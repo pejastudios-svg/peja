@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
-import { Button } from "@/components/ui/Button";
 import {
   ArrowLeft,
   Bell,
@@ -14,22 +12,31 @@ import {
   FileText,
   LogOut,
   ChevronRight,
-  Loader2,
   Moon,
+  Sun,
   Smartphone,
+  Check,
+  X,
 } from "lucide-react";
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { signOut } = useAuth();
   const [loading, setLoading] = useState(false);
 
   // Notification settings
+  const [pushEnabled, setPushEnabled] = useState(true);
   const [dangerAlerts, setDangerAlerts] = useState(true);
   const [cautionAlerts, setCautionAlerts] = useState(true);
   const [awarenessAlerts, setAwarenessAlerts] = useState(false);
   const [infoAlerts, setInfoAlerts] = useState(false);
-  const [pushEnabled, setPushEnabled] = useState(true);
+
+  // Language modal
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const [language, setLanguage] = useState("English");
+
+  // Theme
+  const [darkMode, setDarkMode] = useState(true);
 
   const handleLogout = async () => {
     setLoading(true);
@@ -37,6 +44,7 @@ export default function SettingsPage() {
     router.push("/login");
   };
 
+  // Fixed Toggle Switch Component
   const ToggleSwitch = ({
     enabled,
     onChange,
@@ -45,15 +53,25 @@ export default function SettingsPage() {
     onChange: (value: boolean) => void;
   }) => (
     <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
       onClick={() => onChange(!enabled)}
-      className={`relative w-12 h-6 rounded-full transition-colors ${
-        enabled ? "bg-primary-600" : "bg-dark-600"
-      }`}
+      className={`
+        relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer 
+        rounded-full border-2 border-transparent 
+        transition-colors duration-200 ease-in-out
+        focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-dark-900
+        ${enabled ? "bg-primary-600" : "bg-dark-600"}
+      `}
     >
       <span
-        className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${
-          enabled ? "translate-x-7" : "translate-x-1"
-        }`}
+        className={`
+          pointer-events-none inline-block h-5 w-5 
+          transform rounded-full bg-white shadow-lg
+          ring-0 transition duration-200 ease-in-out
+          ${enabled ? "translate-x-5" : "translate-x-0"}
+        `}
       />
     </button>
   );
@@ -74,9 +92,9 @@ export default function SettingsPage() {
     danger?: boolean;
   }) => (
     <div
-      className={`flex items-center justify-between py-4 ${
-        onClick ? "cursor-pointer active:bg-white/5" : ""
-      }`}
+      className={`flex items-center justify-between py-4 px-2 rounded-lg ${
+        onClick ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : ""
+      } transition-colors`}
       onClick={onClick}
     >
       <div className="flex items-center gap-3">
@@ -117,122 +135,174 @@ export default function SettingsPage() {
             Notifications
           </h2>
 
-          <div className="space-y-2">
-            <SettingRow icon={Bell} label="Push Notifications" description="Receive alerts on your device">
-              <ToggleSwitch enabled={pushEnabled} onChange={setPushEnabled} />
-            </SettingRow>
+          <SettingRow
+            icon={Bell}
+            label="Push Notifications"
+            description="Receive alerts on your device"
+          >
+            <ToggleSwitch enabled={pushEnabled} onChange={setPushEnabled} />
+          </SettingRow>
 
-            {pushEnabled && (
-              <div className="pl-12 space-y-4 py-4 glass-sm rounded-xl p-4 mt-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-dark-100">🔴 Danger Alerts</p>
-                    <p className="text-xs text-dark-400">Crime, Fire, Accidents</p>
-                  </div>
-                  <ToggleSwitch enabled={dangerAlerts} onChange={setDangerAlerts} />
+          {pushEnabled && (
+            <div className="ml-4 mt-2 space-y-3 p-4 glass-sm rounded-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-dark-100">🔴 Danger Alerts</p>
+                  <p className="text-xs text-dark-400">Crime, Fire, Accidents</p>
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-dark-100">🟠 Caution Alerts</p>
-                    <p className="text-xs text-dark-400">Traffic, Outages, Flooding</p>
-                  </div>
-                  <ToggleSwitch enabled={cautionAlerts} onChange={setCautionAlerts} />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-dark-100">🟡 Awareness Alerts</p>
-                    <p className="text-xs text-dark-400">Protests, Events</p>
-                  </div>
-                  <ToggleSwitch enabled={awarenessAlerts} onChange={setAwarenessAlerts} />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-dark-100">🔵 Info Alerts</p>
-                    <p className="text-xs text-dark-400">General information</p>
-                  </div>
-                  <ToggleSwitch enabled={infoAlerts} onChange={setInfoAlerts} />
-                </div>
+                <ToggleSwitch enabled={dangerAlerts} onChange={setDangerAlerts} />
               </div>
-            )}
-          </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-dark-100">🟠 Caution Alerts</p>
+                  <p className="text-xs text-dark-400">Traffic, Outages, Flooding</p>
+                </div>
+                <ToggleSwitch enabled={cautionAlerts} onChange={setCautionAlerts} />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-dark-100">🟡 Awareness Alerts</p>
+                  <p className="text-xs text-dark-400">Protests, Events</p>
+                </div>
+                <ToggleSwitch enabled={awarenessAlerts} onChange={setAwarenessAlerts} />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-dark-100">🔵 Info Alerts</p>
+                  <p className="text-xs text-dark-400">General information</p>
+                </div>
+                <ToggleSwitch enabled={infoAlerts} onChange={setInfoAlerts} />
+              </div>
+            </div>
+          )}
         </section>
 
         {/* General Section */}
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">General</h2>
 
-          <div className="space-y-2">
-            <SettingRow
-              icon={Globe}
-              label="Language"
-              description="English"
-              onClick={() => {
-                /* TODO */
-              }}
-            />
-            <SettingRow
-              icon={Moon}
-              label="Appearance"
-              description="Dark mode"
-              onClick={() => {
-                /* TODO */
-              }}
-            />
-            <SettingRow
-              icon={Smartphone}
-              label="App Version"
-              description="1.0.0"
-            />
-          </div>
+          <SettingRow
+            icon={Globe}
+            label="Language"
+            description={language}
+            onClick={() => setShowLanguageModal(true)}
+          />
+
+          <SettingRow icon={darkMode ? Moon : Sun} label="Appearance">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-dark-400">
+                {darkMode ? "Dark" : "Light"}
+              </span>
+              <ToggleSwitch enabled={darkMode} onChange={setDarkMode} />
+            </div>
+          </SettingRow>
+
+          <SettingRow
+            icon={Smartphone}
+            label="App Version"
+            description="1.0.0"
+          />
         </section>
 
         {/* Support Section */}
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Support</h2>
 
-          <div className="space-y-2">
-            <SettingRow
-              icon={Shield}
-              label="Privacy & Security"
-              onClick={() => {
-                /* TODO */
-              }}
-            />
-            <SettingRow
-              icon={HelpCircle}
-              label="Help & Support"
-              onClick={() => {
-                /* TODO */
-              }}
-            />
-            <SettingRow
-              icon={FileText}
-              label="Terms of Service"
-              onClick={() => {
-                /* TODO */
-              }}
-            />
-          </div>
+          <SettingRow
+            icon={Shield}
+            label="Privacy Policy"
+            onClick={() => router.push("/privacy")}
+          />
+          <SettingRow
+            icon={HelpCircle}
+            label="Help & Support"
+            onClick={() => router.push("/help")}
+          />
+          <SettingRow
+            icon={FileText}
+            label="Terms of Service"
+            onClick={() => router.push("/terms")}
+          />
         </section>
 
         {/* Account Section */}
         <section className="py-6">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Account</h2>
 
-          <SettingRow
-            icon={LogOut}
-            label="Log Out"
-            onClick={handleLogout}
-            danger
-          />
+          <SettingRow icon={LogOut} label="Log Out" onClick={handleLogout} danger />
         </section>
 
         {/* App Info */}
-        <p className="text-center text-sm text-dark-500 py-4">Peja v1.0.0</p>
+        <p className="text-center text-sm text-dark-500 py-4">
+          Peja v1.0.0 • Made with ❤️ in Nigeria
+        </p>
       </main>
+
+      {/* Language Selection Modal */}
+      {showLanguageModal && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            onClick={() => setShowLanguageModal(false)}
+          />
+          <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-md mx-auto">
+            <div className="glass-card">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-dark-100">Select Language</h2>
+                <button
+                  onClick={() => setShowLanguageModal(false)}
+                  className="p-1 hover:bg-white/10 rounded-lg"
+                >
+                  <X className="w-5 h-5 text-dark-400" />
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {[
+                  { code: "en", name: "English", native: "English" },
+                  { code: "pcm", name: "Nigerian Pidgin", native: "Naija" },
+                  { code: "yo", name: "Yoruba", native: "Yorùbá", coming: true },
+                  { code: "ig", name: "Igbo", native: "Igbo", coming: true },
+                  { code: "ha", name: "Hausa", native: "Hausa", coming: true },
+                ].map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={() => {
+                      if (!lang.coming) {
+                        setLanguage(lang.name);
+                        setShowLanguageModal(false);
+                      }
+                    }}
+                    disabled={lang.coming}
+                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
+                      language === lang.name
+                        ? "bg-primary-600/20 border border-primary-500/50"
+                        : lang.coming
+                        ? "opacity-50 cursor-not-allowed"
+                        : "hover:bg-white/5"
+                    }`}
+                  >
+                    <div className="text-left">
+                      <p className="text-dark-100 font-medium">{lang.name}</p>
+                      <p className="text-sm text-dark-400">{lang.native}</p>
+                    </div>
+                    {lang.coming ? (
+                      <span className="text-xs text-dark-500 bg-dark-700 px-2 py-1 rounded">
+                        Coming Soon
+                      </span>
+                    ) : language === lang.name ? (
+                      <Check className="w-5 h-5 text-primary-400" />
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
