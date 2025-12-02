@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Post, CATEGORIES, NIGERIAN_STATES } from "@/lib/types";
+import { Post, CATEGORIES } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
@@ -11,15 +11,13 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import {
   Search,
   X,
-  Filter,
-  MapPin,
-  Calendar,
-  Tag,
   Loader2,
   SlidersHorizontal,
+  MapPin,
 } from "lucide-react";
 
-export default function SearchPage() {
+// Separate component that uses useSearchParams
+function SearchContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -31,7 +29,6 @@ export default function SearchPage() {
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedState, setSelectedState] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all">("all");
 
   const performSearch = useCallback(async () => {
@@ -132,11 +129,10 @@ export default function SearchPage() {
 
   const clearFilters = () => {
     setSelectedCategory(null);
-    setSelectedState(null);
     setDateRange("all");
   };
 
-  const hasActiveFilters = selectedCategory || selectedState || dateRange !== "all";
+  const hasActiveFilters = selectedCategory || dateRange !== "all";
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
@@ -300,5 +296,23 @@ export default function SearchPage() {
 
       <BottomNav />
     </div>
+  );
+}
+
+// Loading fallback component
+function SearchLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+    </div>
+  );
+}
+
+// Main page component with Suspense wrapper
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<SearchLoading />}>
+      <SearchContent />
+    </Suspense>
   );
 }
