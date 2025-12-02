@@ -24,7 +24,7 @@ export default function TermsPage() {
 
       <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
         <div className="prose prose-invert max-w-none">
-          <p className="text-dark-400 text-sm mb-6">Last updated: January 2025</p>
+          <p className="text-dark-400 text-sm mb-6">Last updated: December 2025</p>
 
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-dark-100 mb-3">1. Acceptance of Terms</h2>
@@ -120,8 +120,8 @@ export default function TermsPage() {
             <p className="text-dark-300 leading-relaxed">
               If you have questions about these terms, contact us at:
               <br />
-              <a href="mailto:legal@peja.ng" className="text-primary-400 hover:underline">
-                legal@peja.ng
+              <a href="mailto:pejastudios@gmail.com" className="text-primary-400 hover:underline">
+                pejastudios@gmail.com
               </a>
             </p>
           </section>

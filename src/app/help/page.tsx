@@ -83,7 +83,7 @@ export default function HelpPage() {
           </h2>
           <div className="grid grid-cols-1 gap-3">
             <a
-              href="mailto:support@peja.ng"
+              href="mailto:pejastudios@gmail.com"
               className="flex items-center gap-3 p-4 glass-card hover:bg-white/5 transition-colors"
             >
               <div className="p-2 rounded-lg bg-primary-600/20">
@@ -91,12 +91,12 @@ export default function HelpPage() {
               </div>
               <div>
                 <p className="font-medium text-dark-100">Email Support</p>
-                <p className="text-sm text-dark-400">support@peja.ng</p>
+                <p className="text-sm text-dark-400">pejastudios@gmail.com</p>
               </div>
             </a>
 
             <a
-              href="https://wa.me/2348000000000"
+              href="https://wa.link/2il66e"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-3 p-4 glass-card hover:bg-white/5 transition-colors"

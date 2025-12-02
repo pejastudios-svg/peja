@@ -24,7 +24,7 @@ export default function PrivacyPage() {
 
       <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
         <div className="prose prose-invert max-w-none">
-          <p className="text-dark-400 text-sm mb-6">Last updated: January 2025</p>
+          <p className="text-dark-400 text-sm mb-6">Last updated: December 2025</p>
 
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-dark-100 mb-3">Introduction</h2>
@@ -156,8 +156,8 @@ export default function PrivacyPage() {
             <p className="text-dark-300 leading-relaxed">
               For privacy-related questions or requests, contact us at:
               <br />
-              <a href="mailto:privacy@peja.ng" className="text-primary-400 hover:underline">
-                privacy@peja.ng
+              <a href="mailto:pejastudios@gmail.com" className="text-primary-400 hover:underline">
+                pejastudios@gmail.com
               </a>
             </p>
           </section>

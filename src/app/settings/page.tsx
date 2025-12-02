@@ -7,16 +7,11 @@ import {
   ArrowLeft,
   Bell,
   Shield,
-  Globe,
   HelpCircle,
   FileText,
   LogOut,
   ChevronRight,
-  Moon,
-  Sun,
   Smartphone,
-  Check,
-  X,
 } from "lucide-react";
 
 export default function SettingsPage() {
@@ -31,20 +26,13 @@ export default function SettingsPage() {
   const [awarenessAlerts, setAwarenessAlerts] = useState(false);
   const [infoAlerts, setInfoAlerts] = useState(false);
 
-  // Language modal
-  const [showLanguageModal, setShowLanguageModal] = useState(false);
-  const [language, setLanguage] = useState("English");
-
-  // Theme
-  const [darkMode, setDarkMode] = useState(true);
-
   const handleLogout = async () => {
     setLoading(true);
     await signOut();
     router.push("/login");
   };
 
-  // Fixed Toggle Switch Component
+  // Toggle Switch Component
   const ToggleSwitch = ({
     enabled,
     onChange,
@@ -185,22 +173,6 @@ export default function SettingsPage() {
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">General</h2>
 
           <SettingRow
-            icon={Globe}
-            label="Language"
-            description={language}
-            onClick={() => setShowLanguageModal(true)}
-          />
-
-          <SettingRow icon={darkMode ? Moon : Sun} label="Appearance">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-dark-400">
-                {darkMode ? "Dark" : "Light"}
-              </span>
-              <ToggleSwitch enabled={darkMode} onChange={setDarkMode} />
-            </div>
-          </SettingRow>
-
-          <SettingRow
             icon={Smartphone}
             label="App Version"
             description="1.0.0"
@@ -240,69 +212,6 @@ export default function SettingsPage() {
           Peja v1.0.0 • Made with ❤️ in Nigeria
         </p>
       </main>
-
-      {/* Language Selection Modal */}
-      {showLanguageModal && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-            onClick={() => setShowLanguageModal(false)}
-          />
-          <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-md mx-auto">
-            <div className="glass-card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-dark-100">Select Language</h2>
-                <button
-                  onClick={() => setShowLanguageModal(false)}
-                  className="p-1 hover:bg-white/10 rounded-lg"
-                >
-                  <X className="w-5 h-5 text-dark-400" />
-                </button>
-              </div>
-
-              <div className="space-y-2">
-                {[
-                  { code: "en", name: "English", native: "English" },
-                  { code: "pcm", name: "Nigerian Pidgin", native: "Naija" },
-                  { code: "yo", name: "Yoruba", native: "Yorùbá", coming: true },
-                  { code: "ig", name: "Igbo", native: "Igbo", coming: true },
-                  { code: "ha", name: "Hausa", native: "Hausa", coming: true },
-                ].map((lang) => (
-                  <button
-                    key={lang.code}
-                    onClick={() => {
-                      if (!lang.coming) {
-                        setLanguage(lang.name);
-                        setShowLanguageModal(false);
-                      }
-                    }}
-                    disabled={lang.coming}
-                    className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
-                      language === lang.name
-                        ? "bg-primary-600/20 border border-primary-500/50"
-                        : lang.coming
-                        ? "opacity-50 cursor-not-allowed"
-                        : "hover:bg-white/5"
-                    }`}
-                  >
-                    <div className="text-left">
-                      <p className="text-dark-100 font-medium">{lang.name}</p>
-                      <p className="text-sm text-dark-400">{lang.native}</p>
-                    </div>
-                    {lang.coming ? (
-                      <span className="text-xs text-dark-500 bg-dark-700 px-2 py-1 rounded">
-                        Coming Soon
-                      </span>
-                    ) : language === lang.name ? (
-                      <Check className="w-5 h-5 text-primary-400" />
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }
