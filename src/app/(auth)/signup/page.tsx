@@ -53,6 +53,7 @@ export default function SignupPage() {
     }
 
     try {
+      // Sign up the user
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -65,24 +66,34 @@ export default function SignupPage() {
       }
 
       if (authData.user) {
-        const { error: profileError } = await supabase.from("users").insert({
+        // Create user profile in database
+        await supabase.from("users").insert({
           id: authData.user.id,
           email: formData.email,
           phone: formData.phone,
           full_name: formData.fullName,
-          email_verified: false,
+          email_verified: true,
           phone_verified: false,
           status: "active",
           reputation_score: 0,
           is_guardian: false,
         });
 
-        if (profileError) {
-          console.error("Profile creation error:", profileError);
-        }
-      }
+        // Sign in immediately after signup
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
 
-      router.push("/onboarding");
+        if (signInError) {
+          // If auto sign-in fails, go to login page
+          router.push("/login");
+          return;
+        }
+
+        // Success - go to home page
+        router.push("/");
+      }
     } catch (err) {
       console.error("Signup error:", err);
       setError("An unexpected error occurred");
@@ -153,11 +164,7 @@ export default function SignupPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="hover:text-dark-200"
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               }
             />
@@ -173,17 +180,6 @@ export default function SignupPage() {
             />
           </div>
 
-          <p className="text-xs text-dark-500 mt-4">
-            By signing up, you agree to our{" "}
-            <Link href="/terms" className="text-primary-400 hover:underline">
-              Terms of Service
-            </Link>{" "}
-            and{" "}
-            <Link href="/privacy" className="text-primary-400 hover:underline">
-              Privacy Policy
-            </Link>
-          </p>
-
           <Button
             type="submit"
             variant="primary"
@@ -195,10 +191,7 @@ export default function SignupPage() {
 
           <p className="text-center text-dark-400 text-sm mt-6">
             Already have an account?{" "}
-            <Link
-              href="/login"
-              className="text-primary-400 hover:text-primary-300 font-medium"
-            >
+            <Link href="/login" className="text-primary-400 hover:text-primary-300 font-medium">
               Sign in
             </Link>
           </p>
