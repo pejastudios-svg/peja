@@ -9,6 +9,7 @@ export interface User {
   avatar_url?: string;
   reputation_score: number;
   is_guardian: boolean;
+  is_admin?: boolean;
   status: "active" | "suspended" | "banned";
   email_verified: boolean;
   phone_verified: boolean;
@@ -30,6 +31,7 @@ export interface Post {
   is_sensitive: boolean;
   confirmations: number;
   views: number;
+  comment_count?: number;
   expires_at?: string;
   created_at: string;
   media?: PostMedia[];
@@ -48,6 +50,67 @@ export interface PostMedia {
   thumbnail_url?: string;
 }
 
+export interface Comment {
+  id: string;
+  post_id: string;
+  user_id: string;
+  content: string;
+  is_anonymous: boolean;
+  created_at: string;
+  user?: {
+    full_name: string;
+    avatar_url?: string;
+  };
+}
+
+export interface UserSettings {
+  id: string;
+  user_id: string;
+  push_enabled: boolean;
+  sms_enabled: boolean;
+  email_enabled: boolean;
+  danger_alerts: boolean;
+  caution_alerts: boolean;
+  awareness_alerts: boolean;
+  info_alerts: boolean;
+  alert_zone_type: "all_nigeria" | "states" | "radius" | "saved_locations";
+  selected_states: string[];
+  alert_radius_km: number;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+}
+
+export interface SavedLocation {
+  id: string;
+  user_id: string;
+  name: string;
+  address?: string;
+  latitude: number;
+  longitude: number;
+  radius_km: number;
+}
+
+export interface EmergencyContact {
+  id: string;
+  user_id: string;
+  name: string;
+  phone: string;
+  relationship: string;
+  is_verified: boolean;
+}
+
+export interface SOSAlert {
+  id: string;
+  user_id: string;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  status: "active" | "resolved" | "false_alarm" | "cancelled";
+  created_at: string;
+  resolved_at?: string;
+}
+
 export interface Category {
   id: string;
   name: string;
@@ -58,7 +121,7 @@ export interface Category {
 
 export const CATEGORIES: Category[] = [
   { id: "crime", name: "Crime/Theft", icon: "AlertTriangle", color: "danger", expirySeconds: 86400 },
-  { id: "fire", name: "Fire", icon: "Flame", color: "danger", expirySeconds: 86400 },
+  { id: "fire", name: "Fire", icon: "Flame", color: "danger", expirySeconds: 21600 },
   { id: "accident", name: "Accident", icon: "Car", color: "danger", expirySeconds: 14400 },
   { id: "police", name: "Police Activity", icon: "Shield", color: "danger", expirySeconds: 43200 },
   { id: "roadwork", name: "Road Work", icon: "Construction", color: "warning", expirySeconds: 604800 },
@@ -80,4 +143,12 @@ export const NIGERIAN_STATES = [
   "FCT", "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi",
   "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo", "Osun",
   "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara"
+];
+
+export const REPORT_REASONS = [
+  { id: "false_info", label: "False Information", description: "This incident didn't happen" },
+  { id: "inappropriate", label: "Inappropriate Content", description: "Violates community guidelines" },
+  { id: "spam", label: "Spam", description: "Not a real incident report" },
+  { id: "harassment", label: "Harassment", description: "Targeting or threatening individuals" },
+  { id: "other", label: "Other", description: "Other reason" },
 ];

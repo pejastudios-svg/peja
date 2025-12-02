@@ -10,6 +10,7 @@ import {
   Settings,
   Shield,
   HelpCircle,
+  Search,
   X,
 } from "lucide-react";
 
@@ -20,8 +21,8 @@ interface SidebarProps {
 
 const menuItems = [
   { href: "/", icon: Home, label: "Home" },
+  { href: "/search", icon: Search, label: "Search" },
   { href: "/map", icon: Map, label: "Map View" },
-  { href: "/trending", icon: TrendingUp, label: "Trending" },
   { href: "/notifications", icon: Bell, label: "Notifications" },
 ];
 

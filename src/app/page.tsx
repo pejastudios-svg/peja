@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -10,35 +10,46 @@ import { Button } from "@/components/ui/Button";
 import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
-import { TrendingUp, MapPin, Users, Loader2 } from "lucide-react";
+import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
+
+type FeedTab = "nearby" | "trending";
 
 export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"nearby" | "following" | "trending">("nearby");
+  const [activeTab, setActiveTab] = useState<FeedTab>("nearby");
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchPosts();
-  }, []);
+  }, [activeTab]);
 
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     setLoading(true);
 
     try {
-      // Single optimized query with joins
-      const { data: postsData, error: postsError } = await supabase
+      let query = supabase
         .from("posts")
         .select(`
           *,
           post_media (*),
           post_tags (tag)
         `)
-        .eq("status", "live")
-        .order("created_at", { ascending: false })
-        .limit(20);
+        .eq("status", "live");
+
+      // Different ordering based on tab
+      if (activeTab === "trending") {
+        query = query
+          .order("confirmations", { ascending: false })
+          .order("views", { ascending: false });
+      } else {
+        query = query.order("created_at", { ascending: false });
+      }
+
+      const { data: postsData, error: postsError } = await query.limit(30);
 
       if (postsError) {
         console.error("Error fetching posts:", postsError);
@@ -68,14 +79,15 @@ export default function Home() {
         confirmations: post.confirmations || 0,
         views: post.views || 0,
         created_at: post.created_at,
-        media: post.post_media?.map((m: any) => ({
-          id: m.id,
-          post_id: m.post_id,
-          url: m.url,
-          media_type: m.media_type as "photo" | "video",
-          is_sensitive: m.is_sensitive,
-          thumbnail_url: m.thumbnail_url,
-        })) || [],
+        media:
+          post.post_media?.map((m: any) => ({
+            id: m.id,
+            post_id: m.post_id,
+            url: m.url,
+            media_type: m.media_type as "photo" | "video",
+            is_sensitive: m.is_sensitive,
+            thumbnail_url: m.thumbnail_url,
+          })) || [],
         tags: post.post_tags?.map((t: any) => t.tag) || [],
       }));
 
@@ -84,73 +96,17 @@ export default function Home() {
       console.error("Fetch error:", error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [activeTab]);
 
-  const handleConfirmPost = async (postId: string) => {
-    try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-
-      if (!authUser) {
-        router.push("/login");
-        return;
-      }
-
-      // Check if already confirmed
-      const { data: existing } = await supabase
-        .from("post_confirmations")
-        .select("id")
-        .eq("post_id", postId)
-        .eq("user_id", authUser.id)
-        .maybeSingle();
-
-      const currentPost = posts.find(p => p.id === postId);
-      const currentConfirmations = currentPost?.confirmations || 0;
-
-      if (existing) {
-        // Remove confirmation
-        await supabase
-          .from("post_confirmations")
-          .delete()
-          .eq("post_id", postId)
-          .eq("user_id", authUser.id);
-
-        await supabase
-          .from("posts")
-          .update({ confirmations: Math.max(0, currentConfirmations - 1) })
-          .eq("id", postId);
-
-        // Update local state immediately
-        setPosts(posts.map(p => 
-          p.id === postId 
-            ? { ...p, confirmations: Math.max(0, currentConfirmations - 1) }
-            : p
-        ));
-      } else {
-        // Add confirmation
-        await supabase
-          .from("post_confirmations")
-          .insert({ post_id: postId, user_id: authUser.id });
-
-        await supabase
-          .from("posts")
-          .update({ confirmations: currentConfirmations + 1 })
-          .eq("id", postId);
-
-        // Update local state immediately
-        setPosts(posts.map(p => 
-          p.id === postId 
-            ? { ...p, confirmations: currentConfirmations + 1 }
-            : p
-        ));
-      }
-    } catch (error) {
-      console.error("Error confirming post:", error);
-    }
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchPosts();
   };
 
   const handleSharePost = async (post: Post) => {
-    const shareUrl = `https://peja.vercel.app/post/${post.id}`;
+    const shareUrl = `${window.location.origin}/post/${post.id}`;
     const shareText = post.comment || "Check out this incident on Peja";
 
     if (navigator.share) {
@@ -183,6 +139,7 @@ export default function Home() {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="pt-16 lg:pl-64">
+        {/* Profile Completion Banner */}
         {user && !user.occupation && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
             <div className="glass-card p-4 flex items-center justify-between">
@@ -201,8 +158,18 @@ export default function Home() {
           </div>
         )}
 
-        <div className="max-w-2xl mx-auto px-4 py-6">
-          <div className="flex gap-2 mb-6 overflow-x-auto scrollbar-hide">
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          {/* Search Bar */}
+          <button
+            onClick={() => router.push("/search")}
+            className="w-full flex items-center gap-3 px-4 py-3 glass-sm rounded-xl mb-4 text-dark-400 hover:bg-white/5 transition-colors"
+          >
+            <Search className="w-5 h-5" />
+            <span>Search incidents, #tags, locations...</span>
+          </button>
+
+          {/* Feed Tabs */}
+          <div className="flex items-center gap-2 mb-4">
             <Button
               variant={activeTab === "nearby" ? "primary" : "secondary"}
               size="sm"
@@ -212,14 +179,6 @@ export default function Home() {
               Nearby
             </Button>
             <Button
-              variant={activeTab === "following" ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => setActiveTab("following")}
-              leftIcon={<Users className="w-4 h-4" />}
-            >
-              Following
-            </Button>
-            <Button
               variant={activeTab === "trending" ? "primary" : "secondary"}
               size="sm"
               onClick={() => setActiveTab("trending")}
@@ -227,20 +186,38 @@ export default function Home() {
             >
               Trending
             </Button>
+
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="ml-auto p-2 glass-sm rounded-lg hover:bg-white/10"
+            >
+              <RefreshCw
+                className={`w-4 h-4 text-dark-400 ${refreshing ? "animate-spin" : ""}`}
+              />
+            </button>
           </div>
 
+          {/* Tab Description */}
+          <p className="text-sm text-dark-500 mb-4">
+            {activeTab === "nearby" && "Latest incidents in your area"}
+            {activeTab === "trending" && "Most confirmed and viewed incidents"}
+          </p>
+
+          {/* Posts */}
           {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
             </div>
           ) : posts.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-dark-400 mb-4">No incidents reported yet</p>
-              <Button
-                variant="primary"
-                onClick={() => router.push("/create")}
-              >
-                Report First Incident
+              <MapPin className="w-12 h-12 text-dark-600 mx-auto mb-4" />
+              <p className="text-dark-400 mb-2">No incidents reported yet</p>
+              <p className="text-sm text-dark-500 mb-4">
+                Be the first to report what's happening in your area
+              </p>
+              <Button variant="primary" onClick={() => router.push("/create")}>
+                Report Incident
               </Button>
             </div>
           ) : (
@@ -249,7 +226,7 @@ export default function Home() {
                 <PostCard
                   key={post.id}
                   post={post}
-                  onConfirm={handleConfirmPost}
+                  onConfirm={() => {}}
                   onShare={handleSharePost}
                 />
               ))}

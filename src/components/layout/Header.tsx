@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Menu, Plus, User } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bell, Menu, Plus, User, Search } from "lucide-react";
 import { Button } from "../ui/Button";
 
 interface HeaderProps {
@@ -10,6 +11,8 @@ interface HeaderProps {
 }
 
 export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
+  const router = useRouter();
+
   return (
     <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -24,11 +27,18 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
             <div className="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center">
               <span className="text-white font-bold text-lg">P</span>
             </div>
-            <span className="text-xl font-bold text-gradient">Peja</span>
+            <span className="text-xl font-bold text-gradient hidden sm:block">Peja</span>
           </Link>
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => router.push("/search")}
+            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+          >
+            <Search className="w-5 h-5 text-dark-200" />
+          </button>
+
           <Button
             variant="primary"
             size="sm"
