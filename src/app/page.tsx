@@ -9,10 +9,12 @@ import { PostCard } from "@/components/posts/PostCard";
 import { Button } from "@/components/ui/Button";
 import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/context/AuthContext";
 import { TrendingUp, MapPin, Users, Loader2 } from "lucide-react";
 
 export default function Home() {
   const router = useRouter();
+  const { user } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"nearby" | "following" | "trending">("nearby");
   const [posts, setPosts] = useState<Post[]>([]);
@@ -25,7 +27,7 @@ export default function Home() {
   const fetchPosts = async () => {
     setLoading(true);
     console.log("Fetching posts...");
-    
+
     try {
       const { data: postsData, error: postsError } = await supabase
         .from("posts")
@@ -101,62 +103,79 @@ export default function Home() {
   };
 
   const handleConfirmPost = async (postId: string) => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
 
-    // Check if already confirmed
-    const { data: existing } = await supabase
-      .from("post_confirmations")
-      .select("*")
-      .eq("post_id", postId)
-      .eq("user_id", user.id)
-      .single();
+      if (!authUser) {
+        router.push("/login");
+        return;
+      }
 
-    if (existing) {
-      // Remove confirmation
-      await supabase
+      // Check if already confirmed
+      const { data: existing } = await supabase
         .from("post_confirmations")
-        .delete()
+        .select("*")
         .eq("post_id", postId)
-        .eq("user_id", user.id);
+        .eq("user_id", authUser.id)
+        .single();
 
-      // Decrease count
-      await supabase
-        .from("posts")
-        .update({ confirmations: Math.max(0, (posts.find(p => p.id === postId)?.confirmations || 1) - 1) })
-        .eq("id", postId);
-    } else {
-      // Add confirmation
-      await supabase
-        .from("post_confirmations")
-        .insert({ post_id: postId, user_id: user.id });
+      if (existing) {
+        // Remove confirmation
+        await supabase
+          .from("post_confirmations")
+          .delete()
+          .eq("post_id", postId)
+          .eq("user_id", authUser.id);
 
-      // Increase count
-      await supabase
-        .from("posts")
-        .update({ confirmations: (posts.find(p => p.id === postId)?.confirmations || 0) + 1 })
-        .eq("id", postId);
+        // Decrease count
+        const currentPost = posts.find(p => p.id === postId);
+        await supabase
+          .from("posts")
+          .update({ confirmations: Math.max(0, (currentPost?.confirmations || 1) - 1) })
+          .eq("id", postId);
+      } else {
+        // Add confirmation
+        await supabase
+          .from("post_confirmations")
+          .insert({ post_id: postId, user_id: authUser.id });
+
+        // Increase count
+        const currentPost = posts.find(p => p.id === postId);
+        await supabase
+          .from("posts")
+          .update({ confirmations: (currentPost?.confirmations || 0) + 1 })
+          .eq("id", postId);
+      }
+
+      // Refresh posts
+      fetchPosts();
+    } catch (error) {
+      console.error("Error confirming post:", error);
     }
+  };
 
-    // Refresh posts
-    fetchPosts();
-  } catch (error) {
-    console.error("Error confirming post:", error);
-  }
-};
+  const handleSharePost = async (post: Post) => {
+    const shareUrl = `https://peja.vercel.app/post/${post.id}`;
+    const shareText = post.comment || "Check out this incident on Peja";
 
-  const handleSharePost = (post: Post) => {
     if (navigator.share) {
-      navigator.share({
-        title: "Peja Alert",
-        text: post.comment || "Check out this incident",
-        url: window.location.href,
-      });
+      try {
+        await navigator.share({
+          title: "Peja Alert",
+          text: shareText,
+          url: shareUrl,
+        });
+      } catch (error) {
+        console.log("Share cancelled");
+      }
+    } else {
+      // Fallback: copy to clipboard
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("Link copied to clipboard!");
+      } catch (error) {
+        console.error("Failed to copy:", error);
+      }
     }
   };
 
@@ -170,6 +189,25 @@ export default function Home() {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="pt-16 lg:pl-64">
+        {/* Profile completion banner */}
+        {user && !user.occupation && (
+          <div className="max-w-2xl mx-auto px-4 pt-4">
+            <div className="glass-card p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-dark-200">Complete your profile</p>
+                <p className="text-xs text-dark-400">Add your details to help your community</p>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => router.push("/profile/edit")}
+              >
+                Complete
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="max-w-2xl mx-auto px-4 py-6">
           <div className="flex gap-2 mb-6 overflow-x-auto scrollbar-hide">
             <Button
