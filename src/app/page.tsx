@@ -101,8 +101,54 @@ export default function Home() {
   };
 
   const handleConfirmPost = async (postId: string) => {
-    console.log("Confirming post:", postId);
-  };
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
+    // Check if already confirmed
+    const { data: existing } = await supabase
+      .from("post_confirmations")
+      .select("*")
+      .eq("post_id", postId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (existing) {
+      // Remove confirmation
+      await supabase
+        .from("post_confirmations")
+        .delete()
+        .eq("post_id", postId)
+        .eq("user_id", user.id);
+
+      // Decrease count
+      await supabase
+        .from("posts")
+        .update({ confirmations: Math.max(0, (posts.find(p => p.id === postId)?.confirmations || 1) - 1) })
+        .eq("id", postId);
+    } else {
+      // Add confirmation
+      await supabase
+        .from("post_confirmations")
+        .insert({ post_id: postId, user_id: user.id });
+
+      // Increase count
+      await supabase
+        .from("posts")
+        .update({ confirmations: (posts.find(p => p.id === postId)?.confirmations || 0) + 1 })
+        .eq("id", postId);
+    }
+
+    // Refresh posts
+    fetchPosts();
+  } catch (error) {
+    console.error("Error confirming post:", error);
+  }
+};
 
   const handleSharePost = (post: Post) => {
     if (navigator.share) {
