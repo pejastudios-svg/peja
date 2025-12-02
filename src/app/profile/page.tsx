@@ -7,13 +7,13 @@ import {
   Mail,
   Phone,
   Briefcase,
-  Calendar,
-  MapPin,
   Shield,
   Settings,
   LogOut,
   ChevronRight,
+  ChevronLeft,
   Edit,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
@@ -47,7 +47,11 @@ export default function ProfilePage() {
     try {
       const { data: postsData, error } = await supabase
         .from("posts")
-        .select("*")
+        .select(`
+          *,
+          post_media (*),
+          post_tags (tag)
+        `)
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
@@ -56,45 +60,31 @@ export default function ProfilePage() {
         return;
       }
 
-      const postsWithMedia: Post[] = await Promise.all(
-        (postsData || []).map(async (post) => {
-          const { data: mediaData } = await supabase
-            .from("post_media")
-            .select("*")
-            .eq("post_id", post.id);
+      const formattedPosts: Post[] = (postsData || []).map((post) => ({
+        id: post.id,
+        user_id: post.user_id,
+        category: post.category,
+        comment: post.comment,
+        location: { latitude: 0, longitude: 0 },
+        address: post.address,
+        is_anonymous: post.is_anonymous,
+        status: post.status,
+        is_sensitive: post.is_sensitive,
+        confirmations: post.confirmations || 0,
+        views: post.views || 0,
+        created_at: post.created_at,
+        media: post.post_media?.map((m: any) => ({
+          id: m.id,
+          post_id: m.post_id,
+          url: m.url,
+          media_type: m.media_type as "photo" | "video",
+          is_sensitive: m.is_sensitive,
+          thumbnail_url: m.thumbnail_url,
+        })) || [],
+        tags: post.post_tags?.map((t: any) => t.tag) || [],
+      }));
 
-          const { data: tagsData } = await supabase
-            .from("post_tags")
-            .select("tag")
-            .eq("post_id", post.id);
-
-          return {
-            id: post.id,
-            user_id: post.user_id,
-            category: post.category,
-            comment: post.comment,
-            location: { latitude: 0, longitude: 0 },
-            address: post.address,
-            is_anonymous: post.is_anonymous,
-            status: post.status,
-            is_sensitive: post.is_sensitive,
-            confirmations: post.confirmations || 0,
-            views: post.views || 0,
-            created_at: post.created_at,
-            media: mediaData?.map((m) => ({
-              id: m.id,
-              post_id: m.post_id,
-              url: m.url,
-              media_type: m.media_type as "photo" | "video",
-              is_sensitive: m.is_sensitive,
-              thumbnail_url: m.thumbnail_url,
-            })) || [],
-            tags: tagsData?.map((t) => t.tag) || [],
-          };
-        })
-      );
-
-      setUserPosts(postsWithMedia);
+      setUserPosts(formattedPosts);
     } catch (error) {
       console.error("Error:", error);
     } finally {
@@ -121,169 +111,189 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen pb-20">
-      {/* Header */}
-      <header className="glass border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-xl font-bold text-dark-50">Profile</h1>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push("/settings")}
-            >
-              <Settings className="w-5 h-5" />
-            </Button>
-          </div>
-
-          {/* Profile Card */}
-          <div className="flex items-center gap-4">
-            <div className="w-20 h-20 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center">
-              {user.avatar_url ? (
-                <img
-                  src={user.avatar_url}
-                  alt={user.full_name}
-                  className="w-full h-full rounded-full object-cover"
-                />
-              ) : (
-                <User className="w-10 h-10 text-primary-400" />
-              )}
-            </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-semibold text-dark-50">
-                {user.full_name || "User"}
-              </h2>
-              <p className="text-sm text-dark-400">{user.email}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-xs text-dark-500">
-                  {userPosts.length} posts
-                </span>
-                <span className="text-dark-600">•</span>
-                <span className="text-xs text-green-400 flex items-center gap-1">
-                  <Shield className="w-3 h-3" />
-                  Verified
-                </span>
-              </div>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => router.push("/profile/edit")}
-            >
-              <Edit className="w-4 h-4" />
-            </Button>
-          </div>
+      {/* Header with Back Button */}
+      <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
+        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+          <button
+            onClick={() => router.push("/")}
+            className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5 text-dark-200" />
+          </button>
+          <h1 className="font-semibold text-dark-50">Profile</h1>
+          <button
+            onClick={() => router.push("/settings")}
+            className="p-2 -mr-2 hover:bg-white/5 rounded-lg transition-colors"
+          >
+            <Settings className="w-5 h-5 text-dark-200" />
+          </button>
         </div>
       </header>
 
-      {/* Profile Info */}
-      <div className="max-w-2xl mx-auto px-4 py-4">
-        <div className="glass-card mb-4">
-          <h3 className="text-sm font-medium text-dark-300 mb-3">Information</h3>
-          <div className="space-y-3">
-            {user.email && (
-              <div className="flex items-center gap-3">
-                <Mail className="w-4 h-4 text-dark-500" />
-                <span className="text-sm text-dark-200">{user.email}</span>
+      <main className="pt-14">
+        {/* Profile Header */}
+        <div className="glass border-b border-white/5 px-4 py-6">
+          <div className="max-w-2xl mx-auto">
+            <div className="flex items-center gap-4">
+              {/* Profile Picture */}
+              <div className="relative">
+                <div className="w-20 h-20 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden">
+                  {user.avatar_url ? (
+                    <img
+                      src={user.avatar_url}
+                      alt={user.full_name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-10 h-10 text-primary-400" />
+                  )}
+                </div>
+                <button
+                  onClick={() => router.push("/profile/edit")}
+                  className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center border-2 border-dark-950"
+                >
+                  <Camera className="w-4 h-4 text-white" />
+                </button>
               </div>
-            )}
-            {user.phone && (
-              <div className="flex items-center gap-3">
-                <Phone className="w-4 h-4 text-dark-500" />
-                <span className="text-sm text-dark-200">{user.phone}</span>
-              </div>
-            )}
-            {user.occupation && (
-              <div className="flex items-center gap-3">
-                <Briefcase className="w-4 h-4 text-dark-500" />
-                <span className="text-sm text-dark-200">{user.occupation}</span>
-              </div>
-            )}
-          </div>
-        </div>
 
-        {/* Quick Actions */}
-        <div className="glass-card mb-4">
-          <h3 className="text-sm font-medium text-dark-300 mb-3">Quick Actions</h3>
-          <div className="space-y-1">
-            <button
-              onClick={() => router.push("/settings")}
-              className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Settings className="w-5 h-5 text-dark-400" />
-                <span className="text-sm text-dark-200">Settings</span>
+              <div className="flex-1">
+                <h2 className="text-lg font-semibold text-dark-50">
+                  {user.full_name || "User"}
+                </h2>
+                <p className="text-sm text-dark-400">{user.email}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-xs text-dark-500">
+                    {userPosts.length} posts
+                  </span>
+                  <span className="text-dark-600">•</span>
+                  <span className="text-xs text-green-400 flex items-center gap-1">
+                    <Shield className="w-3 h-3" />
+                    Verified
+                  </span>
+                </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-dark-500" />
-            </button>
-            <button
-              onClick={() => router.push("/become-guardian")}
-              className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Shield className="w-5 h-5 text-dark-400" />
-                <span className="text-sm text-dark-200">Become a Guardian</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-dark-500" />
-            </button>
-            <button
-              onClick={handleSignOut}
-              className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <LogOut className="w-5 h-5 text-red-400" />
-                <span className="text-sm text-red-400">Sign Out</span>
-              </div>
-            </button>
-          </div>
-        </div>
 
-        {/* User Posts */}
-        <div className="mb-4">
-          <div className="flex gap-2 mb-4">
-            <Button
-              variant={activeTab === "posts" ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => setActiveTab("posts")}
-            >
-              My Posts
-            </Button>
-            <Button
-              variant={activeTab === "confirmed" ? "primary" : "secondary"}
-              size="sm"
-              onClick={() => setActiveTab("confirmed")}
-            >
-              Confirmed
-            </Button>
-          </div>
-
-          {postsLoading ? (
-            <div className="flex justify-center py-8">
-              <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
-            </div>
-          ) : userPosts.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-dark-400 mb-4">No posts yet</p>
               <Button
-                variant="primary"
-                onClick={() => router.push("/create")}
+                variant="secondary"
+                size="sm"
+                onClick={() => router.push("/profile/edit")}
               >
-                Create Your First Post
+                <Edit className="w-4 h-4" />
               </Button>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {userPosts.map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  onConfirm={() => {}}
-                  onShare={() => {}}
-                />
-              ))}
-            </div>
-          )}
+          </div>
         </div>
-      </div>
+
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          {/* Profile Info */}
+          <div className="glass-card mb-4">
+            <h3 className="text-sm font-medium text-dark-300 mb-3">Information</h3>
+            <div className="space-y-3">
+              {user.email && (
+                <div className="flex items-center gap-3">
+                  <Mail className="w-4 h-4 text-dark-500" />
+                  <span className="text-sm text-dark-200">{user.email}</span>
+                </div>
+              )}
+              {user.phone && (
+                <div className="flex items-center gap-3">
+                  <Phone className="w-4 h-4 text-dark-500" />
+                  <span className="text-sm text-dark-200">{user.phone}</span>
+                </div>
+              )}
+              {user.occupation && (
+                <div className="flex items-center gap-3">
+                  <Briefcase className="w-4 h-4 text-dark-500" />
+                  <span className="text-sm text-dark-200">{user.occupation}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="glass-card mb-4">
+            <h3 className="text-sm font-medium text-dark-300 mb-3">Quick Actions</h3>
+            <div className="space-y-1">
+              <button
+                onClick={() => router.push("/settings")}
+                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Settings className="w-5 h-5 text-dark-400" />
+                  <span className="text-sm text-dark-200">Settings</span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-dark-500" />
+              </button>
+              <button
+                onClick={() => router.push("/become-guardian")}
+                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <Shield className="w-5 h-5 text-dark-400" />
+                  <span className="text-sm text-dark-200">Become a Guardian</span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-dark-500" />
+              </button>
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <LogOut className="w-5 h-5 text-red-400" />
+                  <span className="text-sm text-red-400">Sign Out</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* User Posts */}
+          <div className="mb-4">
+            <div className="flex gap-2 mb-4">
+              <Button
+                variant={activeTab === "posts" ? "primary" : "secondary"}
+                size="sm"
+                onClick={() => setActiveTab("posts")}
+              >
+                My Posts
+              </Button>
+              <Button
+                variant={activeTab === "confirmed" ? "primary" : "secondary"}
+                size="sm"
+                onClick={() => setActiveTab("confirmed")}
+              >
+                Confirmed
+              </Button>
+            </div>
+
+            {postsLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+              </div>
+            ) : userPosts.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-dark-400 mb-4">No posts yet</p>
+                <Button
+                  variant="primary"
+                  onClick={() => router.push("/create")}
+                >
+                  Create Your First Post
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {userPosts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    onConfirm={() => {}}
+                    onShare={() => {}}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

@@ -26,16 +26,19 @@ export default function Home() {
 
   const fetchPosts = async () => {
     setLoading(true);
-    console.log("Fetching posts...");
 
     try {
+      // Single optimized query with joins
       const { data: postsData, error: postsError } = await supabase
         .from("posts")
-        .select("*")
+        .select(`
+          *,
+          post_media (*),
+          post_tags (tag)
+        `)
         .eq("status", "live")
-        .order("created_at", { ascending: false });
-
-      console.log("Posts response:", { postsData, postsError });
+        .order("created_at", { ascending: false })
+        .limit(20);
 
       if (postsError) {
         console.error("Error fetching posts:", postsError);
@@ -44,57 +47,39 @@ export default function Home() {
       }
 
       if (!postsData || postsData.length === 0) {
-        console.log("No posts found");
         setPosts([]);
         setLoading(false);
         return;
       }
 
-      console.log("Found posts:", postsData.length);
+      const formattedPosts: Post[] = postsData.map((post) => ({
+        id: post.id,
+        user_id: post.user_id,
+        category: post.category,
+        comment: post.comment,
+        location: {
+          latitude: 0,
+          longitude: 0,
+        },
+        address: post.address,
+        is_anonymous: post.is_anonymous,
+        status: post.status,
+        is_sensitive: post.is_sensitive,
+        confirmations: post.confirmations || 0,
+        views: post.views || 0,
+        created_at: post.created_at,
+        media: post.post_media?.map((m: any) => ({
+          id: m.id,
+          post_id: m.post_id,
+          url: m.url,
+          media_type: m.media_type as "photo" | "video",
+          is_sensitive: m.is_sensitive,
+          thumbnail_url: m.thumbnail_url,
+        })) || [],
+        tags: post.post_tags?.map((t: any) => t.tag) || [],
+      }));
 
-      const postsWithMedia: Post[] = await Promise.all(
-        postsData.map(async (post) => {
-          const { data: mediaData } = await supabase
-            .from("post_media")
-            .select("*")
-            .eq("post_id", post.id);
-
-          const { data: tagsData } = await supabase
-            .from("post_tags")
-            .select("tag")
-            .eq("post_id", post.id);
-
-          return {
-            id: post.id,
-            user_id: post.user_id,
-            category: post.category,
-            comment: post.comment,
-            location: {
-              latitude: 0,
-              longitude: 0,
-            },
-            address: post.address,
-            is_anonymous: post.is_anonymous,
-            status: post.status,
-            is_sensitive: post.is_sensitive,
-            confirmations: post.confirmations || 0,
-            views: post.views || 0,
-            created_at: post.created_at,
-            media: mediaData?.map((m) => ({
-              id: m.id,
-              post_id: m.post_id,
-              url: m.url,
-              media_type: m.media_type as "photo" | "video",
-              is_sensitive: m.is_sensitive,
-              thumbnail_url: m.thumbnail_url,
-            })) || [],
-            tags: tagsData?.map((t) => t.tag) || [],
-          };
-        })
-      );
-
-      console.log("Posts with media:", postsWithMedia);
-      setPosts(postsWithMedia);
+      setPosts(formattedPosts);
     } catch (error) {
       console.error("Fetch error:", error);
     } finally {
@@ -114,10 +99,13 @@ export default function Home() {
       // Check if already confirmed
       const { data: existing } = await supabase
         .from("post_confirmations")
-        .select("*")
+        .select("id")
         .eq("post_id", postId)
         .eq("user_id", authUser.id)
-        .single();
+        .maybeSingle();
+
+      const currentPost = posts.find(p => p.id === postId);
+      const currentConfirmations = currentPost?.confirmations || 0;
 
       if (existing) {
         // Remove confirmation
@@ -127,28 +115,35 @@ export default function Home() {
           .eq("post_id", postId)
           .eq("user_id", authUser.id);
 
-        // Decrease count
-        const currentPost = posts.find(p => p.id === postId);
         await supabase
           .from("posts")
-          .update({ confirmations: Math.max(0, (currentPost?.confirmations || 1) - 1) })
+          .update({ confirmations: Math.max(0, currentConfirmations - 1) })
           .eq("id", postId);
+
+        // Update local state immediately
+        setPosts(posts.map(p => 
+          p.id === postId 
+            ? { ...p, confirmations: Math.max(0, currentConfirmations - 1) }
+            : p
+        ));
       } else {
         // Add confirmation
         await supabase
           .from("post_confirmations")
           .insert({ post_id: postId, user_id: authUser.id });
 
-        // Increase count
-        const currentPost = posts.find(p => p.id === postId);
         await supabase
           .from("posts")
-          .update({ confirmations: (currentPost?.confirmations || 0) + 1 })
+          .update({ confirmations: currentConfirmations + 1 })
           .eq("id", postId);
-      }
 
-      // Refresh posts
-      fetchPosts();
+        // Update local state immediately
+        setPosts(posts.map(p => 
+          p.id === postId 
+            ? { ...p, confirmations: currentConfirmations + 1 }
+            : p
+        ));
+      }
     } catch (error) {
       console.error("Error confirming post:", error);
     }
@@ -169,7 +164,6 @@ export default function Home() {
         console.log("Share cancelled");
       }
     } else {
-      // Fallback: copy to clipboard
       try {
         await navigator.clipboard.writeText(shareUrl);
         alert("Link copied to clipboard!");
@@ -189,7 +183,6 @@ export default function Home() {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="pt-16 lg:pl-64">
-        {/* Profile completion banner */}
         {user && !user.occupation && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
             <div className="glass-card p-4 flex items-center justify-between">

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Briefcase, Calendar, User, Phone, Mail } from "lucide-react";
+import { ChevronLeft, Briefcase, Calendar, User, Phone, Mail, Camera, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
@@ -11,14 +11,17 @@ import { supabase } from "@/lib/supabase";
 export default function EditProfilePage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
     full_name: "",
     phone: "",
     occupation: "",
     date_of_birth: "",
+    avatar_url: "",
   });
   const [loading, setLoading] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
@@ -30,12 +33,6 @@ export default function EditProfilePage() {
 
   useEffect(() => {
     if (user) {
-      setFormData({
-        full_name: user.full_name || "",
-        phone: user.phone || "",
-        occupation: user.occupation || "",
-        date_of_birth: "",
-      });
       fetchFullProfile();
     }
   }, [user]);
@@ -55,6 +52,7 @@ export default function EditProfilePage() {
         phone: data.phone || "",
         occupation: data.occupation || "",
         date_of_birth: data.date_of_birth || "",
+        avatar_url: data.avatar_url || "",
       });
     }
   };
@@ -64,6 +62,43 @@ export default function EditProfilePage() {
       ...formData,
       [e.target.name]: e.target.value,
     });
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setUploadingAvatar(true);
+    setError("");
+
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `avatars/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("media")
+        .upload(filePath, file);
+
+      if (uploadError) {
+        setError("Failed to upload image");
+        setUploadingAvatar(false);
+        return;
+      }
+
+      const { data: publicUrl } = supabase.storage
+        .from("media")
+        .getPublicUrl(filePath);
+
+      setFormData({
+        ...formData,
+        avatar_url: publicUrl.publicUrl,
+      });
+    } catch (err) {
+      setError("Failed to upload image");
+    } finally {
+      setUploadingAvatar(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -86,6 +121,7 @@ export default function EditProfilePage() {
           phone: formData.phone,
           occupation: formData.occupation,
           date_of_birth: formData.date_of_birth || null,
+          avatar_url: formData.avatar_url || null,
         })
         .eq("id", user.id);
 
@@ -119,6 +155,7 @@ export default function EditProfilePage() {
 
   return (
     <div className="min-h-screen pb-8">
+      {/* Header with Back Button */}
       <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button
@@ -144,6 +181,42 @@ export default function EditProfilePage() {
             <p className="text-sm text-green-400">Profile updated successfully!</p>
           </div>
         )}
+
+        {/* Avatar Upload */}
+        <div className="flex justify-center mb-6">
+          <div className="relative">
+            <div className="w-24 h-24 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden">
+              {formData.avatar_url ? (
+                <img
+                  src={formData.avatar_url}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <User className="w-12 h-12 text-primary-400" />
+              )}
+              {uploadingAvatar && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 text-white animate-spin" />
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center border-2 border-dark-950"
+            >
+              <Camera className="w-4 h-4 text-white" />
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleAvatarUpload}
+              accept="image/*"
+              className="hidden"
+            />
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="glass-card">
           <div className="space-y-4">
