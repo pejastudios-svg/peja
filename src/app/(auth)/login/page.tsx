@@ -24,39 +24,29 @@ export default function Home() {
 
   const fetchPosts = async () => {
     setLoading(true);
-    console.log("Fetching posts...");
-    
     try {
+      // Fetch posts with their media
       const { data: postsData, error: postsError } = await supabase
         .from("posts")
         .select("*")
         .eq("status", "live")
         .order("created_at", { ascending: false });
 
-      console.log("Posts response:", { postsData, postsError });
-
       if (postsError) {
         console.error("Error fetching posts:", postsError);
-        setLoading(false);
         return;
       }
 
-      if (!postsData || postsData.length === 0) {
-        console.log("No posts found");
-        setPosts([]);
-        setLoading(false);
-        return;
-      }
-
-      console.log("Found posts:", postsData.length);
-
+      // Fetch media for each post
       const postsWithMedia: Post[] = await Promise.all(
-        postsData.map(async (post) => {
+        (postsData || []).map(async (post) => {
+          // Get media
           const { data: mediaData } = await supabase
             .from("post_media")
             .select("*")
             .eq("post_id", post.id);
 
+          // Get tags
           const { data: tagsData } = await supabase
             .from("post_tags")
             .select("tag")
@@ -91,10 +81,9 @@ export default function Home() {
         })
       );
 
-      console.log("Posts with media:", postsWithMedia);
       setPosts(postsWithMedia);
     } catch (error) {
-      console.error("Fetch error:", error);
+      console.error("Error:", error);
     } finally {
       setLoading(false);
     }
@@ -102,6 +91,7 @@ export default function Home() {
 
   const handleConfirmPost = async (postId: string) => {
     console.log("Confirming post:", postId);
+    // TODO: Implement confirmation logic
   };
 
   const handleSharePost = (post: Post) => {

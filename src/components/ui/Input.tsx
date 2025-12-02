@@ -20,23 +20,25 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         )}
         <div className="relative">
           {leftIcon && (
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400">
+            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-400 pointer-events-none z-10">
               {leftIcon}
             </div>
           )}
           <input
             ref={ref}
+            style={{
+              paddingLeft: leftIcon ? '3rem' : '1rem',
+              paddingRight: rightIcon ? '3rem' : '1rem',
+            }}
             className={`
               glass-input
-              ${leftIcon ? "pl-10" : ""}
-              ${rightIcon ? "pr-10" : ""}
               ${error ? "border-red-500/50" : ""}
               ${className}
             `}
             {...props}
           />
           {rightIcon && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-400">
+            <div className="absolute right-4 top-1/2 -translate-y-1/2 text-dark-400 z-10">
               {rightIcon}
             </div>
           )}
