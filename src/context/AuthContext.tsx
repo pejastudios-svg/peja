@@ -33,80 +33,90 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check current session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setSupabaseUser(session.user);
-        fetchUserProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log("Auth event:", event);
-        if (session?.user) {
-          setSupabaseUser(session.user);
-          await fetchUserProfile(session.user.id);
-        } else {
-          setUser(null);
-          setSupabaseUser(null);
-        }
-        setLoading(false);
-      }
-    );
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  async function fetchUserProfile(userId: string) {
-    try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", userId)
-        .single();
-
-      if (error && error.code !== "PGRST116") {
-        console.error("Error fetching profile:", error);
-        setLoading(false);
-        return;
-      }
-
-      if (data) {
-        setUser({
-          id: data.id,
-          email: data.email,
-          phone: data.phone,
-          full_name: data.full_name,
-          avatar_url: data.avatar_url,
-          occupation: data.occupation,
-          email_verified: data.email_verified || false,
-          phone_verified: data.phone_verified || false,
-        });
-      } else {
-        // User exists in auth but not in users table
-        // Use the supabase auth user info
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (authUser) {
-          setUser({
-            id: authUser.id,
-            email: authUser.email || "",
-            email_verified: authUser.email_confirmed_at ? true : false,
-            phone_verified: false,
-          });
-        }
-      }
-      setLoading(false);
-    } catch (error) {
-      console.error("Error fetching profile:", error);
+  // Safety timeout - ensure loading stops after 10 seconds max
+  const timeout = setTimeout(() => {
+    if (loading) {
+      console.warn("Auth loading timeout - forcing complete");
       setLoading(false);
     }
+  }, 10000);
+
+  // Check current session
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    if (session?.user) {
+      setSupabaseUser(session.user);
+      fetchUserProfile(session.user.id);
+    } else {
+      setLoading(false);
+    }
+  });
+
+  // Listen for auth changes
+  const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    async (event, session) => {
+      console.log("Auth event:", event);
+      if (session?.user) {
+        setSupabaseUser(session.user);
+        await fetchUserProfile(session.user.id);
+      } else {
+        setUser(null);
+        setSupabaseUser(null);
+        setLoading(false);
+      }
+    }
+  );
+
+  return () => {
+    clearTimeout(timeout);
+    subscription.unsubscribe();
+  };
+}, []);
+
+  async function fetchUserProfile(userId: string) {
+  try {
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", userId)
+      .single();
+
+    if (error && error.code !== "PGRST116") {
+      console.error("Error fetching profile:", error);
+      // Still set loading to false even on error
+      setLoading(false);
+      return;
+    }
+
+    if (data) {
+      setUser({
+        id: data.id,
+        email: data.email,
+        phone: data.phone,
+        full_name: data.full_name,
+        avatar_url: data.avatar_url,
+        occupation: data.occupation,
+        email_verified: data.email_verified || false,
+        phone_verified: data.phone_verified || false,
+      });
+    } else {
+      // User exists in auth but not in users table
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        setUser({
+          id: authUser.id,
+          email: authUser.email || "",
+          email_verified: authUser.email_confirmed_at ? true : false,
+          phone_verified: false,
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Error fetching profile:", error);
+  } finally {
+    // ALWAYS set loading to false
+    setLoading(false);
   }
+}
 
   async function signUp(email: string, password: string) {
     try {

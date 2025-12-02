@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   MapPin,
   Clock,
@@ -11,11 +12,13 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { Post, CATEGORIES } from "@/lib/types";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { formatDistanceToNow } from "date-fns";
+import { supabase } from "@/lib/supabase";
 
 interface PostCardProps {
   post: Post;
@@ -24,13 +27,101 @@ interface PostCardProps {
 }
 
 export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
+  const router = useRouter();
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [showSensitive, setShowSensitive] = useState(false);
   const [timeAgo, setTimeAgo] = useState("");
 
+  // Confirmation state
+  const [isConfirmed, setIsConfirmed] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [localConfirmations, setLocalConfirmations] = useState(post.confirmations);
+
   useEffect(() => {
     setTimeAgo(formatDistanceToNow(new Date(post.created_at), { addSuffix: true }));
   }, [post.created_at]);
+
+  // Check if user has confirmed this post
+  useEffect(() => {
+    checkIfConfirmed();
+  }, [post.id]);
+
+  // Sync local confirmations with prop
+  useEffect(() => {
+    setLocalConfirmations(post.confirmations);
+  }, [post.confirmations]);
+
+  const checkIfConfirmed = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("post_confirmations")
+        .select("id")
+        .eq("post_id", post.id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      setIsConfirmed(!!data);
+    } catch (error) {
+      console.error("Error checking confirmation:", error);
+    }
+  };
+
+  const handleConfirmClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmLoading(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        router.push("/login");
+        return;
+      }
+
+      if (isConfirmed) {
+        // Optimistic update - remove
+        setIsConfirmed(false);
+        setLocalConfirmations((prev) => Math.max(0, prev - 1));
+
+        await supabase
+          .from("post_confirmations")
+          .delete()
+          .eq("post_id", post.id)
+          .eq("user_id", user.id);
+
+        await supabase
+          .from("posts")
+          .update({ confirmations: Math.max(0, localConfirmations - 1) })
+          .eq("id", post.id);
+      } else {
+        // Optimistic update - add
+        setIsConfirmed(true);
+        setLocalConfirmations((prev) => prev + 1);
+
+        await supabase
+          .from("post_confirmations")
+          .insert({ post_id: post.id, user_id: user.id });
+
+        await supabase
+          .from("posts")
+          .update({ confirmations: localConfirmations + 1 })
+          .eq("id", post.id);
+      }
+
+      // Call parent handler
+      onConfirm?.(post.id);
+    } catch (error) {
+      // Revert on error
+      setIsConfirmed(!isConfirmed);
+      setLocalConfirmations(post.confirmations);
+      console.error("Error toggling confirmation:", error);
+    } finally {
+      setConfirmLoading(false);
+    }
+  };
 
   const category = CATEGORIES.find((c) => c.id === post.category);
   const isLive = post.status === "live";
@@ -44,22 +135,42 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
       ? "info"
       : "default";
 
-  const handlePrevMedia = () => {
+  const handlePrevMedia = (e: React.MouseEvent) => {
+    e.stopPropagation();
     setCurrentMediaIndex((prev) =>
       prev === 0 ? (post.media?.length || 1) - 1 : prev - 1
     );
   };
 
-  const handleNextMedia = () => {
+  const handleNextMedia = (e: React.MouseEvent) => {
+    e.stopPropagation();
     setCurrentMediaIndex((prev) =>
       prev === (post.media?.length || 1) - 1 ? 0 : prev + 1
     );
   };
 
+  const handleCardClick = () => {
+    router.push(`/post/${post.id}`);
+  };
+
+  const handleAddInfo = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    router.push(`/post/${post.id}#comments`);
+  };
+
+  const handleShareClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onShare?.(post);
+  };
+
   const currentMedia = post.media?.[currentMediaIndex];
 
   return (
-    <article className="glass-card overflow-hidden">
+    <article
+      className="glass-card overflow-hidden cursor-pointer hover:ring-1 hover:ring-white/10 transition-all"
+      onClick={handleCardClick}
+    >
+      {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           {isLive ? (
@@ -73,7 +184,9 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
           <span className="text-dark-600">|</span>
           <span className="text-xs text-dark-400 flex items-center gap-1">
             <MapPin className="w-3 h-3" />
-            {post.distance ? `${(post.distance / 1000).toFixed(1)}km away` : post.address}
+            {post.distance
+              ? `${(post.distance / 1000).toFixed(1)}km away`
+              : post.address || "Unknown location"}
           </span>
         </div>
         <span className="text-xs text-dark-500 flex items-center gap-1">
@@ -82,8 +195,9 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
         </span>
       </div>
 
+      {/* Media */}
       {post.media && post.media.length > 0 && (
-        <div className="relative -mx-6 mb-3">
+        <div className="relative -mx-6 mb-3" onClick={(e) => e.stopPropagation()}>
           {post.is_sensitive && !showSensitive ? (
             <div className="aspect-video bg-dark-800 flex flex-col items-center justify-center">
               <AlertTriangle className="w-8 h-8 text-orange-400 mb-2" />
@@ -94,7 +208,10 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setShowSensitive(true)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowSensitive(true);
+                }}
               >
                 View Content
               </Button>
@@ -107,6 +224,7 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
                     src={currentMedia.url}
                     className="w-full h-full object-cover"
                     controls
+                    onClick={(e) => e.stopPropagation()}
                   />
                 ) : (
                   <img
@@ -136,9 +254,7 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
                       <div
                         key={idx}
                         className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                          idx === currentMediaIndex
-                            ? "bg-white"
-                            : "bg-white/40"
+                          idx === currentMediaIndex ? "bg-white" : "bg-white/40"
                         }`}
                       />
                     ))}
@@ -150,14 +266,17 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
         </div>
       )}
 
+      {/* Category */}
       <div className="mb-3">
         <Badge variant={badgeVariant}>{category?.name || post.category}</Badge>
       </div>
 
+      {/* Comment */}
       {post.comment && (
-        <p className="text-dark-200 text-sm mb-3">{post.comment}</p>
+        <p className="text-dark-200 text-sm mb-3 line-clamp-2">{post.comment}</p>
       )}
 
+      {/* Tags */}
       {post.tags && post.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
           {post.tags.map((tag) => (
@@ -168,14 +287,16 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
         </div>
       )}
 
+      {/* Stats */}
       <div className="flex items-center justify-between text-sm text-dark-400 mb-4">
         <span className="flex items-center gap-1">
-          <CheckCircle className="w-4 h-4" />
-          {post.confirmations} confirmed
+          <CheckCircle
+            className={`w-4 h-4 ${isConfirmed ? "text-primary-400 fill-primary-400" : ""}`}
+          />
+          {localConfirmations} confirmed
         </span>
         <span className="flex items-center gap-1">
-          <MessageCircle className="w-4 h-4" />
-          12 comments
+          <MessageCircle className="w-4 h-4" />0 comments
         </span>
         <span className="flex items-center gap-1">
           <Eye className="w-4 h-4" />
@@ -183,31 +304,52 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
         </span>
       </div>
 
+      {/* Action Buttons */}
       <div className="flex gap-2 pt-3 border-t border-white/5">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="flex-1"
-          onClick={() => onConfirm?.(post.id)}
-          leftIcon={<CheckCircle className="w-4 h-4" />}
+        {/* Confirm Button with Visual Feedback */}
+        <button
+          onClick={handleConfirmClick}
+          disabled={confirmLoading}
+          className={`
+            flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+            text-sm font-medium transition-all duration-200
+            ${
+              isConfirmed
+                ? "bg-primary-600 text-white shadow-lg shadow-primary-600/25"
+                : "glass-sm text-dark-200 hover:bg-white/10"
+            }
+            ${confirmLoading ? "opacity-70 cursor-not-allowed" : ""}
+            active:scale-95
+          `}
         >
-          Confirm
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="flex-1"
-          leftIcon={<MessageCircle className="w-4 h-4" />}
+          {confirmLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <CheckCircle
+              className={`w-4 h-4 transition-transform duration-200 ${
+                isConfirmed ? "fill-current scale-110" : ""
+              }`}
+            />
+          )}
+          <span>{isConfirmed ? "Confirmed!" : "Confirm"}</span>
+        </button>
+
+        {/* Add Info Button */}
+        <button
+          onClick={handleAddInfo}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-white/10 transition-colors active:scale-95"
         >
-          Add Info
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onShare?.(post)}
+          <MessageCircle className="w-4 h-4" />
+          <span>Add Info</span>
+        </button>
+
+        {/* Share Button */}
+        <button
+          onClick={handleShareClick}
+          className="p-2 rounded-xl glass-sm text-dark-200 hover:bg-white/10 transition-colors active:scale-95"
         >
           <Share2 className="w-4 h-4" />
-        </Button>
+        </button>
       </div>
     </article>
   );
