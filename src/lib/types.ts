@@ -32,6 +32,7 @@ export interface Post {
   confirmations: number;
   views: number;
   comment_count?: number;
+  report_count?: number;
   expires_at?: string;
   created_at: string;
   media?: PostMedia[];
