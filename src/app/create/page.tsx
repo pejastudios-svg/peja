@@ -23,7 +23,6 @@ export default function CreatePostPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
-  // ALL hooks must be declared before any conditional returns
   const [media, setMedia] = useState<File[]>([]);
   const [mediaPreviews, setMediaPreviews] = useState<string[]>([]);
   const [category, setCategory] = useState("");
@@ -44,32 +43,63 @@ export default function CreatePostPage() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
-  // Redirect to login if not authenticated
   useEffect(() => {
     if (!authLoading && !user) {
       router.push("/login");
     }
   }, [user, authLoading, router]);
 
-  // Get location on page load
   useEffect(() => {
     if (!authLoading && user) {
       handleGetLocation();
     }
   }, [authLoading, user]);
 
-  // NOW we can have conditional returns (after all hooks)
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
       </div>
     );
   }
 
   if (!user) {
-    return null; // Will redirect via useEffect
+    return null;
   }
+
+  // Reverse geocode to get address from coordinates
+  const getAddressFromCoords = async (lat: number, lng: number): Promise<string> => {
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'Peja App'
+          }
+        }
+      );
+      const data = await response.json();
+      
+      if (data && data.address) {
+        const addr = data.address;
+        // Build a readable address
+        const parts = [];
+        if (addr.road) parts.push(addr.road);
+        if (addr.neighbourhood) parts.push(addr.neighbourhood);
+        if (addr.suburb) parts.push(addr.suburb);
+        if (addr.city || addr.town || addr.village) {
+          parts.push(addr.city || addr.town || addr.village);
+        }
+        if (addr.state) parts.push(addr.state);
+        
+        return parts.length > 0 ? parts.join(", ") : data.display_name || "Location found";
+      }
+      return "Location found";
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      return "Location found";
+    }
+  };
 
   const handleGetLocation = () => {
     setLocationLoading(true);
@@ -84,14 +114,19 @@ export default function CreatePostPage() {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        setLocation({ latitude, longitude });
+        
+        // Get the actual address
+        const address = await getAddressFromCoords(latitude, longitude);
+        
+        setLocation({ latitude, longitude, address });
         setLocationLoading(false);
       },
       (err) => {
+        console.error("Location error:", err);
         setError("Could not get your location. Please enable location services.");
         setLocationLoading(false);
       },
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   };
 
@@ -160,7 +195,6 @@ export default function CreatePostPage() {
     setIsLoading(true);
 
     try {
-      // 1. Upload media files to Supabase Storage
       const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
 
       for (const file of media) {
@@ -173,7 +207,6 @@ export default function CreatePostPage() {
           .upload(filePath, file);
 
         if (uploadError) {
-          console.error("Upload error:", uploadError);
           throw new Error(`Failed to upload: ${uploadError.message}`);
         }
 
@@ -187,9 +220,7 @@ export default function CreatePostPage() {
         });
       }
 
-      // 2. Create the post
       const userId = (await supabase.auth.getUser()).data.user?.id;
-      console.log("Creating post with user_id:", userId);
 
       const postData = {
         user_id: userId,
@@ -204,8 +235,6 @@ export default function CreatePostPage() {
         views: 0,
       };
 
-      console.log("Post data:", postData);
-
       const { data: post, error: postError } = await supabase
         .from("posts")
         .insert(postData)
@@ -213,39 +242,25 @@ export default function CreatePostPage() {
         .single();
 
       if (postError) {
-        console.error("Post creation error:", postError);
         throw new Error(`Failed to create post: ${postError.message}`);
       }
 
-      console.log("Post created:", post);
-
-      // 3. Add media records
       for (const mediaItem of mediaUrls) {
-        const { error: mediaError } = await supabase.from("post_media").insert({
+        await supabase.from("post_media").insert({
           post_id: post.id,
           url: mediaItem.url,
           media_type: mediaItem.type,
           is_sensitive: false,
         });
-
-        if (mediaError) {
-          console.error("Media record error:", mediaError);
-        }
       }
 
-      // 4. Add tags
       for (const tag of tags) {
-        const { error: tagError } = await supabase.from("post_tags").insert({
+        await supabase.from("post_tags").insert({
           post_id: post.id,
           tag,
         });
-
-        if (tagError) {
-          console.error("Tag error:", tagError);
-        }
       }
 
-      // Success - redirect to home
       router.push("/");
     } catch (err) {
       console.error("Submit error:", err);
@@ -317,18 +332,12 @@ export default function CreatePostPage() {
                 className="relative aspect-square rounded-lg overflow-hidden bg-dark-800"
               >
                 {media[index].type.startsWith("video/") ? (
-                  <video
-                    src={preview}
-                    className="w-full h-full object-cover"
-                  />
+                  <video src={preview} className="w-full h-full object-cover" />
                 ) : (
-                  <img
-                    src={preview}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={preview} alt="" className="w-full h-full object-cover" />
                 )}
                 <button
+                  type="button"
                   onClick={() => handleRemoveMedia(index)}
                   className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center"
                 >
@@ -340,6 +349,7 @@ export default function CreatePostPage() {
             {media.length < 50 && (
               <>
                 <button
+                  type="button"
                   onClick={() => cameraInputRef.current?.click()}
                   className="aspect-square rounded-lg border-2 border-dashed border-dark-600 flex flex-col items-center justify-center hover:border-primary-500/50 hover:bg-primary-500/5 transition-colors"
                 >
@@ -348,6 +358,7 @@ export default function CreatePostPage() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => videoInputRef.current?.click()}
                   className="aspect-square rounded-lg border-2 border-dashed border-dark-600 flex flex-col items-center justify-center hover:border-primary-500/50 hover:bg-primary-500/5 transition-colors"
                 >
@@ -356,6 +367,7 @@ export default function CreatePostPage() {
                 </button>
 
                 <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="aspect-square rounded-lg border-2 border-dashed border-dark-600 flex flex-col items-center justify-center hover:border-primary-500/50 hover:bg-primary-500/5 transition-colors"
                 >
@@ -377,20 +389,32 @@ export default function CreatePostPage() {
             Location
           </label>
           <button
+            type="button"
             onClick={handleGetLocation}
             disabled={locationLoading}
-            className="w-full flex items-center gap-3 p-3 rounded-xl glass-sm hover:bg-white/10 transition-colors"
+            className="w-full flex items-center gap-3 p-3 rounded-xl glass-sm hover:bg-white/10 transition-colors text-left"
           >
             {locationLoading ? (
               <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
             ) : (
               <MapPin className="w-5 h-5 text-primary-400" />
             )}
-            <span className="text-sm text-dark-200">
-              {location
-                ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`
-                : "Getting location..."}
-            </span>
+            <div className="flex-1 min-w-0">
+              {location ? (
+                <>
+                  <p className="text-sm text-dark-200 truncate">
+                    {location.address || "Location captured"}
+                  </p>
+                  <p className="text-xs text-dark-500">
+                    {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-dark-400">
+                  {locationLoading ? "Getting location..." : "Tap to get location"}
+                </p>
+              )}
+            </div>
           </button>
         </div>
 
@@ -403,6 +427,7 @@ export default function CreatePostPage() {
             {CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
+                type="button"
                 onClick={() => setCategory(cat.id)}
                 className={`p-3 rounded-xl text-left transition-all ${
                   category === cat.id
@@ -451,7 +476,7 @@ export default function CreatePostPage() {
                 }
               }}
             />
-            <Button variant="secondary" onClick={handleAddTag}>
+            <Button type="button" variant="secondary" onClick={handleAddTag}>
               Add
             </Button>
           </div>
@@ -464,6 +489,7 @@ export default function CreatePostPage() {
                 >
                   #{tag}
                   <button
+                    type="button"
                     onClick={() => handleRemoveTag(tag)}
                     className="hover:text-white"
                   >
@@ -493,6 +519,7 @@ export default function CreatePostPage() {
 
         {/* Submit Button */}
         <Button
+          type="button"
           variant="primary"
           className="w-full"
           onClick={handleSubmit}

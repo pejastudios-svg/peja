@@ -23,11 +23,8 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
           >
             <Menu className="w-5 h-5 text-dark-200" />
           </button>
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary-600 flex items-center justify-center">
-              <span className="text-white font-bold text-lg">P</span>
-            </div>
-            <span className="text-xl font-bold text-gradient hidden sm:block">Peja</span>
+          <Link href="/" className="flex items-center">
+            <span className="text-2xl font-bold text-gradient">Peja</span>
           </Link>
         </div>
 
@@ -48,10 +45,13 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
             <span className="hidden sm:inline">Report</span>
           </Button>
 
-          <button className="relative p-2 hover:bg-white/5 rounded-lg transition-colors">
+          <Link
+            href="/notifications"
+            className="relative p-2 hover:bg-white/5 rounded-lg transition-colors"
+          >
             <Bell className="w-5 h-5 text-dark-200" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-          </button>
+          </Link>
 
           <Link
             href="/profile"

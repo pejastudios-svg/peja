@@ -61,21 +61,29 @@ export default function SettingsPage() {
   const [showAddLocationModal, setShowAddLocationModal] = useState(false);
   const [newLocationName, setNewLocationName] = useState("");
   const [newLocationRadius, setNewLocationRadius] = useState(2);
+  const [addingLocation, setAddingLocation] = useState(false);
 
   useEffect(() => {
-    loadSettings();
+    // Add a small delay to ensure auth is ready
+    const timer = setTimeout(() => {
+      loadSettings();
+    }, 100);
+    
+    return () => clearTimeout(timer);
   }, [user]);
 
   const loadSettings = async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
 
     try {
-      // Load user settings
       const { data: settings } = await supabase
         .from("user_settings")
         .select("*")
         .eq("user_id", user.id)
-        .single();
+        .maybeSingle();
 
       if (settings) {
         setPushEnabled(settings.push_enabled ?? true);
@@ -91,7 +99,6 @@ export default function SettingsPage() {
         setQuietHoursEnd(settings.quiet_hours_end ?? "07:00");
       }
 
-      // Load saved locations
       const { data: locations } = await supabase
         .from("saved_locations")
         .select("*")
@@ -137,9 +144,11 @@ export default function SettingsPage() {
   const handleAddLocation = async () => {
     if (!user || !newLocationName) return;
 
-    // Get current location
+    setAddingLocation(true);
+
     if (!navigator.geolocation) {
       alert("Geolocation is not supported");
+      setAddingLocation(false);
       return;
     }
 
@@ -166,10 +175,14 @@ export default function SettingsPage() {
           setNewLocationRadius(2);
         } catch (error) {
           console.error("Error adding location:", error);
+          alert("Failed to add location");
+        } finally {
+          setAddingLocation(false);
         }
       },
       (error) => {
         alert("Could not get your location. Please enable location services.");
+        setAddingLocation(false);
       }
     );
   };
@@ -194,7 +207,6 @@ export default function SettingsPage() {
     );
   };
 
-  // Toggle Switch Component
   const ToggleSwitch = ({
     enabled,
     onChange,
@@ -379,51 +391,6 @@ export default function SettingsPage() {
               </div>
             </label>
 
-            {/* Selected States */}
-            <label
-              className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${
-                alertZoneType === "states"
-                  ? "bg-primary-600/20 border border-primary-500/50"
-                  : "glass-sm hover:bg-white/5"
-              }`}
-            >
-              <input
-                type="radio"
-                name="alertZone"
-                checked={alertZoneType === "states"}
-                onChange={() => setAlertZoneType("states")}
-                className="sr-only"
-              />
-              <div
-                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                  alertZoneType === "states"
-                    ? "border-primary-500 bg-primary-500"
-                    : "border-dark-500"
-                }`}
-              >
-                {alertZoneType === "states" && <Check className="w-3 h-3 text-white" />}
-              </div>
-              <div className="flex-1">
-                <p className="text-dark-100 font-medium">Selected States</p>
-                <p className="text-sm text-dark-400">
-                  {selectedStates.length > 0
-                    ? `${selectedStates.length} states selected`
-                    : "Choose specific states"}
-                </p>
-              </div>
-              {alertZoneType === "states" && (
-                <button
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setShowStatesModal(true);
-                  }}
-                  className="text-primary-400 text-sm"
-                >
-                  Edit
-                </button>
-              )}
-            </label>
-
             {/* Custom Radius */}
             <label
               className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${
@@ -477,10 +444,10 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Saved Locations */}
+            {/* Selected States */}
             <label
               className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${
-                alertZoneType === "saved_locations"
+                alertZoneType === "states"
                   ? "bg-primary-600/20 border border-primary-500/50"
                   : "glass-sm hover:bg-white/5"
               }`}
@@ -488,61 +455,41 @@ export default function SettingsPage() {
               <input
                 type="radio"
                 name="alertZone"
-                checked={alertZoneType === "saved_locations"}
-                onChange={() => setAlertZoneType("saved_locations")}
+                checked={alertZoneType === "states"}
+                onChange={() => setAlertZoneType("states")}
                 className="sr-only"
               />
               <div
                 className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                  alertZoneType === "saved_locations"
+                  alertZoneType === "states"
                     ? "border-primary-500 bg-primary-500"
                     : "border-dark-500"
                 }`}
               >
-                {alertZoneType === "saved_locations" && (
-                  <Check className="w-3 h-3 text-white" />
-                )}
+                {alertZoneType === "states" && <Check className="w-3 h-3 text-white" />}
               </div>
-              <div>
-                <p className="text-dark-100 font-medium">Saved Locations</p>
-                <p className="text-sm text-dark-400">Home, Work, School, etc.</p>
+              <div className="flex-1">
+                <p className="text-dark-100 font-medium">Selected States</p>
+                <p className="text-sm text-dark-400">
+                  {selectedStates.length > 0
+                    ? `${selectedStates.length} states selected`
+                    : "Choose specific states"}
+                </p>
               </div>
+              {alertZoneType === "states" && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowStatesModal(true);
+                  }}
+                  className="text-primary-400 text-sm"
+                >
+                  Edit
+                </button>
+              )}
             </label>
-
-            {alertZoneType === "saved_locations" && (
-              <div className="ml-8 space-y-2">
-                {savedLocations.map((location) => (
-                  <div
-                    key={location.id}
-                    className="flex items-center justify-between p-3 glass-sm rounded-xl"
-                  >
-                    <div className="flex items-center gap-3">
-                      <MapPin className="w-4 h-4 text-primary-400" />
-                      <div>
-                        <p className="text-dark-100 text-sm font-medium">{location.name}</p>
-                        <p className="text-xs text-dark-400">{location.radius_km}km radius</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteLocation(location.id)}
-                      className="p-1 hover:bg-white/5 rounded"
-                    >
-                      <Trash2 className="w-4 h-4 text-dark-500 hover:text-red-400" />
-                    </button>
-                  </div>
-                ))}
-
-                {savedLocations.length < 5 && (
-                  <button
-                    onClick={() => setShowAddLocationModal(true)}
-                    className="flex items-center gap-2 p-3 w-full glass-sm rounded-xl text-primary-400 hover:bg-white/5"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span className="text-sm">Add Location</span>
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         </section>
 
@@ -584,14 +531,13 @@ export default function SettingsPage() {
           )}
         </section>
 
-        {/* General Section */}
+        {/* General */}
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">General</h2>
-
           <SettingRow icon={Smartphone} label="App Version" description="1.0.0" />
         </section>
 
-        {/* Support Section */}
+        {/* Support */}
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Support</h2>
 
@@ -612,10 +558,9 @@ export default function SettingsPage() {
           />
         </section>
 
-        {/* Account Section */}
+        {/* Account */}
         <section className="py-6">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Account</h2>
-
           <SettingRow icon={LogOut} label="Log Out" onClick={handleLogout} danger />
         </section>
 
@@ -631,9 +576,9 @@ export default function SettingsPage() {
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
             onClick={() => setShowStatesModal(false)}
           />
-          <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-md mx-auto max-h-[80vh] overflow-hidden">
-            <div className="glass-card flex flex-col max-h-[80vh]">
-              <div className="flex items-center justify-between mb-4">
+          <div className="fixed inset-4 z-50 max-w-md mx-auto my-auto max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="glass-card flex flex-col h-full">
+              <div className="flex items-center justify-between mb-4 flex-shrink-0">
                 <h2 className="text-lg font-semibold text-dark-100">Select States</h2>
                 <button
                   onClick={() => setShowStatesModal(false)}
@@ -648,99 +593,8 @@ export default function SettingsPage() {
                   {NIGERIAN_STATES.map((state) => (
                     <button
                       key={state}
+                      type="button"
                       onClick={() => toggleState(state)}
                       className={`p-3 rounded-lg text-left text-sm transition-colors ${
                         selectedStates.includes(state)
-                          ? "bg-primary-600/20 text-primary-400 border border-primary-500/50"
-                          : "glass-sm text-dark-300 hover:bg-white/5"
-                      }`}
-                    >
-                      {state}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="pt-4 mt-4 border-t border-white/5">
-                <button
-                  onClick={() => setShowStatesModal(false)}
-                  className="w-full py-3 bg-primary-600 text-white rounded-xl font-medium"
-                >
-                  Done ({selectedStates.length} selected)
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Add Location Modal */}
-      {showAddLocationModal && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-            onClick={() => setShowAddLocationModal(false)}
-          />
-          <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-50 max-w-md mx-auto">
-            <div className="glass-card">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-dark-100">Add Location</h2>
-                <button
-                  onClick={() => setShowAddLocationModal(false)}
-                  className="p-1 hover:bg-white/10 rounded-lg"
-                >
-                  <X className="w-5 h-5 text-dark-400" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm text-dark-300 block mb-1">Location Name</label>
-                  <input
-                    type="text"
-                    value={newLocationName}
-                    onChange={(e) => setNewLocationName(e.target.value)}
-                    placeholder="e.g., Home, Work, School"
-                    className="w-full px-4 py-3 glass-input"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-sm text-dark-300 block mb-1">
-                    Alert Radius: {newLocationRadius} km
-                  </label>
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="10"
-                    step="0.5"
-                    value={newLocationRadius}
-                    onChange={(e) => setNewLocationRadius(Number(e.target.value))}
-                    className="w-full accent-primary-500"
-                  />
-                  <div className="flex justify-between text-xs text-dark-500 mt-1">
-                    <span>500m</span>
-                    <span>5 km</span>
-                    <span>10 km</span>
-                  </div>
-                </div>
-
-                <p className="text-sm text-dark-400">
-                  Your current location will be used for this saved location.
-                </p>
-
-                <button
-                  onClick={handleAddLocation}
-                  disabled={!newLocationName}
-                  className="w-full py-3 bg-primary-600 text-white rounded-xl font-medium disabled:opacity-50"
-                >
-                  Save Location
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+                          ? "bg-primary-600/20 text-primary-400 border 
