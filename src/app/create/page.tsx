@@ -32,6 +32,7 @@ export default function CreatePostPage() {
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [isSensitive, setIsSensitive] = useState(false);
   const [location, setLocation] = useState<{
     latitude: number;
     longitude: number;
@@ -230,7 +231,7 @@ export default function CreatePostPage() {
         address: location.address || null,
         is_anonymous: isAnonymous,
         status: "live",
-        is_sensitive: false,
+        is_sensitive: isSensitive,
         confirmations: 0,
         views: 0,
       };
@@ -516,6 +517,25 @@ export default function CreatePostPage() {
             Your identity will be hidden from other users
           </p>
         </div>
+
+{/* Sensitive Content Toggle */}
+<div className="glass-card mb-6">
+  <label className="flex items-start gap-3 cursor-pointer">
+    <input
+      type="checkbox"
+      checked={isSensitive}
+      onChange={(e) => setIsSensitive(e.target.checked)}
+      className="w-5 h-5 mt-0.5 rounded border-dark-600 bg-dark-800 text-orange-600 focus:ring-orange-500"
+    />
+    <div>
+      <span className="text-sm text-dark-200 font-medium">⚠️ Contains sensitive content</span>
+      <p className="text-xs text-dark-500 mt-1">
+        Check this if the content may be disturbing (graphic violence, accidents, etc.). 
+        It will be blurred until viewers choose to see it.
+      </p>
+    </div>
+  </label>
+</div>
 
         {/* Submit Button */}
         <Button

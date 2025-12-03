@@ -20,6 +20,7 @@ import {
   Loader2,
   CheckCircle,
   Users,
+  Save,
 } from "lucide-react";
 
 export default function SettingsPage() {
@@ -51,7 +52,11 @@ export default function SettingsPage() {
   const [showStatesModal, setShowStatesModal] = useState(false);
 
   useEffect(() => {
-    loadSettings();
+    if (user) {
+      loadSettings();
+    } else {
+      setLoading(false);
+    }
   }, [user]);
 
   const loadSettings = async () => {
@@ -102,7 +107,14 @@ export default function SettingsPage() {
     setSaveError("");
 
     try {
-      const { error } = await supabase.from("user_settings").upsert({
+      // First check if settings exist
+      const { data: existing } = await supabase
+        .from("user_settings")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      const settingsData = {
         user_id: user.id,
         push_enabled: pushEnabled,
         danger_alerts: dangerAlerts,
@@ -116,18 +128,35 @@ export default function SettingsPage() {
         quiet_hours_start: quietHoursStart,
         quiet_hours_end: quietHoursEnd,
         updated_at: new Date().toISOString(),
-      });
+      };
+
+      let error;
+
+      if (existing) {
+        // Update existing
+        const result = await supabase
+          .from("user_settings")
+          .update(settingsData)
+          .eq("user_id", user.id);
+        error = result.error;
+      } else {
+        // Insert new
+        const result = await supabase
+          .from("user_settings")
+          .insert(settingsData);
+        error = result.error;
+      }
 
       if (error) {
         console.error("Save error:", error);
-        setSaveError("Failed to save settings");
+        setSaveError(`Failed to save: ${error.message}`);
       } else {
         setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 2000);
+        setTimeout(() => setSaveSuccess(false), 3000);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving settings:", error);
-      setSaveError("Failed to save settings");
+      setSaveError(`Error: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -189,14 +218,24 @@ export default function SettingsPage() {
           <button
             onClick={saveSettings}
             disabled={saving}
-            className={`p-2 -mr-2 rounded-lg transition-all ${saveSuccess ? "bg-green-500/20" : "hover:bg-white/5"}`}
+            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+              saveSuccess 
+                ? "bg-green-500/20 text-green-400" 
+                : "bg-primary-600 text-white hover:bg-primary-700"
+            }`}
           >
             {saving ? (
-              <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+              <Loader2 className="w-4 h-4 animate-spin" />
             ) : saveSuccess ? (
-              <CheckCircle className="w-5 h-5 text-green-400" />
+              <>
+                <CheckCircle className="w-4 h-4" />
+                <span className="text-sm">Saved</span>
+              </>
             ) : (
-              <Check className="w-5 h-5 text-primary-400" />
+              <>
+                <Save className="w-4 h-4" />
+                <span className="text-sm">Save</span>
+              </>
             )}
           </button>
         </div>
@@ -206,7 +245,7 @@ export default function SettingsPage() {
         {/* Save feedback */}
         {saveSuccess && (
           <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-            <p className="text-sm text-green-400 text-center">Settings saved successfully!</p>
+            <p className="text-sm text-green-400 text-center">✓ Settings saved successfully!</p>
           </div>
         )}
 
@@ -332,11 +371,11 @@ export default function SettingsPage() {
             <div className="ml-4 mt-2 p-4 glass-sm rounded-xl flex gap-4">
               <div className="flex-1">
                 <label className="text-xs text-dark-400 block mb-1">Start Time</label>
-                <input type="time" value={quietHoursStart} onChange={(e) => setQuietHoursStart(e.target.value)} className="w-full px-3 py-2 glass-input text-sm" />
+                <input type="time" value={quietHoursStart} onChange={(e) => setQuietHoursStart(e.target.value)} className="w-full px-3 py-2 glass-input text-base" />
               </div>
               <div className="flex-1">
                 <label className="text-xs text-dark-400 block mb-1">End Time</label>
-                <input type="time" value={quietHoursEnd} onChange={(e) => setQuietHoursEnd(e.target.value)} className="w-full px-3 py-2 glass-input text-sm" />
+                <input type="time" value={quietHoursEnd} onChange={(e) => setQuietHoursEnd(e.target.value)} className="w-full px-3 py-2 glass-input text-base" />
               </div>
             </div>
           )}
