@@ -164,10 +164,11 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
   const currentMedia = post.media?.[currentMediaIndex];
   
   // Check if comment is long
-  const isLongComment = post.comment && post.comment.length > 150;
-  const displayedComment = isLongComment && !showFullComment 
-    ? post.comment.slice(0, 150) + "..." 
-    : post.comment;
+ const commentText = post.comment || "";
+const isLongComment = commentText.length > 150;
+const displayedComment = isLongComment && !showFullComment 
+  ? commentText.slice(0, 150) + "..." 
+  : commentText;
 
   return (
     <article
