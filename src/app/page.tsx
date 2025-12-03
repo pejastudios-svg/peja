@@ -11,6 +11,7 @@ import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
+import { subHours } from "date-fns";
 
 type FeedTab = "nearby" | "trending";
 
@@ -24,7 +25,6 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    // Only fetch posts after auth is done loading
     if (!authLoading) {
       fetchPosts();
     }
@@ -34,6 +34,9 @@ export default function Home() {
     setLoading(true);
 
     try {
+      // Only fetch posts from the last 24 hours for feeds
+      const twentyFourHoursAgo = subHours(new Date(), 24).toISOString();
+      
       let query = supabase
         .from("posts")
         .select(`
@@ -41,7 +44,8 @@ export default function Home() {
           post_media (*),
           post_tags (tag)
         `)
-        .eq("status", "live");
+        .eq("status", "live")
+        .gte("created_at", twentyFourHoursAgo); // Only posts < 24 hours old
 
       if (activeTab === "trending") {
         query = query.order("confirmations", { ascending: false }).order("views", { ascending: false });
@@ -104,16 +108,13 @@ export default function Home() {
     if (navigator.share) {
       try {
         await navigator.share({ title: "Peja Alert", text: shareText, url: shareUrl });
-      } catch (error) {
-        // User cancelled
-      }
+      } catch (error) {}
     } else {
       await navigator.clipboard.writeText(shareUrl);
       alert("Link copied to clipboard!");
     }
   };
 
-  // Show loading while auth is loading
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -164,7 +165,7 @@ export default function Home() {
           </div>
 
           <p className="text-sm text-dark-500 mb-4">
-            {activeTab === "nearby" ? "Latest incidents in your area" : "Most confirmed and viewed incidents"}
+            {activeTab === "nearby" ? "Latest incidents in your area (last 24 hours)" : "Most confirmed incidents (last 24 hours)"}
           </p>
 
           {loading ? (
@@ -174,7 +175,7 @@ export default function Home() {
           ) : posts.length === 0 ? (
             <div className="text-center py-12">
               <MapPin className="w-12 h-12 text-dark-600 mx-auto mb-4" />
-              <p className="text-dark-400 mb-2">No incidents reported yet</p>
+              <p className="text-dark-400 mb-2">No recent incidents</p>
               <p className="text-sm text-dark-500 mb-4">Be the first to report what's happening in your area</p>
               <Button variant="primary" onClick={() => router.push("/create")}>
                 Report Incident

@@ -13,11 +13,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  ChevronDown,
 } from "lucide-react";
 import { Post, CATEGORIES } from "@/lib/types";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, differenceInHours } from "date-fns";
 import { supabase } from "@/lib/supabase";
 
 interface PostCardProps {
@@ -31,22 +32,24 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [showSensitive, setShowSensitive] = useState(false);
   const [timeAgo, setTimeAgo] = useState("");
+  const [showFullComment, setShowFullComment] = useState(false);
 
   // Confirmation state
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [localConfirmations, setLocalConfirmations] = useState(post.confirmations);
 
+  // Check if post is older than 24 hours
+  const isExpired = differenceInHours(new Date(), new Date(post.created_at)) >= 24;
+
   useEffect(() => {
     setTimeAgo(formatDistanceToNow(new Date(post.created_at), { addSuffix: true }));
   }, [post.created_at]);
 
-  // Check if user has confirmed this post
   useEffect(() => {
     checkIfConfirmed();
   }, [post.id]);
 
-  // Sync local confirmations with prop
   useEffect(() => {
     setLocalConfirmations(post.confirmations);
   }, [post.confirmations]);
@@ -82,7 +85,6 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
       }
 
       if (isConfirmed) {
-        // Optimistic update - remove
         setIsConfirmed(false);
         setLocalConfirmations((prev) => Math.max(0, prev - 1));
 
@@ -97,7 +99,6 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
           .update({ confirmations: Math.max(0, localConfirmations - 1) })
           .eq("id", post.id);
       } else {
-        // Optimistic update - add
         setIsConfirmed(true);
         setLocalConfirmations((prev) => prev + 1);
 
@@ -111,10 +112,8 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
           .eq("id", post.id);
       }
 
-      // Call parent handler
       onConfirm?.(post.id);
     } catch (error) {
-      // Revert on error
       setIsConfirmed(!isConfirmed);
       setLocalConfirmations(post.confirmations);
       console.error("Error toggling confirmation:", error);
@@ -124,7 +123,6 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
   };
 
   const category = CATEGORIES.find((c) => c.id === post.category);
-  const isLive = post.status === "live";
 
   const badgeVariant =
     category?.color === "danger"
@@ -164,6 +162,12 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
   };
 
   const currentMedia = post.media?.[currentMediaIndex];
+  
+  // Check if comment is long
+  const isLongComment = post.comment && post.comment.length > 150;
+  const displayedComment = isLongComment && !showFullComment 
+    ? post.comment.slice(0, 150) + "..." 
+    : post.comment;
 
   return (
     <article
@@ -173,13 +177,16 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          {isLive ? (
+          {/* Show LIVE only if not expired */}
+          {!isExpired ? (
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
               <span className="text-xs font-medium text-red-400">LIVE</span>
             </span>
           ) : (
-            <span className="text-xs text-dark-400">Resolved</span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-dark-500 rounded-full" />
+            </span>
           )}
           <span className="text-dark-600">|</span>
           <span className="text-xs text-dark-400 flex items-center gap-1">
@@ -271,9 +278,25 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
         <Badge variant={badgeVariant}>{category?.name || post.category}</Badge>
       </div>
 
-      {/* Comment */}
+      {/* Comment with View More */}
       {post.comment && (
-        <p className="text-dark-200 text-sm mb-3 line-clamp-2">{post.comment}</p>
+        <div className="mb-3">
+          <p className="text-dark-200 text-sm">
+            {displayedComment}
+          </p>
+          {isLongComment && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowFullComment(!showFullComment);
+              }}
+              className="flex items-center gap-1 mt-1 text-xs text-primary-400 hover:text-primary-300"
+            >
+              <ChevronDown className={`w-3 h-3 transition-transform ${showFullComment ? "rotate-180" : ""}`} />
+              {showFullComment ? "Show less" : "View more"}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Tags */}
@@ -296,7 +319,8 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
           {localConfirmations} confirmed
         </span>
         <span className="flex items-center gap-1">
-          <MessageCircle className="w-4 h-4" />0 comments
+          <MessageCircle className="w-4 h-4" />
+          {post.comment_count || 0} comments
         </span>
         <span className="flex items-center gap-1">
           <Eye className="w-4 h-4" />
@@ -306,7 +330,6 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
 
       {/* Action Buttons */}
       <div className="flex gap-2 pt-3 border-t border-white/5">
-        {/* Confirm Button with Visual Feedback */}
         <button
           onClick={handleConfirmClick}
           disabled={confirmLoading}
@@ -334,7 +357,6 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
           <span>{isConfirmed ? "Confirmed!" : "Confirm"}</span>
         </button>
 
-        {/* Add Info Button */}
         <button
           onClick={handleAddInfo}
           className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-white/10 transition-colors active:scale-95"
@@ -343,7 +365,6 @@ export function PostCard({ post, onConfirm, onShare }: PostCardProps) {
           <span>Add Info</span>
         </button>
 
-        {/* Share Button */}
         <button
           onClick={handleShareClick}
           className="p-2 rounded-xl glass-sm text-dark-200 hover:bg-white/10 transition-colors active:scale-95"

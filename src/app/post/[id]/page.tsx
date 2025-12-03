@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post, Comment, CATEGORIES, REPORT_REASONS } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, differenceInHours } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
 import {
   ArrowLeft,
@@ -26,28 +26,42 @@ import {
   Trash2,
   User,
   MoreVertical,
+  Image as ImageIcon,
   X,
+  Reply,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
+
+interface CommentWithReplies extends Comment {
+  replies?: CommentWithReplies[];
+  media?: { id: string; url: string; media_type: string }[];
+}
 
 export default function PostDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { user } = useAuth();
   const postId = params.id as string;
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [post, setPost] = useState<Post | null>(null);
-  const [comments, setComments] = useState<Comment[]>([]);
+  const [comments, setComments] = useState<CommentWithReplies[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [showSensitive, setShowSensitive] = useState(false);
+  const [showFullDescription, setShowFullDescription] = useState(false);
 
   // Comment state
   const [newComment, setNewComment] = useState("");
   const [commentAnonymous, setCommentAnonymous] = useState(false);
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [commentMedia, setCommentMedia] = useState<File[]>([]);
+  const [commentMediaPreviews, setCommentMediaPreviews] = useState<string[]>([]);
 
   // Report modal
   const [showReportModal, setShowReportModal] = useState(false);
@@ -63,6 +77,9 @@ export default function PostDetailPage() {
   const [showOptions, setShowOptions] = useState(false);
 
   const isOwner = user?.id === post?.user_id;
+  
+  // Check if post is older than 24 hours
+  const isExpired = post ? differenceInHours(new Date(), new Date(post.created_at)) >= 24 : false;
 
   useEffect(() => {
     if (postId) {
@@ -133,24 +150,48 @@ export default function PostDetailPage() {
         .from("post_comments")
         .select(`
           *,
-          users:user_id (full_name, avatar_url)
+          users:user_id (full_name, avatar_url),
+          comment_media (*)
         `)
         .eq("post_id", postId)
         .order("created_at", { ascending: true });
 
       if (error) throw error;
 
-      setComments(
-        data?.map((c: any) => ({
-          id: c.id,
-          post_id: c.post_id,
-          user_id: c.user_id,
-          content: c.content,
-          is_anonymous: c.is_anonymous,
-          created_at: c.created_at,
-          user: c.users,
-        })) || []
-      );
+      // Organize comments into parent/child structure
+      const allComments: CommentWithReplies[] = data?.map((c: any) => ({
+        id: c.id,
+        post_id: c.post_id,
+        user_id: c.user_id,
+        content: c.content,
+        is_anonymous: c.is_anonymous,
+        created_at: c.created_at,
+        parent_id: c.parent_id,
+        user: c.users,
+        media: c.comment_media || [],
+        replies: [],
+      })) || [];
+
+      // Build tree structure
+      const parentComments: CommentWithReplies[] = [];
+      const childMap = new Map<string, CommentWithReplies[]>();
+
+      allComments.forEach((comment) => {
+        if (comment.parent_id) {
+          const existing = childMap.get(comment.parent_id) || [];
+          existing.push(comment);
+          childMap.set(comment.parent_id, existing);
+        } else {
+          parentComments.push(comment);
+        }
+      });
+
+      // Attach replies to parents
+      parentComments.forEach((parent) => {
+        parent.replies = childMap.get(parent.id) || [];
+      });
+
+      setComments(parentComments);
     } catch (error) {
       console.error("Error fetching comments:", error);
     }
@@ -222,8 +263,26 @@ export default function PostDetailPage() {
     }
   };
 
+  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length + commentMedia.length > 4) {
+      alert("Maximum 4 images/videos per comment");
+      return;
+    }
+    
+    const previews = files.map((f) => URL.createObjectURL(f));
+    setCommentMedia((prev) => [...prev, ...files]);
+    setCommentMediaPreviews((prev) => [...prev, ...previews]);
+  };
+
+  const removeCommentMedia = (index: number) => {
+    URL.revokeObjectURL(commentMediaPreviews[index]);
+    setCommentMedia((prev) => prev.filter((_, i) => i !== index));
+    setCommentMediaPreviews((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmitComment = async () => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim() && commentMedia.length === 0) return;
 
     const {
       data: { user: authUser },
@@ -236,40 +295,55 @@ export default function PostDetailPage() {
 
     setSubmittingComment(true);
     try {
-      const { data, error } = await supabase
+      // Create comment
+      const { data: commentData, error: commentError } = await supabase
         .from("post_comments")
         .insert({
           post_id: postId,
           user_id: authUser.id,
           content: newComment.trim(),
           is_anonymous: commentAnonymous,
+          parent_id: replyingTo,
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (commentError) throw commentError;
 
-      // Fetch user info for the new comment
-      const { data: userData } = await supabase
-        .from("users")
-        .select("full_name, avatar_url")
-        .eq("id", authUser.id)
-        .single();
+      // Upload media if any
+      if (commentMedia.length > 0) {
+        for (const file of commentMedia) {
+          const fileExt = file.name.split(".").pop();
+          const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+          const filePath = `comments/${fileName}`;
 
-      setComments((prev) => [
-        ...prev,
-        {
-          id: data.id,
-          post_id: data.post_id,
-          user_id: data.user_id,
-          content: data.content,
-          is_anonymous: data.is_anonymous,
-          created_at: data.created_at,
-          user: userData || undefined,
-        },
-      ]);
+          const { error: uploadError } = await supabase.storage
+            .from("media")
+            .upload(filePath, file);
+
+          if (!uploadError) {
+            const { data: publicUrl } = supabase.storage
+              .from("media")
+              .getPublicUrl(filePath);
+
+            await supabase.from("comment_media").insert({
+              comment_id: commentData.id,
+              url: publicUrl.publicUrl,
+              media_type: file.type.startsWith("video/") ? "video" : "photo",
+            });
+          }
+        }
+      }
+
+      // Reset form
       setNewComment("");
       setCommentAnonymous(false);
+      setReplyingTo(null);
+      setCommentMedia([]);
+      setCommentMediaPreviews([]);
+
+      // Refresh comments
+      fetchComments();
     } catch (error) {
       console.error("Error submitting comment:", error);
       alert("Failed to add comment. Please try again.");
@@ -282,7 +356,7 @@ export default function PostDetailPage() {
     try {
       const { error } = await supabase.from("post_comments").delete().eq("id", commentId);
       if (error) throw error;
-      setComments((prev) => prev.filter((c) => c.id !== commentId));
+      fetchComments();
     } catch (error) {
       console.error("Error deleting comment:", error);
     }
@@ -350,15 +424,16 @@ export default function PostDetailPage() {
   };
 
   const handleDeletePost = async () => {
-    if (!post) return;
+    if (!post || !user) return;
     
     setDeleting(true);
     try {
-      // Delete media from storage first
+      // First delete all related records manually to avoid RLS issues
+      
+      // 1. Delete post media files from storage
       if (post.media && post.media.length > 0) {
         for (const media of post.media) {
           try {
-            // Extract the path from the URL
             const urlParts = media.url.split("/storage/v1/object/public/media/");
             if (urlParts[1]) {
               await supabase.storage.from("media").remove([urlParts[1]]);
@@ -369,24 +444,52 @@ export default function PostDetailPage() {
         }
       }
 
-      // Delete related records first (if no cascade)
+      // 2. Delete post_media records
       await supabase.from("post_media").delete().eq("post_id", postId);
+      
+      // 3. Delete post_tags records
       await supabase.from("post_tags").delete().eq("post_id", postId);
+      
+      // 4. Delete post_confirmations records
       await supabase.from("post_confirmations").delete().eq("post_id", postId);
+      
+      // 5. Delete comment_media for all comments on this post
+      const { data: postComments } = await supabase
+        .from("post_comments")
+        .select("id")
+        .eq("post_id", postId);
+      
+      if (postComments) {
+        for (const comment of postComments) {
+          await supabase.from("comment_media").delete().eq("comment_id", comment.id);
+        }
+      }
+      
+      // 6. Delete post_comments records
       await supabase.from("post_comments").delete().eq("post_id", postId);
+      
+      // 7. Delete post_reports records
       await supabase.from("post_reports").delete().eq("post_id", postId);
 
-      // Delete the post
-      const { error } = await supabase.from("posts").delete().eq("id", postId);
+      // 8. Finally delete the post
+      const { error: deleteError } = await supabase
+        .from("posts")
+        .delete()
+        .eq("id", postId)
+        .eq("user_id", user.id); // Ensure user owns the post
       
-      if (error) throw error;
+      if (deleteError) {
+        console.error("Delete error:", deleteError);
+        throw deleteError;
+      }
 
       setShowDeleteModal(false);
-      router.push("/");
+      
+      // Use replace to prevent going back to deleted post
+      router.replace("/");
     } catch (error) {
       console.error("Error deleting post:", error);
       alert("Failed to delete post. Please try again.");
-    } finally {
       setDeleting(false);
     }
   };
@@ -402,6 +505,79 @@ export default function PostDetailPage() {
       prev === (post?.media?.length || 1) - 1 ? 0 : prev + 1
     );
   };
+
+  // Render a single comment with replies
+  const renderComment = (comment: CommentWithReplies, isReply = false) => (
+    <div key={comment.id} className={`${isReply ? "ml-10 mt-3" : ""}`}>
+      <div className="flex gap-3">
+        <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center flex-shrink-0">
+          {comment.is_anonymous ? (
+            <User className="w-4 h-4 text-dark-400" />
+          ) : comment.user?.avatar_url ? (
+            <img
+              src={comment.user.avatar_url}
+              alt=""
+              className="w-8 h-8 rounded-full object-cover"
+            />
+          ) : (
+            <User className="w-4 h-4 text-dark-400" />
+          )}
+        </div>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-dark-200">
+              {comment.is_anonymous ? "Anonymous" : comment.user?.full_name || "User"}
+            </span>
+            <span className="text-xs text-dark-500">
+              {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
+            </span>
+            {comment.user_id === user?.id && (
+              <button
+                onClick={() => handleDeleteComment(comment.id)}
+                className="ml-auto p-1 hover:bg-white/5 rounded"
+              >
+                <Trash2 className="w-3 h-3 text-dark-500 hover:text-red-400" />
+              </button>
+            )}
+          </div>
+          <p className="text-dark-300 text-sm mt-1">{comment.content}</p>
+          
+          {/* Comment Media */}
+          {comment.media && comment.media.length > 0 && (
+            <div className="flex gap-2 mt-2 flex-wrap">
+              {comment.media.map((media) => (
+                <div key={media.id} className="w-20 h-20 rounded-lg overflow-hidden bg-dark-800">
+                  {media.media_type === "video" ? (
+                    <video src={media.url} className="w-full h-full object-cover" />
+                  ) : (
+                    <img src={media.url} alt="" className="w-full h-full object-cover" />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Reply button */}
+          {!isReply && (
+            <button
+              onClick={() => setReplyingTo(comment.id)}
+              className="flex items-center gap-1 mt-2 text-xs text-dark-400 hover:text-primary-400"
+            >
+              <Reply className="w-3 h-3" />
+              Reply
+            </button>
+          )}
+        </div>
+      </div>
+      
+      {/* Replies */}
+      {comment.replies && comment.replies.length > 0 && (
+        <div className="mt-2">
+          {comment.replies.map((reply) => renderComment(reply, true))}
+        </div>
+      )}
+    </div>
+  );
 
   if (loading) {
     return (
@@ -437,9 +613,15 @@ export default function PostDetailPage() {
       : "default";
 
   const currentMedia = post.media?.[currentMediaIndex];
+  
+  // Check if description is long
+  const isLongDescription = post.comment && post.comment.length > 200;
+  const displayedComment = isLongDescription && !showFullDescription 
+    ? post.comment.slice(0, 200) + "..." 
+    : post.comment;
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-screen pb-28">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 glass-header">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
@@ -576,20 +758,47 @@ export default function PostDetailPage() {
           {/* Status & Category */}
           <div className="flex items-center justify-between">
             <Badge variant={badgeVariant}>{category?.name || post.category}</Badge>
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-medium ${
-                post.status === "live"
-                  ? "bg-green-500/20 text-green-400"
-                  : "bg-dark-600 text-dark-300"
-              }`}
-            >
-              {post.status === "live" ? "🔴 LIVE" : "Resolved"}
-            </span>
+            {/* Show LIVE only if not expired (< 24 hours old) */}
+            {!isExpired ? (
+              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-500/20">
+                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                <span className="text-xs font-medium text-red-400">LIVE</span>
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-600">
+                <span className="w-2 h-2 bg-dark-400 rounded-full" />
+                <span className="text-xs font-medium text-dark-400">
+                  {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+                </span>
+              </span>
+            )}
           </div>
 
-          {/* Comment */}
+          {/* Comment/Description with View More */}
           {post.comment && (
-            <p className="text-dark-100 text-lg leading-relaxed">{post.comment}</p>
+            <div>
+              <p className="text-dark-100 text-lg leading-relaxed">
+                {displayedComment}
+              </p>
+              {isLongDescription && (
+                <button
+                  onClick={() => setShowFullDescription(!showFullDescription)}
+                  className="flex items-center gap-1 mt-2 text-sm text-primary-400 hover:text-primary-300"
+                >
+                  {showFullDescription ? (
+                    <>
+                      <ChevronUp className="w-4 h-4" />
+                      Show less
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-4 h-4" />
+                      View more
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           )}
 
           {/* Meta info */}
@@ -675,42 +884,7 @@ export default function PostDetailPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {comments.map((comment) => (
-                <div key={comment.id} className="flex gap-3">
-                  <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center flex-shrink-0">
-                    {comment.is_anonymous ? (
-                      <User className="w-4 h-4 text-dark-400" />
-                    ) : comment.user?.avatar_url ? (
-                      <img
-                        src={comment.user.avatar_url}
-                        alt=""
-                        className="w-8 h-8 rounded-full object-cover"
-                      />
-                    ) : (
-                      <User className="w-4 h-4 text-dark-400" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-dark-200">
-                        {comment.is_anonymous ? "Anonymous" : comment.user?.full_name || "User"}
-                      </span>
-                      <span className="text-xs text-dark-500">
-                        {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
-                      </span>
-                      {comment.user_id === user?.id && (
-                        <button
-                          onClick={() => handleDeleteComment(comment.id)}
-                          className="ml-auto p-1 hover:bg-white/5 rounded"
-                        >
-                          <Trash2 className="w-3 h-3 text-dark-500 hover:text-red-400" />
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-dark-300 text-sm mt-1">{comment.content}</p>
-                  </div>
-                </div>
-              ))}
+              {comments.map((comment) => renderComment(comment))}
             </div>
           )}
         </div>
@@ -719,6 +893,38 @@ export default function PostDetailPage() {
       {/* Fixed Comment Input at Bottom */}
       <div className="fixed-bottom-input">
         <div className="max-w-2xl mx-auto">
+          {/* Replying to indicator */}
+          {replyingTo && (
+            <div className="flex items-center justify-between mb-2 px-2">
+              <span className="text-xs text-primary-400">
+                Replying to comment...
+              </span>
+              <button
+                onClick={() => setReplyingTo(null)}
+                className="text-xs text-dark-400 hover:text-dark-200"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          
+          {/* Media previews */}
+          {commentMediaPreviews.length > 0 && (
+            <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
+              {commentMediaPreviews.map((preview, index) => (
+                <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                  <img src={preview} alt="" className="w-full h-full object-cover" />
+                  <button
+                    onClick={() => removeCommentMedia(index)}
+                    className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center"
+                  >
+                    <X className="w-3 h-3 text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          
           <div className="flex gap-2 items-center">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -729,12 +935,29 @@ export default function PostDetailPage() {
               />
               <span className="text-xs text-dark-400">Anon</span>
             </label>
+            
+            {/* Media upload button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="p-2 hover:bg-white/10 rounded-lg text-dark-400"
+            >
+              <ImageIcon className="w-5 h-5" />
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleMediaSelect}
+              accept="image/*,video/*"
+              multiple
+              className="hidden"
+            />
+            
             <input
               type="text"
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Add an update or comment..."
-              className="flex-1 px-4 py-2.5 glass-input text-sm"
+              placeholder={replyingTo ? "Write a reply..." : "Add an update or comment..."}
+              className="flex-1 px-4 py-2.5 glass-input text-base"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -744,7 +967,7 @@ export default function PostDetailPage() {
             />
             <button
               onClick={handleSubmitComment}
-              disabled={submittingComment || !newComment.trim()}
+              disabled={submittingComment || (!newComment.trim() && commentMedia.length === 0)}
               className="p-2.5 bg-primary-600 rounded-xl text-white hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submittingComment ? (
@@ -796,7 +1019,7 @@ export default function PostDetailPage() {
               onChange={(e) => setReportDescription(e.target.value)}
               placeholder="Please describe the issue..."
               rows={3}
-              className="w-full px-4 py-3 glass-input resize-none"
+              className="w-full px-4 py-3 glass-input resize-none text-base"
             />
           )}
 
@@ -833,6 +1056,7 @@ export default function PostDetailPage() {
               variant="secondary"
               className="flex-1"
               onClick={() => setShowDeleteModal(false)}
+              disabled={deleting}
             >
               Cancel
             </Button>
