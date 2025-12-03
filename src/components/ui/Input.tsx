@@ -10,7 +10,10 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, leftIcon, rightIcon, className = "", ...props }, ref) => {
+  ({ label, error, leftIcon, rightIcon, className = "", type, ...props }, ref) => {
+    // Special handling for date/time inputs
+    const isDateOrTime = type === "date" || type === "time";
+    
     return (
       <div className="w-full">
         {label && (
@@ -26,12 +29,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           )}
           <input
             ref={ref}
-            style={{
-              paddingLeft: leftIcon ? '3rem' : '1rem',
-              paddingRight: rightIcon ? '3rem' : '1rem',
-            }}
+            type={type}
             className={`
               glass-input
+              ${leftIcon ? "pl-12" : "pl-4"}
+              ${rightIcon || isDateOrTime ? "pr-12" : "pr-4"}
               ${error ? "border-red-500/50" : ""}
               ${className}
             `}

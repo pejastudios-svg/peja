@@ -14,12 +14,12 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
   const router = useRouter();
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
+    <header className="fixed top-0 left-0 right-0 z-50 glass-header">
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         <div className="flex items-center gap-4">
           <button
             onClick={onMenuClick}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors lg:hidden"
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors lg:hidden"
           >
             <Menu className="w-5 h-5 text-dark-200" />
           </button>
@@ -31,7 +31,7 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => router.push("/search")}
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
           >
             <Search className="w-5 h-5 text-dark-200" />
           </button>
@@ -47,7 +47,7 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
 
           <Link
             href="/notifications"
-            className="relative p-2 hover:bg-white/5 rounded-lg transition-colors"
+            className="relative p-2 hover:bg-white/10 rounded-lg transition-colors"
           >
             <Bell className="w-5 h-5 text-dark-200" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
@@ -55,7 +55,7 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
 
           <Link
             href="/profile"
-            className="p-2 hover:bg-white/5 rounded-lg transition-colors"
+            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
           >
             <User className="w-5 h-5 text-dark-200" />
           </Link>

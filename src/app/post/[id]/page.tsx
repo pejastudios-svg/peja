@@ -244,13 +244,17 @@ export default function PostDetailPage() {
           content: newComment.trim(),
           is_anonymous: commentAnonymous,
         })
-        .select(`
-          *,
-          users:user_id (full_name, avatar_url)
-        `)
+        .select()
         .single();
 
       if (error) throw error;
+
+      // Fetch user info for the new comment
+      const { data: userData } = await supabase
+        .from("users")
+        .select("full_name, avatar_url")
+        .eq("id", authUser.id)
+        .single();
 
       setComments((prev) => [
         ...prev,
@@ -261,13 +265,14 @@ export default function PostDetailPage() {
           content: data.content,
           is_anonymous: data.is_anonymous,
           created_at: data.created_at,
-          user: data.users,
+          user: userData || undefined,
         },
       ]);
       setNewComment("");
       setCommentAnonymous(false);
     } catch (error) {
       console.error("Error submitting comment:", error);
+      alert("Failed to add comment. Please try again.");
     } finally {
       setSubmittingComment(false);
     }
@@ -275,7 +280,8 @@ export default function PostDetailPage() {
 
   const handleDeleteComment = async (commentId: string) => {
     try {
-      await supabase.from("post_comments").delete().eq("id", commentId);
+      const { error } = await supabase.from("post_comments").delete().eq("id", commentId);
+      if (error) throw error;
       setComments((prev) => prev.filter((c) => c.id !== commentId));
     } catch (error) {
       console.error("Error deleting comment:", error);
@@ -316,47 +322,70 @@ export default function PostDetailPage() {
 
     setSubmittingReport(true);
     try {
-      await supabase.from("post_reports").insert({
+      const { error } = await supabase.from("post_reports").insert({
         post_id: postId,
         user_id: authUser.id,
         reason: reportReason,
         description: reportDescription,
       });
 
-      setShowReportModal(false);
-      setReportReason("");
-      setReportDescription("");
-      alert("Report submitted. Thank you for helping keep Peja safe!");
-    } catch (error: any) {
-      if (error.code === "23505") {
-        alert("You have already reported this post.");
+      if (error) {
+        if (error.code === "23505") {
+          alert("You have already reported this post.");
+        } else {
+          throw error;
+        }
       } else {
-        console.error("Error reporting:", error);
+        setShowReportModal(false);
+        setReportReason("");
+        setReportDescription("");
+        alert("Report submitted. Thank you for helping keep Peja safe!");
       }
+    } catch (error: any) {
+      console.error("Error reporting:", error);
+      alert("Failed to submit report. Please try again.");
     } finally {
       setSubmittingReport(false);
     }
   };
 
   const handleDeletePost = async () => {
+    if (!post) return;
+    
     setDeleting(true);
     try {
       // Delete media from storage first
-      if (post?.media) {
+      if (post.media && post.media.length > 0) {
         for (const media of post.media) {
-          const path = media.url.split("/media/")[1];
-          if (path) {
-            await supabase.storage.from("media").remove([path]);
+          try {
+            // Extract the path from the URL
+            const urlParts = media.url.split("/storage/v1/object/public/media/");
+            if (urlParts[1]) {
+              await supabase.storage.from("media").remove([urlParts[1]]);
+            }
+          } catch (e) {
+            console.error("Error deleting media file:", e);
           }
         }
       }
 
-      // Delete the post (cascade will delete media records, comments, etc.)
-      await supabase.from("posts").delete().eq("id", postId);
+      // Delete related records first (if no cascade)
+      await supabase.from("post_media").delete().eq("post_id", postId);
+      await supabase.from("post_tags").delete().eq("post_id", postId);
+      await supabase.from("post_confirmations").delete().eq("post_id", postId);
+      await supabase.from("post_comments").delete().eq("post_id", postId);
+      await supabase.from("post_reports").delete().eq("post_id", postId);
 
+      // Delete the post
+      const { error } = await supabase.from("posts").delete().eq("id", postId);
+      
+      if (error) throw error;
+
+      setShowDeleteModal(false);
       router.push("/");
     } catch (error) {
       console.error("Error deleting post:", error);
+      alert("Failed to delete post. Please try again.");
     } finally {
       setDeleting(false);
     }
@@ -410,13 +439,13 @@ export default function PostDetailPage() {
   const currentMedia = post.media?.[currentMediaIndex];
 
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-24">
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+      <header className="fixed top-0 left-0 right-0 z-50 glass-header">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
           <button
             onClick={() => router.back()}
-            className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
+            className="p-2 -ml-2 hover:bg-white/10 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-dark-200" />
           </button>
@@ -424,7 +453,7 @@ export default function PostDetailPage() {
           <div className="relative">
             <button
               onClick={() => setShowOptions(!showOptions)}
-              className="p-2 -mr-2 hover:bg-white/5 rounded-lg transition-colors"
+              className="p-2 -mr-2 hover:bg-white/10 rounded-lg transition-colors"
             >
               <MoreVertical className="w-5 h-5 text-dark-200" />
             </button>
@@ -435,13 +464,13 @@ export default function PostDetailPage() {
                   className="fixed inset-0 z-40"
                   onClick={() => setShowOptions(false)}
                 />
-                <div className="absolute right-0 top-full mt-1 w-48 glass-card p-2 z-50">
+                <div className="absolute right-0 top-full mt-1 w-48 glass-strong rounded-xl p-2 z-50">
                   <button
                     onClick={() => {
                       handleShare();
                       setShowOptions(false);
                     }}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 text-left"
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 text-left"
                   >
                     <Share2 className="w-4 h-4 text-dark-400" />
                     <span className="text-dark-200">Share</span>
@@ -453,7 +482,7 @@ export default function PostDetailPage() {
                         setShowReportModal(true);
                         setShowOptions(false);
                       }}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 text-left"
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 text-left"
                     >
                       <Flag className="w-4 h-4 text-orange-400" />
                       <span className="text-dark-200">Report</span>
@@ -466,7 +495,7 @@ export default function PostDetailPage() {
                         setShowDeleteModal(true);
                         setShowOptions(false);
                       }}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 text-left"
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 text-left"
                     >
                       <Trash2 className="w-4 h-4 text-red-400" />
                       <span className="text-red-400">Delete Post</span>
@@ -637,45 +666,6 @@ export default function PostDetailPage() {
             Updates & Comments ({comments.length})
           </h3>
 
-          {/* Comment Input */}
-          <div className="mb-6">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="Add an update or comment..."
-                className="flex-1 px-4 py-3 glass-input"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmitComment();
-                  }
-                }}
-              />
-              <button
-                onClick={handleSubmitComment}
-                disabled={submittingComment || !newComment.trim()}
-                className="p-3 bg-primary-600 rounded-xl text-white hover:bg-primary-700 transition-colors disabled:opacity-50"
-              >
-                {submittingComment ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <Send className="w-5 h-5" />
-                )}
-              </button>
-            </div>
-            <label className="flex items-center gap-2 mt-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={commentAnonymous}
-                onChange={(e) => setCommentAnonymous(e.target.checked)}
-                className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-600"
-              />
-              <span className="text-sm text-dark-400">Comment anonymously</span>
-            </label>
-          </div>
-
           {/* Comments List */}
           {comments.length === 0 ? (
             <div className="text-center py-8">
@@ -725,6 +715,47 @@ export default function PostDetailPage() {
           )}
         </div>
       </main>
+
+      {/* Fixed Comment Input at Bottom */}
+      <div className="fixed-bottom-input">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex gap-2 items-center">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={commentAnonymous}
+                onChange={(e) => setCommentAnonymous(e.target.checked)}
+                className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-600"
+              />
+              <span className="text-xs text-dark-400">Anon</span>
+            </label>
+            <input
+              type="text"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Add an update or comment..."
+              className="flex-1 px-4 py-2.5 glass-input text-sm"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmitComment();
+                }
+              }}
+            />
+            <button
+              onClick={handleSubmitComment}
+              disabled={submittingComment || !newComment.trim()}
+              className="p-2.5 bg-primary-600 rounded-xl text-white hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {submittingComment ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Send className="w-5 h-5" />
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Report Modal */}
       <Modal isOpen={showReportModal} onClose={() => setShowReportModal(false)} title="Report Post">

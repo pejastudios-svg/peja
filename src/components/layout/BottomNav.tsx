@@ -15,8 +15,11 @@ const navItems = [
 export function BottomNav() {
   const pathname = usePathname();
 
+  // Don't show on post detail page (has its own fixed input)
+  if (pathname.startsWith("/post/")) return null;
+
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 glass border-t border-white/5 lg:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 glass-footer lg:hidden safe-bottom">
       <div className="flex items-center justify-around h-16 px-2">
         {navItems.slice(0, 2).map((item) => {
           const isActive = pathname === item.href;

@@ -34,37 +34,74 @@ body {
   color: #f8fafc;
 }
 
+/* Enhanced Glass Effects - Works on all browsers */
 .glass {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 32px 0 rgba(139, 92, 246, 0.15);
+  background: rgba(30, 16, 51, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
 }
 
 .glass-sm {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 16px 0 rgba(139, 92, 246, 0.1);
+  background: rgba(30, 16, 51, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(139, 92, 246, 0.15);
+  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.3);
 }
 
 .glass-card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 32px 0 rgba(139, 92, 246, 0.15);
+  background: rgba(30, 16, 51, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
   border-radius: 1rem;
   padding: 1.5rem;
 }
 
+/* Strong glass for menus, dropdowns, modals */
+.glass-strong {
+  background: rgba(30, 16, 51, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* Header specific */
+.glass-header {
+  background: rgba(20, 10, 40, 0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+  box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* Footer/BottomNav specific */
+.glass-footer {
+  background: rgba(20, 10, 40, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgba(139, 92, 246, 0.2);
+  box-shadow: 0 -4px 20px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* Map legend and floating elements */
+.glass-float {
+  background: rgba(30, 16, 51, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
+}
+
 .glass-input {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(30, 16, 51, 0.6);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
   border-radius: 0.75rem;
   padding-top: 0.75rem;
   padding-bottom: 0.75rem;
@@ -76,32 +113,54 @@ body {
 
 .glass-input:focus {
   border-color: rgba(139, 92, 246, 0.5);
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+  background: rgba(30, 16, 51, 0.8);
 }
 
 .glass-input::placeholder {
   color: #94a3b8;
 }
 
+/* Fix for date inputs */
+.glass-input[type="date"],
+.glass-input[type="time"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  padding-right: 2.5rem;
+}
+
+.glass-input[type="date"]::-webkit-calendar-picker-indicator,
+.glass-input[type="time"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  filter: invert(1);
+  opacity: 0.6;
+}
+
 .btn-primary {
-  background-color: #7c3aed;
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
   color: white;
   font-weight: 500;
   border-radius: 0.75rem;
   padding: 0.75rem 1.5rem;
   transition: all 0.2s;
-  box-shadow: 0 4px 16px 0 rgba(124, 58, 237, 0.25);
+  box-shadow: 0 4px 16px 0 rgba(124, 58, 237, 0.35);
 }
 
 .btn-primary:hover {
-  background-color: #6d28d9;
-  box-shadow: 0 4px 20px 0 rgba(124, 58, 237, 0.4);
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  box-shadow: 0 6px 24px 0 rgba(124, 58, 237, 0.5);
+  transform: translateY(-1px);
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(30, 16, 51, 0.8);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
   color: #e2e8f0;
   font-weight: 500;
   border-radius: 0.75rem;
@@ -110,8 +169,8 @@ body {
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(139, 92, 246, 0.2);
+  border-color: rgba(139, 92, 246, 0.4);
 }
 
 .badge {
@@ -163,6 +222,21 @@ body {
   display: none;
 }
 
+/* Fixed bottom input bar */
+.fixed-bottom-input {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(20, 10, 40, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgba(139, 92, 246, 0.2);
+  padding: 0.75rem 1rem;
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+}
+
 /* Leaflet custom styles */
 .leaflet-container {
   background: #0f172a;
@@ -170,10 +244,11 @@ body {
 }
 
 .leaflet-popup-content-wrapper {
-  background: #1e293b;
+  background: rgba(30, 16, 51, 0.95);
   color: #f8fafc;
   border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(139, 92, 246, 0.2);
 }
 
 .leaflet-popup-content {
@@ -181,22 +256,22 @@ body {
 }
 
 .leaflet-popup-tip {
-  background: #1e293b;
+  background: rgba(30, 16, 51, 0.95);
 }
 
 .leaflet-control-zoom {
   border: none !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3) !important;
 }
 
 .leaflet-control-zoom a {
-  background: #1e293b !important;
+  background: rgba(30, 16, 51, 0.9) !important;
   color: #f8fafc !important;
-  border: none !important;
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
 }
 
 .leaflet-control-zoom a:hover {
-  background: #334155 !important;
+  background: rgba(139, 92, 246, 0.3) !important;
 }
 
 .custom-marker {
@@ -207,4 +282,11 @@ body {
 .user-marker {
   background: transparent;
   border: none;
+}
+
+/* Safe area for iOS */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }

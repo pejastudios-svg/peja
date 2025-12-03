@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
-// Dynamically import the map component (Leaflet doesn't work with SSR)
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
   loading: () => (
@@ -116,13 +115,6 @@ export default function MapPage() {
     ? posts.filter((p) => p.category === selectedCategory)
     : posts;
 
-  const categoryColors: Record<string, string> = {
-    danger: "bg-red-500",
-    warning: "bg-orange-500",
-    awareness: "bg-yellow-500",
-    info: "bg-blue-500",
-  };
-
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header
@@ -155,7 +147,7 @@ export default function MapPage() {
                 className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg transition-colors ${
                   !selectedCategory
                     ? "bg-primary-600 text-white"
-                    : "bg-dark-800/90 backdrop-blur text-dark-200"
+                    : "glass-float text-dark-200"
                 }`}
               >
                 All ({posts.length})
@@ -170,10 +162,10 @@ export default function MapPage() {
                 if (count === 0) return null;
 
                 const colorStyles = {
-                  danger: "bg-red-500/90 text-white",
-                  warning: "bg-orange-500/90 text-white",
-                  awareness: "bg-yellow-500/90 text-black",
-                  info: "bg-blue-500/90 text-white",
+                  danger: "bg-red-600 text-white",
+                  warning: "bg-orange-500 text-white",
+                  awareness: "bg-yellow-500 text-black",
+                  info: "bg-blue-500 text-white",
                 };
 
                 const label = {
@@ -189,7 +181,7 @@ export default function MapPage() {
                     onClick={() => setSelectedCategory(
                       selectedCategory === categoryGroup[0]?.id ? null : categoryGroup[0]?.id
                     )}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg backdrop-blur ${colorStyles[color]}`}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg ${colorStyles[color]}`}
                   >
                     {label[color]} ({count})
                   </button>
@@ -202,7 +194,7 @@ export default function MapPage() {
           <button
             onClick={getUserLocation}
             disabled={gettingLocation}
-            className="absolute bottom-24 right-4 z-[1000] p-3 bg-dark-800/90 backdrop-blur rounded-full shadow-lg"
+            className="absolute bottom-24 right-4 z-[1000] p-3 glass-float rounded-full shadow-lg"
           >
             {gettingLocation ? (
               <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
@@ -214,7 +206,7 @@ export default function MapPage() {
           {/* Toggle List View Button */}
           <button
             onClick={() => setShowList(!showList)}
-            className="absolute bottom-24 left-4 z-[1000] p-3 bg-dark-800/90 backdrop-blur rounded-full shadow-lg"
+            className="absolute bottom-24 left-4 z-[1000] p-3 glass-float rounded-full shadow-lg"
           >
             {showList ? (
               <MapIcon className="w-5 h-5 text-primary-400" />
@@ -225,7 +217,7 @@ export default function MapPage() {
 
           {/* Bottom Sheet List */}
           <div
-            className={`absolute bottom-0 left-0 right-0 z-[1000] bg-dark-900/95 backdrop-blur rounded-t-2xl shadow-2xl transition-transform duration-300 ${
+            className={`absolute bottom-0 left-0 right-0 z-[1000] glass-strong rounded-t-2xl shadow-2xl transition-transform duration-300 ${
               showList ? "translate-y-0" : "translate-y-[calc(100%-60px)]"
             }`}
             style={{ maxHeight: "60%" }}
@@ -304,27 +296,27 @@ export default function MapPage() {
             </div>
           </div>
 
-          {/* Legend */}
-          <div className="absolute top-20 right-4 z-[1000] glass-sm rounded-lg p-2 text-xs space-y-1">
+          {/* Legend - FIXED with glass-float */}
+          <div className="absolute top-20 right-4 z-[1000] glass-float rounded-lg p-3 text-xs space-y-2">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full" />
-              <span className="text-dark-300">Danger</span>
+              <span className="text-dark-200">Danger</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-orange-500 rounded-full" />
-              <span className="text-dark-300">Caution</span>
+              <span className="text-dark-200">Caution</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-yellow-500 rounded-full" />
-              <span className="text-dark-300">Awareness</span>
+              <span className="text-dark-200">Awareness</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-blue-500 rounded-full" />
-              <span className="text-dark-300">Info</span>
+              <span className="text-dark-200">Info</span>
             </div>
             <div className="flex items-center gap-2 pt-1 border-t border-white/10">
               <span className="w-3 h-3 bg-primary-500 rounded-full" />
-              <span className="text-dark-300">You</span>
+              <span className="text-dark-200">You</span>
             </div>
           </div>
         </div>

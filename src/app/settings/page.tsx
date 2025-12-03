@@ -19,6 +19,7 @@ import {
   X,
   Loader2,
   CheckCircle,
+  Users,
 } from "lucide-react";
 
 export default function SettingsPage() {
@@ -179,9 +180,9 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen pb-20">
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+      <header className="fixed top-0 left-0 right-0 z-50 glass-header">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors">
+          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg transition-colors">
             <ArrowLeft className="w-5 h-5 text-dark-200" />
           </button>
           <h1 className="text-lg font-semibold text-dark-100">Settings</h1>
@@ -350,6 +351,7 @@ export default function SettingsPage() {
         {/* Support */}
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Support</h2>
+          <SettingRow icon={Users} label="Emergency Contacts" description="Manage SOS contacts" onClick={() => router.push("/emergency-contacts")} />
           <SettingRow icon={Shield} label="Privacy Policy" onClick={() => router.push("/privacy")} />
           <SettingRow icon={HelpCircle} label="Help & Support" onClick={() => router.push("/help")} />
           <SettingRow icon={FileText} label="Terms of Service" onClick={() => router.push("/terms")} />

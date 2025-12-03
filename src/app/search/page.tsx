@@ -16,7 +16,6 @@ import {
   MapPin,
 } from "lucide-react";
 
-// Separate component that uses useSearchParams
 function SearchContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -44,11 +43,6 @@ function SearchContent() {
         `)
         .order("created_at", { ascending: false })
         .limit(50);
-
-      // Text search in comment
-      if (query.trim()) {
-        queryBuilder = queryBuilder.ilike("comment", `%${query}%`);
-      }
 
       // Category filter
       if (selectedCategory) {
@@ -81,7 +75,7 @@ function SearchContent() {
 
       if (error) throw error;
 
-      const formattedPosts: Post[] = (data || []).map((post) => ({
+      let formattedPosts: Post[] = (data || []).map((post) => ({
         id: post.id,
         user_id: post.user_id,
         category: post.category,
@@ -105,13 +99,33 @@ function SearchContent() {
         tags: post.post_tags?.map((t: any) => t.tag) || [],
       }));
 
-      // Filter by tags if query starts with #
-      if (query.startsWith("#")) {
-        const tagQuery = query.slice(1).toLowerCase();
-        setPosts(formattedPosts.filter((p) => p.tags?.some((t) => t.includes(tagQuery))));
-      } else {
-        setPosts(formattedPosts);
+      // Client-side filtering for better search
+      if (query.trim()) {
+        const searchTerm = query.toLowerCase().trim();
+        
+        // Check if searching for a tag
+        if (searchTerm.startsWith("#")) {
+          const tagQuery = searchTerm.slice(1);
+          formattedPosts = formattedPosts.filter((p) =>
+            p.tags?.some((t) => t.toLowerCase().includes(tagQuery))
+          );
+        } else {
+          // Search in comment, address, category name, and tags
+          formattedPosts = formattedPosts.filter((p) => {
+            const categoryName = CATEGORIES.find((c) => c.id === p.category)?.name || "";
+            
+            return (
+              p.comment?.toLowerCase().includes(searchTerm) ||
+              p.address?.toLowerCase().includes(searchTerm) ||
+              categoryName.toLowerCase().includes(searchTerm) ||
+              p.category.toLowerCase().includes(searchTerm) ||
+              p.tags?.some((t) => t.toLowerCase().includes(searchTerm))
+            );
+          });
+        }
       }
+
+      setPosts(formattedPosts);
     } catch (error) {
       console.error("Search error:", error);
     } finally {
@@ -134,6 +148,18 @@ function SearchContent() {
 
   const hasActiveFilters = selectedCategory || dateRange !== "all";
 
+  const handleSharePost = async (post: Post) => {
+    const shareUrl = `${window.location.origin}/post/${post.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Peja Alert", url: shareUrl });
+      } catch (error) {}
+    } else {
+      await navigator.clipboard.writeText(shareUrl);
+      alert("Link copied!");
+    }
+  };
+
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header
@@ -152,7 +178,7 @@ function SearchContent() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search incidents, #tags, locations..."
+              placeholder="Search incidents, #tags, locations, categories..."
               className="w-full pl-12 pr-20 py-3 glass-input"
               autoFocus
             />
@@ -242,20 +268,53 @@ function SearchContent() {
             </div>
           )}
 
-          {/* Quick Tags */}
+          {/* Quick Search Suggestions */}
           {!query && (
-            <div className="mb-4">
-              <p className="text-sm text-dark-400 mb-2">Popular tags</p>
-              <div className="flex flex-wrap gap-2">
-                {["traffic", "robbery", "fire", "accident", "flooding"].map((tag) => (
-                  <button
-                    key={tag}
-                    onClick={() => setQuery(`#${tag}`)}
-                    className="px-3 py-1.5 glass-sm rounded-lg text-sm text-primary-400"
-                  >
-                    #{tag}
-                  </button>
-                ))}
+            <div className="mb-4 space-y-4">
+              <div>
+                <p className="text-sm text-dark-400 mb-2">Popular tags</p>
+                <div className="flex flex-wrap gap-2">
+                  {["traffic", "robbery", "fire", "accident", "flooding"].map((tag) => (
+                    <button
+                      key={tag}
+                      onClick={() => setQuery(`#${tag}`)}
+                      className="px-3 py-1.5 glass-sm rounded-lg text-sm text-primary-400"
+                    >
+                      #{tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm text-dark-400 mb-2">Categories</p>
+                <div className="flex flex-wrap gap-2">
+                  {CATEGORIES.slice(0, 6).map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setQuery(cat.name)}
+                      className="px-3 py-1.5 glass-sm rounded-lg text-sm text-dark-300"
+                    >
+                      {cat.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm text-dark-400 mb-2">Popular locations</p>
+                <div className="flex flex-wrap gap-2">
+                  {["Lagos", "Lekki", "Victoria Island", "Ikeja", "Yaba"].map((loc) => (
+                    <button
+                      key={loc}
+                      onClick={() => setQuery(loc)}
+                      className="px-3 py-1.5 glass-sm rounded-lg text-sm text-dark-300 flex items-center gap-1"
+                    >
+                      <MapPin className="w-3 h-3" />
+                      {loc}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -272,7 +331,7 @@ function SearchContent() {
                 {query ? `No results for "${query}"` : "Start typing to search"}
               </p>
               <p className="text-sm text-dark-500 mt-1">
-                Try searching for keywords, #tags, or locations
+                Try searching for keywords, #tags, locations, or categories
               </p>
             </div>
           ) : (
@@ -286,7 +345,7 @@ function SearchContent() {
                   key={post.id}
                   post={post}
                   onConfirm={() => {}}
-                  onShare={() => {}}
+                  onShare={handleSharePost}
                 />
               ))}
             </div>
@@ -299,7 +358,6 @@ function SearchContent() {
   );
 }
 
-// Loading fallback component
 function SearchLoading() {
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -308,7 +366,6 @@ function SearchLoading() {
   );
 }
 
-// Main page component with Suspense wrapper
 export default function SearchPage() {
   return (
     <Suspense fallback={<SearchLoading />}>
