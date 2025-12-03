@@ -616,10 +616,11 @@ export default function PostDetailPage() {
   const currentMedia = post.media?.[currentMediaIndex];
   
   // Check if description is long
-  const isLongDescription = post.comment && post.comment.length > 200;
-  const displayedComment = isLongDescription && !showFullDescription 
-    ? post.comment.slice(0, 200) + "..." 
-    : post.comment;
+  const commentText = post.comment || "";
+const isLongDescription = commentText.length > 200;
+const displayedComment = isLongDescription && !showFullDescription 
+  ? commentText.slice(0, 200) + "..." 
+  : commentText;
 
   return (
     <div className="min-h-screen pb-28">
