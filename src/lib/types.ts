@@ -57,6 +57,7 @@ export interface Comment {
   content: string;
   is_anonymous: boolean;
   created_at: string;
+  parent_id?: string | null;
   user?: {
     full_name: string;
     avatar_url?: string;

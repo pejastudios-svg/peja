@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 
 interface CommentWithReplies extends Comment {
+  parent_id?: string | null;
   replies?: CommentWithReplies[];
   media?: { id: string; url: string; media_type: string }[];
 }
