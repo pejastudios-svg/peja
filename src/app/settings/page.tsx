@@ -18,6 +18,7 @@ import {
   Check,
   X,
   Loader2,
+  CheckCircle,
 } from "lucide-react";
 
 export default function SettingsPage() {
@@ -25,6 +26,8 @@ export default function SettingsPage() {
   const { user, signOut } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   // Notification settings
   const [pushEnabled, setPushEnabled] = useState(true);
@@ -47,10 +50,7 @@ export default function SettingsPage() {
   const [showStatesModal, setShowStatesModal] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadSettings();
-    }, 100);
-    return () => clearTimeout(timer);
+    loadSettings();
   }, [user]);
 
   const loadSettings = async () => {
@@ -60,11 +60,15 @@ export default function SettingsPage() {
     }
 
     try {
-      const { data: settings } = await supabase
+      const { data: settings, error } = await supabase
         .from("user_settings")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
+
+      if (error) {
+        console.error("Load settings error:", error);
+      }
 
       if (settings) {
         setPushEnabled(settings.push_enabled ?? true);
@@ -87,11 +91,17 @@ export default function SettingsPage() {
   };
 
   const saveSettings = async () => {
-    if (!user) return;
+    if (!user) {
+      setSaveError("Please sign in to save settings");
+      return;
+    }
 
     setSaving(true);
+    setSaveSuccess(false);
+    setSaveError("");
+
     try {
-      await supabase.from("user_settings").upsert({
+      const { error } = await supabase.from("user_settings").upsert({
         user_id: user.id,
         push_enabled: pushEnabled,
         danger_alerts: dangerAlerts,
@@ -106,8 +116,17 @@ export default function SettingsPage() {
         quiet_hours_end: quietHoursEnd,
         updated_at: new Date().toISOString(),
       });
+
+      if (error) {
+        console.error("Save error:", error);
+        setSaveError("Failed to save settings");
+      } else {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2000);
+      }
     } catch (error) {
       console.error("Error saving settings:", error);
+      setSaveError("Failed to save settings");
     } finally {
       setSaving(false);
     }
@@ -124,43 +143,18 @@ export default function SettingsPage() {
     );
   };
 
-  const ToggleSwitch = ({
-    enabled,
-    onChange,
-  }: {
-    enabled: boolean;
-    onChange: (value: boolean) => void;
-  }) => (
+  const ToggleSwitch = ({ enabled, onChange }: { enabled: boolean; onChange: (value: boolean) => void }) => (
     <button
       type="button"
       onClick={() => onChange(!enabled)}
       className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${enabled ? "bg-primary-600" : "bg-dark-600"}`}
     >
-      <span
-        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition duration-200 ease-in-out ${enabled ? "translate-x-5" : "translate-x-0"}`}
-      />
+      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition duration-200 ease-in-out ${enabled ? "translate-x-5" : "translate-x-0"}`} />
     </button>
   );
 
-  const SettingRow = ({
-    icon: Icon,
-    label,
-    description,
-    children,
-    onClick,
-    danger,
-  }: {
-    icon: any;
-    label: string;
-    description?: string;
-    children?: React.ReactNode;
-    onClick?: () => void;
-    danger?: boolean;
-  }) => (
-    <div
-      className={`flex items-center justify-between py-4 px-2 rounded-lg ${onClick ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : ""} transition-colors`}
-      onClick={onClick}
-    >
+  const SettingRow = ({ icon: Icon, label, description, children, onClick, danger }: { icon: any; label: string; description?: string; children?: React.ReactNode; onClick?: () => void; danger?: boolean }) => (
+    <div className={`flex items-center justify-between py-4 px-2 rounded-lg ${onClick ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : ""} transition-colors`} onClick={onClick}>
       <div className="flex items-center gap-3">
         <div className={`p-2 rounded-lg ${danger ? "bg-red-500/10" : "bg-dark-700"}`}>
           <Icon className={`w-5 h-5 ${danger ? "text-red-400" : "text-primary-400"}`} />
@@ -187,24 +181,40 @@ export default function SettingsPage() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <button
-            onClick={() => router.back()}
-            className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
-          >
+          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors">
             <ArrowLeft className="w-5 h-5 text-dark-200" />
           </button>
           <h1 className="text-lg font-semibold text-dark-100">Settings</h1>
           <button
             onClick={saveSettings}
             disabled={saving}
-            className="p-2 -mr-2 hover:bg-white/5 rounded-lg transition-colors text-primary-400"
+            className={`p-2 -mr-2 rounded-lg transition-all ${saveSuccess ? "bg-green-500/20" : "hover:bg-white/5"}`}
           >
-            {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
+            {saving ? (
+              <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+            ) : saveSuccess ? (
+              <CheckCircle className="w-5 h-5 text-green-400" />
+            ) : (
+              <Check className="w-5 h-5 text-primary-400" />
+            )}
           </button>
         </div>
       </header>
 
       <main className="pt-14 max-w-2xl mx-auto px-4">
+        {/* Save feedback */}
+        {saveSuccess && (
+          <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+            <p className="text-sm text-green-400 text-center">Settings saved successfully!</p>
+          </div>
+        )}
+
+        {saveError && (
+          <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+            <p className="text-sm text-red-400 text-center">{saveError}</p>
+          </div>
+        )}
+
         {/* Notifications Section */}
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Notifications</h2>
@@ -256,15 +266,8 @@ export default function SettingsPage() {
           <p className="text-sm text-dark-400 mb-4">Choose where you want to receive incident alerts from</p>
 
           <div className="space-y-3">
-            {/* All Nigeria */}
             <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${alertZoneType === "all_nigeria" ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-              <input
-                type="radio"
-                name="alertZone"
-                checked={alertZoneType === "all_nigeria"}
-                onChange={() => setAlertZoneType("all_nigeria")}
-                className="sr-only"
-              />
+              <input type="radio" name="alertZone" checked={alertZoneType === "all_nigeria"} onChange={() => setAlertZoneType("all_nigeria")} className="sr-only" />
               <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${alertZoneType === "all_nigeria" ? "border-primary-500 bg-primary-500" : "border-dark-500"}`}>
                 {alertZoneType === "all_nigeria" && <Check className="w-3 h-3 text-white" />}
               </div>
@@ -274,15 +277,8 @@ export default function SettingsPage() {
               </div>
             </label>
 
-            {/* Custom Radius */}
             <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${alertZoneType === "radius" ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-              <input
-                type="radio"
-                name="alertZone"
-                checked={alertZoneType === "radius"}
-                onChange={() => setAlertZoneType("radius")}
-                className="sr-only"
-              />
+              <input type="radio" name="alertZone" checked={alertZoneType === "radius"} onChange={() => setAlertZoneType("radius")} className="sr-only" />
               <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${alertZoneType === "radius" ? "border-primary-500 bg-primary-500" : "border-dark-500"}`}>
                 {alertZoneType === "radius" && <Check className="w-3 h-3 text-white" />}
               </div>
@@ -298,15 +294,7 @@ export default function SettingsPage() {
                   <span className="text-sm text-dark-400">Radius</span>
                   <span className="text-primary-400 font-medium">{alertRadius} km</span>
                 </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="50"
-                  step="1"
-                  value={alertRadius}
-                  onChange={(e) => setAlertRadius(Number(e.target.value))}
-                  className="w-full accent-primary-500"
-                />
+                <input type="range" min="1" max="50" step="1" value={alertRadius} onChange={(e) => setAlertRadius(Number(e.target.value))} className="w-full accent-primary-500" />
                 <div className="flex justify-between text-xs text-dark-500 mt-1">
                   <span>1 km</span>
                   <span>25 km</span>
@@ -315,36 +303,17 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Selected States */}
             <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${alertZoneType === "states" ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-              <input
-                type="radio"
-                name="alertZone"
-                checked={alertZoneType === "states"}
-                onChange={() => setAlertZoneType("states")}
-                className="sr-only"
-              />
+              <input type="radio" name="alertZone" checked={alertZoneType === "states"} onChange={() => setAlertZoneType("states")} className="sr-only" />
               <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${alertZoneType === "states" ? "border-primary-500 bg-primary-500" : "border-dark-500"}`}>
                 {alertZoneType === "states" && <Check className="w-3 h-3 text-white" />}
               </div>
               <div className="flex-1">
                 <p className="text-dark-100 font-medium">Selected States</p>
-                <p className="text-sm text-dark-400">
-                  {selectedStates.length > 0 ? `${selectedStates.length} states selected` : "Choose specific states"}
-                </p>
+                <p className="text-sm text-dark-400">{selectedStates.length > 0 ? `${selectedStates.length} states selected` : "Choose specific states"}</p>
               </div>
               {alertZoneType === "states" && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setShowStatesModal(true);
-                  }}
-                  className="text-primary-400 text-sm"
-                >
-                  Edit
-                </button>
+                <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowStatesModal(true); }} className="text-primary-400 text-sm">Edit</button>
               )}
             </label>
           </div>
@@ -362,21 +331,11 @@ export default function SettingsPage() {
             <div className="ml-4 mt-2 p-4 glass-sm rounded-xl flex gap-4">
               <div className="flex-1">
                 <label className="text-xs text-dark-400 block mb-1">Start Time</label>
-                <input
-                  type="time"
-                  value={quietHoursStart}
-                  onChange={(e) => setQuietHoursStart(e.target.value)}
-                  className="w-full px-3 py-2 glass-input text-sm"
-                />
+                <input type="time" value={quietHoursStart} onChange={(e) => setQuietHoursStart(e.target.value)} className="w-full px-3 py-2 glass-input text-sm" />
               </div>
               <div className="flex-1">
                 <label className="text-xs text-dark-400 block mb-1">End Time</label>
-                <input
-                  type="time"
-                  value={quietHoursEnd}
-                  onChange={(e) => setQuietHoursEnd(e.target.value)}
-                  className="w-full px-3 py-2 glass-input text-sm"
-                />
+                <input type="time" value={quietHoursEnd} onChange={(e) => setQuietHoursEnd(e.target.value)} className="w-full px-3 py-2 glass-input text-sm" />
               </div>
             </div>
           )}
@@ -434,11 +393,7 @@ export default function SettingsPage() {
               </div>
 
               <div className="pt-4 mt-4 border-t border-white/5 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowStatesModal(false)}
-                  className="w-full py-3 bg-primary-600 text-white rounded-xl font-medium"
-                >
+                <button type="button" onClick={() => setShowStatesModal(false)} className="w-full py-3 bg-primary-600 text-white rounded-xl font-medium">
                   Done ({selectedStates.length} selected)
                 </button>
               </div>
