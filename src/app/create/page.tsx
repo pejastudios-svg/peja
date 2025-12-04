@@ -30,15 +30,16 @@ export default function CreatePostPage() {
   const [tagInput, setTagInput] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [isAnonymous, setIsAnonymous] = useState(false);
+  const [isSensitive, setIsSensitive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
-  const [isSensitive, setIsSensitive] = useState(false);
   const [location, setLocation] = useState<{
     latitude: number;
     longitude: number;
     address?: string;
   } | null>(null);
   const [error, setError] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -64,40 +65,27 @@ export default function CreatePostPage() {
     );
   }
 
-  if (!user) {
-    return null;
-  }
+  if (!user) return null;
 
-  // Reverse geocode to get address from coordinates
   const getAddressFromCoords = async (lat: number, lng: number): Promise<string> => {
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
-        {
-          headers: {
-            'User-Agent': 'Peja App'
-          }
-        }
+        { headers: { "User-Agent": "Peja App" } }
       );
       const data = await response.json();
-      
-      if (data && data.address) {
+      if (data?.address) {
         const addr = data.address;
-        // Build a readable address
         const parts = [];
         if (addr.road) parts.push(addr.road);
         if (addr.neighbourhood) parts.push(addr.neighbourhood);
         if (addr.suburb) parts.push(addr.suburb);
-        if (addr.city || addr.town || addr.village) {
-          parts.push(addr.city || addr.town || addr.village);
-        }
+        if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
         if (addr.state) parts.push(addr.state);
-        
         return parts.length > 0 ? parts.join(", ") : data.display_name || "Location found";
       }
       return "Location found";
     } catch (error) {
-      console.error("Geocoding error:", error);
       return "Location found";
     }
   };
@@ -115,15 +103,11 @@ export default function CreatePostPage() {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        
-        // Get the actual address
         const address = await getAddressFromCoords(latitude, longitude);
-        
         setLocation({ latitude, longitude, address });
         setLocationLoading(false);
       },
       (err) => {
-        console.error("Location error:", err);
         setError("Could not get your location. Please enable location services.");
         setLocationLoading(false);
       },
@@ -149,10 +133,21 @@ export default function CreatePostPage() {
       return;
     }
 
+    // Check file sizes (50MB max per file)
+    for (const file of files) {
+      if (file.size > 50 * 1024 * 1024) {
+        setError(`File "${file.name}" is too large. Maximum 50MB per file.`);
+        return;
+      }
+    }
+
     const newPreviews = files.map((file) => URL.createObjectURL(file));
     setMedia((prev) => [...prev, ...files]);
     setMediaPreviews((prev) => [...prev, ...newPreviews]);
     setError("");
+    
+    // Reset file input
+    e.target.value = "";
   };
 
   const handleRemoveMedia = (index: number) => {
@@ -194,31 +189,41 @@ export default function CreatePostPage() {
     }
 
     setIsLoading(true);
+    setUploadProgress(0);
 
     try {
       const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
+      const totalFiles = media.length;
 
-      for (const file of media) {
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-        const filePath = `posts/${fileName}`;
+      for (let i = 0; i < media.length; i++) {
+        const file = media[i];
+        const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+        const fileName = `posts/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
-        const { error: uploadError } = await supabase.storage
+        console.log(`Uploading file ${i + 1}/${totalFiles}: ${fileName}`);
+
+        const { error: uploadError, data: uploadData } = await supabase.storage
           .from("media")
-          .upload(filePath, file);
+          .upload(fileName, file, {
+            cacheControl: "3600",
+            upsert: false,
+          });
 
         if (uploadError) {
-          throw new Error(`Failed to upload: ${uploadError.message}`);
+          console.error("Upload error:", uploadError);
+          throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
         }
 
         const { data: publicUrl } = supabase.storage
           .from("media")
-          .getPublicUrl(filePath);
+          .getPublicUrl(fileName);
 
         mediaUrls.push({
           url: publicUrl.publicUrl,
           type: file.type.startsWith("video/") ? "video" : "photo",
         });
+
+        setUploadProgress(Math.round(((i + 1) / totalFiles) * 100));
       }
 
       const userId = (await supabase.auth.getUser()).data.user?.id;
@@ -230,10 +235,11 @@ export default function CreatePostPage() {
         location: `POINT(${location.longitude} ${location.latitude})`,
         address: location.address || null,
         is_anonymous: isAnonymous,
-        status: "live",
         is_sensitive: isSensitive,
+        status: "live",
         confirmations: 0,
         views: 0,
+        report_count: 0,
       };
 
       const { data: post, error: postError } = await supabase
@@ -246,15 +252,17 @@ export default function CreatePostPage() {
         throw new Error(`Failed to create post: ${postError.message}`);
       }
 
+      // Insert media records
       for (const mediaItem of mediaUrls) {
         await supabase.from("post_media").insert({
           post_id: post.id,
           url: mediaItem.url,
           media_type: mediaItem.type,
-          is_sensitive: false,
+          is_sensitive: isSensitive,
         });
       }
 
+      // Insert tags
       for (const tag of tags) {
         await supabase.from("post_tags").insert({
           post_id: post.id,
@@ -268,18 +276,15 @@ export default function CreatePostPage() {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setIsLoading(false);
+      setUploadProgress(0);
     }
   };
 
   return (
     <div className="min-h-screen pb-8">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
+      <header className="fixed top-0 left-0 right-0 z-40 glass-header">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <button
-            onClick={() => router.back()}
-            className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
-          >
+          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors">
             <ChevronLeft className="w-5 h-5 text-dark-200" />
           </button>
           <h1 className="font-semibold text-dark-50">Report Incident</h1>
@@ -295,11 +300,25 @@ export default function CreatePostPage() {
           </div>
         )}
 
+        {/* Upload Progress */}
+        {isLoading && uploadProgress > 0 && (
+          <div className="mb-4 p-3 rounded-lg bg-primary-500/10 border border-primary-500/20">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-primary-400">Uploading...</span>
+              <span className="text-sm text-primary-400">{uploadProgress}%</span>
+            </div>
+            <div className="w-full bg-dark-700 rounded-full h-2">
+              <div 
+                className="bg-primary-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Media Upload */}
         <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">
-            Photos / Videos
-          </label>
+          <label className="block text-sm font-medium text-dark-200 mb-3">Photos / Videos *</label>
 
           <input
             type="file"
@@ -328,10 +347,7 @@ export default function CreatePostPage() {
 
           <div className="grid grid-cols-4 gap-2">
             {mediaPreviews.map((preview, index) => (
-              <div
-                key={index}
-                className="relative aspect-square rounded-lg overflow-hidden bg-dark-800"
-              >
+              <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-dark-800">
                 {media[index].type.startsWith("video/") ? (
                   <video src={preview} className="w-full h-full object-cover" />
                 ) : (
@@ -344,6 +360,11 @@ export default function CreatePostPage() {
                 >
                   <X className="w-4 h-4 text-white" />
                 </button>
+                {media[index].type.startsWith("video/") && (
+                  <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/70 rounded text-xs text-white">
+                    Video
+                  </div>
+                )}
               </div>
             ))}
 
@@ -379,16 +400,12 @@ export default function CreatePostPage() {
             )}
           </div>
 
-          <p className="text-xs text-dark-500 mt-2">
-            Up to 50 photos, 10 videos (3 min each)
-          </p>
+          <p className="text-xs text-dark-500 mt-2">Up to 50 photos, 10 videos (max 50MB each)</p>
         </div>
 
         {/* Location */}
         <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">
-            Location
-          </label>
+          <label className="block text-sm font-medium text-dark-200 mb-3">Location *</label>
           <button
             type="button"
             onClick={handleGetLocation}
@@ -403,9 +420,7 @@ export default function CreatePostPage() {
             <div className="flex-1 min-w-0">
               {location ? (
                 <>
-                  <p className="text-sm text-dark-200 truncate">
-                    {location.address || "Location captured"}
-                  </p>
+                  <p className="text-sm text-dark-200 truncate">{location.address || "Location captured"}</p>
                   <p className="text-xs text-dark-500">
                     {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
                   </p>
@@ -421,9 +436,7 @@ export default function CreatePostPage() {
 
         {/* Category */}
         <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">
-            Category
-          </label>
+          <label className="block text-sm font-medium text-dark-200 mb-3">Category *</label>
           <div className="grid grid-cols-2 gap-2">
             {CATEGORIES.map((cat) => (
               <button
@@ -436,9 +449,7 @@ export default function CreatePostPage() {
                     : "glass-sm hover:bg-white/10"
                 }`}
               >
-                <span className="text-sm font-medium text-dark-200">
-                  {cat.name}
-                </span>
+                <span className="text-sm font-medium text-dark-200">{cat.name}</span>
               </button>
             ))}
           </div>
@@ -446,24 +457,19 @@ export default function CreatePostPage() {
 
         {/* Description */}
         <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">
-            Description (Optional)
-          </label>
+          <label className="block text-sm font-medium text-dark-200 mb-3">Description (Optional)</label>
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             placeholder="What's happening?"
             rows={3}
-            className="glass-input resize-none"
-            style={{ paddingLeft: "1rem", paddingRight: "1rem" }}
+            className="w-full px-4 py-3 glass-input resize-none text-base"
           />
         </div>
 
         {/* Tags */}
         <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">
-            Tags (Optional)
-          </label>
+          <label className="block text-sm font-medium text-dark-200 mb-3">Tags (Optional)</label>
           <div className="flex gap-2 mb-2">
             <Input
               value={tagInput}
@@ -477,29 +483,39 @@ export default function CreatePostPage() {
                 }
               }}
             />
-            <Button type="button" variant="secondary" onClick={handleAddTag}>
-              Add
-            </Button>
+            <Button type="button" variant="secondary" onClick={handleAddTag}>Add</Button>
           </div>
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary-600/20 text-primary-400 text-sm"
-                >
+                <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary-600/20 text-primary-400 text-sm">
                   #{tag}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveTag(tag)}
-                    className="hover:text-white"
-                  >
+                  <button type="button" onClick={() => handleRemoveTag(tag)} className="hover:text-white">
                     <X className="w-3 h-3" />
                   </button>
                 </span>
               ))}
             </div>
           )}
+        </div>
+
+        {/* Sensitive Content Toggle */}
+        <div className="glass-card mb-4">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isSensitive}
+              onChange={(e) => setIsSensitive(e.target.checked)}
+              className="w-5 h-5 mt-0.5 rounded border-dark-600 bg-dark-800 text-orange-600 focus:ring-orange-500"
+            />
+            <div>
+              <span className="text-sm text-dark-200 font-medium">⚠️ Contains sensitive content</span>
+              <p className="text-xs text-dark-500 mt-1">
+                Check this if the content may be disturbing (graphic violence, accidents, etc.). 
+                It will be blurred until viewers choose to see it.
+              </p>
+            </div>
+          </label>
         </div>
 
         {/* Anonymous Toggle */}
@@ -513,39 +529,18 @@ export default function CreatePostPage() {
             />
             <span className="text-sm text-dark-200">Post anonymously</span>
           </label>
-          <p className="text-xs text-dark-500 mt-2 ml-8">
-            Your identity will be hidden from other users
-          </p>
+          <p className="text-xs text-dark-500 mt-2 ml-8">Your identity will be hidden from other users</p>
         </div>
 
-{/* Sensitive Content Toggle */}
-<div className="glass-card mb-6">
-  <label className="flex items-start gap-3 cursor-pointer">
-    <input
-      type="checkbox"
-      checked={isSensitive}
-      onChange={(e) => setIsSensitive(e.target.checked)}
-      className="w-5 h-5 mt-0.5 rounded border-dark-600 bg-dark-800 text-orange-600 focus:ring-orange-500"
-    />
-    <div>
-      <span className="text-sm text-dark-200 font-medium">⚠️ Contains sensitive content</span>
-      <p className="text-xs text-dark-500 mt-1">
-        Check this if the content may be disturbing (graphic violence, accidents, etc.). 
-        It will be blurred until viewers choose to see it.
-      </p>
-    </div>
-  </label>
-</div>
-
-        {/* Submit Button */}
         <Button
           type="button"
           variant="primary"
           className="w-full"
           onClick={handleSubmit}
           isLoading={isLoading}
+          disabled={isLoading}
         >
-          Post to Peja
+          {isLoading ? `Uploading... ${uploadProgress}%` : "Post to Peja"}
         </Button>
       </main>
     </div>
