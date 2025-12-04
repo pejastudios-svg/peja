@@ -227,20 +227,36 @@ const displayedComment = isLongComment && !showFullComment
           ) : (
             <>
               <div className="aspect-video relative bg-dark-900">
-                {currentMedia?.media_type === "video" ? (
-                  <video
-                    src={currentMedia.url}
-                    className="w-full h-full object-cover"
-                    controls
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <img
-                    src={currentMedia?.url || "/placeholder.jpg"}
-                    alt="Post media"
-                    className="w-full h-full object-cover"
-                  />
-                )}
+{currentMedia?.media_type === "video" ? (
+  <div className="relative w-full h-full bg-black">
+    <video
+      src={currentMedia.url}
+      className="w-full h-full object-contain"
+      controls
+      playsInline
+      preload="metadata"
+      poster={currentMedia.thumbnail_url || undefined}
+      controlsList="nodownload"
+      onLoadedMetadata={(e) => {
+        // Set to first frame if no poster
+        if (!currentMedia.thumbnail_url) {
+          (e.target as HTMLVideoElement).currentTime = 0.1;
+        }
+      }}
+    >
+      <source src={currentMedia.url} type="video/mp4" />
+      <source src={currentMedia.url} type="video/quicktime" />
+      <source src={currentMedia.url} type="video/webm" />
+      Your browser does not support the video tag.
+    </video>
+  </div>
+) : (
+  <img
+    src={currentMedia?.url || "/placeholder.jpg"}
+    alt="Post media"
+    className="w-full h-full object-cover"
+  />
+)}
               </div>
 
               {post.media.length > 1 && (

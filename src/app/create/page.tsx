@@ -368,27 +368,44 @@ const handleSubmit = async () => {
           />
 
           <div className="grid grid-cols-4 gap-2">
-            {mediaPreviews.map((preview, index) => (
-              <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-dark-800">
-                {media[index].type.startsWith("video/") ? (
-                  <video src={preview} className="w-full h-full object-cover" />
-                ) : (
-                  <img src={preview} alt="" className="w-full h-full object-cover" />
-                )}
-                <button
-                  type="button"
-                  onClick={() => handleRemoveMedia(index)}
-                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center"
-                >
-                  <X className="w-4 h-4 text-white" />
-                </button>
-                {media[index].type.startsWith("video/") && (
-                  <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/70 rounded text-xs text-white">
-                    Video
-                  </div>
-                )}
-              </div>
-            ))}
+{mediaPreviews.map((preview, index) => (
+  <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-dark-800">
+    {media[index].type.startsWith("video/") ? (
+      <div className="relative w-full h-full">
+        <video 
+          src={preview} 
+          className="w-full h-full object-cover"
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedData={(e) => {
+            // Seek to first frame for thumbnail
+            (e.target as HTMLVideoElement).currentTime = 0.1;
+          }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+            <div className="w-0 h-0 border-l-[12px] border-l-white border-t-[8px] border-t-transparent border-b-[8px] border-b-transparent ml-1" />
+          </div>
+        </div>
+      </div>
+    ) : (
+      <img src={preview} alt="" className="w-full h-full object-cover" />
+    )}
+    <button
+      type="button"
+      onClick={() => handleRemoveMedia(index)}
+      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center z-10"
+    >
+      <X className="w-4 h-4 text-white" />
+    </button>
+    {media[index].type.startsWith("video/") && (
+      <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/70 rounded text-xs text-white">
+        Video
+      </div>
+    )}
+  </div>
+))}
 
             {media.length < 50 && (
               <>
