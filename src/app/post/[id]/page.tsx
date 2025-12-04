@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { Post, Comment, CATEGORIES, REPORT_REASONS } from "@/lib/types";
+import { Post, CATEGORIES, REPORT_REASONS } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -130,6 +130,7 @@ export default function PostDetailPage() {
           is_sensitive: data.is_sensitive,
           confirmations: data.confirmations || 0,
           views: data.views || 0,
+          report_count: data.report_count || 0,
           created_at: data.created_at,
           media: data.post_media?.map((m: any) => ({
             id: m.id,
@@ -156,77 +157,65 @@ export default function PostDetailPage() {
     }
   };
 
-const fetchComments = async () => {
-  try {
-    const { data, error } = await supabase
-      .from("post_comments")
-      .select(`
-        id,
-        post_id,
-        user_id,
-        content,
-        is_anonymous,
-        created_at,
-        parent_id,
-        users!user_id (
-          full_name,
-          avatar_url
-        )
-      `)
-      .eq("post_id", postId)
-      .order("created_at", { ascending: true });
+  const fetchComments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from("post_comments")
+        .select(`
+          *,
+          users:user_id (full_name, avatar_url)
+        `)
+        .eq("post_id", postId)
+        .order("created_at", { ascending: true });
 
-    if (error) {
-      console.error("Comments fetch error:", error);
-      return;
-    }
+      if (error) throw error;
 
-    // Fetch media for each comment
-    const commentsWithMedia: CommentWithReplies[] = [];
-    
-    for (const c of data || []) {
-      const { data: mediaData } = await supabase
-        .from("comment_media")
-        .select("*")
-        .eq("comment_id", c.id);
+      // Fetch media for each comment
+      const commentsWithMedia: CommentWithReplies[] = [];
+      
+      for (const c of data || []) {
+        const { data: mediaData } = await supabase
+          .from("comment_media")
+          .select("*")
+          .eq("comment_id", c.id);
 
-      commentsWithMedia.push({
-        id: c.id,
-        post_id: c.post_id,
-        user_id: c.user_id,
-        content: c.content,
-        is_anonymous: c.is_anonymous,
-        created_at: c.created_at,
-        parent_id: c.parent_id,
-        user: c.users,
-        media: mediaData || [],
-        replies: [],
-      });
-    }
-
-    // Build tree structure
-    const parentComments: CommentWithReplies[] = [];
-    const childMap = new Map<string, CommentWithReplies[]>();
-
-    commentsWithMedia.forEach((comment) => {
-      if (comment.parent_id) {
-        const existing = childMap.get(comment.parent_id) || [];
-        existing.push(comment);
-        childMap.set(comment.parent_id, existing);
-      } else {
-        parentComments.push(comment);
+        commentsWithMedia.push({
+          id: c.id,
+          post_id: c.post_id,
+          user_id: c.user_id,
+          content: c.content,
+          is_anonymous: c.is_anonymous,
+          created_at: c.created_at,
+          parent_id: c.parent_id,
+          user: c.users,
+          media: mediaData || [],
+          replies: [],
+        });
       }
-    });
 
-    parentComments.forEach((parent) => {
-      parent.replies = childMap.get(parent.id) || [];
-    });
+      // Build tree structure
+      const parentComments: CommentWithReplies[] = [];
+      const childMap = new Map<string, CommentWithReplies[]>();
 
-    setComments(parentComments);
-  } catch (error) {
-    console.error("Error fetching comments:", error);
-  }
-};
+      commentsWithMedia.forEach((comment) => {
+        if (comment.parent_id) {
+          const existing = childMap.get(comment.parent_id) || [];
+          existing.push(comment);
+          childMap.set(comment.parent_id, existing);
+        } else {
+          parentComments.push(comment);
+        }
+      });
+
+      parentComments.forEach((parent) => {
+        parent.replies = childMap.get(parent.id) || [];
+      });
+
+      setComments(parentComments);
+    } catch (error) {
+      console.error("Error fetching comments:", error);
+    }
+  };
 
   const checkIfConfirmed = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -287,29 +276,17 @@ const fetchComments = async () => {
   };
 
   const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const files = e.target.files;
-  if (!files) return;
-  
-  console.log("Files selected:", files.length);
-  
-  if (files.length + commentMedia.length > 4) {
-    alert("Maximum 4 images/videos per comment");
-    return;
-  }
-  
-  const newFiles = Array.from(files);
-  const newPreviews = newFiles.map((f) => URL.createObjectURL(f));
-  
-  console.log("Adding files:", newFiles);
-  
-  setCommentMedia((prev) => [...prev, ...newFiles]);
-  setCommentMediaPreviews((prev) => [...prev, ...newPreviews]);
-  
-  // Clear the input
-  if (e.target) {
-    e.target.value = '';
-  }
-};
+    const files = Array.from(e.target.files || []);
+    if (files.length + commentMedia.length > 4) {
+      alert("Maximum 4 images/videos per comment");
+      return;
+    }
+    
+    const previews = files.map((f) => URL.createObjectURL(f));
+    setCommentMedia((prev) => [...prev, ...files]);
+    setCommentMediaPreviews((prev) => [...prev, ...previews]);
+    e.target.value = "";
+  };
 
   const removeCommentMedia = (index: number) => {
     URL.revokeObjectURL(commentMediaPreviews[index]);
@@ -318,113 +295,92 @@ const fetchComments = async () => {
   };
 
   const handleSubmitComment = async () => {
-  console.log("Submit comment clicked");
-  console.log("Comment text:", newComment);
-  console.log("Media files:", commentMedia.length);
-  
-  if (!newComment.trim() && commentMedia.length === 0) {
-    alert("Please add a comment or media");
-    return;
-  }
-
-  const { data: { user: authUser } } = await supabase.auth.getUser();
-  if (!authUser) {
-    router.push("/login");
-    return;
-  }
-
-  setSubmittingComment(true);
-  
-  try {
-    // 1. Create the comment
-    const { data: commentData, error: commentError } = await supabase
-      .from("post_comments")
-      .insert({
-        post_id: postId,
-        user_id: authUser.id,
-        content: newComment.trim() || "",
-        is_anonymous: commentAnonymous,
-        parent_id: replyingTo?.id || null,
-      })
-      .select()
-      .single();
-
-    if (commentError) {
-      console.error("Comment insert error:", commentError);
-      throw new Error(`Failed to create comment: ${commentError.message}`);
+    if (!newComment.trim() && commentMedia.length === 0) {
+      alert("Please add a comment or media");
+      return;
     }
 
-    console.log("Comment created:", commentData);
+    const { data: { user: authUser } } = await supabase.auth.getUser();
 
-    // 2. Upload media if any
-    if (commentMedia.length > 0) {
-      console.log("Uploading media files...");
-      
-      for (let i = 0; i < commentMedia.length; i++) {
-        const file = commentMedia[i];
-        try {
-          const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
-          const fileName = `comments/${commentData.id}/${Date.now()}-${i}.${fileExt}`;
+    if (!authUser) {
+      router.push("/login");
+      return;
+    }
 
-          console.log(`Uploading file ${i + 1}:`, fileName);
+    setSubmittingComment(true);
+    
+    try {
+      // 1. Create the comment
+      const { data: commentData, error: commentError } = await supabase
+        .from("post_comments")
+        .insert({
+          post_id: postId,
+          user_id: authUser.id,
+          content: newComment.trim() || "",
+          is_anonymous: commentAnonymous,
+          parent_id: replyingTo?.id || null,
+        })
+        .select()
+        .single();
 
-          const { error: uploadError } = await supabase.storage
-            .from("media")
-            .upload(fileName, file, {
-              cacheControl: "3600",
-              upsert: false,
+      if (commentError) {
+        throw new Error(`Failed to create comment: ${commentError.message}`);
+      }
+
+      // 2. Upload media if any
+      if (commentMedia.length > 0) {
+        for (const file of commentMedia) {
+          try {
+            const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+            const fileName = `comments/${commentData.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+
+            const { error: uploadError } = await supabase.storage
+              .from("media")
+              .upload(fileName, file, {
+                cacheControl: "3600",
+                upsert: false,
+              });
+
+            if (uploadError) {
+              console.error("Upload error:", uploadError);
+              continue;
+            }
+
+            const { data: publicUrl } = supabase.storage
+              .from("media")
+              .getPublicUrl(fileName);
+
+            await supabase.from("comment_media").insert({
+              comment_id: commentData.id,
+              url: publicUrl.publicUrl,
+              media_type: file.type.startsWith("video/") ? "video" : "photo",
             });
-
-          if (uploadError) {
-            console.error("Upload error:", uploadError);
-            continue;
+          } catch (uploadErr) {
+            console.error("File upload error:", uploadErr);
           }
-
-          const { data: publicUrl } = supabase.storage
-            .from("media")
-            .getPublicUrl(fileName);
-
-          console.log("Public URL:", publicUrl.publicUrl);
-
-          const { error: mediaError } = await supabase.from("comment_media").insert({
-            comment_id: commentData.id,
-            url: publicUrl.publicUrl,
-            media_type: file.type.startsWith("video/") ? "video" : "photo",
-          });
-
-          if (mediaError) {
-            console.error("Media insert error:", mediaError);
-          }
-        } catch (uploadErr) {
-          console.error("File upload error:", uploadErr);
         }
       }
-    }
 
-    // 3. Reset form and refresh comments
-    console.log("Resetting form...");
-    setNewComment("");
-    setCommentAnonymous(false);
-    setReplyingTo(null);
-    setCommentMedia([]);
-    setCommentMediaPreviews([]);
-    
-    console.log("Refreshing comments...");
-    await fetchComments();
-    
-  } catch (error: any) {
-    console.error("Error submitting comment:", error);
-    alert(error.message || "Failed to add comment. Please try again.");
-  } finally {
-    setSubmittingComment(false);
-  }
-};
+      // 3. Reset form and refresh
+      setNewComment("");
+      setCommentAnonymous(false);
+      setReplyingTo(null);
+      setCommentMedia([]);
+      setCommentMediaPreviews([]);
+      
+      await fetchComments();
+      
+    } catch (error: any) {
+      console.error("Error submitting comment:", error);
+      alert(error.message || "Failed to add comment. Please try again.");
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
 
   const handleDeleteComment = async (commentId: string) => {
     try {
-      // Delete media first
       await supabase.from("comment_media").delete().eq("comment_id", commentId);
-      // Delete comment
       await supabase.from("post_comments").delete().eq("id", commentId);
       fetchComments();
     } catch (error) {
@@ -458,7 +414,6 @@ const fetchComments = async () => {
 
     setSubmittingReport(true);
     try {
-      // Insert report
       await supabase.from("post_reports").insert({
         post_id: postId,
         user_id: authUser.id,
@@ -466,13 +421,11 @@ const fetchComments = async () => {
         description: reportDescription,
       });
 
-      // Increment report count
       await supabase
         .from("posts")
         .update({ report_count: (post?.report_count || 0) + 1 })
         .eq("id", postId);
 
-      // Check if 3 reports - auto delete
       if ((post?.report_count || 0) + 1 >= 3) {
         await supabase.from("posts").delete().eq("id", postId);
         alert("This post has been removed due to multiple reports.");
@@ -480,7 +433,6 @@ const fetchComments = async () => {
         return;
       }
 
-      // Send notification to post owner
       if (post?.user_id) {
         await supabase.from("notifications").insert({
           user_id: post.user_id,
@@ -511,7 +463,6 @@ const fetchComments = async () => {
     
     setDeleting(true);
     try {
-      // Delete from storage
       if (post.media) {
         for (const media of post.media) {
           try {
@@ -521,14 +472,11 @@ const fetchComments = async () => {
         }
       }
 
-      // Delete related records
       await supabase.from("post_media").delete().eq("post_id", postId);
       await supabase.from("post_tags").delete().eq("post_id", postId);
       await supabase.from("post_confirmations").delete().eq("post_id", postId);
       await supabase.from("post_comments").delete().eq("post_id", postId);
       await supabase.from("post_reports").delete().eq("post_id", postId);
-      
-      // Delete post
       await supabase.from("posts").delete().eq("id", postId);
 
       router.replace("/");
@@ -566,10 +514,7 @@ const fetchComments = async () => {
               {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
             </span>
             {comment.user_id === user?.id && (
-              <button
-                onClick={() => handleDeleteComment(comment.id)}
-                className="ml-auto p-1 hover:bg-white/5 rounded"
-              >
+              <button onClick={() => handleDeleteComment(comment.id)} className="ml-auto p-1 hover:bg-white/5 rounded">
                 <Trash2 className="w-3 h-3 text-dark-500 hover:text-red-400" />
               </button>
             )}
@@ -579,14 +524,13 @@ const fetchComments = async () => {
             <p className="text-dark-300 text-sm mt-1">{comment.content}</p>
           )}
           
-          {/* Comment Media */}
           {comment.media && comment.media.length > 0 && (
             <div className="flex gap-2 mt-2 flex-wrap">
               {comment.media.map((media) => (
                 <div key={media.id} className="relative w-32 h-32 rounded-lg overflow-hidden bg-dark-800">
                   {media.media_type === "video" ? (
                     <div className="relative w-full h-full">
-                      <video src={media.url} className="w-full h-full object-cover" />
+                      <video src={media.url} className="w-full h-full object-cover" playsInline muted preload="metadata" />
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                         <Play className="w-8 h-8 text-white" />
                       </div>
@@ -599,12 +543,8 @@ const fetchComments = async () => {
             </div>
           )}
           
-          {/* Reply button */}
           {!isReply && (
-            <button
-              onClick={() => handleReply(comment)}
-              className="flex items-center gap-1 mt-2 text-xs text-dark-400 hover:text-primary-400"
-            >
+            <button onClick={() => handleReply(comment)} className="flex items-center gap-1 mt-2 text-xs text-dark-400 hover:text-primary-400">
               <Reply className="w-3 h-3" />
               Reply
             </button>
@@ -612,7 +552,6 @@ const fetchComments = async () => {
         </div>
       </div>
       
-      {/* Replies */}
       {comment.replies && comment.replies.length > 0 && (
         <div className="mt-2">
           {comment.replies.map((reply) => renderComment(reply, true))}
@@ -692,7 +631,6 @@ const fetchComments = async () => {
         {/* Media Gallery */}
         {post.media && post.media.length > 0 && (
           <div className="relative bg-dark-900" style={{ minHeight: "200px" }}>
-            {/* Sensitive Content Warning */}
             {post.is_sensitive && !showSensitive ? (
               <div className="aspect-video flex flex-col items-center justify-center bg-dark-800">
                 <AlertTriangle className="w-12 h-12 text-orange-400 mb-3" />
@@ -718,7 +656,6 @@ const fetchComments = async () => {
                     <source src={currentMedia.url} type="video/mp4" />
                     <source src={currentMedia.url} type="video/quicktime" />
                     <source src={currentMedia.url} type="video/webm" />
-                    <source src={currentMedia.url} type="video/x-m4v" />
                     Your browser does not support video playback.
                   </video>
                 ) : (
@@ -730,36 +667,31 @@ const fetchComments = async () => {
                   />
                 )}
 
-                {/* Navigation arrows for multiple media */}
                 {post.media.length > 1 && (
                   <>
                     <button
                       onClick={() => setCurrentMediaIndex((prev) => prev === 0 ? post.media!.length - 1 : prev - 1)}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80"
                     >
                       <ChevronLeft className="w-6 h-6 text-white" />
                     </button>
                     <button
                       onClick={() => setCurrentMediaIndex((prev) => prev === post.media!.length - 1 ? 0 : prev + 1)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80"
                     >
                       <ChevronRight className="w-6 h-6 text-white" />
                     </button>
                     
-                    {/* Media indicators */}
                     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                      {post.media.map((m, index) => (
+                      {post.media.map((_, index) => (
                         <button
                           key={index}
                           onClick={() => setCurrentMediaIndex(index)}
-                          className={`w-2 h-2 rounded-full transition-colors ${
-                            index === currentMediaIndex ? "bg-white" : "bg-white/40"
-                          }`}
+                          className={`w-2 h-2 rounded-full ${index === currentMediaIndex ? "bg-white" : "bg-white/40"}`}
                         />
                       ))}
                     </div>
 
-                    {/* Media type indicator */}
                     <div className="absolute top-4 right-4 px-2 py-1 bg-black/60 rounded text-xs text-white">
                       {currentMediaIndex + 1} / {post.media.length}
                       {currentMedia?.media_type === "video" && " • Video"}
@@ -767,7 +699,6 @@ const fetchComments = async () => {
                   </>
                 )}
 
-                {/* Single video indicator */}
                 {post.media.length === 1 && currentMedia?.media_type === "video" && (
                   <div className="absolute top-4 right-4 px-2 py-1 bg-black/60 rounded text-xs text-white">
                     Video
@@ -872,85 +803,60 @@ const fetchComments = async () => {
         </div>
       </main>
 
-{/* Fixed Comment Input */}
-<div className="fixed-bottom-input">
-  <div className="max-w-2xl mx-auto">
-    {replyingTo && (
-      <div className="flex items-center justify-between mb-2 px-2">
-        <span className="text-xs text-primary-400">Replying to {replyingTo.name}</span>
-        <button onClick={() => setReplyingTo(null)} className="text-xs text-dark-400">Cancel</button>
-      </div>
-    )}
-    
-    {commentMediaPreviews.length > 0 && (
-      <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
-        {commentMediaPreviews.map((preview, index) => (
-          <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-            <img src={preview} alt="" className="w-full h-full object-cover" />
-            <button 
-              onClick={() => removeCommentMedia(index)} 
-              className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center"
+      {/* Fixed Comment Input */}
+      <div className="fixed-bottom-input">
+        <div className="max-w-2xl mx-auto">
+          {replyingTo && (
+            <div className="flex items-center justify-between mb-2 px-2">
+              <span className="text-xs text-primary-400">Replying to {replyingTo.name}</span>
+              <button onClick={() => setReplyingTo(null)} className="text-xs text-dark-400 hover:text-dark-200">Cancel</button>
+            </div>
+          )}
+          
+          {commentMediaPreviews.length > 0 && (
+            <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
+              {commentMediaPreviews.map((preview, index) => (
+                <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+                  <img src={preview} alt="" className="w-full h-full object-cover" />
+                  <button onClick={() => removeCommentMedia(index)} className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center">
+                    <X className="w-3 h-3 text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <div className="flex gap-2 items-center">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={commentAnonymous} onChange={(e) => setCommentAnonymous(e.target.checked)} className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-600" />
+              <span className="text-xs text-dark-400">Anon</span>
+            </label>
+            
+            <button onClick={() => fileInputRef.current?.click()} className="p-2 hover:bg-white/10 rounded-lg text-dark-400">
+              <ImageIcon className="w-5 h-5" />
+            </button>
+            <input type="file" ref={fileInputRef} onChange={handleMediaSelect} accept="image/*,video/*" multiple className="hidden" />
+            
+            <input
+              ref={commentInputRef}
+              type="text"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder={replyingTo ? "Write a reply..." : "Add a comment..."}
+              className="flex-1 px-4 py-2.5 glass-input text-base"
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmitComment(); } }}
+            />
+            
+            <button
+              onClick={handleSubmitComment}
+              disabled={submittingComment || (!newComment.trim() && commentMedia.length === 0)}
+              className="p-2.5 bg-primary-600 rounded-xl text-white hover:bg-primary-700 disabled:opacity-50"
             >
-              <X className="w-3 h-3 text-white" />
+              {submittingComment ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
             </button>
           </div>
-        ))}
+        </div>
       </div>
-    )}
-    
-    <div className="flex gap-2 items-center">
-      <label className="flex items-center gap-1.5 cursor-pointer">
-        <input 
-          type="checkbox" 
-          checked={commentAnonymous} 
-          onChange={(e) => setCommentAnonymous(e.target.checked)} 
-          className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-600" 
-        />
-        <span className="text-xs text-dark-400">Anon</span>
-      </label>
-      
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleMediaSelect}
-        accept="image/*,video/*"
-        multiple
-        className="hidden"
-        id="comment-file-input"
-      />
-      
-      <button 
-        onClick={() => document.getElementById('comment-file-input')?.click()}
-        className="p-2 hover:bg-white/10 rounded-lg text-dark-400"
-      >
-        <ImageIcon className="w-5 h-5" />
-      </button>
-      
-      <input
-        ref={commentInputRef}
-        type="text"
-        value={newComment}
-        onChange={(e) => setNewComment(e.target.value)}
-        placeholder={replyingTo ? "Write a reply..." : "Add a comment..."}
-        className="flex-1 px-4 py-2.5 glass-input text-base"
-        onKeyDown={(e) => { 
-          if (e.key === "Enter" && !e.shiftKey) { 
-            e.preventDefault(); 
-            handleSubmitComment(); 
-          } 
-        }}
-      />
-      
-      <button
-        onClick={handleSubmitComment}
-        disabled={submittingComment || (!newComment.trim() && commentMedia.length === 0)}
-        className="p-2.5 bg-primary-600 rounded-xl text-white hover:bg-primary-700 disabled:opacity-50"
-      >
-        {submittingComment ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-      </button>
-    </div>
-  </div>
-</div>
 
       {/* Report Modal */}
       <Modal isOpen={showReportModal} onClose={() => setShowReportModal(false)} title="Report Post">
