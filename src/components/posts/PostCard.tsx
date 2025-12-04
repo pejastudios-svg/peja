@@ -230,23 +230,30 @@ const displayedComment = isLongComment && !showFullComment
 {currentMedia?.media_type === "video" ? (
   <div className="relative w-full h-full bg-black">
     <video
-      src={currentMedia.url}
+      key={currentMedia.url}
       className="w-full h-full object-contain"
       controls
       playsInline
       preload="metadata"
-      poster={currentMedia.thumbnail_url || undefined}
-      controlsList="nodownload"
-      onLoadedMetadata={(e) => {
-        // Set to first frame if no poster
-        if (!currentMedia.thumbnail_url) {
-          (e.target as HTMLVideoElement).currentTime = 0.1;
+      poster={currentMedia.thumbnail_url}
+      onError={(e) => {
+        console.error("Video error:", e);
+        const target = e.target as HTMLVideoElement;
+        if (target.error) {
+          console.error("Video error details:", target.error.message);
         }
+      }}
+      onLoadStart={() => {
+        console.log("Video started loading");
+      }}
+      onCanPlay={() => {
+        console.log("Video can play");
       }}
     >
       <source src={currentMedia.url} type="video/mp4" />
       <source src={currentMedia.url} type="video/quicktime" />
       <source src={currentMedia.url} type="video/webm" />
+      <source src={currentMedia.url} type="video/x-m4v" />
       Your browser does not support the video tag.
     </video>
   </div>
@@ -255,6 +262,9 @@ const displayedComment = isLongComment && !showFullComment
     src={currentMedia?.url || "/placeholder.jpg"}
     alt="Post media"
     className="w-full h-full object-cover"
+    onError={(e) => {
+      console.error("Image error:", e);
+    }}
   />
 )}
               </div>

@@ -156,65 +156,77 @@ export default function PostDetailPage() {
     }
   };
 
-  const fetchComments = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("post_comments")
-        .select(`
-          *,
-          users:user_id (full_name, avatar_url)
-        `)
-        .eq("post_id", postId)
-        .order("created_at", { ascending: true });
+const fetchComments = async () => {
+  try {
+    const { data, error } = await supabase
+      .from("post_comments")
+      .select(`
+        id,
+        post_id,
+        user_id,
+        content,
+        is_anonymous,
+        created_at,
+        parent_id,
+        users!user_id (
+          full_name,
+          avatar_url
+        )
+      `)
+      .eq("post_id", postId)
+      .order("created_at", { ascending: true });
 
-      if (error) throw error;
-
-      // Fetch media for each comment
-      const commentsWithMedia: CommentWithReplies[] = [];
-      
-      for (const c of data || []) {
-        const { data: mediaData } = await supabase
-          .from("comment_media")
-          .select("*")
-          .eq("comment_id", c.id);
-
-        commentsWithMedia.push({
-          id: c.id,
-          post_id: c.post_id,
-          user_id: c.user_id,
-          content: c.content,
-          is_anonymous: c.is_anonymous,
-          created_at: c.created_at,
-          parent_id: c.parent_id,
-          user: c.users,
-          media: mediaData || [],
-          replies: [],
-        });
-      }
-
-      // Build tree structure
-      const parentComments: CommentWithReplies[] = [];
-      const childMap = new Map<string, CommentWithReplies[]>();
-
-      commentsWithMedia.forEach((comment) => {
-        if (comment.parent_id) {
-          const existing = childMap.get(comment.parent_id) || [];
-          existing.push(comment);
-          childMap.set(comment.parent_id, existing);
-        } else {
-          parentComments.push(comment);
-        }
-      });
-
-      parentComments.forEach((parent) => {
-        parent.replies = childMap.get(parent.id) || [];
-      });
-
-      setComments(parentComments);
-    } catch (error) {
-      console.error("Error fetching comments:", error);
+    if (error) {
+      console.error("Comments fetch error:", error);
+      return;
     }
-  };
+
+    // Fetch media for each comment
+    const commentsWithMedia: CommentWithReplies[] = [];
+    
+    for (const c of data || []) {
+      const { data: mediaData } = await supabase
+        .from("comment_media")
+        .select("*")
+        .eq("comment_id", c.id);
+
+      commentsWithMedia.push({
+        id: c.id,
+        post_id: c.post_id,
+        user_id: c.user_id,
+        content: c.content,
+        is_anonymous: c.is_anonymous,
+        created_at: c.created_at,
+        parent_id: c.parent_id,
+        user: c.users,
+        media: mediaData || [],
+        replies: [],
+      });
+    }
+
+    // Build tree structure
+    const parentComments: CommentWithReplies[] = [];
+    const childMap = new Map<string, CommentWithReplies[]>();
+
+    commentsWithMedia.forEach((comment) => {
+      if (comment.parent_id) {
+        const existing = childMap.get(comment.parent_id) || [];
+        existing.push(comment);
+        childMap.set(comment.parent_id, existing);
+      } else {
+        parentComments.push(comment);
+      }
+    });
+
+    parentComments.forEach((parent) => {
+      parent.replies = childMap.get(parent.id) || [];
+    });
+
+    setComments(parentComments);
+  } catch (error) {
+    console.error("Error fetching comments:", error);
+  }
+};
 
   const checkIfConfirmed = async () => {
     const { data: { user: authUser } } = await supabase.auth.getUser();
