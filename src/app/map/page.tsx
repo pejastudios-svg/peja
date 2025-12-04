@@ -15,12 +15,10 @@ import {
   Navigation,
   List,
   Map as MapIcon,
-  X,
   Clock,
-  CheckCircle,
   ChevronUp,
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, subHours } from "date-fns";
 
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
@@ -70,6 +68,9 @@ export default function MapPage() {
 
   const fetchPosts = async () => {
     try {
+      // Only fetch posts from the last 24 hours
+      const twentyFourHoursAgo = subHours(new Date(), 24).toISOString();
+
       const { data, error } = await supabase
         .from("posts")
         .select(`
@@ -77,6 +78,7 @@ export default function MapPage() {
           post_media (*)
         `)
         .eq("status", "live")
+        .gte("created_at", twentyFourHoursAgo)
         .order("created_at", { ascending: false })
         .limit(100);
 
@@ -126,7 +128,6 @@ export default function MapPage() {
 
       <main className="pt-16 lg:pl-64 h-screen">
         <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">
-          {/* Map */}
           {loading ? (
             <div className="h-full flex items-center justify-center bg-dark-800">
               <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
@@ -139,15 +140,13 @@ export default function MapPage() {
             />
           )}
 
-          {/* Category Filters - Floating on top of map */}
+          {/* Category Filters */}
           <div className="absolute top-4 left-4 right-4 z-[1000]">
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               <button
                 onClick={() => setSelectedCategory(null)}
                 className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg transition-colors ${
-                  !selectedCategory
-                    ? "bg-primary-600 text-white"
-                    : "glass-float text-dark-200"
+                  !selectedCategory ? "bg-primary-600 text-white" : "glass-float text-dark-200"
                 }`}
               >
                 All ({posts.length})
@@ -155,10 +154,7 @@ export default function MapPage() {
               
               {(["danger", "warning", "awareness", "info"] as const).map((color) => {
                 const categoryGroup = CATEGORIES.filter((c) => c.color === color);
-                const count = posts.filter((p) =>
-                  categoryGroup.some((c) => c.id === p.category)
-                ).length;
-
+                const count = posts.filter((p) => categoryGroup.some((c) => c.id === p.category)).length;
                 if (count === 0) return null;
 
                 const colorStyles = {
@@ -178,9 +174,7 @@ export default function MapPage() {
                 return (
                   <button
                     key={color}
-                    onClick={() => setSelectedCategory(
-                      selectedCategory === categoryGroup[0]?.id ? null : categoryGroup[0]?.id
-                    )}
+                    onClick={() => setSelectedCategory(selectedCategory === categoryGroup[0]?.id ? null : categoryGroup[0]?.id)}
                     className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg ${colorStyles[color]}`}
                   >
                     {label[color]} ({count})
@@ -203,16 +197,12 @@ export default function MapPage() {
             )}
           </button>
 
-          {/* Toggle List View Button */}
+          {/* Toggle List Button */}
           <button
             onClick={() => setShowList(!showList)}
             className="absolute bottom-24 left-4 z-[1000] p-3 glass-float rounded-full shadow-lg"
           >
-            {showList ? (
-              <MapIcon className="w-5 h-5 text-primary-400" />
-            ) : (
-              <List className="w-5 h-5 text-primary-400" />
-            )}
+            {showList ? <MapIcon className="w-5 h-5 text-primary-400" /> : <List className="w-5 h-5 text-primary-400" />}
           </button>
 
           {/* Bottom Sheet List */}
@@ -222,29 +212,19 @@ export default function MapPage() {
             }`}
             style={{ maxHeight: "60%" }}
           >
-            {/* Handle */}
-            <button
-              onClick={() => setShowList(!showList)}
-              className="w-full py-3 flex flex-col items-center"
-            >
+            <button onClick={() => setShowList(!showList)} className="w-full py-3 flex flex-col items-center">
               <div className="w-10 h-1 bg-dark-600 rounded-full mb-1" />
               <div className="flex items-center gap-1 text-sm text-dark-400">
                 <ChevronUp className={`w-4 h-4 transition-transform ${showList ? "rotate-180" : ""}`} />
-                {filteredPosts.length} incidents
+                {filteredPosts.length} incidents (last 24h)
               </div>
             </button>
 
-            {/* List */}
             <div className="overflow-y-auto px-4 pb-4" style={{ maxHeight: "calc(60vh - 60px)" }}>
               <div className="space-y-3">
                 {filteredPosts.map((post) => {
                   const category = CATEGORIES.find((c) => c.id === post.category);
-                  const badgeVariant =
-                    category?.color === "danger"
-                      ? "danger"
-                      : category?.color === "warning"
-                      ? "warning"
-                      : "info";
+                  const badgeVariant = category?.color === "danger" ? "danger" : category?.color === "warning" ? "warning" : "info";
 
                   return (
                     <div
@@ -253,29 +233,17 @@ export default function MapPage() {
                       className="flex gap-3 p-3 glass-sm rounded-xl cursor-pointer hover:bg-white/5"
                     >
                       {post.media?.[0] && (
-                        <img
-                          src={post.media[0].url}
-                          alt=""
-                          className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-                        />
+                        <img src={post.media[0].url} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                          <Badge variant={badgeVariant}>
-                            {category?.name || post.category}
-                          </Badge>
-                          {post.status === "live" && (
-                            <span className="flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                              <span className="text-xs text-red-400">LIVE</span>
-                            </span>
-                          )}
+                          <Badge variant={badgeVariant}>{category?.name || post.category}</Badge>
+                          <span className="flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                            <span className="text-xs text-red-400">LIVE</span>
+                          </span>
                         </div>
-                        {post.comment && (
-                          <p className="text-sm text-dark-200 line-clamp-1 mb-1">
-                            {post.comment}
-                          </p>
-                        )}
+                        {post.comment && <p className="text-sm text-dark-200 line-clamp-1 mb-1">{post.comment}</p>}
                         <div className="flex items-center gap-3 text-xs text-dark-400">
                           {post.address && (
                             <span className="flex items-center gap-1 truncate max-w-[150px]">
@@ -292,11 +260,19 @@ export default function MapPage() {
                     </div>
                   );
                 })}
+                
+                {filteredPosts.length === 0 && (
+                  <div className="text-center py-8">
+                    <MapPin className="w-12 h-12 text-dark-600 mx-auto mb-3" />
+                    <p className="text-dark-400">No recent incidents</p>
+                    <p className="text-sm text-dark-500">No incidents reported in the last 24 hours</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>
 
-          {/* Legend - FIXED with glass-float */}
+          {/* Legend */}
           <div className="absolute top-20 right-4 z-[1000] glass-float rounded-lg p-3 text-xs space-y-2">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full" />
