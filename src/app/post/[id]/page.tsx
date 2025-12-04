@@ -275,16 +275,29 @@ export default function PostDetailPage() {
   };
 
   const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length + commentMedia.length > 4) {
-      alert("Maximum 4 images/videos per comment");
-      return;
-    }
-    
-    const previews = files.map((f) => URL.createObjectURL(f));
-    setCommentMedia((prev) => [...prev, ...files]);
-    setCommentMediaPreviews((prev) => [...prev, ...previews]);
-  };
+  const files = e.target.files;
+  if (!files) return;
+  
+  console.log("Files selected:", files.length);
+  
+  if (files.length + commentMedia.length > 4) {
+    alert("Maximum 4 images/videos per comment");
+    return;
+  }
+  
+  const newFiles = Array.from(files);
+  const newPreviews = newFiles.map((f) => URL.createObjectURL(f));
+  
+  console.log("Adding files:", newFiles);
+  
+  setCommentMedia((prev) => [...prev, ...newFiles]);
+  setCommentMediaPreviews((prev) => [...prev, ...newPreviews]);
+  
+  // Clear the input
+  if (e.target) {
+    e.target.value = '';
+  }
+};
 
   const removeCommentMedia = (index: number) => {
     URL.revokeObjectURL(commentMediaPreviews[index]);
@@ -293,99 +306,107 @@ export default function PostDetailPage() {
   };
 
   const handleSubmitComment = async () => {
-    if (!newComment.trim() && commentMedia.length === 0) {
-      alert("Please add a comment or media");
-      return;
+  console.log("Submit comment clicked");
+  console.log("Comment text:", newComment);
+  console.log("Media files:", commentMedia.length);
+  
+  if (!newComment.trim() && commentMedia.length === 0) {
+    alert("Please add a comment or media");
+    return;
+  }
+
+  const { data: { user: authUser } } = await supabase.auth.getUser();
+  if (!authUser) {
+    router.push("/login");
+    return;
+  }
+
+  setSubmittingComment(true);
+  
+  try {
+    // 1. Create the comment
+    const { data: commentData, error: commentError } = await supabase
+      .from("post_comments")
+      .insert({
+        post_id: postId,
+        user_id: authUser.id,
+        content: newComment.trim() || "",
+        is_anonymous: commentAnonymous,
+        parent_id: replyingTo?.id || null,
+      })
+      .select()
+      .single();
+
+    if (commentError) {
+      console.error("Comment insert error:", commentError);
+      throw new Error(`Failed to create comment: ${commentError.message}`);
     }
 
-    const { data: { user: authUser } } = await supabase.auth.getUser();
+    console.log("Comment created:", commentData);
 
-    if (!authUser) {
-      router.push("/login");
-      return;
-    }
+    // 2. Upload media if any
+    if (commentMedia.length > 0) {
+      console.log("Uploading media files...");
+      
+      for (let i = 0; i < commentMedia.length; i++) {
+        const file = commentMedia[i];
+        try {
+          const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+          const fileName = `comments/${commentData.id}/${Date.now()}-${i}.${fileExt}`;
 
-    setSubmittingComment(true);
-    
-    try {
-      // 1. Create the comment
-      const { data: commentData, error: commentError } = await supabase
-        .from("post_comments")
-        .insert({
-          post_id: postId,
-          user_id: authUser.id,
-          content: newComment.trim() || "",
-          is_anonymous: commentAnonymous,
-          parent_id: replyingTo?.id || null,
-        })
-        .select()
-        .single();
+          console.log(`Uploading file ${i + 1}:`, fileName);
 
-      if (commentError) {
-        console.error("Comment insert error:", commentError);
-        throw new Error(`Failed to create comment: ${commentError.message}`);
-      }
-
-      console.log("Comment created:", commentData);
-
-      // 2. Upload media if any
-      if (commentMedia.length > 0) {
-        for (const file of commentMedia) {
-          try {
-            const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
-            const fileName = `comments/${commentData.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-            console.log("Uploading file:", fileName);
-
-            const { error: uploadError } = await supabase.storage
-              .from("media")
-              .upload(fileName, file, {
-                cacheControl: "3600",
-                upsert: false,
-              });
-
-            if (uploadError) {
-              console.error("Upload error:", uploadError);
-              continue;
-            }
-
-            const { data: publicUrl } = supabase.storage
-              .from("media")
-              .getPublicUrl(fileName);
-
-            console.log("Public URL:", publicUrl.publicUrl);
-
-            const { error: mediaError } = await supabase.from("comment_media").insert({
-              comment_id: commentData.id,
-              url: publicUrl.publicUrl,
-              media_type: file.type.startsWith("video/") ? "video" : "photo",
+          const { error: uploadError } = await supabase.storage
+            .from("media")
+            .upload(fileName, file, {
+              cacheControl: "3600",
+              upsert: false,
             });
 
-            if (mediaError) {
-              console.error("Media insert error:", mediaError);
-            }
-          } catch (uploadErr) {
-            console.error("File upload error:", uploadErr);
+          if (uploadError) {
+            console.error("Upload error:", uploadError);
+            continue;
           }
+
+          const { data: publicUrl } = supabase.storage
+            .from("media")
+            .getPublicUrl(fileName);
+
+          console.log("Public URL:", publicUrl.publicUrl);
+
+          const { error: mediaError } = await supabase.from("comment_media").insert({
+            comment_id: commentData.id,
+            url: publicUrl.publicUrl,
+            media_type: file.type.startsWith("video/") ? "video" : "photo",
+          });
+
+          if (mediaError) {
+            console.error("Media insert error:", mediaError);
+          }
+        } catch (uploadErr) {
+          console.error("File upload error:", uploadErr);
         }
       }
-
-      // 3. Reset form and refresh comments
-      setNewComment("");
-      setCommentAnonymous(false);
-      setReplyingTo(null);
-      setCommentMedia([]);
-      setCommentMediaPreviews([]);
-      
-      await fetchComments();
-      
-    } catch (error: any) {
-      console.error("Error submitting comment:", error);
-      alert(error.message || "Failed to add comment. Please try again.");
-    } finally {
-      setSubmittingComment(false);
     }
-  };
+
+    // 3. Reset form and refresh comments
+    console.log("Resetting form...");
+    setNewComment("");
+    setCommentAnonymous(false);
+    setReplyingTo(null);
+    setCommentMedia([]);
+    setCommentMediaPreviews([]);
+    
+    console.log("Refreshing comments...");
+    await fetchComments();
+    
+  } catch (error: any) {
+    console.error("Error submitting comment:", error);
+    alert(error.message || "Failed to add comment. Please try again.");
+  } finally {
+    setSubmittingComment(false);
+  }
+};
 
   const handleDeleteComment = async (commentId: string) => {
     try {
@@ -839,60 +860,85 @@ export default function PostDetailPage() {
         </div>
       </main>
 
-      {/* Fixed Comment Input */}
-      <div className="fixed-bottom-input">
-        <div className="max-w-2xl mx-auto">
-          {replyingTo && (
-            <div className="flex items-center justify-between mb-2 px-2">
-              <span className="text-xs text-primary-400">Replying to {replyingTo.name}</span>
-              <button onClick={() => setReplyingTo(null)} className="text-xs text-dark-400 hover:text-dark-200">Cancel</button>
-            </div>
-          )}
-          
-          {commentMediaPreviews.length > 0 && (
-            <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
-              {commentMediaPreviews.map((preview, index) => (
-                <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
-                  <img src={preview} alt="" className="w-full h-full object-cover" />
-                  <button onClick={() => removeCommentMedia(index)} className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center">
-                    <X className="w-3 h-3 text-white" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          
-          <div className="flex gap-2 items-center">
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="checkbox" checked={commentAnonymous} onChange={(e) => setCommentAnonymous(e.target.checked)} className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-600" />
-              <span className="text-xs text-dark-400">Anon</span>
-            </label>
-            
-            <button onClick={() => fileInputRef.current?.click()} className="p-2 hover:bg-white/10 rounded-lg text-dark-400">
-              <ImageIcon className="w-5 h-5" />
-            </button>
-            <input type="file" ref={fileInputRef} onChange={handleMediaSelect} accept="image/*,video/*" multiple className="hidden" />
-            
-            <input
-              ref={commentInputRef}
-              type="text"
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder={replyingTo ? "Write a reply..." : "Add a comment..."}
-              className="flex-1 px-4 py-2.5 glass-input text-base"
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmitComment(); } }}
-            />
-            
-            <button
-              onClick={handleSubmitComment}
-              disabled={submittingComment || (!newComment.trim() && commentMedia.length === 0)}
-              className="p-2.5 bg-primary-600 rounded-xl text-white hover:bg-primary-700 disabled:opacity-50"
+{/* Fixed Comment Input */}
+<div className="fixed-bottom-input">
+  <div className="max-w-2xl mx-auto">
+    {replyingTo && (
+      <div className="flex items-center justify-between mb-2 px-2">
+        <span className="text-xs text-primary-400">Replying to {replyingTo.name}</span>
+        <button onClick={() => setReplyingTo(null)} className="text-xs text-dark-400">Cancel</button>
+      </div>
+    )}
+    
+    {commentMediaPreviews.length > 0 && (
+      <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
+        {commentMediaPreviews.map((preview, index) => (
+          <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+            <img src={preview} alt="" className="w-full h-full object-cover" />
+            <button 
+              onClick={() => removeCommentMedia(index)} 
+              className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center"
             >
-              {submittingComment ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              <X className="w-3 h-3 text-white" />
             </button>
           </div>
-        </div>
+        ))}
       </div>
+    )}
+    
+    <div className="flex gap-2 items-center">
+      <label className="flex items-center gap-1.5 cursor-pointer">
+        <input 
+          type="checkbox" 
+          checked={commentAnonymous} 
+          onChange={(e) => setCommentAnonymous(e.target.checked)} 
+          className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-600" 
+        />
+        <span className="text-xs text-dark-400">Anon</span>
+      </label>
+      
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleMediaSelect}
+        accept="image/*,video/*"
+        multiple
+        className="hidden"
+        id="comment-file-input"
+      />
+      
+      <button 
+        onClick={() => document.getElementById('comment-file-input')?.click()}
+        className="p-2 hover:bg-white/10 rounded-lg text-dark-400"
+      >
+        <ImageIcon className="w-5 h-5" />
+      </button>
+      
+      <input
+        ref={commentInputRef}
+        type="text"
+        value={newComment}
+        onChange={(e) => setNewComment(e.target.value)}
+        placeholder={replyingTo ? "Write a reply..." : "Add a comment..."}
+        className="flex-1 px-4 py-2.5 glass-input text-base"
+        onKeyDown={(e) => { 
+          if (e.key === "Enter" && !e.shiftKey) { 
+            e.preventDefault(); 
+            handleSubmitComment(); 
+          } 
+        }}
+      />
+      
+      <button
+        onClick={handleSubmitComment}
+        disabled={submittingComment || (!newComment.trim() && commentMedia.length === 0)}
+        className="p-2.5 bg-primary-600 rounded-xl text-white hover:bg-primary-700 disabled:opacity-50"
+      >
+        {submittingComment ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+      </button>
+    </div>
+  </div>
+</div>
 
       {/* Report Modal */}
       <Modal isOpen={showReportModal} onClose={() => setShowReportModal(false)} title="Report Post">
