@@ -656,107 +656,94 @@ export default function PostDetailPage() {
       </header>
 
       <main className="pt-14 max-w-2xl mx-auto">
-        {/* Sensitive Content Warning */}
-        {post.is_sensitive && !showSensitive ? (
-          <div className="aspect-video bg-dark-800 flex flex-col items-center justify-center">
-            <AlertTriangle className="w-12 h-12 text-orange-400 mb-3" />
-            <p className="text-dark-200 font-medium mb-1">Sensitive Content</p>
-            <p className="text-sm text-dark-400 mb-4 text-center px-4">
-              This may contain content that some viewers find disturbing.
-            </p>
-            <Button variant="secondary" size="sm" onClick={() => setShowSensitive(true)}>
-              View Content
-            </Button>
-          </div>
-        ) : (
-{/* Media Gallery */}
-{post.media && post.media.length > 0 && (
-  <div className="relative bg-dark-900" style={{ minHeight: "200px" }}>
-    {/* Sensitive Content Warning */}
-    {post.is_sensitive && !showSensitive ? (
-      <div className="aspect-video flex flex-col items-center justify-center bg-dark-800">
-        <AlertTriangle className="w-12 h-12 text-orange-400 mb-3" />
-        <p className="text-dark-200 font-medium mb-1">Sensitive Content</p>
-        <p className="text-sm text-dark-400 mb-4 text-center px-4">
-          This may contain content that some viewers find disturbing.
-        </p>
-        <Button variant="secondary" size="sm" onClick={() => setShowSensitive(true)}>
-          View Content
-        </Button>
-      </div>
-    ) : (
-      <div className="relative aspect-video bg-black">
-        {currentMedia?.media_type === "video" ? (
-          <video
-            key={currentMedia.url + currentMediaIndex}
-            className="w-full h-full object-contain"
-            controls
-            playsInline
-            preload="auto"
-            style={{ maxHeight: "70vh" }}
-          >
-            <source src={currentMedia.url} type="video/mp4" />
-            <source src={currentMedia.url} type="video/quicktime" />
-            <source src={currentMedia.url} type="video/webm" />
-            <source src={currentMedia.url} type="video/x-m4v" />
-            Your browser does not support video playback.
-          </video>
-        ) : (
-          <img
-            src={currentMedia?.url}
-            alt="Incident"
-            className="w-full h-full object-contain"
-            style={{ maxHeight: "70vh" }}
-          />
-        )}
+        {/* Media Gallery */}
+        {post.media && post.media.length > 0 && (
+          <div className="relative bg-dark-900" style={{ minHeight: "200px" }}>
+            {/* Sensitive Content Warning */}
+            {post.is_sensitive && !showSensitive ? (
+              <div className="aspect-video flex flex-col items-center justify-center bg-dark-800">
+                <AlertTriangle className="w-12 h-12 text-orange-400 mb-3" />
+                <p className="text-dark-200 font-medium mb-1">Sensitive Content</p>
+                <p className="text-sm text-dark-400 mb-4 text-center px-4">
+                  This may contain content that some viewers find disturbing.
+                </p>
+                <Button variant="secondary" size="sm" onClick={() => setShowSensitive(true)}>
+                  View Content
+                </Button>
+              </div>
+            ) : (
+              <div className="relative aspect-video bg-black">
+                {currentMedia?.media_type === "video" ? (
+                  <video
+                    key={currentMedia.url + currentMediaIndex}
+                    className="w-full h-full object-contain"
+                    controls
+                    playsInline
+                    preload="auto"
+                    style={{ maxHeight: "70vh" }}
+                  >
+                    <source src={currentMedia.url} type="video/mp4" />
+                    <source src={currentMedia.url} type="video/quicktime" />
+                    <source src={currentMedia.url} type="video/webm" />
+                    <source src={currentMedia.url} type="video/x-m4v" />
+                    Your browser does not support video playback.
+                  </video>
+                ) : (
+                  <img
+                    src={currentMedia?.url}
+                    alt="Incident"
+                    className="w-full h-full object-contain"
+                    style={{ maxHeight: "70vh" }}
+                  />
+                )}
 
-        {/* Navigation arrows for multiple media */}
-        {post.media.length > 1 && (
-          <>
-            <button
-              onClick={() => setCurrentMediaIndex((prev) => prev === 0 ? post.media!.length - 1 : prev - 1)}
-              className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
-            >
-              <ChevronLeft className="w-6 h-6 text-white" />
-            </button>
-            <button
-              onClick={() => setCurrentMediaIndex((prev) => prev === post.media!.length - 1 ? 0 : prev + 1)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
-            >
-              <ChevronRight className="w-6 h-6 text-white" />
-            </button>
-            
-            {/* Media indicators */}
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-              {post.media.map((m, index) => (
-                <button
-                  key={index}
-                  onClick={() => setCurrentMediaIndex(index)}
-                  className={`w-2 h-2 rounded-full transition-colors ${
-                    index === currentMediaIndex ? "bg-white" : "bg-white/40"
-                  }`}
-                />
-              ))}
-            </div>
+                {/* Navigation arrows for multiple media */}
+                {post.media.length > 1 && (
+                  <>
+                    <button
+                      onClick={() => setCurrentMediaIndex((prev) => prev === 0 ? post.media!.length - 1 : prev - 1)}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
+                    >
+                      <ChevronLeft className="w-6 h-6 text-white" />
+                    </button>
+                    <button
+                      onClick={() => setCurrentMediaIndex((prev) => prev === post.media!.length - 1 ? 0 : prev + 1)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
+                    >
+                      <ChevronRight className="w-6 h-6 text-white" />
+                    </button>
+                    
+                    {/* Media indicators */}
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                      {post.media.map((m, index) => (
+                        <button
+                          key={index}
+                          onClick={() => setCurrentMediaIndex(index)}
+                          className={`w-2 h-2 rounded-full transition-colors ${
+                            index === currentMediaIndex ? "bg-white" : "bg-white/40"
+                          }`}
+                        />
+                      ))}
+                    </div>
 
-            {/* Media type indicator */}
-            <div className="absolute top-4 right-4 px-2 py-1 bg-black/60 rounded text-xs text-white">
-              {currentMediaIndex + 1} / {post.media.length}
-              {currentMedia?.media_type === "video" && " • Video"}
-            </div>
-          </>
-        )}
+                    {/* Media type indicator */}
+                    <div className="absolute top-4 right-4 px-2 py-1 bg-black/60 rounded text-xs text-white">
+                      {currentMediaIndex + 1} / {post.media.length}
+                      {currentMedia?.media_type === "video" && " • Video"}
+                    </div>
+                  </>
+                )}
 
-        {/* Single video indicator */}
-        {post.media.length === 1 && currentMedia?.media_type === "video" && (
-          <div className="absolute top-4 right-4 px-2 py-1 bg-black/60 rounded text-xs text-white">
-            Video
+                {/* Single video indicator */}
+                {post.media.length === 1 && currentMedia?.media_type === "video" && (
+                  <div className="absolute top-4 right-4 px-2 py-1 bg-black/60 rounded text-xs text-white">
+                    Video
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
-      </div>
-    )}
-  </div>
-)}
 
         {/* Content */}
         <div className="p-4 space-y-4">
