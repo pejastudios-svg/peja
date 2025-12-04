@@ -170,115 +170,137 @@ export default function CreatePostPage() {
     setTags((prev) => prev.filter((t) => t !== tag));
   };
 
-  const handleSubmit = async () => {
-    setError("");
+const handleSubmit = async () => {
+  setError("");
 
-    if (media.length === 0) {
-      setError("Please add at least one photo or video");
-      return;
-    }
+  if (media.length === 0) {
+    setError("Please add at least one photo or video");
+    return;
+  }
 
-    if (!category) {
-      setError("Please select a category");
-      return;
-    }
+  if (!category) {
+    setError("Please select a category");
+    return;
+  }
 
-    if (!location) {
-      setError("Location is required. Please enable location services.");
-      return;
-    }
+  if (!location) {
+    setError("Location is required. Please enable location services.");
+    return;
+  }
 
-    setIsLoading(true);
-    setUploadProgress(0);
+  // Check authentication
+  const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
-    try {
-      const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
-      const totalFiles = media.length;
+  if (authError || !authUser) {
+    setError("Please sign in to post. Your session may have expired.");
+    router.push("/login");
+    return;
+  }
 
-      for (let i = 0; i < media.length; i++) {
-        const file = media[i];
-        const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
-        const fileName = `posts/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+  setIsLoading(true);
+  setUploadProgress(0);
 
-        console.log(`Uploading file ${i + 1}/${totalFiles}: ${fileName}`);
+  try {
+    const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
+    const totalFiles = media.length;
 
-        const { error: uploadError, data: uploadData } = await supabase.storage
-          .from("media")
-          .upload(fileName, file, {
-            cacheControl: "3600",
-            upsert: false,
-          });
+    // Upload all media files
+    for (let i = 0; i < media.length; i++) {
+      const file = media[i];
+      const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const fileName = `posts/${authUser.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
-        if (uploadError) {
-          console.error("Upload error:", uploadError);
-          throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
-        }
+      console.log(`Uploading file ${i + 1}/${totalFiles}: ${fileName}`);
 
-        const { data: publicUrl } = supabase.storage
-          .from("media")
-          .getPublicUrl(fileName);
-
-        mediaUrls.push({
-          url: publicUrl.publicUrl,
-          type: file.type.startsWith("video/") ? "video" : "photo",
+      const { error: uploadError } = await supabase.storage
+        .from("media")
+        .upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: false,
         });
 
-        setUploadProgress(Math.round(((i + 1) / totalFiles) * 100));
+      if (uploadError) {
+        console.error("Upload error:", uploadError);
+        throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
       }
 
-      const userId = (await supabase.auth.getUser()).data.user?.id;
+      const { data: publicUrl } = supabase.storage
+        .from("media")
+        .getPublicUrl(fileName);
 
-      const postData = {
-        user_id: userId,
-        category,
-        comment: comment || null,
-        location: `POINT(${location.longitude} ${location.latitude})`,
-        address: location.address || null,
-        is_anonymous: isAnonymous,
+      mediaUrls.push({
+        url: publicUrl.publicUrl,
+        type: file.type.startsWith("video/") ? "video" : "photo",
+      });
+
+      setUploadProgress(Math.round(((i + 1) / totalFiles) * 80)); // 80% for uploads
+    }
+
+    // Create the post
+    const postData = {
+      user_id: authUser.id,
+      category,
+      comment: comment.trim() || null,
+      location: `POINT(${location.longitude} ${location.latitude})`,
+      address: location.address || null,
+      is_anonymous: isAnonymous,
+      is_sensitive: isSensitive,
+      status: "live",
+      confirmations: 0,
+      views: 0,
+      report_count: 0,
+    };
+
+    console.log("Creating post with data:", postData);
+
+    const { data: post, error: postError } = await supabase
+      .from("posts")
+      .insert(postData)
+      .select()
+      .single();
+
+    if (postError) {
+      console.error("Post creation error:", postError);
+      throw new Error(`Failed to create post: ${postError.message}`);
+    }
+
+    console.log("Post created:", post);
+    setUploadProgress(90);
+
+    // Insert media records
+    for (const mediaItem of mediaUrls) {
+      const { error: mediaError } = await supabase.from("post_media").insert({
+        post_id: post.id,
+        url: mediaItem.url,
+        media_type: mediaItem.type,
         is_sensitive: isSensitive,
-        status: "live",
-        confirmations: 0,
-        views: 0,
-        report_count: 0,
-      };
+      });
 
-      const { data: post, error: postError } = await supabase
-        .from("posts")
-        .insert(postData)
-        .select()
-        .single();
-
-      if (postError) {
-        throw new Error(`Failed to create post: ${postError.message}`);
+      if (mediaError) {
+        console.error("Media insert error:", mediaError);
       }
-
-      // Insert media records
-      for (const mediaItem of mediaUrls) {
-        await supabase.from("post_media").insert({
-          post_id: post.id,
-          url: mediaItem.url,
-          media_type: mediaItem.type,
-          is_sensitive: isSensitive,
-        });
-      }
-
-      // Insert tags
-      for (const tag of tags) {
-        await supabase.from("post_tags").insert({
-          post_id: post.id,
-          tag,
-        });
-      }
-
-      router.push("/");
-    } catch (err) {
-      console.error("Submit error:", err);
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setIsLoading(false);
-      setUploadProgress(0);
     }
-  };
+
+    // Insert tags
+    for (const tag of tags) {
+      await supabase.from("post_tags").insert({
+        post_id: post.id,
+        tag,
+      });
+    }
+
+    setUploadProgress(100);
+
+    // Success - redirect to home
+    router.push("/");
+  } catch (err) {
+    console.error("Submit error:", err);
+    setError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+  } finally {
+    setIsLoading(false);
+    setUploadProgress(0);
+  }
+};
 
   return (
     <div className="min-h-screen pb-8">
