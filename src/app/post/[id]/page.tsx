@@ -1,6 +1,7 @@
+// src/app/post/[id]/page.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES, REPORT_REASONS } from "@/lib/types";
@@ -31,7 +32,6 @@ import {
   Reply,
   ChevronDown,
   ChevronUp,
-  Play,
 } from "lucide-react";
 
 interface CommentMedia {
@@ -78,34 +78,27 @@ export default function PostDetailPage() {
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string } | null>(null);
   const [commentMedia, setCommentMedia] = useState<File[]>([]);
   const [commentMediaPreviews, setCommentMediaPreviews] = useState<string[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [expandedReplies, setExpandedReplies] = useState<Set<string>>(new Set());
 
-  // Report modal
+  // Modals
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportDescription, setReportDescription] = useState("");
   const [submittingReport, setSubmittingReport] = useState(false);
-
-  // Delete modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  // Options menu
   const [showOptions, setShowOptions] = useState(false);
 
   const isOwner = user?.id === post?.user_id;
   const isExpired = post ? differenceInHours(new Date(), new Date(post.created_at)) >= 24 : false;
 
-  useEffect(() => {
-    if (postId) {
-      fetchPost();
-      fetchComments();
-      checkIfConfirmed();
-    }
-  }, [postId]);
-
-  const fetchPost = async () => {
+  // Fetch post data
+  const fetchPost = useCallback(async () => {
+    if (!postId) return;
+    
     try {
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from("posts")
         .select(`
           *,
@@ -115,83 +108,103 @@ export default function PostDetailPage() {
         .eq("id", postId)
         .single();
 
-      if (error) throw error;
-
-      if (data) {
-        setPost({
-          id: data.id,
-          user_id: data.user_id,
-          category: data.category,
-          comment: data.comment,
-          location: { latitude: 0, longitude: 0 },
-          address: data.address,
-          is_anonymous: data.is_anonymous,
-          status: data.status,
-          is_sensitive: data.is_sensitive,
-          confirmations: data.confirmations || 0,
-          views: data.views || 0,
-          report_count: data.report_count || 0,
-          created_at: data.created_at,
-          media: data.post_media?.map((m: any) => ({
-            id: m.id,
-            post_id: m.post_id,
-            url: m.url,
-            media_type: m.media_type,
-            is_sensitive: m.is_sensitive,
-            thumbnail_url: m.thumbnail_url,
-          })) || [],
-          tags: data.post_tags?.map((t: any) => t.tag) || [],
-        });
-
-        // Increment views
-        await supabase
-          .from("posts")
-          .update({ views: (data.views || 0) + 1 })
-          .eq("id", postId);
+      if (fetchError) {
+        console.error("Fetch post error:", fetchError);
+        setError("Post not found");
+        return;
       }
-    } catch (err: any) {
-      console.error("Error fetching post:", err);
-      setError("Post not found");
+
+      setPost({
+        id: data.id,
+        user_id: data.user_id,
+        category: data.category,
+        comment: data.comment,
+        location: { latitude: 0, longitude: 0 },
+        address: data.address,
+        is_anonymous: data.is_anonymous,
+        status: data.status,
+        is_sensitive: data.is_sensitive,
+        confirmations: data.confirmations || 0,
+        views: data.views || 0,
+        report_count: data.report_count || 0,
+        created_at: data.created_at,
+        media: data.post_media || [],
+        tags: data.post_tags?.map((t: any) => t.tag) || [],
+      });
+
+      // Increment views (don't await)
+      supabase
+        .from("posts")
+        .update({ views: (data.views || 0) + 1 })
+        .eq("id", postId)
+        .then(() => {});
+
+    } catch (err) {
+      console.error("Error:", err);
+      setError("Failed to load post");
     } finally {
       setLoading(false);
     }
-  };
+  }, [postId]);
 
-  const fetchComments = async () => {
+  // Fetch comments
+  const fetchComments = useCallback(async () => {
+    if (!postId) return;
+
     try {
-      const { data, error } = await supabase
+      // Get comments with user info
+      const { data: commentsData, error: commentsError } = await supabase
         .from("post_comments")
         .select(`
-          *,
+          id,
+          post_id,
+          user_id,
+          content,
+          is_anonymous,
+          created_at,
+          parent_id,
           users:user_id (full_name, avatar_url)
         `)
         .eq("post_id", postId)
         .order("created_at", { ascending: true });
 
-      if (error) throw error;
-
-      // Fetch media for each comment
-      const commentsWithMedia: CommentWithReplies[] = [];
-      
-      for (const c of data || []) {
-        const { data: mediaData } = await supabase
-          .from("comment_media")
-          .select("*")
-          .eq("comment_id", c.id);
-
-        commentsWithMedia.push({
-          id: c.id,
-          post_id: c.post_id,
-          user_id: c.user_id,
-          content: c.content,
-          is_anonymous: c.is_anonymous,
-          created_at: c.created_at,
-          parent_id: c.parent_id,
-          user: c.users,
-          media: mediaData || [],
-          replies: [],
-        });
+      if (commentsError) {
+        console.error("Comments fetch error:", commentsError);
+        return;
       }
+
+      if (!commentsData || commentsData.length === 0) {
+        setComments([]);
+        return;
+      }
+
+      // Get media for all comments in one query
+      const commentIds = commentsData.map(c => c.id);
+      const { data: mediaData } = await supabase
+        .from("comment_media")
+        .select("*")
+        .in("comment_id", commentIds);
+
+      // Group media by comment_id
+      const mediaMap: Record<string, CommentMedia[]> = {};
+      (mediaData || []).forEach(m => {
+        if (!mediaMap[m.comment_id]) mediaMap[m.comment_id] = [];
+        mediaMap[m.comment_id].push(m);
+      });
+
+      // Build comments with media
+      const commentsWithMedia: CommentWithReplies[] = commentsData.map(c => ({
+        id: c.id,
+        post_id: c.post_id,
+        user_id: c.user_id,
+        content: c.content || "",
+        is_anonymous: c.is_anonymous,
+        created_at: c.created_at,
+        parent_id: c.parent_id,
+        user: c.users as any,
+        media: mediaMap[c.id] || [],
+        replies: [],
+      }));
 
       // Build tree structure
       const parentComments: CommentWithReplies[] = [];
@@ -212,156 +225,163 @@ export default function PostDetailPage() {
       });
 
       setComments(parentComments);
-    } catch (error) {
-      console.error("Error fetching comments:", error);
+    } catch (err) {
+      console.error("Error fetching comments:", err);
     }
-  };
+  }, [postId]);
 
-  const checkIfConfirmed = async () => {
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) return;
+  // Check if user confirmed
+  const checkIfConfirmed = useCallback(async () => {
+    if (!postId || !user) return;
 
     const { data } = await supabase
       .from("post_confirmations")
       .select("id")
       .eq("post_id", postId)
-      .eq("user_id", authUser.id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     setIsConfirmed(!!data);
-  };
+  }, [postId, user]);
 
+  useEffect(() => {
+    if (postId) {
+      fetchPost();
+      fetchComments();
+    }
+  }, [postId, fetchPost, fetchComments]);
+
+  useEffect(() => {
+    if (user && postId) {
+      checkIfConfirmed();
+    }
+  }, [user, postId, checkIfConfirmed]);
+
+  // Handle confirm
   const handleConfirm = async () => {
+    if (!user) {
+      router.push("/login");
+      return;
+    }
+
     setConfirmLoading(true);
     try {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-
-      if (!authUser) {
-        router.push("/login");
-        return;
-      }
-
       if (isConfirmed) {
         await supabase
           .from("post_confirmations")
           .delete()
           .eq("post_id", postId)
-          .eq("user_id", authUser.id);
-
-        await supabase
-          .from("posts")
-          .update({ confirmations: Math.max(0, (post?.confirmations || 1) - 1) })
-          .eq("id", postId);
+          .eq("user_id", user.id);
 
         setIsConfirmed(false);
-        setPost((prev) => prev ? { ...prev, confirmations: Math.max(0, prev.confirmations - 1) } : null);
+        setPost(prev => prev ? { ...prev, confirmations: Math.max(0, prev.confirmations - 1) } : null);
       } else {
         await supabase
           .from("post_confirmations")
-          .insert({ post_id: postId, user_id: authUser.id });
-
-        await supabase
-          .from("posts")
-          .update({ confirmations: (post?.confirmations || 0) + 1 })
-          .eq("id", postId);
+          .insert({ post_id: postId, user_id: user.id });
 
         setIsConfirmed(true);
-        setPost((prev) => prev ? { ...prev, confirmations: prev.confirmations + 1 } : null);
+        setPost(prev => prev ? { ...prev, confirmations: prev.confirmations + 1 } : null);
       }
-    } catch (error) {
-      console.error("Error confirming:", error);
+    } catch (err) {
+      console.error("Confirm error:", err);
     } finally {
       setConfirmLoading(false);
     }
   };
 
+  // Handle media select for comments
   const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length + commentMedia.length > 4) {
-      alert("Maximum 4 images/videos per comment");
+      alert("Maximum 4 files per comment");
       return;
     }
-    
-    const previews = files.map((f) => URL.createObjectURL(f));
-    setCommentMedia((prev) => [...prev, ...files]);
-    setCommentMediaPreviews((prev) => [...prev, ...previews]);
+
+    for (const file of files) {
+      if (file.size > 50 * 1024 * 1024) {
+        alert(`${file.name} is too large. Max 50MB.`);
+        return;
+      }
+    }
+
+    const previews = files.map(f => URL.createObjectURL(f));
+    setCommentMedia(prev => [...prev, ...files]);
+    setCommentMediaPreviews(prev => [...prev, ...previews]);
     e.target.value = "";
   };
 
   const removeCommentMedia = (index: number) => {
     URL.revokeObjectURL(commentMediaPreviews[index]);
-    setCommentMedia((prev) => prev.filter((_, i) => i !== index));
-    setCommentMediaPreviews((prev) => prev.filter((_, i) => i !== index));
+    setCommentMedia(prev => prev.filter((_, i) => i !== index));
+    setCommentMediaPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Submit comment
   const handleSubmitComment = async () => {
     if (!newComment.trim() && commentMedia.length === 0) {
-      alert("Please add a comment or media");
+      alert("Add a comment or media");
       return;
     }
 
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-
-    if (!authUser) {
+    if (!user) {
       router.push("/login");
       return;
     }
 
     setSubmittingComment(true);
-    
+    setUploadProgress(0);
+
     try {
-      // 1. Create the comment
+      // 1. Create comment
       const { data: commentData, error: commentError } = await supabase
         .from("post_comments")
         .insert({
           post_id: postId,
-          user_id: authUser.id,
-          content: newComment.trim() || "",
+          user_id: user.id,
+          content: newComment.trim(),
           is_anonymous: commentAnonymous,
           parent_id: replyingTo?.id || null,
         })
-        .select()
+        .select("id")
         .single();
 
       if (commentError) {
-        throw new Error(`Failed to create comment: ${commentError.message}`);
+        console.error("Comment error:", commentError);
+        throw new Error(commentError.message);
       }
 
-      // 2. Upload media if any
+      // 2. Upload media
       if (commentMedia.length > 0) {
-        for (const file of commentMedia) {
-          try {
-            const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
-            const fileName = `comments/${commentData.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        for (let i = 0; i < commentMedia.length; i++) {
+          const file = commentMedia[i];
+          const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
+          const fileName = `comments/${commentData.id}/${Date.now()}-${i}.${ext}`;
 
-            const { error: uploadError } = await supabase.storage
-              .from("media")
-              .upload(fileName, file, {
-                cacheControl: "3600",
-                upsert: false,
-              });
+          const { error: uploadError } = await supabase.storage
+            .from("media")
+            .upload(fileName, file);
 
-            if (uploadError) {
-              console.error("Upload error:", uploadError);
-              continue;
-            }
-
-            const { data: publicUrl } = supabase.storage
-              .from("media")
-              .getPublicUrl(fileName);
-
-            await supabase.from("comment_media").insert({
-              comment_id: commentData.id,
-              url: publicUrl.publicUrl,
-              media_type: file.type.startsWith("video/") ? "video" : "photo",
-            });
-          } catch (uploadErr) {
-            console.error("File upload error:", uploadErr);
+          if (uploadError) {
+            console.error("Upload error:", uploadError);
+            continue;
           }
+
+          const { data: urlData } = supabase.storage
+            .from("media")
+            .getPublicUrl(fileName);
+
+          await supabase.from("comment_media").insert({
+            comment_id: commentData.id,
+            url: urlData.publicUrl,
+            media_type: file.type.startsWith("video/") ? "video" : "photo",
+          });
+
+          setUploadProgress(Math.round(((i + 1) / commentMedia.length) * 100));
         }
       }
 
-      // 3. Reset form and refresh
+      // 3. Reset and refresh
       setNewComment("");
       setCommentAnonymous(false);
       setReplyingTo(null);
@@ -369,89 +389,73 @@ export default function PostDetailPage() {
       setCommentMediaPreviews([]);
       
       await fetchComments();
-      
-    } catch (error: any) {
-      console.error("Error submitting comment:", error);
-      alert(error.message || "Failed to add comment. Please try again.");
+
+    } catch (err: any) {
+      console.error("Submit error:", err);
+      alert(err.message || "Failed to add comment");
     } finally {
       setSubmittingComment(false);
+      setUploadProgress(0);
     }
   };
 
   const handleDeleteComment = async (commentId: string) => {
+    if (!confirm("Delete this comment?")) return;
+
     try {
       await supabase.from("comment_media").delete().eq("comment_id", commentId);
+      await supabase.from("post_comments").delete().eq("parent_id", commentId);
       await supabase.from("post_comments").delete().eq("id", commentId);
-      fetchComments();
-    } catch (error) {
-      console.error("Error deleting comment:", error);
+      await fetchComments();
+    } catch (err) {
+      console.error("Delete error:", err);
     }
   };
 
   const handleShare = async () => {
-    const shareUrl = `${window.location.origin}/post/${postId}`;
-    const shareText = post?.comment || "Check out this incident on Peja";
-
+    const url = `${window.location.origin}/post/${postId}`;
     if (navigator.share) {
       try {
-        await navigator.share({ title: "Peja Alert", text: shareText, url: shareUrl });
-      } catch (error) {}
+        await navigator.share({ title: "Peja Alert", url });
+      } catch {}
     } else {
-      await navigator.clipboard.writeText(shareUrl);
-      alert("Link copied to clipboard!");
+      await navigator.clipboard.writeText(url);
+      alert("Link copied!");
     }
   };
 
   const handleReport = async () => {
-    if (!reportReason) return;
-
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-
-    if (!authUser) {
-      router.push("/login");
-      return;
-    }
+    if (!reportReason || !user) return;
 
     setSubmittingReport(true);
     try {
       await supabase.from("post_reports").insert({
         post_id: postId,
-        user_id: authUser.id,
+        user_id: user.id,
         reason: reportReason,
         description: reportDescription,
       });
 
-      await supabase
-        .from("posts")
-        .update({ report_count: (post?.report_count || 0) + 1 })
-        .eq("id", postId);
-
-      if ((post?.report_count || 0) + 1 >= 3) {
-        await supabase.from("posts").delete().eq("id", postId);
-        alert("This post has been removed due to multiple reports.");
+      const newCount = (post?.report_count || 0) + 1;
+      
+      if (newCount >= 3) {
+        await supabase.from("posts").update({ status: "archived" }).eq("id", postId);
+        alert("Post removed due to multiple reports.");
         router.push("/");
         return;
       }
 
-      if (post?.user_id) {
-        await supabase.from("notifications").insert({
-          user_id: post.user_id,
-          type: "report_warning",
-          title: "Your post was reported",
-          body: `Your post was reported for: ${reportReason}. Please review our community guidelines.`,
-          data: { post_id: postId },
-        });
-      }
+      await supabase.from("posts").update({ report_count: newCount }).eq("id", postId);
 
       setShowReportModal(false);
       setReportReason("");
       setReportDescription("");
-      alert("Report submitted. Thank you for helping keep Peja safe!");
-    } catch (error: any) {
-      if (error.code === "23505") {
-        alert("You have already reported this post.");
+      alert("Report submitted!");
+    } catch (err: any) {
+      if (err.code === "23505") {
+        alert("Already reported.");
       } else {
-        alert("Failed to submit report.");
+        alert("Failed to report.");
       }
     } finally {
       setSubmittingReport(false);
@@ -459,42 +463,45 @@ export default function PostDetailPage() {
   };
 
   const handleDeletePost = async () => {
-    if (!post || !user) return;
-    
+    if (!post) return;
+
     setDeleting(true);
     try {
-      if (post.media) {
-        for (const media of post.media) {
-          try {
-            const path = media.url.split("/media/")[1];
-            if (path) await supabase.storage.from("media").remove([path]);
-          } catch (e) {}
-        }
-      }
-
       await supabase.from("post_media").delete().eq("post_id", postId);
       await supabase.from("post_tags").delete().eq("post_id", postId);
       await supabase.from("post_confirmations").delete().eq("post_id", postId);
       await supabase.from("post_comments").delete().eq("post_id", postId);
       await supabase.from("post_reports").delete().eq("post_id", postId);
       await supabase.from("posts").delete().eq("id", postId);
-
       router.replace("/");
-    } catch (error) {
-      console.error("Error deleting post:", error);
-      alert("Failed to delete post.");
+    } catch (err) {
+      console.error("Delete error:", err);
+      alert("Failed to delete.");
     } finally {
       setDeleting(false);
     }
   };
 
   const handleReply = (comment: CommentWithReplies) => {
-    setReplyingTo({ id: comment.id, name: comment.is_anonymous ? "Anonymous" : comment.user?.full_name || "User" });
+    setReplyingTo({
+      id: comment.id,
+      name: comment.is_anonymous ? "Anonymous" : comment.user?.full_name || "User"
+    });
     commentInputRef.current?.focus();
   };
 
+  const toggleReplies = (commentId: string) => {
+    setExpandedReplies(prev => {
+      const next = new Set(prev);
+      if (next.has(commentId)) next.delete(commentId);
+      else next.add(commentId);
+      return next;
+    });
+  };
+
+  // Render comment
   const renderComment = (comment: CommentWithReplies, isReply = false) => (
-    <div key={comment.id} className={`${isReply ? "ml-10 mt-3" : ""}`}>
+    <div key={comment.id} className={isReply ? "ml-10 mt-3" : ""}>
       <div className="flex gap-3">
         <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
           {comment.is_anonymous ? (
@@ -506,7 +513,7 @@ export default function PostDetailPage() {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-dark-200">
               {comment.is_anonymous ? "Anonymous" : comment.user?.full_name || "User"}
             </span>
@@ -519,47 +526,53 @@ export default function PostDetailPage() {
               </button>
             )}
           </div>
-          
+
           {comment.content && (
             <p className="text-dark-300 text-sm mt-1">{comment.content}</p>
           )}
-          
+
           {comment.media && comment.media.length > 0 && (
             <div className="flex gap-2 mt-2 flex-wrap">
-              {comment.media.map((media) => (
-                <div key={media.id} className="relative w-32 h-32 rounded-lg overflow-hidden bg-dark-800">
-                  {media.media_type === "video" ? (
-                    <div className="relative w-full h-full">
-                      <video src={media.url} className="w-full h-full object-cover" playsInline muted preload="metadata" />
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                        <Play className="w-8 h-8 text-white" />
-                      </div>
-                    </div>
+              {comment.media.map((m) => (
+                <div key={m.id} className="relative w-24 h-24 rounded-lg overflow-hidden bg-dark-800">
+                  {m.media_type === "video" ? (
+                    <video src={m.url} className="w-full h-full object-cover" controls playsInline preload="metadata" />
                   ) : (
-                    <img src={media.url} alt="" className="w-full h-full object-cover" />
+                    <img src={m.url} alt="" className="w-full h-full object-cover cursor-pointer" onClick={() => window.open(m.url, "_blank")} />
                   )}
                 </div>
               ))}
             </div>
           )}
-          
-          {!isReply && (
-            <button onClick={() => handleReply(comment)} className="flex items-center gap-1 mt-2 text-xs text-dark-400 hover:text-primary-400">
-              <Reply className="w-3 h-3" />
-              Reply
-            </button>
-          )}
+
+          <div className="flex items-center gap-3 mt-2">
+            {!isReply && (
+              <button onClick={() => handleReply(comment)} className="flex items-center gap-1 text-xs text-dark-400 hover:text-primary-400">
+                <Reply className="w-3 h-3" /> Reply
+              </button>
+            )}
+            {!isReply && comment.replies && comment.replies.length > 0 && (
+              <button onClick={() => toggleReplies(comment.id)} className="flex items-center gap-1 text-xs text-primary-400">
+                {expandedReplies.has(comment.id) ? (
+                  <><ChevronUp className="w-3 h-3" /> Hide {comment.replies.length} replies</>
+                ) : (
+                  <><ChevronDown className="w-3 h-3" /> View {comment.replies.length} replies</>
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </div>
-      
-      {comment.replies && comment.replies.length > 0 && (
-        <div className="mt-2">
+
+      {!isReply && comment.replies && expandedReplies.has(comment.id) && (
+        <div className="mt-2 border-l-2 border-dark-700 pl-2">
           {comment.replies.map((reply) => renderComment(reply, true))}
         </div>
       )}
     </div>
   );
 
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -568,12 +581,12 @@ export default function PostDetailPage() {
     );
   }
 
+  // Error state
   if (error || !post) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-4">
         <AlertTriangle className="w-16 h-16 text-red-400 mb-4" />
         <h1 className="text-xl font-bold text-dark-100 mb-2">Post Not Found</h1>
-        <p className="text-dark-400 mb-6 text-center">This incident may have been removed.</p>
         <Button variant="primary" onClick={() => router.push("/")}>Go Home</Button>
       </div>
     );
@@ -599,25 +612,24 @@ export default function PostDetailPage() {
             <button onClick={() => setShowOptions(!showOptions)} className="p-2 -mr-2 hover:bg-white/10 rounded-lg">
               <MoreVertical className="w-5 h-5 text-dark-200" />
             </button>
-
             {showOptions && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowOptions(false)} />
                 <div className="absolute right-0 top-full mt-1 w-48 glass-strong rounded-xl p-2 z-50">
-                  <button onClick={() => { handleShare(); setShowOptions(false); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 text-left">
+                  <button onClick={() => { handleShare(); setShowOptions(false); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10">
                     <Share2 className="w-4 h-4 text-dark-400" />
                     <span className="text-dark-200">Share</span>
                   </button>
                   {!isOwner && (
-                    <button onClick={() => { setShowReportModal(true); setShowOptions(false); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 text-left">
+                    <button onClick={() => { setShowReportModal(true); setShowOptions(false); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10">
                       <Flag className="w-4 h-4 text-orange-400" />
                       <span className="text-dark-200">Report</span>
                     </button>
                   )}
                   {isOwner && (
-                    <button onClick={() => { setShowDeleteModal(true); setShowOptions(false); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10 text-left">
+                    <button onClick={() => { setShowDeleteModal(true); setShowOptions(false); }} className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/10">
                       <Trash2 className="w-4 h-4 text-red-400" />
-                      <span className="text-red-400">Delete Post</span>
+                      <span className="text-red-400">Delete</span>
                     </button>
                   )}
                 </div>
@@ -628,81 +640,55 @@ export default function PostDetailPage() {
       </header>
 
       <main className="pt-14 max-w-2xl mx-auto">
-        {/* Media Gallery */}
+        {/* Media */}
         {post.media && post.media.length > 0 && (
-          <div className="relative bg-dark-900" style={{ minHeight: "200px" }}>
+          <div className="relative bg-dark-900">
             {post.is_sensitive && !showSensitive ? (
               <div className="aspect-video flex flex-col items-center justify-center bg-dark-800">
                 <AlertTriangle className="w-12 h-12 text-orange-400 mb-3" />
                 <p className="text-dark-200 font-medium mb-1">Sensitive Content</p>
-                <p className="text-sm text-dark-400 mb-4 text-center px-4">
-                  This may contain content that some viewers find disturbing.
-                </p>
-                <Button variant="secondary" size="sm" onClick={() => setShowSensitive(true)}>
-                  View Content
-                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setShowSensitive(true)}>View</Button>
               </div>
             ) : (
               <div className="relative aspect-video bg-black">
                 {currentMedia?.media_type === "video" ? (
                   <video
-                    key={currentMedia.url + currentMediaIndex}
+                    key={currentMedia.url}
                     className="w-full h-full object-contain"
                     controls
                     playsInline
-                    preload="auto"
-                    style={{ maxHeight: "70vh" }}
+                    preload="metadata"
                   >
                     <source src={currentMedia.url} type="video/mp4" />
-                    <source src={currentMedia.url} type="video/quicktime" />
-                    <source src={currentMedia.url} type="video/webm" />
-                    Your browser does not support video playback.
                   </video>
                 ) : (
-                  <img
-                    src={currentMedia?.url}
-                    alt="Incident"
-                    className="w-full h-full object-contain"
-                    style={{ maxHeight: "70vh" }}
-                  />
+                  <img src={currentMedia?.url} alt="" className="w-full h-full object-contain" />
                 )}
 
                 {post.media.length > 1 && (
                   <>
                     <button
-                      onClick={() => setCurrentMediaIndex((prev) => prev === 0 ? post.media!.length - 1 : prev - 1)}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80"
+                      onClick={() => setCurrentMediaIndex(i => i === 0 ? post.media!.length - 1 : i - 1)}
+                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full"
                     >
                       <ChevronLeft className="w-6 h-6 text-white" />
                     </button>
                     <button
-                      onClick={() => setCurrentMediaIndex((prev) => prev === post.media!.length - 1 ? 0 : prev + 1)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full hover:bg-black/80"
+                      onClick={() => setCurrentMediaIndex(i => i === post.media!.length - 1 ? 0 : i + 1)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/60 rounded-full"
                     >
                       <ChevronRight className="w-6 h-6 text-white" />
                     </button>
-                    
                     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                      {post.media.map((_, index) => (
+                      {post.media.map((_, i) => (
                         <button
-                          key={index}
-                          onClick={() => setCurrentMediaIndex(index)}
-                          className={`w-2 h-2 rounded-full ${index === currentMediaIndex ? "bg-white" : "bg-white/40"}`}
+                          key={i}
+                          onClick={() => setCurrentMediaIndex(i)}
+                          className={`w-2 h-2 rounded-full ${i === currentMediaIndex ? "bg-white" : "bg-white/40"}`}
                         />
                       ))}
                     </div>
-
-                    <div className="absolute top-4 right-4 px-2 py-1 bg-black/60 rounded text-xs text-white">
-                      {currentMediaIndex + 1} / {post.media.length}
-                      {currentMedia?.media_type === "video" && " • Video"}
-                    </div>
                   </>
-                )}
-
-                {post.media.length === 1 && currentMedia?.media_type === "video" && (
-                  <div className="absolute top-4 right-4 px-2 py-1 bg-black/60 rounded text-xs text-white">
-                    Video
-                  </div>
                 )}
               </div>
             )}
@@ -719,21 +705,18 @@ export default function PostDetailPage() {
                 <span className="text-xs font-medium text-red-400">LIVE</span>
               </span>
             ) : (
-              <span className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-dark-600">
-                <span className="w-2 h-2 bg-dark-400 rounded-full" />
-                <span className="text-xs font-medium text-dark-400">
-                  {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
-                </span>
+              <span className="text-xs text-dark-400">
+                {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
               </span>
             )}
           </div>
 
           {displayedComment && (
             <div>
-              <p className="text-dark-100 text-lg leading-relaxed">{displayedComment}</p>
+              <p className="text-dark-100 text-lg">{displayedComment}</p>
               {isLongDescription && (
-                <button onClick={() => setShowFullDescription(!showFullDescription)} className="flex items-center gap-1 mt-2 text-sm text-primary-400">
-                  {showFullDescription ? <><ChevronUp className="w-4 h-4" /> Show less</> : <><ChevronDown className="w-4 h-4" /> View more</>}
+                <button onClick={() => setShowFullDescription(!showFullDescription)} className="text-sm text-primary-400 mt-1">
+                  {showFullDescription ? "Show less" : "View more"}
                 </button>
               )}
             </div>
@@ -741,19 +724,10 @@ export default function PostDetailPage() {
 
           <div className="flex flex-wrap gap-4 text-sm text-dark-400">
             {post.address && (
-              <div className="flex items-center gap-1.5">
-                <MapPin className="w-4 h-4" />
-                <span>{post.address}</span>
-              </div>
+              <span className="flex items-center gap-1"><MapPin className="w-4 h-4" />{post.address}</span>
             )}
-            <div className="flex items-center gap-1.5">
-              <Clock className="w-4 h-4" />
-              <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Eye className="w-4 h-4" />
-              <span>{post.views} views</span>
-            </div>
+            <span className="flex items-center gap-1"><Clock className="w-4 h-4" />{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
+            <span className="flex items-center gap-1"><Eye className="w-4 h-4" />{post.views} views</span>
           </div>
 
           {post.tags && post.tags.length > 0 && (
@@ -768,13 +742,11 @@ export default function PostDetailPage() {
             <button
               onClick={handleConfirm}
               disabled={confirmLoading}
-              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"
-              }`}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all ${isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"}`}
             >
               {confirmLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className={`w-5 h-5 ${isConfirmed ? "fill-current" : ""}`} />}
               <span>{isConfirmed ? "Confirmed!" : "Confirm"}</span>
-              <span className={isConfirmed ? "text-primary-200" : "text-dark-400"}>({post.confirmations})</span>
+              <span className="text-dark-400">({post.confirmations})</span>
             </button>
             <button onClick={handleShare} className="p-3 rounded-xl glass-sm text-dark-400 hover:bg-white/10">
               <Share2 className="w-5 h-5" />
@@ -782,7 +754,7 @@ export default function PostDetailPage() {
           </div>
         </div>
 
-        {/* Comments Section */}
+        {/* Comments */}
         <div className="p-4 border-t border-white/5">
           <h3 className="text-lg font-semibold text-dark-100 mb-4 flex items-center gap-2">
             <MessageCircle className="w-5 h-5" />
@@ -793,7 +765,6 @@ export default function PostDetailPage() {
             <div className="text-center py-8">
               <MessageCircle className="w-12 h-12 text-dark-600 mx-auto mb-3" />
               <p className="text-dark-400">No comments yet</p>
-              <p className="text-sm text-dark-500">Be the first to add information</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -803,50 +774,59 @@ export default function PostDetailPage() {
         </div>
       </main>
 
-      {/* Fixed Comment Input */}
+      {/* Comment Input */}
       <div className="fixed-bottom-input">
         <div className="max-w-2xl mx-auto">
           {replyingTo && (
             <div className="flex items-center justify-between mb-2 px-2">
               <span className="text-xs text-primary-400">Replying to {replyingTo.name}</span>
-              <button onClick={() => setReplyingTo(null)} className="text-xs text-dark-400 hover:text-dark-200">Cancel</button>
+              <button onClick={() => setReplyingTo(null)} className="text-xs text-dark-400">Cancel</button>
             </div>
           )}
-          
+
           {commentMediaPreviews.length > 0 && (
             <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
-              {commentMediaPreviews.map((preview, index) => (
-                <div key={index} className="relative w-16 h-16 rounded-lg overflow-hidden flex-shrink-0">
+              {commentMediaPreviews.map((preview, i) => (
+                <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0">
                   <img src={preview} alt="" className="w-full h-full object-cover" />
-                  <button onClick={() => removeCommentMedia(index)} className="absolute top-1 right-1 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center">
+                  <button onClick={() => removeCommentMedia(i)} className="absolute top-0.5 right-0.5 w-5 h-5 bg-black/70 rounded-full flex items-center justify-center">
                     <X className="w-3 h-3 text-white" />
                   </button>
                 </div>
               ))}
             </div>
           )}
-          
+
+          {submittingComment && uploadProgress > 0 && (
+            <div className="mb-2">
+              <div className="w-full bg-dark-700 rounded-full h-1">
+                <div className="bg-primary-500 h-1 rounded-full" style={{ width: `${uploadProgress}%` }} />
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2 items-center">
-            <label className="flex items-center gap-1.5 cursor-pointer">
-              <input type="checkbox" checked={commentAnonymous} onChange={(e) => setCommentAnonymous(e.target.checked)} className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-600" />
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input type="checkbox" checked={commentAnonymous} onChange={e => setCommentAnonymous(e.target.checked)} className="w-4 h-4 rounded border-dark-600 bg-dark-800 text-primary-600" />
               <span className="text-xs text-dark-400">Anon</span>
             </label>
-            
+
             <button onClick={() => fileInputRef.current?.click()} className="p-2 hover:bg-white/10 rounded-lg text-dark-400">
               <ImageIcon className="w-5 h-5" />
             </button>
             <input type="file" ref={fileInputRef} onChange={handleMediaSelect} accept="image/*,video/*" multiple className="hidden" />
-            
+
             <input
               ref={commentInputRef}
               type="text"
               value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
+              onChange={e => setNewComment(e.target.value)}
               placeholder={replyingTo ? "Write a reply..." : "Add a comment..."}
               className="flex-1 px-4 py-2.5 glass-input text-base"
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmitComment(); } }}
+              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmitComment(); } }}
+              disabled={submittingComment}
             />
-            
+
             <button
               onClick={handleSubmitComment}
               disabled={submittingComment || (!newComment.trim() && commentMedia.length === 0)}
@@ -861,22 +841,19 @@ export default function PostDetailPage() {
       {/* Report Modal */}
       <Modal isOpen={showReportModal} onClose={() => setShowReportModal(false)} title="Report Post">
         <div className="space-y-4">
-          <p className="text-dark-400 text-sm">Why are you reporting this post?</p>
-          <div className="space-y-2">
-            {REPORT_REASONS.map((reason) => (
-              <label key={reason.id} className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer ${reportReason === reason.id ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-                <input type="radio" name="reason" value={reason.id} checked={reportReason === reason.id} onChange={(e) => setReportReason(e.target.value)} className="mt-1" />
-                <div>
-                  <p className="text-dark-100 font-medium">{reason.label}</p>
-                  <p className="text-sm text-dark-400">{reason.description}</p>
-                </div>
-              </label>
-            ))}
-          </div>
+          {REPORT_REASONS.map((reason) => (
+            <label key={reason.id} className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer ${reportReason === reason.id ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm"}`}>
+              <input type="radio" name="reason" value={reason.id} checked={reportReason === reason.id} onChange={e => setReportReason(e.target.value)} className="mt-1" />
+              <div>
+                <p className="text-dark-100 font-medium">{reason.label}</p>
+                <p className="text-sm text-dark-400">{reason.description}</p>
+              </div>
+            </label>
+          ))}
           {reportReason === "other" && (
-            <textarea value={reportDescription} onChange={(e) => setReportDescription(e.target.value)} placeholder="Describe the issue..." rows={3} className="w-full px-4 py-3 glass-input resize-none text-base" />
+            <textarea value={reportDescription} onChange={e => setReportDescription(e.target.value)} placeholder="Describe..." rows={3} className="w-full px-4 py-3 glass-input resize-none" />
           )}
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3">
             <Button variant="secondary" className="flex-1" onClick={() => setShowReportModal(false)}>Cancel</Button>
             <Button variant="primary" className="flex-1" onClick={handleReport} isLoading={submittingReport} disabled={!reportReason}>Submit</Button>
           </div>
@@ -885,12 +862,10 @@ export default function PostDetailPage() {
 
       {/* Delete Modal */}
       <Modal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} title="Delete Post">
-        <div className="space-y-4">
-          <p className="text-dark-300">Are you sure you want to delete this post? This cannot be undone.</p>
-          <div className="flex gap-3 pt-4">
-            <Button variant="secondary" className="flex-1" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
-            <Button variant="danger" className="flex-1" onClick={handleDeletePost} isLoading={deleting}>Delete</Button>
-          </div>
+        <p className="text-dark-300 mb-4">Delete this post? This cannot be undone.</p>
+        <div className="flex gap-3">
+          <Button variant="secondary" className="flex-1" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
+          <Button variant="danger" className="flex-1" onClick={handleDeletePost} isLoading={deleting}>Delete</Button>
         </div>
       </Modal>
     </div>

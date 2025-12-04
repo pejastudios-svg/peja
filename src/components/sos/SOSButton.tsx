@@ -1,10 +1,11 @@
+// src/components/sos/SOSButton.tsx
 "use client";
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
-import { AlertTriangle, X, Phone, Loader2, CheckCircle, MessageCircle } from "lucide-react";
+import { AlertTriangle, X, Phone, Loader2, CheckCircle } from "lucide-react";
 
 interface SOSButtonProps {
   className?: string;
@@ -19,7 +20,7 @@ export function SOSButton({ className = "" }: SOSButtonProps) {
   const [sosId, setSosId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [smsSent, setSmsSent] = useState(false);
+  const [smsResults, setSmsResults] = useState<{ sent: number; failed: number }>({ sent: 0, failed: 0 });
   const [smsError, setSmsError] = useState("");
   
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
@@ -64,7 +65,14 @@ export function SOSButton({ className = "" }: SOSButtonProps) {
     }
   };
 
-  const sendSOSSMS = async (contacts: any[], userName: string, address: string, lat: number, lng: number) => {
+  const sendSOSSMS = async (
+    contacts: any[], 
+    userName: string, 
+    address: string, 
+    lat: number, 
+    lng: number,
+    sosAlertId: string
+  ) => {
     const mapLink = `https://www.google.com/maps?q=${lat},${lng}`;
     
     const message = `🚨 PEJA SOS ALERT 🚨
@@ -78,61 +86,58 @@ Please respond immediately or contact emergency services.
 
 ⚠️ Peja will NEVER ask for money. Any payment request is a SCAM.`;
 
-    let successCount = 0;
+    let sentCount = 0;
+    let failedCount = 0;
     
     for (const contact of contacts) {
       try {
-        // Format phone number
-        let phone = contact.phone.replace(/\s+/g, '').replace(/^0/, '234');
-        if (!phone.startsWith('234') && !phone.startsWith('+')) {
-          phone = '234' + phone;
-        }
-        phone = phone.replace('+', '');
-
-        // Call Termii API directly (you can also use an API route)
-        const response = await fetch('https://api.ng.termii.com/api/sms/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        // Call our API route instead of Termii directly
+        const response = await fetch("/api/sms", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            to: phone,
-            from: 'N-Alert', // Use N-Alert for DND numbers or your registered sender ID
-            sms: message,
-            type: 'plain',
-            channel: 'dnd', // Use 'dnd' channel to reach DND numbers
-            api_key: process.env.NEXT_PUBLIC_TERMII_API_KEY,
+            phone: contact.phone,
+            message: message,
+            recipientName: contact.name,
           }),
         });
 
         const result = await response.json();
         
-        if (result.code === 'ok') {
-          successCount++;
-          
-          // Log SMS in database
-          await supabase.from("sms_logs").insert({
-            sos_id: sosId,
-            recipient_phone: contact.phone,
-            recipient_name: contact.name,
-            message: message,
-            status: 'sent',
-            provider_response: result,
-          });
+        // Log to database
+        await supabase.from("sms_logs").insert({
+          sos_id: sosAlertId,
+          recipient_phone: contact.phone,
+          recipient_name: contact.name,
+          message: message,
+          status: result.success ? "sent" : "failed",
+          provider_response: result,
+          error_message: result.error || null,
+        });
+        
+        if (result.success) {
+          sentCount++;
+          console.log(`SMS sent to ${contact.name}`);
         } else {
-          await supabase.from("sms_logs").insert({
-            sos_id: sosId,
-            recipient_phone: contact.phone,
-            recipient_name: contact.name,
-            message: message,
-            status: 'failed',
-            provider_response: result,
-          });
+          failedCount++;
+          console.error(`Failed to send SMS to ${contact.name}:`, result.error);
         }
       } catch (error) {
+        failedCount++;
         console.error(`Failed to send SMS to ${contact.name}:`, error);
+        
+        await supabase.from("sms_logs").insert({
+          sos_id: sosAlertId,
+          recipient_phone: contact.phone,
+          recipient_name: contact.name,
+          message: message,
+          status: "failed",
+          error_message: String(error),
+        });
       }
     }
 
-    return successCount;
+    return { sent: sentCount, failed: failedCount };
   };
 
   const handleHoldStart = () => {
@@ -172,6 +177,7 @@ Please respond immediately or contact emergency services.
     setLoading(true);
     setIsHolding(false);
     setSmsError("");
+    setSmsResults({ sent: 0, failed: 0 });
 
     try {
       // Get location
@@ -220,23 +226,46 @@ Please respond immediately or contact emergency services.
         const userName = userData?.full_name || "A Peja user";
 
         // Send SMS to all contacts
-        const sentCount = await sendSOSSMS(contacts, userName, address, latitude, longitude);
+        const results = await sendSOSSMS(contacts, userName, address, latitude, longitude, sosData.id);
+        setSmsResults(results);
         
-        if (sentCount > 0) {
-          setSmsSent(true);
-        } else {
+        if (results.sent === 0) {
           setSmsError("Could not send SMS. Please call your contacts directly.");
         }
       } else {
-        setSmsError("No emergency contacts set up. Please add contacts in Settings.");
+        setSmsError("No emergency contacts set up. Go to Settings to add contacts.");
+      }
+
+      // Create notification for admins
+      const { data: admins } = await supabase
+        .from("users")
+        .select("id")
+        .eq("is_admin", true);
+      
+      if (admins) {
+        for (const admin of admins) {
+          await supabase.from("notifications").insert({
+            user_id: admin.id,
+            type: "sos_alert",
+            title: "🚨 SOS Alert Triggered",
+            body: `User ${user.email} triggered an SOS alert at ${address}`,
+            data: { sos_id: sosData.id, latitude, longitude },
+          });
+        }
       }
 
       setShowConfirmation(true);
       setTimeout(() => setShowConfirmation(false), 5000);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error triggering SOS:", error);
-      alert("Could not send SOS. Please try again or call emergency services directly.");
+      if (error.code === 1) {
+        alert("Location access denied. Please enable location services.");
+      } else if (error.code === 3) {
+        alert("Location request timed out. Please try again.");
+      } else {
+        alert("Could not send SOS. Please try again or call emergency services directly.");
+      }
     } finally {
       setLoading(false);
     }
@@ -254,7 +283,8 @@ Please respond immediately or contact emergency services.
 
       setSosActive(false);
       setSosId(null);
-      setSmsSent(false);
+      setSmsResults({ sent: 0, failed: 0 });
+      setSmsError("");
     } catch (error) {
       console.error("Error cancelling SOS:", error);
     } finally {
@@ -278,10 +308,16 @@ Please respond immediately or contact emergency services.
           </div>
 
           <p className="text-sm text-dark-300 mb-3">
-            {smsSent 
-              ? "✅ SMS sent to your emergency contacts. Help is on the way!"
+            {smsResults.sent > 0 
+              ? `✅ SMS sent to ${smsResults.sent} contact(s). Help is on the way!`
               : "Your location is being shared. Call emergency services if needed."}
           </p>
+
+          {smsResults.failed > 0 && (
+            <p className="text-sm text-orange-400 mb-2">
+              ⚠️ {smsResults.failed} SMS failed to send.
+            </p>
+          )}
 
           {smsError && (
             <p className="text-sm text-orange-400 mb-3">⚠️ {smsError}</p>
@@ -358,10 +394,15 @@ Please respond immediately or contact emergency services.
             </div>
             <h3 className="text-lg font-semibold text-dark-100 mb-2">SOS Sent!</h3>
             <p className="text-dark-400 text-sm mb-2">
-              {smsSent 
-                ? "Emergency contacts have been notified via SMS."
+              {smsResults.sent > 0 
+                ? `${smsResults.sent} emergency contact(s) have been notified via SMS.`
                 : "Your location is being shared."}
             </p>
+            {smsResults.failed > 0 && (
+              <p className="text-orange-400 text-sm mb-2">
+                {smsResults.failed} SMS failed. Call them directly.
+              </p>
+            )}
             <p className="text-xs text-dark-500">
               ⚠️ Peja will NEVER ask for money. Any payment request is a SCAM.
             </p>
