@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { formatDistanceToNow, differenceInHours } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
+import { notifyPostComment, notifyCommentLiked } from "@/lib/notifications";
 import {
   ArrowLeft,
   MapPin,
@@ -92,6 +93,7 @@ export default function PostDetailPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const [visibleReplyCounts, setVisibleReplyCounts] = useState<Record<string, number>>({});
+  const [sortBy, setSortBy] = useState<"top" | "recent">("top");
 
   // Modals
   const [showReportModal, setShowReportModal] = useState(false);
@@ -190,7 +192,6 @@ export default function PostDetailPage() {
     setCommentsLoading(true);
 
     try {
-      // Get all comments
       const { data: rawComments, error: commentsErr } = await supabase
         .from("post_comments")
         .select("id, post_id, user_id, content, is_anonymous, created_at, parent_id, likes_count, reply_to_id, reply_to_name")
@@ -210,7 +211,6 @@ export default function PostDetailPage() {
         return;
       }
 
-      // Get user info
       const userIds = [...new Set(rawComments.filter(c => !c.is_anonymous).map(c => c.user_id))];
       let userMap: Record<string, { full_name: string; avatar_url?: string }> = {};
 
@@ -227,7 +227,6 @@ export default function PostDetailPage() {
         }
       }
 
-      // Get user's likes
       let userLikes = new Set<string>();
       if (user) {
         const { data: likes } = await supabase
@@ -241,7 +240,6 @@ export default function PostDetailPage() {
         }
       }
 
-      // Get media
       const commentIds = rawComments.map(c => c.id);
       let mediaMap: Record<string, CommentMedia[]> = {};
 
@@ -259,7 +257,6 @@ export default function PostDetailPage() {
         }
       }
 
-      // Build comments
       const comments: Comment[] = rawComments.map(c => ({
         id: c.id,
         post_id: c.post_id,
@@ -309,17 +306,22 @@ export default function PostDetailPage() {
     checkConfirmed();
   }, [postId, user]);
 
-  // Get top-level comments (sorted by likes, then date)
+  // Get top-level comments (sorted based on toggle)
   const parentComments = allComments
     .filter(c => !c.parent_id)
     .sort((a, b) => {
       if (a.isPending && !b.isPending) return -1;
       if (!a.isPending && b.isPending) return 1;
-      if (b.likes_count !== a.likes_count) return b.likes_count - a.likes_count;
+      
+      if (sortBy === "top") {
+        if (b.likes_count !== a.likes_count) {
+          return b.likes_count - a.likes_count;
+        }
+      }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
 
-  // Get all replies for a parent comment (flat list)
+  // Get all replies for a parent comment
   const getRepliesForParent = (parentId: string): Comment[] => {
     return allComments
       .filter(c => c.parent_id === parentId)
@@ -340,7 +342,6 @@ export default function PostDetailPage() {
     const wasConfirmed = isConfirmed;
     const prevCount = post?.confirmations || 0;
 
-    // Optimistic update
     setIsConfirmed(!wasConfirmed);
     setPost(p => p ? { ...p, confirmations: wasConfirmed ? Math.max(0, prevCount - 1) : prevCount + 1 } : null);
 
@@ -354,7 +355,6 @@ export default function PostDetailPage() {
         await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", postId);
       }
     } catch (err) {
-      // Revert on error
       setIsConfirmed(wasConfirmed);
       setPost(p => p ? { ...p, confirmations: prevCount } : null);
     } finally {
@@ -362,92 +362,97 @@ export default function PostDetailPage() {
     }
   };
 
-// Handle like comment - WITH DATABASE UPDATE
-const handleLikeComment = async (commentId: string, currentlyLiked: boolean) => {
-  if (!user) {
-    router.push("/login");
-    return;
-  }
-
-  const currentComment = allComments.find(c => c.id === commentId);
-  if (!currentComment) return;
-
-  const currentCount = currentComment.likes_count;
-  const newCount = currentlyLiked ? Math.max(0, currentCount - 1) : currentCount + 1;
-
-  // Optimistic update
-  setAllComments(prev => prev.map(c => {
-    if (c.id === commentId) {
-      return { ...c, isLiked: !currentlyLiked, likes_count: newCount };
-    }
-    return c;
-  }));
-
-  try {
-    if (currentlyLiked) {
-      // Remove like from likes table
-      await supabase
-        .from("comment_likes")
-        .delete()
-        .eq("comment_id", commentId)
-        .eq("user_id", user.id);
-    } else {
-      // Add like to likes table
-      await supabase
-        .from("comment_likes")
-        .insert({ comment_id: commentId, user_id: user.id });
+  // Handle like comment
+  const handleLikeComment = async (commentId: string, currentlyLiked: boolean) => {
+    if (!user) {
+      router.push("/login");
+      return;
     }
 
-    // UPDATE THE LIKES COUNT IN THE COMMENTS TABLE
-    await supabase
-      .from("post_comments")
-      .update({ likes_count: newCount })
-      .eq("id", commentId);
+    const currentComment = allComments.find(c => c.id === commentId);
+    if (!currentComment) return;
 
-  } catch (err) {
-    console.error("Like error:", err);
-    // Revert on error
+    const currentCount = currentComment.likes_count;
+
     setAllComments(prev => prev.map(c => {
       if (c.id === commentId) {
-        return { ...c, isLiked: currentlyLiked, likes_count: currentCount };
+        return { 
+          ...c, 
+          isLiked: !currentlyLiked, 
+          likes_count: currentlyLiked ? Math.max(0, currentCount - 1) : currentCount + 1 
+        };
       }
       return c;
     }));
-  }
-};
 
-// Handle media select - IMAGES ONLY
-const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const files = Array.from(e.target.files || []);
-  
-  // Filter to images only
-  const imageFiles = files.filter(f => f.type.startsWith("image/"));
-  
-  if (imageFiles.length !== files.length) {
-    alert("Only images are allowed in comments");
-  }
-  
-  if (imageFiles.length + commentMedia.length > 4) {
-    alert("Maximum 4 images per comment");
-    return;
-  }
+    try {
+      const { data, error } = await supabase.rpc('toggle_comment_like', {
+        p_comment_id: commentId,
+        p_user_id: user.id
+      });
 
-  for (const file of imageFiles) {
-    if (file.size > 10 * 1024 * 1024) {  // 10MB for images
-      alert(`${file.name} is too large. Max 10MB.`);
+      if (error) {
+        console.error("Like error:", error);
+        throw error;
+      }
+
+      if (data && data.length > 0) {
+        const actualLiked = data[0].liked;
+        const actualCount = data[0].new_count;
+        
+        setAllComments(prev => prev.map(c => {
+          if (c.id === commentId) {
+            return { ...c, isLiked: actualLiked, likes_count: actualCount };
+          }
+          return c;
+        }));
+
+        if (actualLiked && currentComment.user_id !== user.id) {
+          notifyCommentLiked(postId, currentComment.user_id, user.full_name || "Someone");
+        }
+      }
+
+    } catch (err) {
+      console.error("Like error:", err);
+      setAllComments(prev => prev.map(c => {
+        if (c.id === commentId) {
+          return { ...c, isLiked: currentlyLiked, likes_count: currentCount };
+        }
+        return c;
+      }));
+    }
+  };
+
+  // Handle media select - IMAGES ONLY
+  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const imageFiles = files.filter(f => f.type.startsWith("image/"));
+    
+    if (imageFiles.length !== files.length) {
+      alert("Only images are allowed in comments");
+    }
+    
+    if (imageFiles.length + commentMedia.length > 4) {
+      alert("Maximum 4 images per comment");
       return;
     }
-  }
 
-  const previews = imageFiles.map(f => ({
-    url: URL.createObjectURL(f),
-    type: "image",
-  }));
-  
-  setCommentMedia(prev => [...prev, ...imageFiles]);
-  setCommentMediaPreviews(prev => [...prev, ...previews]);
-  e.target.value = "";
-};
+    for (const file of imageFiles) {
+      if (file.size > 10 * 1024 * 1024) {
+        alert(`${file.name} is too large. Max 10MB.`);
+        return;
+      }
+    }
+
+    const previews = imageFiles.map(f => ({
+      url: URL.createObjectURL(f),
+      type: "image",
+    }));
+    
+    setCommentMedia(prev => [...prev, ...imageFiles]);
+    setCommentMediaPreviews(prev => [...prev, ...previews]);
+    e.target.value = "";
+  };
 
   const removeMedia = (index: number) => {
     URL.revokeObjectURL(commentMediaPreviews[index].url);
@@ -455,7 +460,7 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCommentMediaPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Submit comment with optimistic update
+  // Submit comment
   const handleSubmitComment = async () => {
     if (!newComment.trim() && commentMedia.length === 0) {
       alert("Please add a comment or media");
@@ -472,24 +477,19 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const mediaFiles = [...commentMedia];
     const mediaPreviews = [...commentMediaPreviews];
     
-    // Determine parent_id: if replying to a reply, use the top-level parent
-    // If replying to a top-level comment, use that comment's id
     let parentId: string | null = null;
     let replyToId: string | null = null;
     let replyToName: string | null = null;
     
     if (replyingTo) {
-      // Find the comment we're replying to
       const targetComment = allComments.find(c => c.id === replyingTo.id);
       if (targetComment) {
-        // If it has a parent, use that parent (keep all replies under top-level)
         parentId = targetComment.parent_id || targetComment.id;
         replyToId = replyingTo.id;
         replyToName = replyingTo.name;
       }
     }
 
-    // Optimistic update - add comment immediately
     const optimisticComment: Comment = {
       id: tempId,
       post_id: postId,
@@ -515,12 +515,10 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     setAllComments(prev => [...prev, optimisticComment]);
     setPost(p => p ? { ...p, comment_count: (p.comment_count || 0) + 1 } : null);
 
-    // Expand thread if replying
     if (parentId) {
       setExpandedThreads(prev => new Set([...prev, parentId!]));
     }
 
-    // Clear form immediately
     setNewComment("");
     setReplyingTo(null);
     setCommentMedia([]);
@@ -529,7 +527,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploadProgress(0);
 
     try {
-      // Create comment in database
       const { data: newCommentData, error: insertError } = await supabase
         .from("post_comments")
         .insert({
@@ -549,7 +546,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         throw new Error(insertError.message);
       }
 
-      // Upload media
       const uploadedMedia: CommentMedia[] = [];
       
       if (mediaFiles.length > 0) {
@@ -587,7 +583,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         }
       }
 
-      // Update optimistic comment with real data
       setAllComments(prev => prev.map(c => {
         if (c.id === tempId) {
           return {
@@ -603,19 +598,26 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         return c;
       }));
 
-      // Update post comment count in database
       await supabase.from("posts").update({ 
         comment_count: (post?.comment_count || 0) + 1 
       }).eq("id", postId);
 
+      // Notify post owner about new comment
+      if (post?.user_id && post.user_id !== user.id && commentContent) {
+        notifyPostComment(
+          postId,
+          post.user_id,
+          user.full_name || "Someone",
+          commentContent
+        );
+      }
+
     } catch (err: any) {
       console.error("Submit error:", err);
       
-      // Remove optimistic comment on error
       setAllComments(prev => prev.filter(c => c.id !== tempId));
       setPost(p => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
       
-      // Restore form
       setNewComment(commentContent);
       setCommentMedia(mediaFiles);
       setCommentMediaPreviews(mediaPreviews);
@@ -634,39 +636,30 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const commentToDelete = allComments.find(c => c.id === commentId);
     if (!commentToDelete) return;
 
-    // Count replies that will be deleted
     const replies = allComments.filter(c => c.parent_id === commentId);
     const totalToDelete = 1 + replies.length;
 
-    // Optimistic update
     setAllComments(prev => prev.filter(c => c.id !== commentId && c.parent_id !== commentId));
     setPost(p => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - totalToDelete) } : null);
 
     try {
-      // Delete likes
       await supabase.from("comment_likes").delete().eq("comment_id", commentId);
-      
-      // Delete media
       await supabase.from("comment_media").delete().eq("comment_id", commentId);
       
-      // Delete replies
       for (const reply of replies) {
         await supabase.from("comment_likes").delete().eq("comment_id", reply.id);
         await supabase.from("comment_media").delete().eq("comment_id", reply.id);
         await supabase.from("post_comments").delete().eq("id", reply.id);
       }
       
-      // Delete comment
       await supabase.from("post_comments").delete().eq("id", commentId);
       
-      // Update count
       await supabase.from("posts").update({ 
         comment_count: Math.max(0, (post?.comment_count || 0) - totalToDelete) 
       }).eq("id", postId);
 
     } catch (err) {
       console.error("Delete error:", err);
-      // Refresh on error
       fetchComments();
     }
   };
@@ -724,7 +717,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
 
     setDeleting(true);
     try {
-      // Delete all related data
       const commentIds = allComments.map(c => c.id);
       if (commentIds.length > 0) {
         await supabase.from("comment_likes").delete().in("comment_id", commentIds);
@@ -746,7 +738,7 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     }
   };
 
-  // Reply handler - works for any comment level
+  // Reply handler
   const handleReply = (comment: Comment) => {
     setReplyingTo({ 
       id: comment.id, 
@@ -787,7 +779,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       className={`${isReply ? "ml-10 py-2" : "py-3"} ${comment.isPending ? "opacity-60" : ""}`}
     >
       <div className="flex gap-3">
-        {/* Avatar */}
         <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
           {comment.user_avatar ? (
             <img src={comment.user_avatar} alt="" className="w-8 h-8 object-cover" />
@@ -796,9 +787,7 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
           )}
         </div>
 
-        {/* Content */}
         <div className="flex-1 min-w-0">
-          {/* Header */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium text-dark-200">{comment.user_name}</span>
             <span className="text-xs text-dark-500">
@@ -806,7 +795,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
             </span>
           </div>
 
-          {/* Text with @mention */}
           <p className="text-dark-200 text-sm mt-1">
             {comment.reply_to_name && (
               <span className="text-primary-400 mr-1">@{comment.reply_to_name}</span>
@@ -814,45 +802,33 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
             {comment.content}
           </p>
 
-          {/* Media */}
           {comment.media.length > 0 && (
             <div className="flex gap-2 mt-2 flex-wrap">
               {comment.media.map(m => (
                 <div key={m.id} className="w-24 h-24 rounded-lg overflow-hidden bg-dark-800">
-                  {m.media_type === "video" ? (
-                    <video 
-                      src={m.url} 
-                      className="w-full h-full object-cover" 
-                      controls 
-                      playsInline 
-                      preload="metadata" 
-                    />
-                  ) : (
-                    <img 
-                      src={m.url} 
-                      alt="" 
-                      className="w-full h-full object-cover cursor-pointer" 
-                      onClick={() => window.open(m.url)} 
-                    />
-                  )}
+                  <img 
+                    src={m.url} 
+                    alt="" 
+                    className="w-full h-full object-cover cursor-pointer" 
+                    onClick={() => window.open(m.url)} 
+                  />
                 </div>
               ))}
             </div>
           )}
 
-          {/* Actions */}
           {!comment.isPending && (
             <div className="flex items-center gap-4 mt-2">
-              {/* Like */}
               <button
                 onClick={() => handleLikeComment(comment.id, comment.isLiked)}
-                className="flex items-center gap-1 text-xs text-dark-400 hover:text-red-400 transition-colors"
+                className={`flex items-center gap-1.5 text-xs transition-colors ${
+                  comment.isLiked ? "text-red-400" : "text-dark-400 hover:text-red-400"
+                }`}
               >
-                <Heart className={`w-4 h-4 ${comment.isLiked ? "fill-red-500 text-red-500" : ""}`} />
-                {comment.likes_count > 0 && <span>{comment.likes_count}</span>}
+                <Heart className={`w-4 h-4 ${comment.isLiked ? "fill-current" : ""}`} />
+                <span>{comment.likes_count}</span>
               </button>
 
-              {/* Reply */}
               <button
                 onClick={() => handleReply(comment)}
                 className="text-xs text-dark-400 hover:text-primary-400 transition-colors"
@@ -860,7 +836,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
                 Reply
               </button>
 
-              {/* Delete */}
               {comment.user_id === user?.id && (
                 <button
                   onClick={() => handleDeleteComment(comment.id)}
@@ -888,7 +863,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       <div key={parent.id} className="border-b border-white/5 last:border-0">
         {renderComment(parent, false)}
         
-        {/* View replies button */}
         {replies.length > 0 && !isExpanded && (
           <button
             onClick={() => toggleThread(parent.id)}
@@ -899,7 +873,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
           </button>
         )}
 
-        {/* Replies */}
         {isExpanded && (
           <div className="ml-1 border-l-2 border-dark-700">
             {visibleReplies.map(reply => renderComment(reply, true))}
@@ -913,7 +886,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
               </button>
             )}
 
-            {/* Hide replies button */}
             <button
               onClick={() => toggleThread(parent.id)}
               className="ml-10 py-2 flex items-center gap-1 text-xs text-dark-400 hover:text-dark-300"
@@ -1078,7 +1050,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
             </div>
           )}
 
-          {/* Stats */}
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-dark-400">
             {post.address && (
               <span className="flex items-center gap-1">
@@ -1106,7 +1077,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
             </div>
           )}
 
-          {/* Actions */}
           <div className="flex gap-2 pt-2">
             <button
               onClick={handleConfirm}
@@ -1130,10 +1100,33 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
 
         {/* Comments */}
         <div className="border-t border-white/5 p-4">
-          <h3 className="text-base font-semibold text-dark-100 mb-4 flex items-center gap-2">
-            <MessageCircle className="w-5 h-5" />
-            Comments ({post.comment_count || 0})
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-base font-semibold text-dark-100 flex items-center gap-2">
+              <MessageCircle className="w-5 h-5" />
+              Comments ({post.comment_count || 0})
+            </h3>
+            
+            {parentComments.length > 1 && (
+              <div className="flex gap-1 glass-sm rounded-lg p-1">
+                <button
+                  onClick={() => setSortBy("top")}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                    sortBy === "top" ? "bg-primary-600 text-white" : "text-dark-400 hover:text-dark-200"
+                  }`}
+                >
+                  Top
+                </button>
+                <button
+                  onClick={() => setSortBy("recent")}
+                  className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                    sortBy === "recent" ? "bg-primary-600 text-white" : "text-dark-400 hover:text-dark-200"
+                  }`}
+                >
+                  Recent
+                </button>
+              </div>
+            )}
+          </div>
 
           {commentsLoading ? (
             <div className="flex justify-center py-8">
@@ -1156,7 +1149,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       {/* Comment Input */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-dark-950/95 backdrop-blur-lg border-t border-white/10">
         <div className="max-w-2xl mx-auto p-3">
-          {/* Replying indicator */}
           {replyingTo && (
             <div className="flex items-center justify-between mb-2 px-1">
               <span className="text-xs text-primary-400">Replying to @{replyingTo.name}</span>
@@ -1166,18 +1158,11 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
             </div>
           )}
 
-          {/* Media previews */}
           {commentMediaPreviews.length > 0 && (
             <div className="flex gap-2 mb-2 overflow-x-auto pb-1">
               {commentMediaPreviews.map((p, i) => (
                 <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 bg-dark-800">
-                  {p.type === "video" ? (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Play className="w-6 h-6 text-dark-400" />
-                    </div>
-                  ) : (
-                    <img src={p.url} alt="" className="w-full h-full object-cover" />
-                  )}
+                  <img src={p.url} alt="" className="w-full h-full object-cover" />
                   <button 
                     onClick={() => removeMedia(i)} 
                     className="absolute top-0.5 right-0.5 w-5 h-5 bg-black/80 rounded-full flex items-center justify-center"
@@ -1189,7 +1174,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
             </div>
           )}
 
-          {/* Upload progress */}
           {uploadProgress > 0 && uploadProgress < 100 && (
             <div className="mb-2">
               <div className="h-1 bg-dark-700 rounded-full overflow-hidden">
@@ -1198,7 +1182,6 @@ const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
             </div>
           )}
 
-          {/* Input row */}
           <div className="flex items-center gap-2">
             <button 
               onClick={() => fileInputRef.current?.click()} 

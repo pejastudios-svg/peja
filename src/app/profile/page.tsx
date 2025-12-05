@@ -72,6 +72,7 @@ export default function ProfilePage() {
         is_sensitive: post.is_sensitive,
         confirmations: post.confirmations || 0,
         views: post.views || 0,
+        comment_count: post.comment_count || 0,
         created_at: post.created_at,
         media: post.post_media?.map((m: any) => ({
           id: m.id,

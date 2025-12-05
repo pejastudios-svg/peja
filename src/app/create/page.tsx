@@ -46,7 +46,6 @@ export default function CreatePostPage() {
     isMounted.current = true;
     return () => {
       isMounted.current = false;
-      // Cleanup previews
       mediaPreviews.forEach(p => URL.revokeObjectURL(p.url));
     };
   }, []);
@@ -140,8 +139,8 @@ export default function CreatePostPage() {
     }
 
     for (const file of files) {
-      if (file.size > 100 * 1024 * 1024) {
-        setError(`${file.name} is too large. Maximum 100MB per file.`);
+      if (file.size > 50 * 1024 * 1024) {
+        setError(`${file.name} is too large. Maximum 50MB per file.`);
         return;
       }
     }
@@ -390,7 +389,7 @@ export default function CreatePostPage() {
               </>
             )}
           </div>
-          <p className="text-xs text-dark-500 mt-2">Up to 50 photos, 10 videos (max 100MB each)</p>
+          <p className="text-xs text-dark-500 mt-2">Up to 50 photos, 10 videos (max 50MB each)</p>
         </div>
 
         {/* Location */}

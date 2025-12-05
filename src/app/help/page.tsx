@@ -25,12 +25,12 @@ interface FAQItem {
 const faqs: FAQItem[] = [
   {
     question: "How do I report an incident?",
-    answer: "Tap the + button at the bottom of the screen, take a photo or video of the incident, select a category, add a description if needed, and post. Your location is automatically captured.",
+    answer: "Tap the + button at the top of the screen, take a photo or video of the incident, select a category, add a description if needed, and post. Your location is automatically captured.",
     icon: Camera,
   },
   {
     question: "What is the SOS feature?",
-    answer: "The SOS feature is for personal emergencies. Press and hold the SOS button for 3 seconds to alert your emergency contacts and nearby users. Your live location will be shared for 30 minutes. Misuse of this feature will result in a permanent ban.",
+    answer: "The SOS feature is for personal emergencies. Press and hold the SOS button for 3 seconds to alert your emergency contacts and nearby users. Your live location will be shared for 5 hours. Misuse of this feature will result in a permanent ban.",
     icon: AlertTriangle,
   },
   {
@@ -42,11 +42,6 @@ const faqs: FAQItem[] = [
     question: "Why should I confirm incidents?",
     answer: "Confirming incidents helps verify their accuracy. When multiple users confirm an incident, it increases trust and helps others know the report is real.",
     icon: Bell,
-  },
-  {
-    question: "Can I post anonymously?",
-    answer: "Yes! Toggle 'Post anonymously' when creating a post. Your identity will be hidden from other users. However, Peja admins can always see your identity for safety and accountability.",
-    icon: Shield,
   },
   {
     question: "How do location alerts work?",

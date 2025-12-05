@@ -1,9 +1,12 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bell, Menu, Plus, User, Search } from "lucide-react";
 import { Button } from "../ui/Button";
+import { useAuth } from "@/context/AuthContext";
+import { getUnreadCount } from "@/lib/notifications";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -12,6 +15,21 @@ interface HeaderProps {
 
 export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
   const router = useRouter();
+  const { user } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (user) {
+      getUnreadCount(user.id).then(setUnreadCount);
+      
+      // Refresh count every 30 seconds
+      const interval = setInterval(() => {
+        getUnreadCount(user.id).then(setUnreadCount);
+      }, 30000);
+
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass-header">
@@ -50,7 +68,11 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
             className="relative p-2 hover:bg-white/10 rounded-lg transition-colors"
           >
             <Bell className="w-5 h-5 text-dark-200" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-xs font-bold rounded-full px-1">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
           </Link>
 
           <Link

@@ -21,6 +21,7 @@ import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { formatDistanceToNow, differenceInHours } from "date-fns";
 import { supabase } from "@/lib/supabase";
+import { notifyPostConfirmed } from "@/lib/notifications";
 
 interface PostCardProps {
   post: Post;
@@ -68,54 +69,71 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
     return () => { mounted = false; };
   }, [post.id]);
 
-  const handleConfirmClick = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmLoading(true);
 
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push("/login");
-        return;
-      }
+const handleConfirmClick = async (e: React.MouseEvent) => {
+  e.stopPropagation();
+  setConfirmLoading(true);
 
-      if (isConfirmed) {
-        setIsConfirmed(false);
-        setLocalConfirmations((prev) => Math.max(0, prev - 1));
-
-        await supabase
-          .from("post_confirmations")
-          .delete()
-          .eq("post_id", post.id)
-          .eq("user_id", user.id);
-
-        await supabase
-          .from("posts")
-          .update({ confirmations: Math.max(0, localConfirmations - 1) })
-          .eq("id", post.id);
-      } else {
-        setIsConfirmed(true);
-        setLocalConfirmations((prev) => prev + 1);
-
-        await supabase
-          .from("post_confirmations")
-          .insert({ post_id: post.id, user_id: user.id });
-
-        await supabase
-          .from("posts")
-          .update({ confirmations: localConfirmations + 1 })
-          .eq("id", post.id);
-      }
-
-      onConfirm?.(post.id);
-    } catch (error) {
-      // Revert on error
-      setIsConfirmed(!isConfirmed);
-      setLocalConfirmations(post.confirmations);
-    } finally {
-      setConfirmLoading(false);
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      router.push("/login");
+      return;
     }
-  };
+
+    if (isConfirmed) {
+      // Unlike - no notification needed
+      setIsConfirmed(false);
+      setLocalConfirmations((prev) => Math.max(0, prev - 1));
+
+      await supabase
+        .from("post_confirmations")
+        .delete()
+        .eq("post_id", post.id)
+        .eq("user_id", user.id);
+
+      await supabase
+        .from("posts")
+        .update({ confirmations: Math.max(0, localConfirmations - 1) })
+        .eq("id", post.id);
+    } else {
+      // Confirm
+      setIsConfirmed(true);
+      setLocalConfirmations((prev) => prev + 1);
+
+      await supabase
+        .from("post_confirmations")
+        .insert({ post_id: post.id, user_id: user.id });
+
+      await supabase
+        .from("posts")
+        .update({ confirmations: localConfirmations + 1 })
+        .eq("id", post.id);
+
+      // Notify post owner (if not self)
+      if (post.user_id && post.user_id !== user.id) {
+        const { data: userData } = await supabase
+          .from("users")
+          .select("full_name")
+          .eq("id", user.id)
+          .single();
+        
+        notifyPostConfirmed(
+          post.id,
+          post.user_id,
+          userData?.full_name || "Someone"
+        );
+      }
+    }
+
+    onConfirm?.(post.id);
+  } catch (error) {
+    setIsConfirmed(!isConfirmed);
+    setLocalConfirmations(post.confirmations);
+  } finally {
+    setConfirmLoading(false);
+  }
+};
 
   const category = CATEGORIES.find((c) => c.id === post.category);
   const badgeVariant = category?.color === "danger" ? "danger" : category?.color === "warning" ? "warning" : "info";

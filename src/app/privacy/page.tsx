@@ -86,10 +86,9 @@ export default function PrivacyPage() {
             <h2 className="text-xl font-semibold text-dark-100 mb-3">Anonymous Posting</h2>
             <div className="p-4 glass-sm rounded-xl">
               <p className="text-dark-300 leading-relaxed">
-                <strong className="text-dark-100">Important:</strong> When you post anonymously, 
-                your identity is hidden from other users. However, Peja administrators can 
-                always see your identity for safety and accountability purposes. This helps 
-                us maintain trust and prevent abuse.
+                <strong className="text-dark-100">Important:</strong> Your identity is hidden from other users. 
+                However, Peja administrators can always see your identity for safety and accountability purposes. 
+                This helps us maintain trust and prevent abuse.
               </p>
             </div>
           </section>
