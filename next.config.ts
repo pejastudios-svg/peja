@@ -1,11 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Generate unique build IDs
   generateBuildId: async () => {
     return `build-${Date.now()}`;
   },
   
-  // Headers for cache control
+  // Disable static generation for dynamic pages
+  experimental: {
+    // This helps with dynamic routes
+  },
+  
   async headers() {
     return [
       {
@@ -22,14 +25,21 @@ const nextConfig = {
         headers: [
           {
             key: 'Cache-Control',
-            value: 'no-store, no-cache, must-revalidate',
+            value: 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          },
+          {
+            key: 'Pragma',
+            value: 'no-cache',
+          },
+          {
+            key: 'Expires',
+            value: '0',
           },
         ],
       },
     ];
   },
   
-  // Optimize images
   images: {
     remotePatterns: [
       {
@@ -37,9 +47,9 @@ const nextConfig = {
         hostname: '**.supabase.co',
       },
     ],
+    unoptimized: true, // Helps with cache issues
   },
   
-  // Reduce bundle size
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },

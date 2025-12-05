@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -11,41 +11,50 @@ import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
-import { subHours } from "date-fns";
 
 type FeedTab = "nearby" | "trending";
 
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<FeedTab>("nearby");
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
 
-  useEffect(() => {
-    if (!authLoading) {
-      fetchPosts();
+  const fetchPosts = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else if (!hasFetched) {
+      setLoading(true);
     }
-  }, [authLoading, activeTab]);
-
-  const fetchPosts = async () => {
-    setLoading(true);
 
     try {
-      // Only fetch posts from the last 24 hours for feeds
-      const twentyFourHoursAgo = subHours(new Date(), 24).toISOString();
-      
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
       let query = supabase
         .from("posts")
         .select(`
-          *,
-          post_media (*),
+          id,
+          user_id,
+          category,
+          comment,
+          address,
+          is_anonymous,
+          status,
+          is_sensitive,
+          confirmations,
+          views,
+          comment_count,
+          created_at,
+          post_media (id, url, media_type, is_sensitive),
           post_tags (tag)
         `)
         .eq("status", "live")
-        .gte("created_at", twentyFourHoursAgo); // Only posts < 24 hours old
+        .gte("created_at", twentyFourHoursAgo);
 
       if (activeTab === "trending") {
         query = query.order("confirmations", { ascending: false }).order("views", { ascending: false });
@@ -53,16 +62,14 @@ export default function Home() {
         query = query.order("created_at", { ascending: false });
       }
 
-      const { data: postsData, error } = await query.limit(30);
+      const { data, error } = await query.limit(30);
 
       if (error) {
-        console.error("Error fetching posts:", error);
-        setPosts([]);
-        setLoading(false);
+        console.error("Fetch error:", error);
         return;
       }
 
-      const formattedPosts: Post[] = (postsData || []).map((post) => ({
+      const formattedPosts: Post[] = (data || []).map((post) => ({
         id: post.id,
         user_id: post.user_id,
         category: post.category,
@@ -74,44 +81,71 @@ export default function Home() {
         is_sensitive: post.is_sensitive,
         confirmations: post.confirmations || 0,
         views: post.views || 0,
+        comment_count: post.comment_count || 0,
         created_at: post.created_at,
         media: post.post_media?.map((m: any) => ({
           id: m.id,
-          post_id: m.post_id,
+          post_id: post.id,
           url: m.url,
-          media_type: m.media_type as "photo" | "video",
+          media_type: m.media_type,
           is_sensitive: m.is_sensitive,
-          thumbnail_url: m.thumbnail_url,
         })) || [],
         tags: post.post_tags?.map((t: any) => t.tag) || [],
       }));
 
       setPosts(formattedPosts);
-    } catch (error) {
-      console.error("Fetch error:", error);
-      setPosts([]);
+      setHasFetched(true);
+    } catch (err: any) {
+      console.error("Fetch error:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [activeTab, hasFetched]);
+
+  // Fetch on mount and when tab changes
+  useEffect(() => {
+    if (!authLoading) {
+      fetchPosts();
+    }
+  }, [activeTab, authLoading]); // Remove fetchPosts from dependencies
+
+  // Refetch when page becomes visible (user navigates back)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && hasFetched) {
+        fetchPosts(true);
+      }
+    };
+
+    const handleFocus = () => {
+      if (hasFetched) {
+        fetchPosts(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [hasFetched]);
 
   const handleRefresh = () => {
-    setRefreshing(true);
-    fetchPosts();
+    fetchPosts(true);
   };
 
   const handleSharePost = async (post: Post) => {
     const shareUrl = `${window.location.origin}/post/${post.id}`;
-    const shareText = post.comment || "Check out this incident on Peja";
-
     if (navigator.share) {
       try {
-        await navigator.share({ title: "Peja Alert", text: shareText, url: shareUrl });
-      } catch (error) {}
+        await navigator.share({ title: "Peja Alert", url: shareUrl });
+      } catch {}
     } else {
       await navigator.clipboard.writeText(shareUrl);
-      alert("Link copied to clipboard!");
+      alert("Link copied!");
     }
   };
 
@@ -153,22 +187,32 @@ export default function Home() {
           </button>
 
           <div className="flex items-center gap-2 mb-4">
-            <Button variant={activeTab === "nearby" ? "primary" : "secondary"} size="sm" onClick={() => setActiveTab("nearby")} leftIcon={<MapPin className="w-4 h-4" />}>
+            <Button 
+              variant={activeTab === "nearby" ? "primary" : "secondary"} 
+              size="sm" 
+              onClick={() => setActiveTab("nearby")} 
+              leftIcon={<MapPin className="w-4 h-4" />}
+            >
               Nearby
             </Button>
-            <Button variant={activeTab === "trending" ? "primary" : "secondary"} size="sm" onClick={() => setActiveTab("trending")} leftIcon={<TrendingUp className="w-4 h-4" />}>
+            <Button 
+              variant={activeTab === "trending" ? "primary" : "secondary"} 
+              size="sm" 
+              onClick={() => setActiveTab("trending")} 
+              leftIcon={<TrendingUp className="w-4 h-4" />}
+            >
               Trending
             </Button>
-            <button onClick={handleRefresh} disabled={refreshing} className="ml-auto p-2 glass-sm rounded-lg hover:bg-white/10">
+            <button 
+              onClick={handleRefresh} 
+              disabled={refreshing} 
+              className="ml-auto p-2 glass-sm rounded-lg hover:bg-white/10"
+            >
               <RefreshCw className={`w-4 h-4 text-dark-400 ${refreshing ? "animate-spin" : ""}`} />
             </button>
           </div>
 
-          <p className="text-sm text-dark-500 mb-4">
-            {activeTab === "nearby" ? "Latest incidents in your area (last 24 hours)" : "Most confirmed incidents (last 24 hours)"}
-          </p>
-
-          {loading ? (
+          {loading && !hasFetched ? (
             <div className="flex justify-center py-12">
               <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
             </div>
@@ -176,15 +220,25 @@ export default function Home() {
             <div className="text-center py-12">
               <MapPin className="w-12 h-12 text-dark-600 mx-auto mb-4" />
               <p className="text-dark-400 mb-2">No recent incidents</p>
-              <p className="text-sm text-dark-500 mb-4">Be the first to report what's happening in your area</p>
+              <p className="text-sm text-dark-500 mb-4">Be the first to report</p>
               <Button variant="primary" onClick={() => router.push("/create")}>
                 Report Incident
               </Button>
             </div>
           ) : (
             <div className="space-y-4">
+              {refreshing && (
+                <div className="flex justify-center py-2">
+                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                </div>
+              )}
               {posts.map((post) => (
-                <PostCard key={post.id} post={post} onConfirm={() => {}} onShare={handleSharePost} />
+                <PostCard 
+                  key={post.id} 
+                  post={post} 
+                  onConfirm={() => {}} 
+                  onShare={handleSharePost} 
+                />
               ))}
             </div>
           )}
