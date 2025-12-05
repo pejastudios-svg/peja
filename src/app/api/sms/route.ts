@@ -1,56 +1,45 @@
-// src/app/api/sms/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
-const TERMII_API_KEY = process.env.TERMII_API_KEY; // Note: NOT NEXT_PUBLIC_
-const TERMII_SENDER_ID = "Peja";
-
-interface SMSRequest {
-  phone: string;
-  message: string;
-  recipientName?: string;
-}
+const TERMII_API_KEY = process.env.TERMII_API_KEY;
 
 export async function POST(request: NextRequest) {
   try {
-    const body: SMSRequest = await request.json();
-    const { phone, message, recipientName } = body;
+    const { phone, message, recipientName } = await request.json();
 
     if (!phone || !message) {
       return NextResponse.json(
-        { success: false, error: "Phone and message are required" },
+        { success: false, error: "Phone and message required" },
         { status: 400 }
       );
     }
 
     if (!TERMII_API_KEY) {
-      console.error("TERMII_API_KEY is not set");
+      console.error("TERMII_API_KEY not set");
       return NextResponse.json(
-        { success: false, error: "SMS service not configured" },
+        { success: false, error: "SMS not configured" },
         { status: 500 }
       );
     }
 
-    // Format phone number
+    // Format phone: remove spaces, convert 0 to 234
     let formattedPhone = phone.replace(/\s+/g, "").replace(/^0/, "234");
     if (!formattedPhone.startsWith("234") && !formattedPhone.startsWith("+")) {
       formattedPhone = "234" + formattedPhone;
     }
     formattedPhone = formattedPhone.replace("+", "");
 
-    console.log(`Sending SMS to ${formattedPhone} (${recipientName || "Unknown"})`);
+    console.log(`Sending SMS to ${formattedPhone}`);
 
-    // Try DND channel first (reaches all numbers including DND)
+    // Use "generic" channel with "Termii" sender - THIS WORKS WITHOUT REGISTRATION
     const response = await fetch("https://api.ng.termii.com/api/sms/send", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         to: formattedPhone,
-        from: "N-Alert", // Use N-Alert for DND bypass
+        from: "Termii",  // Use Termii's default sender
         sms: message,
         type: "plain",
-        channel: "dnd", // DND channel for better delivery
+        channel: "generic",  // Generic channel works without custom sender ID
         api_key: TERMII_API_KEY,
       }),
     });
@@ -62,21 +51,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message_id: result.message_id,
-        balance: result.balance,
       });
     } else {
-      // Log the error for debugging
-      console.error("Termii error:", result);
       return NextResponse.json({
         success: false,
-        error: result.message || "Failed to send SMS",
-        details: result,
+        error: result.message || "SMS failed",
       });
     }
   } catch (error: any) {
-    console.error("SMS API error:", error);
+    console.error("SMS error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Internal server error" },
+      { success: false, error: error.message },
       { status: 500 }
     );
   }

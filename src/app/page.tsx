@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -14,6 +14,10 @@ import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
 
 type FeedTab = "nearby" | "trending";
 
+// Simple cache for posts
+let postsCache: { posts: Post[]; tab: FeedTab; timestamp: number } | null = null;
+const POSTS_CACHE_DURATION = 30 * 1000; // 30 seconds
+
 export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -23,12 +27,20 @@ export default function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [hasFetched, setHasFetched] = useState(false);
 
-  const fetchPosts = useCallback(async (isRefresh = false) => {
+  const fetchPosts = async (isRefresh = false) => {
+    // Check cache first (unless refreshing)
+    if (!isRefresh && postsCache && 
+        postsCache.tab === activeTab && 
+        Date.now() - postsCache.timestamp < POSTS_CACHE_DURATION) {
+      setPosts(postsCache.posts);
+      setLoading(false);
+      return;
+    }
+
     if (isRefresh) {
       setRefreshing(true);
-    } else if (!hasFetched) {
+    } else {
       setLoading(true);
     }
 
@@ -38,18 +50,8 @@ export default function Home() {
       let query = supabase
         .from("posts")
         .select(`
-          id,
-          user_id,
-          category,
-          comment,
-          address,
-          is_anonymous,
-          status,
-          is_sensitive,
-          confirmations,
-          views,
-          comment_count,
-          created_at,
+          id, user_id, category, comment, address, is_anonymous,
+          status, is_sensitive, confirmations, views, comment_count, created_at,
           post_media (id, url, media_type, is_sensitive),
           post_tags (tag)
         `)
@@ -66,6 +68,7 @@ export default function Home() {
 
       if (error) {
         console.error("Fetch error:", error);
+        setPosts([]);
         return;
       }
 
@@ -94,46 +97,31 @@ export default function Home() {
       }));
 
       setPosts(formattedPosts);
-      setHasFetched(true);
-    } catch (err: any) {
+      
+      // Update cache
+      postsCache = {
+        posts: formattedPosts,
+        tab: activeTab,
+        timestamp: Date.now(),
+      };
+    } catch (err) {
       console.error("Fetch error:", err);
+      setPosts([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeTab, hasFetched]);
+  };
 
-  // Fetch on mount and when tab changes
+  // Fetch on mount and tab change
   useEffect(() => {
     if (!authLoading) {
       fetchPosts();
     }
-  }, [activeTab, authLoading]); // Remove fetchPosts from dependencies
-
-  // Refetch when page becomes visible (user navigates back)
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && hasFetched) {
-        fetchPosts(true);
-      }
-    };
-
-    const handleFocus = () => {
-      if (hasFetched) {
-        fetchPosts(true);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [hasFetched]);
+  }, [activeTab, authLoading]);
 
   const handleRefresh = () => {
+    postsCache = null; // Clear cache
     fetchPosts(true);
   };
 
@@ -149,7 +137,8 @@ export default function Home() {
     }
   };
 
-  if (authLoading) {
+  // Show loading only on initial load, not on every auth check
+  if (authLoading && !postsCache) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
@@ -212,7 +201,7 @@ export default function Home() {
             </button>
           </div>
 
-          {loading && !hasFetched ? (
+          {loading ? (
             <div className="flex justify-center py-12">
               <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
             </div>

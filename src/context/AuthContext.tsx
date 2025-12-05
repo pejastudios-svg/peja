@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { User as SupabaseUser, Session } from "@supabase/supabase-js";
 
@@ -28,53 +28,70 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Simple in-memory cache for user profile
+let userProfileCache: { userId: string; profile: User; timestamp: number } | null = null;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const initRef = useRef(false);
+  const fetchingRef = useRef(false);
 
   useEffect(() => {
-    // Get initial session
+    // Prevent double initialization in strict mode
+    if (initRef.current) return;
+    initRef.current = true;
+
     const initAuth = async () => {
       try {
-        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          console.error("Session error:", error);
-          setLoading(false);
-          return;
-        }
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
 
         if (currentSession?.user) {
           setSession(currentSession);
           setSupabaseUser(currentSession.user);
           await fetchUserProfile(currentSession.user.id);
-        } else {
-          setLoading(false);
         }
       } catch (error) {
         console.error("Auth init error:", error);
+      } finally {
+        // ALWAYS set loading to false, no matter what
         setLoading(false);
       }
     };
 
-    initAuth();
+    // Set a timeout to ensure loading NEVER stays true forever
+    const timeoutId = setTimeout(() => {
+      setLoading(false);
+    }, 5000); // Max 5 seconds to initialize
+
+    initAuth().finally(() => {
+      clearTimeout(timeoutId);
+    });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         console.log("Auth event:", event);
-        
+
+        // Ignore token refresh events - they don't need full reload
+        if (event === 'TOKEN_REFRESHED') {
+          setSession(newSession);
+          return;
+        }
+
         setSession(newSession);
-        
+
         if (newSession?.user) {
           setSupabaseUser(newSession.user);
-          await fetchUserProfile(newSession.user.id);
+          // Don't block on profile fetch during navigation
+          fetchUserProfile(newSession.user.id).catch(() => {});
         } else {
           setUser(null);
           setSupabaseUser(null);
-          setLoading(false);
+          userProfileCache = null;
         }
       }
     );
@@ -85,6 +102,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function fetchUserProfile(userId: string) {
+    // Check cache first
+    if (userProfileCache && 
+        userProfileCache.userId === userId && 
+        Date.now() - userProfileCache.timestamp < CACHE_DURATION) {
+      setUser(userProfileCache.profile);
+      return;
+    }
+
+    // Prevent concurrent fetches
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+
     try {
       const { data, error } = await supabase
         .from("users")
@@ -94,39 +123,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error("Profile fetch error:", error);
+        // Don't return - still set basic user info
       }
 
-      if (data) {
-        setUser({
-          id: data.id,
-          email: data.email,
-          phone: data.phone,
-          full_name: data.full_name,
-          avatar_url: data.avatar_url,
-          occupation: data.occupation,
-          email_verified: data.email_verified || false,
-          phone_verified: data.phone_verified || false,
-        });
-      } else {
-        // User in auth but not in users table - create basic profile
-        const { data: authUser } = await supabase.auth.getUser();
-        if (authUser?.user) {
-          setUser({
-            id: authUser.user.id,
-            email: authUser.user.email || "",
-            email_verified: !!authUser.user.email_confirmed_at,
-            phone_verified: false,
-          });
-        }
-      }
+      const profile: User = data ? {
+        id: data.id,
+        email: data.email,
+        phone: data.phone,
+        full_name: data.full_name,
+        avatar_url: data.avatar_url,
+        occupation: data.occupation,
+        email_verified: data.email_verified || false,
+        phone_verified: data.phone_verified || false,
+      } : {
+        id: userId,
+        email: supabaseUser?.email || "",
+        email_verified: false,
+        phone_verified: false,
+      };
+
+      setUser(profile);
+      
+      // Cache the profile
+      userProfileCache = {
+        userId,
+        profile,
+        timestamp: Date.now(),
+      };
     } catch (error) {
       console.error("Profile error:", error);
+      // Set minimal user info on error
+      setUser({
+        id: userId,
+        email: supabaseUser?.email || "",
+        email_verified: false,
+        phone_verified: false,
+      });
     } finally {
-      setLoading(false);
+      fetchingRef.current = false;
     }
   }
 
   async function refreshUser() {
+    userProfileCache = null; // Clear cache
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (authUser) {
       await fetchUserProfile(authUser.id);
@@ -135,45 +174,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signUp(email: string, password: string, fullName: string, phone: string) {
     try {
-      // 1. Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: {
-            full_name: fullName,
-          },
+          data: { full_name: fullName },
         },
       });
 
-      if (authError) {
-        console.error("Signup auth error:", authError);
-        return { error: authError };
-      }
+      if (authError) return { error: authError };
+      if (!authData.user) return { error: new Error("Failed to create user") };
 
-      if (!authData.user) {
-        return { error: new Error("Failed to create user") };
-      }
-
-      // 2. Create user profile in database
-      const { error: profileError } = await supabase.from("users").insert({
-        id: authData.user.id,
-        email: email,
-        phone: phone,
-        full_name: fullName,
-        email_verified: false,
-        phone_verified: false,
-        status: "active",
-        reputation_score: 0,
-        is_guardian: false,
-      });
-
-      if (profileError) {
+      // Create profile - don't fail signup if this fails
+      try {
+        await supabase.from("users").insert({
+          id: authData.user.id,
+          email,
+          phone,
+          full_name: fullName,
+          email_verified: false,
+          phone_verified: false,
+          status: "active",
+          reputation_score: 0,
+          is_guardian: false,
+        });
+      } catch (profileError) {
         console.error("Profile creation error:", profileError);
-        // Don't return error - user was created in auth
       }
 
-      // 3. Auto sign in
       if (authData.session) {
         setSession(authData.session);
         setSupabaseUser(authData.user);
@@ -182,7 +210,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { error: null };
     } catch (error) {
-      console.error("Signup error:", error);
       return { error: error as Error };
     }
   }
@@ -194,9 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         password,
       });
 
-      if (error) {
-        return { error };
-      }
+      if (error) return { error };
 
       if (data.session) {
         setSession(data.session);
@@ -211,6 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signOut() {
+    userProfileCache = null;
     await supabase.auth.signOut();
     setUser(null);
     setSupabaseUser(null);

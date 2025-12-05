@@ -362,99 +362,92 @@ export default function PostDetailPage() {
     }
   };
 
-// Handle like comment
+// Handle like comment - WITH DATABASE UPDATE
 const handleLikeComment = async (commentId: string, currentlyLiked: boolean) => {
   if (!user) {
     router.push("/login");
     return;
   }
 
-  // Find current count
   const currentComment = allComments.find(c => c.id === commentId);
   if (!currentComment) return;
-  
+
   const currentCount = currentComment.likes_count;
   const newCount = currentlyLiked ? Math.max(0, currentCount - 1) : currentCount + 1;
 
   // Optimistic update
   setAllComments(prev => prev.map(c => {
     if (c.id === commentId) {
-      return {
-        ...c,
-        isLiked: !currentlyLiked,
-        likes_count: newCount,
-      };
+      return { ...c, isLiked: !currentlyLiked, likes_count: newCount };
     }
     return c;
   }));
 
   try {
     if (currentlyLiked) {
-      // Remove like
+      // Remove like from likes table
       await supabase
         .from("comment_likes")
         .delete()
         .eq("comment_id", commentId)
         .eq("user_id", user.id);
-      
-      // Update count in database
-      await supabase
-        .from("post_comments")
-        .update({ likes_count: newCount })
-        .eq("id", commentId);
     } else {
-      // Add like
+      // Add like to likes table
       await supabase
         .from("comment_likes")
         .insert({ comment_id: commentId, user_id: user.id });
-      
-      // Update count in database
-      await supabase
-        .from("post_comments")
-        .update({ likes_count: newCount })
-        .eq("id", commentId);
     }
+
+    // UPDATE THE LIKES COUNT IN THE COMMENTS TABLE
+    await supabase
+      .from("post_comments")
+      .update({ likes_count: newCount })
+      .eq("id", commentId);
+
   } catch (err) {
     console.error("Like error:", err);
     // Revert on error
     setAllComments(prev => prev.map(c => {
       if (c.id === commentId) {
-        return {
-          ...c,
-          isLiked: currentlyLiked,
-          likes_count: currentCount,
-        };
+        return { ...c, isLiked: currentlyLiked, likes_count: currentCount };
       }
       return c;
     }));
   }
 };
 
-  // Handle media select for comment
-  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    
-    if (files.length + commentMedia.length > 4) {
-      alert("Maximum 4 files per comment");
+// Handle media select - IMAGES ONLY
+const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = Array.from(e.target.files || []);
+  
+  // Filter to images only
+  const imageFiles = files.filter(f => f.type.startsWith("image/"));
+  
+  if (imageFiles.length !== files.length) {
+    alert("Only images are allowed in comments");
+  }
+  
+  if (imageFiles.length + commentMedia.length > 4) {
+    alert("Maximum 4 images per comment");
+    return;
+  }
+
+  for (const file of imageFiles) {
+    if (file.size > 10 * 1024 * 1024) {  // 10MB for images
+      alert(`${file.name} is too large. Max 10MB.`);
       return;
     }
+  }
 
-    for (const file of files) {
-      if (file.size > 100 * 1024 * 1024) {
-        alert(`${file.name} is too large. Max 100MB.`);
-        return;
-      }
-    }
-
-    const previews = files.map(f => ({
-      url: URL.createObjectURL(f),
-      type: f.type.startsWith("video/") ? "video" : "image",
-    }));
-    
-    setCommentMedia(prev => [...prev, ...files]);
-    setCommentMediaPreviews(prev => [...prev, ...previews]);
-    e.target.value = "";
-  };
+  const previews = imageFiles.map(f => ({
+    url: URL.createObjectURL(f),
+    type: "image",
+  }));
+  
+  setCommentMedia(prev => [...prev, ...imageFiles]);
+  setCommentMediaPreviews(prev => [...prev, ...previews]);
+  e.target.value = "";
+};
 
   const removeMedia = (index: number) => {
     URL.revokeObjectURL(commentMediaPreviews[index].url);
@@ -1217,7 +1210,7 @@ const handleLikeComment = async (commentId: string, currentlyLiked: boolean) => 
               type="file" 
               ref={fileInputRef} 
               onChange={handleMediaSelect} 
-              accept="image/*,video/*" 
+              accept="image/*" 
               multiple 
               className="hidden" 
             />
