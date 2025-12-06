@@ -40,7 +40,6 @@ class LocationTracker {
   private userId: string | null = null;
   private isTracking = false;
 
-  // Start tracking location every 10 seconds
   start(userId: string) {
     if (this.isTracking) return;
     
@@ -49,26 +48,23 @@ class LocationTracker {
     
     console.log("🌍 Starting location tracking...");
 
-    // Use watchPosition for continuous updates
     if (navigator.geolocation) {
       this.watchId = navigator.geolocation.watchPosition(
         (position) => this.handlePositionUpdate(position),
         (error) => this.handleError(error),
         {
           enableHighAccuracy: true,
-          maximumAge: 10000, // Accept positions up to 10 seconds old
-          timeout: 15000,
+          maximumAge: 30000,
+          timeout: 30000,
         }
       );
 
-      // Also set interval to force updates every 10 seconds
       this.updateInterval = setInterval(() => {
         this.forceUpdate();
       }, 10000);
     }
   }
 
-  // Stop tracking
   stop() {
     console.log("🛑 Stopping location tracking");
     
@@ -85,11 +81,9 @@ class LocationTracker {
     this.isTracking = false;
   }
 
-  // Handle position update
   private async handlePositionUpdate(position: GeolocationPosition) {
     const { latitude, longitude } = position.coords;
 
-    // Only update if position changed significantly (more than 10 meters)
     if (this.lastPosition) {
       const distance = this.calculateDistance(
         this.lastPosition.lat,
@@ -99,7 +93,6 @@ class LocationTracker {
       );
 
       if (distance < 0.01) {
-        // Less than 10 meters, skip update
         return;
       }
     }
@@ -108,29 +101,26 @@ class LocationTracker {
     await this.savePosition(latitude, longitude);
   }
 
-  // Force an update
   private forceUpdate() {
     navigator.geolocation.getCurrentPosition(
       (position) => this.handlePositionUpdate(position),
       (error) => this.handleError(error),
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 30000,
+        maximumAge: 30000,
       }
     );
   }
 
-  // Save position to database
   private async savePosition(latitude: number, longitude: number) {
     if (!this.userId) return;
 
     try {
-      // Get address from coordinates
       const address = await this.getAddressFromCoords(latitude, longitude);
 
       console.log(`📍 Location updated: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
 
-      // Update user's location in database
       const { error } = await supabase
         .from("users")
         .update({
@@ -149,7 +139,6 @@ class LocationTracker {
     }
   }
 
-  // Get address from coordinates using OpenStreetMap
   private async getAddressFromCoords(lat: number, lng: number): Promise<string> {
     try {
       const response = await fetch(
@@ -177,9 +166,8 @@ class LocationTracker {
     }
   }
 
-  // Calculate distance between two points in kilometers
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371; // Earth's radius in km
+    const R = 6371;
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     
@@ -194,7 +182,6 @@ class LocationTracker {
     return R * c;
   }
 
-  // Handle geolocation errors
   private handleError(error: GeolocationPositionError) {
     switch (error.code) {
       case error.PERMISSION_DENIED:
@@ -209,7 +196,6 @@ class LocationTracker {
     }
   }
 
-  // Get current position once (for initial load)
   async getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
     return new Promise((resolve) => {
       navigator.geolocation.getCurrentPosition(
@@ -219,22 +205,24 @@ class LocationTracker {
             lng: position.coords.longitude,
           });
         },
-        () => resolve(null),
+        (error) => {
+          console.warn("Could not get position:", error.message);
+          resolve(null);
+        },
         {
           enableHighAccuracy: true,
-          timeout: 10000,
+          timeout: 30000,
+          maximumAge: 30000,
         }
       );
     });
   }
 }
 
-// Create singleton instance
 const locationTracker = new LocationTracker();
 
-// Cache for user profile
 let userProfileCache: { userId: string; profile: User; timestamp: number } | null = null;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 5 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -256,8 +244,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(currentSession);
           setSupabaseUser(currentSession.user);
           await fetchUserProfile(currentSession.user.id);
-          
-          // Check if user needs location tracking
           checkAndStartLocationTracking(currentSession.user.id);
         }
       } catch (error) {
@@ -302,17 +288,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // Cleanup on unmount
     return () => {
       subscription.unsubscribe();
       locationTracker.stop();
     };
   }, []);
 
-  // Check if user needs location tracking based on settings
   async function checkAndStartLocationTracking(userId: string) {
     try {
-      // Check if user has custom radius or active SOS
       const [{ data: settings }, { data: sos }] = await Promise.all([
         supabase
           .from("user_settings")
@@ -330,11 +313,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const hasCustomRadius = settings?.alert_zone_type === "radius";
       const hasActiveSOS = !!sos;
 
+      console.log("🌍 User needs location tracking:", { hasCustomRadius, hasActiveSOS });
+
       if (hasCustomRadius || hasActiveSOS) {
-        console.log("🌍 User needs location tracking:", { hasCustomRadius, hasActiveSOS });
         locationTracker.start(userId);
       } else {
-        // Just get location once and save it
         const position = await locationTracker.getCurrentPosition();
         if (position && userId) {
           await supabase
@@ -421,66 +404,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signUp(email: string, password: string, fullName: string, phone: string) {
-  try {
-    console.log("🔐 Starting signup process...");
-    
-    // Supabase auth.signUp will trigger handle_new_user which creates:
-    // 1. public.users row
-    // 2. user_settings row with defaults
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { 
-          full_name: fullName,
-          phone: phone,
-        },
-      },
-    });
-
-    if (authError) {
-      console.error("❌ Auth signup error:", authError);
-      return { error: authError };
-    }
-    
-    if (!authData.user) {
-      return { error: new Error("Failed to create user") };
-    }
-
-    console.log("✅ Auth user created:", authData.user.id);
-
-    // Update the phone number (trigger can't access it from metadata)
     try {
-      const { error: updateError } = await supabase
-        .from("users")
-        .update({ phone: phone })
-        .eq("id", authData.user.id);
+      console.log("🔐 Starting signup process...");
+      
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { 
+            full_name: fullName,
+            phone: phone,
+          },
+        },
+      });
 
-      if (updateError) {
-        console.warn("⚠️ Phone update error:", updateError);
-      } else {
-        console.log("✅ Phone number updated");
+      if (authError) {
+        console.error("❌ Auth signup error:", authError);
+        return { error: authError };
       }
-    } catch (updateErr) {
-      console.warn("⚠️ Phone update exception:", updateErr);
-    }
+      
+      if (!authData.user) {
+        return { error: new Error("Failed to create user") };
+      }
 
-    // Sign in the user
-    if (authData.session) {
-      setSession(authData.session);
-      setSupabaseUser(authData.user);
-      await fetchUserProfile(authData.user.id);
-      checkAndStartLocationTracking(authData.user.id);
-    }
+      console.log("✅ Auth user created:", authData.user.id);
 
-    console.log("✅ Signup complete!");
-    return { error: null };
-    
-  } catch (error: any) {
-    console.error("❌ Signup exception:", error);
-    return { error: error };
+      try {
+        const { error: updateError } = await supabase
+          .from("users")
+          .update({ phone: phone })
+          .eq("id", authData.user.id);
+
+        if (updateError) {
+          console.warn("⚠️ Phone update error:", updateError);
+        } else {
+          console.log("✅ Phone number updated");
+        }
+      } catch (updateErr) {
+        console.warn("⚠️ Phone update exception:", updateErr);
+      }
+
+      if (authData.session) {
+        setSession(authData.session);
+        setSupabaseUser(authData.user);
+        await fetchUserProfile(authData.user.id);
+        checkAndStartLocationTracking(authData.user.id);
+      }
+
+      console.log("✅ Signup complete!");
+      return { error: null };
+      
+    } catch (error: any) {
+      console.error("❌ Signup exception:", error);
+      return { error: error };
+    }
   }
-}
 
   async function signIn(email: string, password: string) {
     try {
@@ -530,5 +508,4 @@ export function useAuth() {
   return context;
 }
 
-// Export location tracker for use in SOS component
 export { locationTracker };

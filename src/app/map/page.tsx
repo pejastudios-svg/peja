@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
-import { Post, CATEGORIES } from "@/lib/types";
+import { Post, CATEGORIES, SOSAlert } from "@/lib/types";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -30,19 +30,8 @@ const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ),
 });
 
-interface SOSAlert {
-  id: string;
-  user_id: string;
-  latitude: number;
-  longitude: number;
-  address?: string;
-  status: string;
-  created_at: string;
-  user?: {
-    full_name: string;
-    avatar_url?: string;
-  };
-}
+// ❌ REMOVED - Already imported from @/lib/types above
+// interface SOSAlert { ... }
 
 export default function MapPage() {
   const router = useRouter();
@@ -60,7 +49,6 @@ export default function MapPage() {
     fetchPosts();
     fetchSOSAlerts();
 
-    // Real-time subscription for SOS
     const channel = supabase
       .channel('sos-map')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sos_alerts' }, () => {
@@ -95,7 +83,6 @@ export default function MapPage() {
         setUserLocation(newLocation);
         setGettingLocation(false);
 
-        // Update in DB
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           await supabase
@@ -112,137 +99,139 @@ export default function MapPage() {
         console.error("Location error:", error);
         setGettingLocation(false);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 30000, maximumAge: 30000 }
     );
   }, []);
 
   const fetchPosts = async () => {
-  try {
-    const twentyFourHoursAgo = subHours(new Date(), 24).toISOString();
+    try {
+      const twentyFourHoursAgo = subHours(new Date(), 24).toISOString();
 
-    const { data, error } = await supabase
-      .from("posts")
-      .select(`
-        id, user_id, category, comment, address, 
-        latitude, longitude,
-        is_anonymous, status, is_sensitive, 
-        confirmations, views, created_at,
-        post_media (id, post_id, url, media_type, is_sensitive)
-      `)
-      .eq("status", "live")
-      .gte("created_at", twentyFourHoursAgo)
-      .not("latitude", "is", null)
-      .not("longitude", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(100);
+      const { data, error } = await supabase
+        .from("posts")
+        .select(`
+          id, user_id, category, comment, address, 
+          latitude, longitude,
+          is_anonymous, status, is_sensitive, 
+          confirmations, views, created_at,
+          post_media (id, post_id, url, media_type, is_sensitive)
+        `)
+        .eq("status", "live")
+        .gte("created_at", twentyFourHoursAgo)
+        .not("latitude", "is", null)
+        .not("longitude", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(100);
 
-    if (error) throw error;
+      if (error) throw error;
 
-    const formattedPosts: Post[] = (data || [])
-      .filter(post => post.latitude && post.longitude)
-      .map((post) => ({
-        id: post.id,
-        user_id: post.user_id,
-        category: post.category,
-        comment: post.comment,
-        location: { 
-          latitude: post.latitude, 
-          longitude: post.longitude 
-        },
-        address: post.address,
-        is_anonymous: post.is_anonymous,
-        status: post.status,
-        is_sensitive: post.is_sensitive,
-        confirmations: post.confirmations || 0,
-        views: post.views || 0,
-        created_at: post.created_at,
-        media: post.post_media?.map((m: any) => ({
-          id: m.id,
-          post_id: m.post_id,
-          url: m.url,
-          media_type: m.media_type as "photo" | "video",
-          is_sensitive: m.is_sensitive,
-        })) || [],
-        tags: [],
-      }));
+      const formattedPosts: Post[] = (data || [])
+        .filter(post => post.latitude && post.longitude)
+        .map((post) => ({
+          id: post.id,
+          user_id: post.user_id,
+          category: post.category,
+          comment: post.comment,
+          location: { 
+            latitude: post.latitude, 
+            longitude: post.longitude 
+          },
+          address: post.address,
+          is_anonymous: post.is_anonymous,
+          status: post.status,
+          is_sensitive: post.is_sensitive,
+          confirmations: post.confirmations || 0,
+          views: post.views || 0,
+          created_at: post.created_at,
+          media: post.post_media?.map((m: any) => ({
+            id: m.id,
+            post_id: m.post_id,
+            url: m.url,
+            media_type: m.media_type as "photo" | "video",
+            is_sensitive: m.is_sensitive,
+          })) || [],
+          tags: [],
+        }));
 
-    console.log(`Loaded ${formattedPosts.length} posts with coordinates`);
-    setPosts(formattedPosts);
-  } catch (error) {
-    console.error("Error fetching posts:", error);
-  } finally {
-    setLoading(false);
-  }
-};
+      console.log(`Loaded ${formattedPosts.length} posts with coordinates`);
+      setPosts(formattedPosts);
+    } catch (error) {
+      console.error("Error fetching posts:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchSOSAlerts = async () => {
-  try {
-    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    try {
+      const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
 
-    // STEP 1: Get SOS alerts
-    const { data: sosData, error: sosError } = await supabase
-      .from("sos_alerts")
-      .select("*")
-      .eq("status", "active")
-      .gte("created_at", fiveHoursAgo);
+      const { data: sosData, error: sosError } = await supabase
+        .from("sos_alerts")
+        .select("*")
+        .eq("status", "active")
+        .gte("created_at", fiveHoursAgo);
 
-    if (sosError) {
-      console.error("SOS query error:", sosError);
+      if (sosError) {
+        console.error("SOS query error:", sosError);
+        setSOSAlerts([]);
+        return;
+      }
+
+      if (!sosData || sosData.length === 0) {
+        console.log("No active SOS alerts");
+        setSOSAlerts([]);
+        return;
+      }
+
+      console.log(`Found ${sosData.length} active SOS alerts:`, sosData);
+
+      const userIds = [...new Set(sosData.map(s => s.user_id))];
+      console.log("Fetching users:", userIds);
+      
+      const { data: users, error: usersError } = await supabase
+        .from("users")
+        .select("id, full_name, avatar_url")
+        .in("id", userIds);
+
+      if (usersError) {
+        console.error("Users query error:", usersError);
+      }
+
+      console.log("Fetched users:", users);
+
+      const userMap: Record<string, any> = {};
+      if (users && users.length > 0) {
+        users.forEach(u => {
+          userMap[u.id] = {
+            full_name: u.full_name,
+            avatar_url: u.avatar_url,
+          };
+        });
+      }
+
+      console.log("User map:", userMap);
+
+      const formattedSOSAlerts: SOSAlert[] = sosData.map(sos => ({
+        id: sos.id,
+        user_id: sos.user_id,
+        latitude: sos.latitude,
+        longitude: sos.longitude,
+        address: sos.address,
+        status: sos.status as "active" | "resolved" | "false_alarm" | "cancelled",
+        created_at: sos.created_at,
+        last_updated: sos.last_updated,
+        resolved_at: sos.resolved_at,
+        user: userMap[sos.user_id],
+      }));
+
+      console.log("Formatted SOS alerts:", formattedSOSAlerts);
+      setSOSAlerts(formattedSOSAlerts);
+    } catch (error) {
+      console.error("Error fetching SOS:", error);
       setSOSAlerts([]);
-      return;
     }
-
-    if (!sosData || sosData.length === 0) {
-      console.log("No active SOS alerts");
-      setSOSAlerts([]);
-      return;
-    }
-
-    console.log(`Found ${sosData.length} active SOS alerts`);
-
-    // STEP 2: Get user details for each SOS
-    const userIds = [...new Set(sosData.map(s => s.user_id))];
-    
-    const { data: users, error: usersError } = await supabase
-      .from("users")
-      .select("id, full_name, avatar_url")
-      .in("id", userIds);
-
-    if (usersError) {
-      console.error("Users query error:", usersError);
-    }
-
-    // Create user map
-    const userMap: Record<string, any> = {};
-    if (users && users.length > 0) {
-      users.forEach(u => {
-        userMap[u.id] = {
-          full_name: u.full_name,
-          avatar_url: u.avatar_url,
-        };
-      });
-    }
-
-    // Combine data
-    const formattedSOSAlerts = sosData.map(sos => ({
-      id: sos.id,
-      user_id: sos.user_id,
-      latitude: sos.latitude,
-      longitude: sos.longitude,
-      address: sos.address,
-      status: sos.status,
-      created_at: sos.created_at,
-      last_updated: sos.last_updated,
-      user: userMap[sos.user_id],
-    }));
-
-    console.log("Formatted SOS alerts:", formattedSOSAlerts);
-    setSOSAlerts(formattedSOSAlerts);
-  } catch (error) {
-    console.error("Error fetching SOS:", error);
-    setSOSAlerts([]);
-  }
-};
+  };
 
   const handlePostClick = (postId: string) => router.push(`/post/${postId}`);
 
@@ -250,7 +239,6 @@ export default function MapPage() {
     ? posts.filter((p) => p.category === selectedCategory)
     : posts;
 
-  // Default center (Lagos) or user location
   const defaultCenter: [number, number] = [6.5244, 3.3792];
 
   return (
@@ -274,7 +262,6 @@ export default function MapPage() {
             />
           )}
 
-          {/* SOS Banner */}
           {sosAlerts.length > 0 && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] glass-float rounded-lg p-3 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-400 animate-pulse" />
@@ -284,7 +271,6 @@ export default function MapPage() {
             </div>
           )}
 
-          {/* Filters */}
           <div className="absolute top-16 left-4 right-4 z-[1000]">
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               <button
@@ -298,7 +284,6 @@ export default function MapPage() {
             </div>
           </div>
 
-          {/* My Location Button */}
           <button
             onClick={getUserLocation}
             disabled={gettingLocation}
@@ -311,7 +296,6 @@ export default function MapPage() {
             )}
           </button>
 
-          {/* List Toggle */}
           <button
             onClick={() => setShowList(!showList)}
             className="absolute bottom-24 left-4 z-[1000] p-3 glass-float rounded-full shadow-lg"
@@ -319,7 +303,6 @@ export default function MapPage() {
             {showList ? <MapIcon className="w-5 h-5 text-primary-400" /> : <List className="w-5 h-5 text-primary-400" />}
           </button>
 
-          {/* Bottom Sheet */}
           <div
             className={`absolute bottom-0 left-0 right-0 z-[1000] glass-strong rounded-t-2xl shadow-2xl transition-transform duration-300 ${
               showList ? "translate-y-0" : "translate-y-[calc(100%-60px)]"
@@ -334,7 +317,6 @@ export default function MapPage() {
             </button>
 
             <div className="overflow-y-auto px-4 pb-4" style={{ maxHeight: "calc(60vh - 60px)" }}>
-              {/* SOS Alerts */}
               {sosAlerts.map((sos) => (
                 <div key={sos.id} className="flex gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl mb-2">
                   <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center overflow-hidden">
@@ -351,7 +333,6 @@ export default function MapPage() {
                 </div>
               ))}
 
-              {/* Posts */}
               {filteredPosts.map((post) => {
                 const category = CATEGORIES.find((c) => c.id === post.category);
                 return (
@@ -376,7 +357,6 @@ export default function MapPage() {
             </div>
           </div>
 
-          {/* Legend */}
           <div className="absolute top-32 right-4 z-[1000] glass-float rounded-lg p-3 text-xs space-y-2">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full" />
