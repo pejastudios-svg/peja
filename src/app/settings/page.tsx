@@ -21,6 +21,8 @@ import {
   CheckCircle,
   Users,
   Save,
+  MapPin,
+  AlertTriangle,
 } from "lucide-react";
 
 export default function SettingsPage() {
@@ -30,6 +32,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [settingsId, setSettingsId] = useState<string | null>(null);
 
   // Notification settings
   const [pushEnabled, setPushEnabled] = useState(true);
@@ -51,6 +54,9 @@ export default function SettingsPage() {
   // Modals
   const [showStatesModal, setShowStatesModal] = useState(false);
 
+  // Debug info
+  const [debugInfo, setDebugInfo] = useState<string>("");
+
   useEffect(() => {
     if (user) {
       loadSettings();
@@ -66,17 +72,24 @@ export default function SettingsPage() {
     }
 
     try {
+      console.log("Loading settings for user:", user.id);
+      
       const { data: settings, error } = await supabase
         .from("user_settings")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (error) {
+      console.log("Loaded settings:", settings);
+      console.log("Load error:", error);
+
+      if (error && error.code !== "PGRST116") {
         console.error("Load settings error:", error);
+        setDebugInfo(`Load error: ${error.message}`);
       }
 
       if (settings) {
+        setSettingsId(settings.id);
         setPushEnabled(settings.push_enabled ?? true);
         setDangerAlerts(settings.danger_alerts ?? true);
         setCautionAlerts(settings.caution_alerts ?? true);
@@ -88,9 +101,14 @@ export default function SettingsPage() {
         setQuietHoursEnabled(settings.quiet_hours_enabled ?? false);
         setQuietHoursStart(settings.quiet_hours_start ?? "23:00");
         setQuietHoursEnd(settings.quiet_hours_end ?? "07:00");
+        
+        setDebugInfo(`Loaded: zone=${settings.alert_zone_type}, states=${JSON.stringify(settings.selected_states)}`);
+      } else {
+        setDebugInfo("No settings found, using defaults");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error loading settings:", error);
+      setDebugInfo(`Error: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -106,57 +124,60 @@ export default function SettingsPage() {
     setSaveSuccess(false);
     setSaveError("");
 
+    const settingsData = {
+      user_id: user.id,
+      push_enabled: pushEnabled,
+      danger_alerts: dangerAlerts,
+      caution_alerts: cautionAlerts,
+      awareness_alerts: awarenessAlerts,
+      info_alerts: infoAlerts,
+      alert_zone_type: alertZoneType,
+      selected_states: selectedStates,
+      alert_radius_km: alertRadius,
+      quiet_hours_enabled: quietHoursEnabled,
+      quiet_hours_start: quietHoursStart,
+      quiet_hours_end: quietHoursEnd,
+      updated_at: new Date().toISOString(),
+    };
+
+    console.log("Saving settings:", settingsData);
+
     try {
-      // First check if settings exist
-      const { data: existing } = await supabase
-        .from("user_settings")
-        .select("id")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      const settingsData = {
-        user_id: user.id,
-        push_enabled: pushEnabled,
-        danger_alerts: dangerAlerts,
-        caution_alerts: cautionAlerts,
-        awareness_alerts: awarenessAlerts,
-        info_alerts: infoAlerts,
-        alert_zone_type: alertZoneType,
-        selected_states: selectedStates,
-        alert_radius_km: alertRadius,
-        quiet_hours_enabled: quietHoursEnabled,
-        quiet_hours_start: quietHoursStart,
-        quiet_hours_end: quietHoursEnd,
-        updated_at: new Date().toISOString(),
-      };
-
-      let error;
-
-      if (existing) {
+      let result;
+      
+      if (settingsId) {
         // Update existing
-        const result = await supabase
+        result = await supabase
           .from("user_settings")
           .update(settingsData)
-          .eq("user_id", user.id);
-        error = result.error;
+          .eq("id", settingsId)
+          .select()
+          .single();
       } else {
         // Insert new
-        const result = await supabase
+        result = await supabase
           .from("user_settings")
-          .insert(settingsData);
-        error = result.error;
+          .insert(settingsData)
+          .select()
+          .single();
       }
 
-      if (error) {
-        console.error("Save error:", error);
-        setSaveError(`Failed to save: ${error.message}`);
+      console.log("Save result:", result);
+
+      if (result.error) {
+        console.error("Save error:", result.error);
+        setSaveError(`Failed to save: ${result.error.message}`);
+        setDebugInfo(`Save error: ${result.error.message}`);
       } else {
+        setSettingsId(result.data.id);
         setSaveSuccess(true);
+        setDebugInfo(`Saved! zone=${result.data.alert_zone_type}, states=${JSON.stringify(result.data.selected_states)}`);
         setTimeout(() => setSaveSuccess(false), 3000);
       }
     } catch (error: any) {
       console.error("Error saving settings:", error);
       setSaveError(`Error: ${error.message}`);
+      setDebugInfo(`Exception: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -242,6 +263,13 @@ export default function SettingsPage() {
       </header>
 
       <main className="pt-14 max-w-2xl mx-auto px-4">
+        {/* Debug Info */}
+        {debugInfo && (
+          <div className="mt-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+            <p className="text-xs text-blue-400 font-mono">{debugInfo}</p>
+          </div>
+        )}
+
         {/* Save feedback */}
         {saveSuccess && (
           <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
@@ -305,20 +333,47 @@ export default function SettingsPage() {
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Alert Zone</h2>
           <p className="text-sm text-dark-400 mb-4">Choose where you want to receive incident alerts from</p>
 
+          {/* Current Selection Display */}
+          <div className="mb-4 p-3 glass-sm rounded-xl">
+            <div className="flex items-center gap-2 text-sm">
+              <MapPin className="w-4 h-4 text-primary-400" />
+              <span className="text-dark-200">Current:</span>
+              <span className="text-primary-400 font-medium">
+                {alertZoneType === "all_nigeria" && "All of Nigeria"}
+                {alertZoneType === "states" && (selectedStates.length > 0 ? selectedStates.join(", ") : "No states selected")}
+                {alertZoneType === "radius" && `${alertRadius}km radius`}
+              </span>
+            </div>
+          </div>
+
           <div className="space-y-3">
+            {/* All of Nigeria */}
             <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${alertZoneType === "all_nigeria" ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-              <input type="radio" name="alertZone" checked={alertZoneType === "all_nigeria"} onChange={() => setAlertZoneType("all_nigeria")} className="sr-only" />
+              <input 
+                type="radio" 
+                name="alertZone" 
+                checked={alertZoneType === "all_nigeria"} 
+                onChange={() => setAlertZoneType("all_nigeria")} 
+                className="sr-only" 
+              />
               <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${alertZoneType === "all_nigeria" ? "border-primary-500 bg-primary-500" : "border-dark-500"}`}>
                 {alertZoneType === "all_nigeria" && <Check className="w-3 h-3 text-white" />}
               </div>
               <div>
                 <p className="text-dark-100 font-medium">All of Nigeria</p>
-                <p className="text-sm text-dark-400">Receive alerts from anywhere</p>
+                <p className="text-sm text-dark-400">Receive alerts from anywhere in Nigeria</p>
               </div>
             </label>
 
+            {/* Custom Radius */}
             <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${alertZoneType === "radius" ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-              <input type="radio" name="alertZone" checked={alertZoneType === "radius"} onChange={() => setAlertZoneType("radius")} className="sr-only" />
+              <input 
+                type="radio" 
+                name="alertZone" 
+                checked={alertZoneType === "radius"} 
+                onChange={() => setAlertZoneType("radius")} 
+                className="sr-only" 
+              />
               <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${alertZoneType === "radius" ? "border-primary-500 bg-primary-500" : "border-dark-500"}`}>
                 {alertZoneType === "radius" && <Check className="w-3 h-3 text-white" />}
               </div>
@@ -334,7 +389,15 @@ export default function SettingsPage() {
                   <span className="text-sm text-dark-400">Radius</span>
                   <span className="text-primary-400 font-medium">{alertRadius} km</span>
                 </div>
-                <input type="range" min="1" max="50" step="1" value={alertRadius} onChange={(e) => setAlertRadius(Number(e.target.value))} className="w-full accent-primary-500" />
+                <input 
+                  type="range" 
+                  min="1" 
+                  max="50" 
+                  step="1" 
+                  value={alertRadius} 
+                  onChange={(e) => setAlertRadius(Number(e.target.value))} 
+                  className="w-full accent-primary-500" 
+                />
                 <div className="flex justify-between text-xs text-dark-500 mt-1">
                   <span>1 km</span>
                   <span>25 km</span>
@@ -343,19 +406,59 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {/* Selected States */}
             <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${alertZoneType === "states" ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-              <input type="radio" name="alertZone" checked={alertZoneType === "states"} onChange={() => setAlertZoneType("states")} className="sr-only" />
+              <input 
+                type="radio" 
+                name="alertZone" 
+                checked={alertZoneType === "states"} 
+                onChange={() => setAlertZoneType("states")} 
+                className="sr-only" 
+              />
               <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${alertZoneType === "states" ? "border-primary-500 bg-primary-500" : "border-dark-500"}`}>
                 {alertZoneType === "states" && <Check className="w-3 h-3 text-white" />}
               </div>
               <div className="flex-1">
                 <p className="text-dark-100 font-medium">Selected States</p>
-                <p className="text-sm text-dark-400">{selectedStates.length > 0 ? `${selectedStates.length} states selected` : "Choose specific states"}</p>
+                <p className="text-sm text-dark-400">
+                  {selectedStates.length > 0 ? `${selectedStates.length} states selected` : "Choose specific states"}
+                </p>
               </div>
               {alertZoneType === "states" && (
-                <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowStatesModal(true); }} className="text-primary-400 text-sm">Edit</button>
+                <button 
+                  type="button" 
+                  onClick={(e) => { 
+                    e.preventDefault(); 
+                    e.stopPropagation(); 
+                    setShowStatesModal(true); 
+                  }} 
+                  className="text-primary-400 text-sm px-3 py-1 rounded-lg hover:bg-white/10"
+                >
+                  Edit
+                </button>
               )}
             </label>
+
+            {/* Show selected states */}
+            {alertZoneType === "states" && selectedStates.length > 0 && (
+              <div className="ml-8 p-4 glass-sm rounded-xl">
+                <p className="text-xs text-dark-400 mb-2">Selected states:</p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedStates.map((state) => (
+                    <span key={state} className="px-2 py-1 bg-primary-600/20 text-primary-400 text-xs rounded-lg">
+                      {state}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {alertZoneType === "states" && selectedStates.length === 0 && (
+              <div className="ml-8 p-4 glass-sm rounded-xl flex items-center gap-2 text-orange-400">
+                <AlertTriangle className="w-4 h-4" />
+                <span className="text-sm">Please select at least one state</span>
+              </div>
+            )}
           </div>
         </section>
 
@@ -371,20 +474,24 @@ export default function SettingsPage() {
             <div className="ml-4 mt-2 p-4 glass-sm rounded-xl flex gap-4">
               <div className="flex-1">
                 <label className="text-xs text-dark-400 block mb-1">Start Time</label>
-                <input type="time" value={quietHoursStart} onChange={(e) => setQuietHoursStart(e.target.value)} className="w-full px-3 py-2 glass-input text-base" />
+                <input 
+                  type="time" 
+                  value={quietHoursStart} 
+                  onChange={(e) => setQuietHoursStart(e.target.value)} 
+                  className="w-full px-3 py-2 glass-input text-base" 
+                />
               </div>
               <div className="flex-1">
                 <label className="text-xs text-dark-400 block mb-1">End Time</label>
-                <input type="time" value={quietHoursEnd} onChange={(e) => setQuietHoursEnd(e.target.value)} className="w-full px-3 py-2 glass-input text-base" />
+                <input 
+                  type="time" 
+                  value={quietHoursEnd} 
+                  onChange={(e) => setQuietHoursEnd(e.target.value)} 
+                  className="w-full px-3 py-2 glass-input text-base" 
+                />
               </div>
             </div>
           )}
-        </section>
-
-        {/* General */}
-        <section className="py-6 border-b border-white/5">
-          <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">General</h2>
-          <SettingRow icon={Smartphone} label="App Version" description="1.0.0" />
         </section>
 
         {/* Support */}
@@ -425,7 +532,11 @@ export default function SettingsPage() {
                       key={state}
                       type="button"
                       onClick={() => toggleState(state)}
-                      className={`p-3 rounded-lg text-left text-sm transition-colors ${selectedStates.includes(state) ? "bg-primary-600/20 text-primary-400 border border-primary-500/50" : "glass-sm text-dark-300 hover:bg-white/5"}`}
+                      className={`p-3 rounded-lg text-left text-sm transition-colors ${
+                        selectedStates.includes(state) 
+                          ? "bg-primary-600/20 text-primary-400 border border-primary-500/50" 
+                          : "glass-sm text-dark-300 hover:bg-white/5"
+                      }`}
                     >
                       {state}
                     </button>
@@ -434,7 +545,11 @@ export default function SettingsPage() {
               </div>
 
               <div className="pt-4 mt-4 border-t border-white/5 flex-shrink-0">
-                <button type="button" onClick={() => setShowStatesModal(false)} className="w-full py-3 bg-primary-600 text-white rounded-xl font-medium">
+                <button 
+                  type="button" 
+                  onClick={() => setShowStatesModal(false)} 
+                  className="w-full py-3 bg-primary-600 text-white rounded-xl font-medium"
+                >
                   Done ({selectedStates.length} selected)
                 </button>
               </div>

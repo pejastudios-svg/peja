@@ -49,24 +49,35 @@ export default function NotificationsPage() {
   }, [user, authLoading]);
 
   const fetchNotifications = async () => {
-    if (!user) return;
+  if (!user) return;
 
-    try {
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(50);
+  try {
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
 
-      if (error) throw error;
-      setNotifications(data || []);
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // Delete old SOS notifications
+    await supabase
+      .from("notifications")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("type", "sos_alert")
+      .lt("created_at", fiveHoursAgo);
+
+    // Fetch remaining
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) throw error;
+    setNotifications(data || []);
+  } catch (error) {
+    console.error("Error:", error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const setupRealtime = () => {
     if (!user) return;

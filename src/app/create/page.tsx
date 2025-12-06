@@ -241,25 +241,26 @@ export default function CreatePostPage() {
         setUploadProgress(Math.round(((i + 1) / totalFiles) * 80));
       }
 
-      // Create post
-      const { data: post, error: postError } = await supabase
-        .from("posts")
-        .insert({
-          user_id: authUser.id,
-          category,
-          comment: comment.trim() || null,
-          location: `POINT(${location.longitude} ${location.latitude})`,
-          address: location.address || null,
-          is_anonymous: false,
-          is_sensitive: isSensitive,
-          status: "live",
-          confirmations: 0,
-          views: 0,
-          comment_count: 0,
-          report_count: 0,
-        })
-        .select()
-        .single();
+      // Create post with proper coordinates
+const { data: post, error: postError } = await supabase
+  .from("posts")
+  .insert({
+    user_id: authUser.id,
+    category,
+    comment: comment.trim() || null,
+    latitude: location.latitude,  // Store as separate column
+    longitude: location.longitude,  // Store as separate column
+    address: location.address || null,
+    is_anonymous: false,
+    is_sensitive: isSensitive,
+    status: "live",
+    confirmations: 0,
+    views: 0,
+    comment_count: 0,
+    report_count: 0,
+  })
+  .select()
+  .single();
 
       if (postError) {
         throw new Error(postError.message);

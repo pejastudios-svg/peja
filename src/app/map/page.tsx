@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -17,6 +17,7 @@ import {
   Map as MapIcon,
   Clock,
   ChevronUp,
+  AlertTriangle,
 } from "lucide-react";
 import { formatDistanceToNow, subHours } from "date-fns";
 
@@ -29,10 +30,25 @@ const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ),
 });
 
+interface SOSAlert {
+  id: string;
+  user_id: string;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  status: string;
+  created_at: string;
+  user?: {
+    full_name: string;
+    avatar_url?: string;
+  };
+}
+
 export default function MapPage() {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [sosAlerts, setSOSAlerts] = useState<SOSAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [showList, setShowList] = useState(false);
@@ -42,65 +58,109 @@ export default function MapPage() {
   useEffect(() => {
     getUserLocation();
     fetchPosts();
+    fetchSOSAlerts();
+
+    // Real-time subscription for SOS
+    const channel = supabase
+      .channel('sos-map')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sos_alerts' }, () => {
+        fetchSOSAlerts();
+      })
+      .subscribe();
+
+    const interval = setInterval(fetchSOSAlerts, 30000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
   }, []);
 
-  const getUserLocation = () => {
+  const getUserLocation = useCallback(() => {
     setGettingLocation(true);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setGettingLocation(false);
-        },
-        (error) => {
-          console.error("Location error:", error);
-          setGettingLocation(false);
-        },
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    } else {
+    
+    if (!navigator.geolocation) {
+      console.log("Geolocation not supported");
       setGettingLocation(false);
+      return;
     }
-  };
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const newLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        console.log("Got user location:", newLocation);
+        setUserLocation(newLocation);
+        setGettingLocation(false);
+
+        // Update in DB
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase
+            .from("users")
+            .update({
+              last_latitude: newLocation.lat,
+              last_longitude: newLocation.lng,
+              last_location_updated_at: new Date().toISOString(),
+            })
+            .eq("id", user.id);
+        }
+      },
+      (error) => {
+        console.error("Location error:", error);
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }, []);
 
   const fetchPosts = async () => {
     try {
-      // Only fetch posts from the last 24 hours
       const twentyFourHoursAgo = subHours(new Date(), 24).toISOString();
 
       const { data, error } = await supabase
         .from("posts")
         .select(`
-          *,
-          post_media (*)
+          id, user_id, category, comment, address, 
+          latitude, longitude,
+          is_anonymous, status, is_sensitive, 
+          confirmations, views, created_at,
+          post_media (id, url, media_type)
         `)
         .eq("status", "live")
         .gte("created_at", twentyFourHoursAgo)
+        .not("latitude", "is", null)
+        .not("longitude", "is", null)
         .order("created_at", { ascending: false })
         .limit(100);
 
       if (error) throw error;
 
-      const formattedPosts: Post[] = (data || []).map((post) => ({
-        id: post.id,
-        user_id: post.user_id,
-        category: post.category,
-        comment: post.comment,
-        location: { latitude: 0, longitude: 0 },
-        address: post.address,
-        is_anonymous: post.is_anonymous,
-        status: post.status,
-        is_sensitive: post.is_sensitive,
-        confirmations: post.confirmations || 0,
-        views: post.views || 0,
-        created_at: post.created_at,
-        media: post.post_media || [],
-        tags: [],
-      }));
+      const formattedPosts: Post[] = (data || [])
+        .filter(post => post.latitude && post.longitude)
+        .map((post) => ({
+          id: post.id,
+          user_id: post.user_id,
+          category: post.category,
+          comment: post.comment,
+          location: { 
+            latitude: post.latitude, 
+            longitude: post.longitude 
+          },
+          address: post.address,
+          is_anonymous: post.is_anonymous,
+          status: post.status,
+          is_sensitive: post.is_sensitive,
+          confirmations: post.confirmations || 0,
+          views: post.views || 0,
+          created_at: post.created_at,
+          media: post.post_media || [],
+          tags: [],
+        }));
 
+      console.log(`Loaded ${formattedPosts.length} posts with coordinates`);
       setPosts(formattedPosts);
     } catch (error) {
       console.error("Error fetching posts:", error);
@@ -109,21 +169,49 @@ export default function MapPage() {
     }
   };
 
-  const handlePostClick = (postId: string) => {
-    router.push(`/post/${postId}`);
+  const fetchSOSAlerts = async () => {
+    try {
+      const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+
+      const { data, error } = await supabase
+        .from("sos_alerts")
+        .select("id, user_id, latitude, longitude, address, status, created_at")
+        .eq("status", "active")
+        .gte("created_at", fiveHoursAgo);
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const userIds = [...new Set(data.map(s => s.user_id))];
+        const { data: users } = await supabase
+          .from("users")
+          .select("id, full_name, avatar_url")
+          .in("id", userIds);
+
+        const userMap: Record<string, any> = {};
+        users?.forEach(u => { userMap[u.id] = u; });
+
+        setSOSAlerts(data.map(sos => ({ ...sos, user: userMap[sos.user_id] })));
+      } else {
+        setSOSAlerts([]);
+      }
+    } catch (error) {
+      console.error("Error fetching SOS:", error);
+    }
   };
+
+  const handlePostClick = (postId: string) => router.push(`/post/${postId}`);
 
   const filteredPosts = selectedCategory
     ? posts.filter((p) => p.category === selectedCategory)
     : posts;
 
+  // Default center (Lagos) or user location
+  const defaultCenter: [number, number] = [6.5244, 3.3792];
+
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
-      <Header
-        onMenuClick={() => setSidebarOpen(true)}
-        onCreateClick={() => router.push("/create")}
-      />
-
+      <Header onMenuClick={() => setSidebarOpen(true)} onCreateClick={() => router.push("/create")} />
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <main className="pt-16 lg:pl-64 h-screen">
@@ -137,50 +225,32 @@ export default function MapPage() {
               posts={filteredPosts}
               userLocation={userLocation}
               onPostClick={handlePostClick}
+              sosAlerts={sosAlerts}
+              onSOSClick={(id) => console.log("SOS:", id)}
             />
           )}
 
-          {/* Category Filters */}
-          <div className="absolute top-4 left-4 right-4 z-[1000]">
+          {/* SOS Banner */}
+          {sosAlerts.length > 0 && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] glass-float rounded-lg p-3 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-400 animate-pulse" />
+              <span className="text-sm font-medium text-red-400">
+                {sosAlerts.length} Active SOS
+              </span>
+            </div>
+          )}
+
+          {/* Filters */}
+          <div className="absolute top-16 left-4 right-4 z-[1000]">
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               <button
                 onClick={() => setSelectedCategory(null)}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg transition-colors ${
+                className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg ${
                   !selectedCategory ? "bg-primary-600 text-white" : "glass-float text-dark-200"
                 }`}
               >
                 All ({posts.length})
               </button>
-              
-              {(["danger", "warning", "awareness", "info"] as const).map((color) => {
-                const categoryGroup = CATEGORIES.filter((c) => c.color === color);
-                const count = posts.filter((p) => categoryGroup.some((c) => c.id === p.category)).length;
-                if (count === 0) return null;
-
-                const colorStyles = {
-                  danger: "bg-red-600 text-white",
-                  warning: "bg-orange-500 text-white",
-                  awareness: "bg-yellow-500 text-black",
-                  info: "bg-blue-500 text-white",
-                };
-
-                const label = {
-                  danger: "🔴 Danger",
-                  warning: "🟠 Caution",
-                  awareness: "🟡 Awareness",
-                  info: "🔵 Info",
-                };
-
-                return (
-                  <button
-                    key={color}
-                    onClick={() => setSelectedCategory(selectedCategory === categoryGroup[0]?.id ? null : categoryGroup[0]?.id)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg ${colorStyles[color]}`}
-                  >
-                    {label[color]} ({count})
-                  </button>
-                );
-              })}
             </div>
           </div>
 
@@ -188,7 +258,7 @@ export default function MapPage() {
           <button
             onClick={getUserLocation}
             disabled={gettingLocation}
-            className="absolute bottom-24 right-4 z-[1000] p-3 glass-float rounded-full shadow-lg"
+            className="absolute bottom-24 right-4 z-[1000] p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
           >
             {gettingLocation ? (
               <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
@@ -197,7 +267,7 @@ export default function MapPage() {
             )}
           </button>
 
-          {/* Toggle List Button */}
+          {/* List Toggle */}
           <button
             onClick={() => setShowList(!showList)}
             className="absolute bottom-24 left-4 z-[1000] p-3 glass-float rounded-full shadow-lg"
@@ -205,7 +275,7 @@ export default function MapPage() {
             {showList ? <MapIcon className="w-5 h-5 text-primary-400" /> : <List className="w-5 h-5 text-primary-400" />}
           </button>
 
-          {/* Bottom Sheet List */}
+          {/* Bottom Sheet */}
           <div
             className={`absolute bottom-0 left-0 right-0 z-[1000] glass-strong rounded-t-2xl shadow-2xl transition-transform duration-300 ${
               showList ? "translate-y-0" : "translate-y-[calc(100%-60px)]"
@@ -214,66 +284,56 @@ export default function MapPage() {
           >
             <button onClick={() => setShowList(!showList)} className="w-full py-3 flex flex-col items-center">
               <div className="w-10 h-1 bg-dark-600 rounded-full mb-1" />
-              <div className="flex items-center gap-1 text-sm text-dark-400">
-                <ChevronUp className={`w-4 h-4 transition-transform ${showList ? "rotate-180" : ""}`} />
-                {filteredPosts.length} incidents (last 24h)
-              </div>
+              <span className="text-sm text-dark-400">
+                {filteredPosts.length} incidents
+              </span>
             </button>
 
             <div className="overflow-y-auto px-4 pb-4" style={{ maxHeight: "calc(60vh - 60px)" }}>
-              <div className="space-y-3">
-                {filteredPosts.map((post) => {
-                  const category = CATEGORIES.find((c) => c.id === post.category);
-                  const badgeVariant = category?.color === "danger" ? "danger" : category?.color === "warning" ? "warning" : "info";
-
-                  return (
-                    <div
-                      key={post.id}
-                      onClick={() => router.push(`/post/${post.id}`)}
-                      className="flex gap-3 p-3 glass-sm rounded-xl cursor-pointer hover:bg-white/5"
-                    >
-                      {post.media?.[0] && (
-                        <img src={post.media[0].url} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge variant={badgeVariant}>{category?.name || post.category}</Badge>
-                          <span className="flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                            <span className="text-xs text-red-400">LIVE</span>
-                          </span>
-                        </div>
-                        {post.comment && <p className="text-sm text-dark-200 line-clamp-1 mb-1">{post.comment}</p>}
-                        <div className="flex items-center gap-3 text-xs text-dark-400">
-                          {post.address && (
-                            <span className="flex items-center gap-1 truncate max-w-[150px]">
-                              <MapPin className="w-3 h-3 flex-shrink-0" />
-                              {post.address}
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                
-                {filteredPosts.length === 0 && (
-                  <div className="text-center py-8">
-                    <MapPin className="w-12 h-12 text-dark-600 mx-auto mb-3" />
-                    <p className="text-dark-400">No recent incidents</p>
-                    <p className="text-sm text-dark-500">No incidents reported in the last 24 hours</p>
+              {/* SOS Alerts */}
+              {sosAlerts.map((sos) => (
+                <div key={sos.id} className="flex gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl mb-2">
+                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center overflow-hidden">
+                    {sos.user?.avatar_url ? (
+                      <img src={sos.user.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 text-red-400" />
+                    )}
                   </div>
-                )}
-              </div>
+                  <div>
+                    <p className="font-medium text-red-400">{sos.user?.full_name || "Someone"} needs help!</p>
+                    <p className="text-xs text-dark-400">{sos.address}</p>
+                  </div>
+                </div>
+              ))}
+
+              {/* Posts */}
+              {filteredPosts.map((post) => {
+                const category = CATEGORIES.find((c) => c.id === post.category);
+                return (
+                  <div
+                    key={post.id}
+                    onClick={() => router.push(`/post/${post.id}`)}
+                    className="flex gap-3 p-3 glass-sm rounded-xl mb-2 cursor-pointer hover:bg-white/5"
+                  >
+                    {post.media?.[0] && (
+                      <img src={post.media[0].url} alt="" className="w-16 h-16 rounded-lg object-cover" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <Badge variant={category?.color === "danger" ? "danger" : "info"}>
+                        {category?.name || post.category}
+                      </Badge>
+                      {post.comment && <p className="text-sm text-dark-200 line-clamp-1 mt-1">{post.comment}</p>}
+                      <p className="text-xs text-dark-500 mt-1">{post.address}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           {/* Legend */}
-          <div className="absolute top-20 right-4 z-[1000] glass-float rounded-lg p-3 text-xs space-y-2">
+          <div className="absolute top-32 right-4 z-[1000] glass-float rounded-lg p-3 text-xs space-y-2">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full" />
               <span className="text-dark-200">Danger</span>
@@ -281,14 +341,6 @@ export default function MapPage() {
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-orange-500 rounded-full" />
               <span className="text-dark-200">Caution</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-yellow-500 rounded-full" />
-              <span className="text-dark-200">Awareness</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-blue-500 rounded-full" />
-              <span className="text-dark-200">Info</span>
             </div>
             <div className="flex items-center gap-2 pt-1 border-t border-white/10">
               <span className="w-3 h-3 bg-primary-500 rounded-full" />
