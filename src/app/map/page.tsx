@@ -117,57 +117,63 @@ export default function MapPage() {
   }, []);
 
   const fetchPosts = async () => {
-    try {
-      const twentyFourHoursAgo = subHours(new Date(), 24).toISOString();
+  try {
+    const twentyFourHoursAgo = subHours(new Date(), 24).toISOString();
 
-      const { data, error } = await supabase
-        .from("posts")
-        .select(`
-          id, user_id, category, comment, address, 
-          latitude, longitude,
-          is_anonymous, status, is_sensitive, 
-          confirmations, views, created_at,
-          post_media (id, url, media_type)
-        `)
-        .eq("status", "live")
-        .gte("created_at", twentyFourHoursAgo)
-        .not("latitude", "is", null)
-        .not("longitude", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(100);
+    const { data, error } = await supabase
+      .from("posts")
+      .select(`
+        id, user_id, category, comment, address, 
+        latitude, longitude,
+        is_anonymous, status, is_sensitive, 
+        confirmations, views, created_at,
+        post_media (id, post_id, url, media_type, is_sensitive)
+      `)
+      .eq("status", "live")
+      .gte("created_at", twentyFourHoursAgo)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(100);
 
-      if (error) throw error;
+    if (error) throw error;
 
-      const formattedPosts: Post[] = (data || [])
-        .filter(post => post.latitude && post.longitude)
-        .map((post) => ({
-          id: post.id,
-          user_id: post.user_id,
-          category: post.category,
-          comment: post.comment,
-          location: { 
-            latitude: post.latitude, 
-            longitude: post.longitude 
-          },
-          address: post.address,
-          is_anonymous: post.is_anonymous,
-          status: post.status,
-          is_sensitive: post.is_sensitive,
-          confirmations: post.confirmations || 0,
-          views: post.views || 0,
-          created_at: post.created_at,
-          media: post.post_media || [],
-          tags: [],
-        }));
+    const formattedPosts: Post[] = (data || [])
+      .filter(post => post.latitude && post.longitude)
+      .map((post) => ({
+        id: post.id,
+        user_id: post.user_id,
+        category: post.category,
+        comment: post.comment,
+        location: { 
+          latitude: post.latitude, 
+          longitude: post.longitude 
+        },
+        address: post.address,
+        is_anonymous: post.is_anonymous,
+        status: post.status,
+        is_sensitive: post.is_sensitive,
+        confirmations: post.confirmations || 0,
+        views: post.views || 0,
+        created_at: post.created_at,
+        media: post.post_media?.map((m: any) => ({
+          id: m.id,
+          post_id: m.post_id,
+          url: m.url,
+          media_type: m.media_type as "photo" | "video",
+          is_sensitive: m.is_sensitive,
+        })) || [],
+        tags: [],
+      }));
 
-      console.log(`Loaded ${formattedPosts.length} posts with coordinates`);
-      setPosts(formattedPosts);
-    } catch (error) {
-      console.error("Error fetching posts:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    console.log(`Loaded ${formattedPosts.length} posts with coordinates`);
+    setPosts(formattedPosts);
+  } catch (error) {
+    console.error("Error fetching posts:", error);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const fetchSOSAlerts = async () => {
     try {
