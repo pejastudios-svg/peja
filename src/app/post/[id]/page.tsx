@@ -68,6 +68,9 @@ export default function PostDetailPage() {
   const commentInputRef = useRef<HTMLInputElement>(null);
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
+  
+  // CRITICAL: Track ongoing like operations to prevent double-clicks
+  const likingInProgress = useRef<Set<string>>(new Set());
 
   // Post state
   const [post, setPost] = useState<Post | null>(null);
@@ -362,64 +365,89 @@ export default function PostDetailPage() {
     }
   };
 
-  // Handle like comment
-  const handleLikeComment = async (commentId: string, currentlyLiked: boolean) => {
+  // ========================================
+  // FIXED LIKE HANDLER - Prevents double likes
+  // ========================================
+  const handleLikeComment = async (commentId: string) => {
     if (!user) {
       router.push("/login");
       return;
     }
 
-    const currentComment = allComments.find(c => c.id === commentId);
-    if (!currentComment) return;
+    // CRITICAL: Check if already processing this comment
+    if (likingInProgress.current.has(commentId)) {
+      console.log("Like already in progress for:", commentId);
+      return;
+    }
 
-    const currentCount = currentComment.likes_count;
+    // Mark as in progress
+    likingInProgress.current.add(commentId);
 
+    const comment = allComments.find(c => c.id === commentId);
+    if (!comment) {
+      likingInProgress.current.delete(commentId);
+      return;
+    }
+
+    // Store previous state for rollback
+    const previousLiked = comment.isLiked;
+    const previousCount = comment.likes_count;
+
+    // Optimistic update
     setAllComments(prev => prev.map(c => {
       if (c.id === commentId) {
         return { 
           ...c, 
-          isLiked: !currentlyLiked, 
-          likes_count: currentlyLiked ? Math.max(0, currentCount - 1) : currentCount + 1 
+          isLiked: !previousLiked, 
+          likes_count: previousLiked ? Math.max(0, previousCount - 1) : previousCount + 1 
         };
       }
       return c;
     }));
 
     try {
+      // Call the RPC function
       const { data, error } = await supabase.rpc('toggle_comment_like', {
         p_comment_id: commentId,
         p_user_id: user.id
       });
 
       if (error) {
-        console.error("Like error:", error);
         throw error;
       }
 
+      // Update with actual server values
       if (data && data.length > 0) {
-        const actualLiked = data[0].liked;
-        const actualCount = data[0].new_count;
+        const serverLiked = data[0].liked;
+        const serverCount = data[0].new_count;
         
         setAllComments(prev => prev.map(c => {
           if (c.id === commentId) {
-            return { ...c, isLiked: actualLiked, likes_count: actualCount };
+            return { ...c, isLiked: serverLiked, likes_count: serverCount };
           }
           return c;
         }));
 
-        if (actualLiked && currentComment.user_id !== user.id) {
-          notifyCommentLiked(postId, currentComment.user_id, user.full_name || "Someone");
+        // Send notification only if we liked (not unliked) and it's not our own comment
+        if (serverLiked && comment.user_id !== user.id) {
+          notifyCommentLiked(postId, comment.user_id, user.full_name || "Someone");
         }
       }
 
     } catch (err) {
       console.error("Like error:", err);
+      // Rollback on error
       setAllComments(prev => prev.map(c => {
         if (c.id === commentId) {
-          return { ...c, isLiked: currentlyLiked, likes_count: currentCount };
+          return { ...c, isLiked: previousLiked, likes_count: previousCount };
         }
         return c;
       }));
+    } finally {
+      // Remove from in-progress after a delay to prevent rapid clicks
+      setTimeout(() => {
+        likingInProgress.current.delete(commentId);
+      }, 300);
     }
   };
 
@@ -820,7 +848,12 @@ export default function PostDetailPage() {
           {!comment.isPending && (
             <div className="flex items-center gap-4 mt-2">
               <button
-                onClick={() => handleLikeComment(comment.id, comment.isLiked)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleLikeComment(comment.id);
+                }}
+                disabled={likingInProgress.current.has(comment.id)}
                 className={`flex items-center gap-1.5 text-xs transition-colors ${
                   comment.isLiked ? "text-red-400" : "text-dark-400 hover:text-red-400"
                 }`}

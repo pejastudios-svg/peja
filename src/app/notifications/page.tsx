@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { markAllAsRead } from "@/lib/notifications";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -17,6 +18,7 @@ import {
   Loader2,
   Trash2,
   Check,
+  Heart,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -40,6 +42,7 @@ export default function NotificationsPage() {
   useEffect(() => {
     if (!authLoading && user) {
       fetchNotifications();
+      setupRealtime();
     } else if (!authLoading && !user) {
       router.push("/login");
     }
@@ -65,7 +68,31 @@ export default function NotificationsPage() {
     }
   };
 
-  const markAsRead = async (notificationId: string) => {
+  const setupRealtime = () => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('notifications-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          setNotifications(prev => [payload.new as Notification, ...prev]);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
+
+  const handleMarkAsRead = async (notificationId: string) => {
     try {
       await supabase
         .from("notifications")
@@ -80,23 +107,23 @@ export default function NotificationsPage() {
     }
   };
 
-  const markAllAsRead = async () => {
+  const handleMarkAllAsRead = async () => {
     if (!user) return;
 
-    try {
-      await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("user_id", user.id)
-        .eq("is_read", false);
+    // Optimistic update
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
 
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-    } catch (error) {
-      console.error("Error marking all as read:", error);
+    const success = await markAllAsRead(user.id);
+    if (!success) {
+      fetchNotifications();
     }
   };
 
-  const deleteNotification = async (notificationId: string) => {
+  const handleDeleteNotification = async (e: React.MouseEvent, notificationId: string) => {
+    // Prevent the click from bubbling to the parent
+    e.preventDefault();
+    e.stopPropagation();
+
     try {
       await supabase
         .from("notifications")
@@ -109,24 +136,45 @@ export default function NotificationsPage() {
     }
   };
 
+  // FIXED: Proper navigation handler for mobile
   const handleNotificationClick = (notification: Notification) => {
-    // Mark as read
+    // Mark as read first
     if (!notification.is_read) {
-      markAsRead(notification.id);
+      handleMarkAsRead(notification.id);
     }
 
-    // Navigate based on type
     const data = notification.data || {};
-    
-    if (notification.type === "sos_alert" && data.sos_id) {
-      // Could navigate to a SOS detail page or map
-      router.push(`/map?sos=${data.sos_id}`);
-    } else if (notification.type === "nearby_incident" && data.post_id) {
-      router.push(`/post/${data.post_id}`);
-    } else if (notification.type === "comment" && data.post_id) {
-      router.push(`/post/${data.post_id}`);
-    } else if (notification.type === "confirmation" && data.post_id) {
-      router.push(`/post/${data.post_id}`);
+
+    // Navigate based on notification type
+    switch (notification.type) {
+      case "sos_alert":
+        if (data.sos_id) {
+          router.push(`/map?sos=${data.sos_id}`);
+        } else {
+          router.push("/map");
+        }
+        break;
+      
+      case "nearby_incident":
+      case "post_confirmed":
+      case "post_comment":
+      case "comment_liked":
+        if (data.post_id) {
+          router.push(`/post/${data.post_id}`);
+        }
+        break;
+      
+      case "guardian_approved":
+      case "guardian_rejected":
+        router.push("/become-guardian");
+        break;
+      
+      default:
+        // For any notification with a post_id, navigate to that post
+        if (data.post_id) {
+          router.push(`/post/${data.post_id}`);
+        }
+        break;
     }
   };
 
@@ -136,10 +184,12 @@ export default function NotificationsPage() {
         return <AlertTriangle className="w-5 h-5 text-red-400" />;
       case "nearby_incident":
         return <MapPin className="w-5 h-5 text-orange-400" />;
-      case "comment":
+      case "post_comment":
         return <MessageCircle className="w-5 h-5 text-blue-400" />;
-      case "confirmation":
+      case "post_confirmed":
         return <CheckCircle className="w-5 h-5 text-green-400" />;
+      case "comment_liked":
+        return <Heart className="w-5 h-5 text-red-400" />;
       default:
         return <Bell className="w-5 h-5 text-primary-400" />;
     }
@@ -175,8 +225,8 @@ export default function NotificationsPage() {
             </div>
             {unreadCount > 0 && (
               <button
-                onClick={markAllAsRead}
-                className="flex items-center gap-1 text-sm text-primary-400 hover:text-primary-300"
+                onClick={handleMarkAllAsRead}
+                className="flex items-center gap-1 text-sm text-primary-400 hover:text-primary-300 py-2 px-3 rounded-lg active:bg-white/10"
               >
                 <Check className="w-4 h-4" />
                 Mark all read
@@ -203,9 +253,17 @@ export default function NotificationsPage() {
                 <div
                   key={notification.id}
                   onClick={() => handleNotificationClick(notification)}
-                  className={`glass-card p-4 cursor-pointer transition-all hover:bg-white/5 ${
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      handleNotificationClick(notification);
+                    }
+                  }}
+                  className={`glass-card p-4 cursor-pointer transition-all active:scale-[0.98] active:bg-white/10 hover:bg-white/5 select-none ${
                     !notification.is_read ? "border-l-4 border-l-primary-500" : ""
                   }`}
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
                 >
                   <div className="flex gap-3">
                     {/* Icon */}
@@ -220,7 +278,7 @@ export default function NotificationsPage() {
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
-                        <div>
+                        <div className="flex-1 min-w-0">
                           <p className={`font-medium ${
                             notification.is_read ? "text-dark-300" : "text-dark-100"
                           }`}>
@@ -234,11 +292,8 @@ export default function NotificationsPage() {
                         </div>
                         
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteNotification(notification.id);
-                          }}
-                          className="p-1 hover:bg-white/10 rounded text-dark-500 hover:text-red-400"
+                          onClick={(e) => handleDeleteNotification(e, notification.id)}
+                          className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-400 active:bg-white/20 flex-shrink-0"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

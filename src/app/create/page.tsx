@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
+import { notifyUsersAboutIncident } from "@/lib/notifications";
 
 export default function CreatePostPage() {
   const router = useRouter();
@@ -46,6 +47,7 @@ export default function CreatePostPage() {
     isMounted.current = true;
     return () => {
       isMounted.current = false;
+      // Cleanup previews
       mediaPreviews.forEach(p => URL.revokeObjectURL(p.url));
     };
   }, []);
@@ -139,8 +141,8 @@ export default function CreatePostPage() {
     }
 
     for (const file of files) {
-      if (file.size > 50 * 1024 * 1024) {
-        setError(`${file.name} is too large. Maximum 50MB per file.`);
+      if (file.size > 100 * 1024 * 1024) {
+        setError(`${file.name} is too large. Maximum 100MB per file.`);
         return;
       }
     }
@@ -263,7 +265,7 @@ export default function CreatePostPage() {
         throw new Error(postError.message);
       }
 
-      setUploadProgress(90);
+      setUploadProgress(85);
 
       // Insert media records
       for (const mediaItem of mediaUrls) {
@@ -282,6 +284,34 @@ export default function CreatePostPage() {
           tag,
         });
       }
+
+      setUploadProgress(90);
+
+      // Update user's last known location (for radius-based notifications)
+      await supabase
+        .from("users")
+        .update({
+          last_latitude: location.latitude,
+          last_longitude: location.longitude,
+          last_location_updated_at: new Date().toISOString(),
+        })
+        .eq("id", authUser.id);
+
+      setUploadProgress(95);
+
+      // Notify users based on their settings (runs in background)
+      notifyUsersAboutIncident(
+        post.id,
+        authUser.id,
+        category,
+        location.address || null,
+        location.latitude,
+        location.longitude
+      ).then(count => {
+        console.log(`Notified ${count} users about new post`);
+      }).catch(err => {
+        console.error("Error notifying users:", err);
+      });
 
       setUploadProgress(100);
       router.push("/");
@@ -389,7 +419,7 @@ export default function CreatePostPage() {
               </>
             )}
           </div>
-          <p className="text-xs text-dark-500 mt-2">Up to 50 photos, 10 videos (max 50MB each)</p>
+          <p className="text-xs text-dark-500 mt-2">Up to 50 photos, 10 videos (max 100MB each)</p>
         </div>
 
         {/* Location */}

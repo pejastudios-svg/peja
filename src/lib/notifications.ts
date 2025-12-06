@@ -18,7 +18,9 @@ interface CreateNotificationParams {
   data?: Record<string, any>;
 }
 
-// Create a notification for a user
+// ============================================
+// CORE NOTIFICATION FUNCTION
+// ============================================
 export async function createNotification({
   userId,
   type,
@@ -48,7 +50,378 @@ export async function createNotification({
   }
 }
 
-// Notify post owner when someone confirms their post
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+// Calculate distance between two points in km (Haversine formula)
+function calculateDistanceKm(
+  lat1: number, 
+  lon1: number, 
+  lat2: number, 
+  lon2: number
+): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Check if current time is within quiet hours
+function isInQuietHours(start: string, end: string): boolean {
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  const currentTimeMinutes = currentHour * 60 + currentMinute;
+
+  const [startHour, startMin] = start.split(':').map(Number);
+  const [endHour, endMin] = end.split(':').map(Number);
+  const startTimeMinutes = startHour * 60 + startMin;
+  const endTimeMinutes = endHour * 60 + endMin;
+
+  if (startTimeMinutes > endTimeMinutes) {
+    // Overnight quiet hours (e.g., 23:00 - 07:00)
+    return currentTimeMinutes >= startTimeMinutes || currentTimeMinutes <= endTimeMinutes;
+  } else {
+    // Same-day quiet hours
+    return currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes;
+  }
+}
+
+// Nigerian states list
+const NIGERIAN_STATES = [
+  "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue",
+  "Borno", "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu",
+  "FCT", "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi",
+  "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo", "Osun",
+  "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara"
+];
+
+// Extract state from address string
+function extractStateFromAddress(address: string | null): string | null {
+  if (!address) return null;
+  
+  const addressLower = address.toLowerCase();
+  for (const state of NIGERIAN_STATES) {
+    if (addressLower.includes(state.toLowerCase())) {
+      return state;
+    }
+  }
+  
+  return null;
+}
+
+// Category classification
+const DANGER_CATEGORIES = ["crime", "fire", "accident", "police"];
+const CAUTION_CATEGORIES = ["roadwork", "traffic", "outage", "flooding"];
+const AWARENESS_CATEGORIES = ["protest", "event", "animal", "noise"];
+const INFO_CATEGORIES = ["general", "closure", "transport"];
+
+function getCategoryType(category: string): "danger" | "caution" | "awareness" | "info" {
+  if (DANGER_CATEGORIES.includes(category)) return "danger";
+  if (CAUTION_CATEGORIES.includes(category)) return "caution";
+  if (AWARENESS_CATEGORIES.includes(category)) return "awareness";
+  return "info";
+}
+
+function getCategoryName(category: string): string {
+  const names: Record<string, string> = {
+    crime: "Crime",
+    fire: "Fire",
+    accident: "Accident",
+    police: "Police Activity",
+    roadwork: "Road Work",
+    traffic: "Traffic",
+    outage: "Power Outage",
+    flooding: "Flooding",
+    protest: "Protest",
+    event: "Event",
+    animal: "Animal Hazard",
+    noise: "Disturbance",
+    general: "General",
+    closure: "Closure",
+    transport: "Transport",
+  };
+  return names[category] || "Incident";
+}
+
+// ============================================
+// MAIN NOTIFICATION LOGIC
+// ============================================
+
+interface UserWithSettings {
+  id: string;
+  last_latitude: number | null;
+  last_longitude: number | null;
+  settings: {
+    push_enabled: boolean;
+    danger_alerts: boolean;
+    caution_alerts: boolean;
+    awareness_alerts: boolean;
+    info_alerts: boolean;
+    alert_zone_type: string;
+    selected_states: string[];
+    alert_radius_km: number;
+    quiet_hours_enabled: boolean;
+    quiet_hours_start: string;
+    quiet_hours_end: string;
+  } | null;
+}
+
+async function shouldNotifyUser(
+  user: UserWithSettings,
+  category: string,
+  postLatitude: number | null,
+  postLongitude: number | null,
+  postAddress: string | null
+): Promise<boolean> {
+  const settings = user.settings;
+  const catType = getCategoryType(category);
+
+  // ============================================
+  // CASE 1: No settings - use defaults
+  // ============================================
+  if (!settings) {
+    // Default: danger and caution alerts ON, all of Nigeria
+    return catType === "danger" || catType === "caution";
+  }
+
+  // ============================================
+  // CASE 2: Push notifications disabled
+  // ============================================
+  if (settings.push_enabled === false) {
+    return false;
+  }
+
+  // ============================================
+  // CASE 3: Check category preferences
+  // ============================================
+  switch (catType) {
+    case "danger":
+      if (settings.danger_alerts === false) return false;
+      break;
+    case "caution":
+      if (settings.caution_alerts === false) return false;
+      break;
+    case "awareness":
+      if (settings.awareness_alerts === false) return false;
+      break;
+    case "info":
+      if (settings.info_alerts === false) return false;
+      break;
+  }
+
+  // ============================================
+  // CASE 4: Check quiet hours
+  // ============================================
+  if (settings.quiet_hours_enabled) {
+    const start = settings.quiet_hours_start || "23:00";
+    const end = settings.quiet_hours_end || "07:00";
+    
+    if (isInQuietHours(start, end)) {
+      // During quiet hours, ONLY danger alerts get through
+      if (catType !== "danger") {
+        return false;
+      }
+    }
+  }
+
+  // ============================================
+  // CASE 5: Check location/zone preferences
+  // ============================================
+  const alertZoneType = settings.alert_zone_type || "all_nigeria";
+
+  switch (alertZoneType) {
+    // -----------------------------------------
+    // ALL OF NIGERIA - No location filtering
+    // -----------------------------------------
+    case "all_nigeria":
+      return true;
+
+    // -----------------------------------------
+    // SELECTED STATES - Check if post is in user's selected states
+    // -----------------------------------------
+    case "states": {
+      const selectedStates = settings.selected_states || [];
+      
+      // If no states selected, treat as "all"
+      if (selectedStates.length === 0) {
+        return true;
+      }
+      
+      // Get the state from the post address
+      const postState = extractStateFromAddress(postAddress);
+      
+      if (!postState) {
+        // Can't determine state - don't notify
+        return false;
+      }
+      
+      // Check if post state is in user's selected states
+      const isInSelectedState = selectedStates.some(
+        s => s.toLowerCase() === postState.toLowerCase()
+      );
+      
+      return isInSelectedState;
+    }
+
+    // -----------------------------------------
+    // CUSTOM RADIUS - Check distance from user
+    // -----------------------------------------
+    case "radius": {
+      // Need both user location and post location
+      if (!user.last_latitude || !user.last_longitude) {
+        // User has no saved location - can't check radius
+        return false;
+      }
+      
+      if (!postLatitude || !postLongitude) {
+        // Post has no coordinates - can't check radius
+        return false;
+      }
+      
+      const radiusKm = settings.alert_radius_km || 5;
+      
+      const distance = calculateDistanceKm(
+        user.last_latitude,
+        user.last_longitude,
+        postLatitude,
+        postLongitude
+      );
+      
+      // User is within radius if distance is less than or equal to their setting
+      return distance <= radiusKm;
+    }
+
+    default:
+      return true;
+  }
+}
+
+// ============================================
+// NOTIFY USERS ABOUT NEW INCIDENT
+// ============================================
+export async function notifyUsersAboutIncident(
+  postId: string,
+  posterId: string,
+  category: string,
+  address: string | null,
+  latitude?: number,
+  longitude?: number
+): Promise<number> {
+  console.log("========================================");
+  console.log("NOTIFY USERS ABOUT INCIDENT");
+  console.log("Post ID:", postId);
+  console.log("Category:", category);
+  console.log("Address:", address);
+  console.log("Latitude:", latitude);
+  console.log("Longitude:", longitude);
+  console.log("========================================");
+
+  try {
+    // Get all active users with their settings and location
+    const { data: users, error: usersError } = await supabase
+      .from("users")
+      .select(`
+        id,
+        last_latitude,
+        last_longitude
+      `)
+      .neq("id", posterId)
+      .eq("status", "active");
+
+    if (usersError) {
+      console.error("Error fetching users:", usersError);
+      return 0;
+    }
+
+    if (!users || users.length === 0) {
+      console.log("No users to notify");
+      return 0;
+    }
+
+    console.log(`Found ${users.length} potential users`);
+
+    // Get settings for all users in one query
+    const userIds = users.map(u => u.id);
+    const { data: allSettings } = await supabase
+      .from("user_settings")
+      .select("*")
+      .in("user_id", userIds);
+
+    // Create a map of user_id -> settings
+    const settingsMap: Record<string, any> = {};
+    if (allSettings) {
+      allSettings.forEach(s => {
+        settingsMap[s.user_id] = s;
+      });
+    }
+
+    // Prepare notification content
+    const categoryName = getCategoryName(category);
+    const shortAddress = address 
+      ? address.split(",").slice(0, 2).join(",").trim() 
+      : null;
+
+    let notifiedCount = 0;
+
+    // Check each user
+    for (const user of users) {
+      const userWithSettings: UserWithSettings = {
+        id: user.id,
+        last_latitude: user.last_latitude,
+        last_longitude: user.last_longitude,
+        settings: settingsMap[user.id] || null,
+      };
+
+      const shouldNotify = await shouldNotifyUser(
+        userWithSettings,
+        category,
+        latitude || null,
+        longitude || null,
+        address
+      );
+
+      if (shouldNotify) {
+        const success = await createNotification({
+          userId: user.id,
+          type: "nearby_incident",
+          title: `📍 ${categoryName} Alert`,
+          body: shortAddress 
+            ? `Reported near ${shortAddress}` 
+            : "An incident was reported nearby",
+          data: { post_id: postId, category },
+        });
+
+        if (success) {
+          notifiedCount++;
+          console.log(`✓ Notified user ${user.id}`);
+        }
+      } else {
+        console.log(`✗ Skipped user ${user.id} (settings filter)`);
+      }
+    }
+
+    console.log(`========================================`);
+    console.log(`TOTAL NOTIFIED: ${notifiedCount} / ${users.length}`);
+    console.log(`========================================`);
+
+    return notifiedCount;
+  } catch (error) {
+    console.error("Error in notifyUsersAboutIncident:", error);
+    return 0;
+  }
+}
+
+// ============================================
+// SIMPLE NOTIFICATION FUNCTIONS
+// ============================================
+
 export async function notifyPostConfirmed(
   postId: string,
   postOwnerId: string,
@@ -63,7 +436,6 @@ export async function notifyPostConfirmed(
   });
 }
 
-// Notify post owner when someone comments
 export async function notifyPostComment(
   postId: string,
   postOwnerId: string,
@@ -83,7 +455,6 @@ export async function notifyPostComment(
   });
 }
 
-// Notify comment owner when someone likes their comment
 export async function notifyCommentLiked(
   postId: string,
   commentOwnerId: string,
@@ -98,7 +469,10 @@ export async function notifyCommentLiked(
   });
 }
 
-// Get unread notification count for header badge
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+
 export async function getUnreadCount(userId: string): Promise<number> {
   try {
     const { count, error } = await supabase
@@ -111,5 +485,33 @@ export async function getUnreadCount(userId: string): Promise<number> {
     return count || 0;
   } catch {
     return 0;
+  }
+}
+
+export async function markAllAsRead(userId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", userId)
+      .eq("is_read", false);
+
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export async function cleanupOldSOSNotifications(): Promise<void> {
+  try {
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    
+    await supabase
+      .from("notifications")
+      .delete()
+      .eq("type", "sos_alert")
+      .lt("created_at", fiveHoursAgo);
+  } catch (error) {
+    console.error("Error cleaning up SOS notifications:", error);
   }
 }

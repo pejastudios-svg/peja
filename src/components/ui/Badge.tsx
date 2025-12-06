@@ -1,30 +1,23 @@
 "use client";
 
-import { HTMLAttributes } from "react";
+import { ReactNode } from "react";
 
-interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
-  variant?: "danger" | "warning" | "info" | "success" | "default";
+interface BadgeProps {
+  children: ReactNode;
+  variant?: "danger" | "warning" | "info" | "success";
+  className?: string;
 }
 
-export function Badge({
-  children,
-  variant = "default",
-  className = "",
-  ...props
-}: BadgeProps) {
+export function Badge({ children, variant = "info", className = "" }: BadgeProps) {
   const variants = {
     danger: "badge-danger",
     warning: "badge-warning",
     info: "badge-info",
     success: "badge-success",
-    default: "badge bg-dark-500/20 text-dark-300 border border-dark-500/30",
   };
 
   return (
-    <span
-      className={`badge ${variants[variant]} ${className}`}
-      {...props}
-    >
+    <span className={`badge ${variants[variant]} ${className}`}>
       {children}
     </span>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -8,23 +8,35 @@ import {
   ArrowLeft,
   Plus,
   Trash2,
-  Phone,
+  Search,
   User,
   Users,
   Loader2,
   AlertTriangle,
   CheckCircle,
+  X,
+  Share2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 
 interface EmergencyContact {
   id: string;
-  name: string;
-  phone: string;
+  contact_user_id: string;
   relationship: string;
-  is_verified: boolean;
+  created_at: string;
+  contact_user?: {
+    id: string;
+    full_name: string;
+    avatar_url?: string;
+    phone?: string;
+  };
+}
+
+interface SearchUser {
+  id: string;
+  full_name: string;
+  avatar_url?: string;
 }
 
 const RELATIONSHIPS = [
@@ -41,6 +53,7 @@ const RELATIONSHIPS = [
 export default function EmergencyContactsPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,11 +62,14 @@ export default function EmergencyContactsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Form state
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<SearchUser | null>(null);
   const [relationship, setRelationship] = useState("");
   const [error, setError] = useState("");
+  const [showNotOnPeja, setShowNotOnPeja] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -67,18 +83,86 @@ export default function EmergencyContactsPage() {
     }
   }, [user]);
 
+  // Search for users when query changes
+  useEffect(() => {
+    const searchUsers = async () => {
+      if (searchQuery.length < 2) {
+        setSearchResults([]);
+        setShowNotOnPeja(false);
+        return;
+      }
+
+      setSearching(true);
+      try {
+        const { data, error } = await supabase
+          .from("users")
+          .select("id, full_name, avatar_url")
+          .neq("id", user?.id)
+          .ilike("full_name", `%${searchQuery}%`)
+          .limit(10);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          setSearchResults(data);
+          setShowNotOnPeja(false);
+        } else {
+          setSearchResults([]);
+          setShowNotOnPeja(true);
+        }
+      } catch (error) {
+        console.error("Search error:", error);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    };
+
+    const debounce = setTimeout(searchUsers, 300);
+    return () => clearTimeout(debounce);
+  }, [searchQuery, user?.id]);
+
   const fetchContacts = async () => {
     if (!user) return;
 
     try {
       const { data, error } = await supabase
         .from("emergency_contacts")
-        .select("*")
+        .select(`
+          id,
+          contact_user_id,
+          relationship,
+          created_at
+        `)
         .eq("user_id", user.id)
         .order("created_at", { ascending: true });
 
       if (error) throw error;
-      setContacts(data || []);
+
+      // Fetch user details for each contact
+      if (data && data.length > 0) {
+        const contactUserIds = data.map(c => c.contact_user_id);
+        const { data: usersData } = await supabase
+          .from("users")
+          .select("id, full_name, avatar_url, phone")
+          .in("id", contactUserIds);
+
+        const usersMap: Record<string, any> = {};
+        if (usersData) {
+          usersData.forEach(u => {
+            usersMap[u.id] = u;
+          });
+        }
+
+        const contactsWithUsers = data.map(c => ({
+          ...c,
+          contact_user: usersMap[c.contact_user_id] || null,
+        }));
+
+        setContacts(contactsWithUsers);
+      } else {
+        setContacts([]);
+      }
     } catch (error) {
       console.error("Error fetching contacts:", error);
     } finally {
@@ -87,12 +171,8 @@ export default function EmergencyContactsPage() {
   };
 
   const handleAddContact = async () => {
-    if (!name.trim()) {
-      setError("Please enter a name");
-      return;
-    }
-    if (!phone.trim()) {
-      setError("Please enter a phone number");
+    if (!selectedUser) {
+      setError("Please select a user");
       return;
     }
     if (!relationship) {
@@ -104,6 +184,12 @@ export default function EmergencyContactsPage() {
       return;
     }
 
+    // Check if already added
+    if (contacts.some(c => c.contact_user_id === selectedUser.id)) {
+      setError("This person is already in your emergency contacts");
+      return;
+    }
+
     setSaving(true);
     setError("");
 
@@ -112,21 +198,22 @@ export default function EmergencyContactsPage() {
         .from("emergency_contacts")
         .insert({
           user_id: user?.id,
-          name: name.trim(),
-          phone: phone.trim(),
+          contact_user_id: selectedUser.id,
           relationship,
-          is_verified: false,
         })
         .select()
         .single();
 
       if (error) throw error;
 
-      setContacts((prev) => [...prev, data]);
-      setShowAddModal(false);
-      setName("");
-      setPhone("");
-      setRelationship("");
+      // Add the new contact with user details
+      const newContact: EmergencyContact = {
+        ...data,
+        contact_user: selectedUser,
+      };
+
+      setContacts((prev) => [...prev, newContact]);
+      handleCloseModal();
     } catch (error) {
       console.error("Error adding contact:", error);
       setError("Failed to add contact. Please try again.");
@@ -153,6 +240,36 @@ export default function EmergencyContactsPage() {
       console.error("Error deleting contact:", error);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    setShowAddModal(false);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSelectedUser(null);
+    setRelationship("");
+    setError("");
+    setShowNotOnPeja(false);
+  };
+
+  const handleShare = async () => {
+    const shareText = "Join Peja - Stay safe with real-time incident alerts in your area!";
+    const shareUrl = "https://peja.ng"; // Your app URL
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Peja - Community Safety",
+          text: shareText,
+          url: shareUrl,
+        });
+      } catch (e) {
+        // User cancelled
+      }
+    } else {
+      await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+      alert("Link copied! Share it with your contact.");
     }
   };
 
@@ -186,8 +303,8 @@ export default function EmergencyContactsPage() {
           <AlertTriangle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
           <div>
             <p className="text-dark-200 text-sm">
-              These contacts will be notified via SMS when you trigger an SOS alert.
-              You can add up to 5 emergency contacts.
+              These Peja users will be notified when you trigger an SOS alert.
+              They must be registered on Peja to receive notifications.
             </p>
           </div>
         </div>
@@ -199,7 +316,7 @@ export default function EmergencyContactsPage() {
               <Users className="w-12 h-12 text-dark-600 mx-auto mb-4" />
               <p className="text-dark-400 mb-2">No emergency contacts yet</p>
               <p className="text-sm text-dark-500 mb-4">
-                Add contacts who should be notified in emergencies
+                Add Peja users who should be notified in emergencies
               </p>
             </div>
           ) : (
@@ -208,17 +325,24 @@ export default function EmergencyContactsPage() {
                 key={contact.id}
                 className="glass-card flex items-center gap-4"
               >
-                <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center flex-shrink-0">
-                  <User className="w-6 h-6 text-primary-400" />
+                <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {contact.contact_user?.avatar_url ? (
+                    <img 
+                      src={contact.contact_user.avatar_url} 
+                      alt="" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-6 h-6 text-primary-400" />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="font-medium text-dark-100">{contact.name}</p>
-                    {contact.is_verified && (
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                    )}
+                    <p className="font-medium text-dark-100">
+                      {contact.contact_user?.full_name || "Unknown User"}
+                    </p>
+                    <CheckCircle className="w-4 h-4 text-green-400" />
                   </div>
-                  <p className="text-sm text-dark-400">{contact.phone}</p>
                   <p className="text-xs text-dark-500">{contact.relationship}</p>
                 </div>
                 <button
@@ -254,11 +378,9 @@ export default function EmergencyContactsPage() {
       {/* Add Contact Modal */}
       <Modal
         isOpen={showAddModal}
-        onClose={() => {
-          setShowAddModal(false);
-          setError("");
-        }}
+        onClose={handleCloseModal}
         title="Add Emergency Contact"
+        size="lg"
       >
         <div className="space-y-4">
           {error && (
@@ -267,53 +389,142 @@ export default function EmergencyContactsPage() {
             </div>
           )}
 
-          <Input
-            label="Name"
-            placeholder="Contact's full name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            leftIcon={<User className="w-4 h-4" />}
-          />
+          {/* Search Input */}
+          {!selectedUser ? (
+            <div>
+              <label className="block text-sm font-medium text-dark-200 mb-1.5">
+                Search for a Peja user
+              </label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Type a name to search..."
+                  className="w-full pl-10 pr-4 py-3 glass-input"
+                  autoFocus
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-white/10 rounded"
+                  >
+                    <X className="w-4 h-4 text-dark-400" />
+                  </button>
+                )}
+              </div>
 
-          <Input
-            label="Phone Number"
-            type="tel"
-            placeholder="+234 800 000 0000"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            leftIcon={<Phone className="w-4 h-4" />}
-          />
+              {/* Search Results */}
+              {searching && (
+                <div className="flex justify-center py-4">
+                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                </div>
+              )}
 
-          <div>
-            <label className="block text-sm font-medium text-dark-200 mb-1.5">
-              Relationship
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {RELATIONSHIPS.map((rel) => (
-                <button
-                  key={rel}
-                  type="button"
-                  onClick={() => setRelationship(rel)}
-                  className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                    relationship === rel
-                      ? "bg-primary-600 text-white"
-                      : "glass-sm text-dark-300 hover:bg-white/10"
-                  }`}
-                >
-                  {rel}
-                </button>
-              ))}
+              {!searching && searchResults.length > 0 && (
+                <div className="mt-2 space-y-1 max-h-60 overflow-y-auto">
+                  {searchResults.map((resultUser) => (
+                    <button
+                      key={resultUser.id}
+                      onClick={() => setSelectedUser(resultUser)}
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/10 transition-colors text-left"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        {resultUser.avatar_url ? (
+                          <img src={resultUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-5 h-5 text-primary-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-medium text-dark-100">{resultUser.full_name}</p>
+                        <p className="text-xs text-dark-500">Peja User</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Not on Peja Message */}
+              {showNotOnPeja && !searching && (
+                <div className="mt-4 p-4 glass-sm rounded-xl text-center">
+                  <p className="text-dark-300 mb-3">
+                    No users found with that name.
+                  </p>
+                  <p className="text-sm text-dark-400 mb-4">
+                    Your contact must be registered on Peja to receive SOS alerts.
+                    Share Peja with them!
+                  </p>
+                  <Button
+                    variant="secondary"
+                    onClick={handleShare}
+                    leftIcon={<Share2 className="w-4 h-4" />}
+                  >
+                    Share Peja
+                  </Button>
+                </div>
+              )}
+
+              {!searching && searchQuery.length > 0 && searchQuery.length < 2 && (
+                <p className="text-xs text-dark-500 mt-2">
+                  Type at least 2 characters to search
+                </p>
+              )}
             </div>
-          </div>
+          ) : (
+            // Selected User & Relationship
+            <div>
+              <label className="block text-sm font-medium text-dark-200 mb-2">
+                Selected Contact
+              </label>
+              <div className="flex items-center gap-3 p-3 glass-sm rounded-xl mb-4">
+                <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  {selectedUser.avatar_url ? (
+                    <img src={selectedUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-5 h-5 text-primary-400" />
+                  )}
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-dark-100">{selectedUser.full_name}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedUser(null)}
+                  className="p-1 hover:bg-white/10 rounded text-dark-400"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <label className="block text-sm font-medium text-dark-200 mb-2">
+                Relationship
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {RELATIONSHIPS.map((rel) => (
+                  <button
+                    key={rel}
+                    type="button"
+                    onClick={() => setRelationship(rel)}
+                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                      relationship === rel
+                        ? "bg-primary-600 text-white"
+                        : "glass-sm text-dark-300 hover:bg-white/10"
+                    }`}
+                  >
+                    {rel}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-3 pt-4">
             <Button
               variant="secondary"
               className="flex-1"
-              onClick={() => {
-                setShowAddModal(false);
-                setError("");
-              }}
+              onClick={handleCloseModal}
             >
               Cancel
             </Button>
@@ -322,6 +533,7 @@ export default function EmergencyContactsPage() {
               className="flex-1"
               onClick={handleAddContact}
               isLoading={saving}
+              disabled={!selectedUser || !relationship}
             >
               Add Contact
             </Button>

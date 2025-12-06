@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -10,13 +10,10 @@ import { Button } from "@/components/ui/Button";
 import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { realtimeManager } from "@/lib/realtime";
 import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
 
 type FeedTab = "nearby" | "trending";
-
-// Simple cache for posts
-let postsCache: { posts: Post[]; tab: FeedTab; timestamp: number } | null = null;
-const POSTS_CACHE_DURATION = 30 * 1000; // 30 seconds
 
 export default function Home() {
   const router = useRouter();
@@ -28,16 +25,43 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchPosts = async (isRefresh = false) => {
-    // Check cache first (unless refreshing)
-    if (!isRefresh && postsCache && 
-        postsCache.tab === activeTab && 
-        Date.now() - postsCache.timestamp < POSTS_CACHE_DURATION) {
-      setPosts(postsCache.posts);
-      setLoading(false);
-      return;
-    }
+  const formatPost = useCallback(async (postData: any): Promise<Post | null> => {
+    try {
+      // Fetch media and tags for new post
+      const [{ data: media }, { data: tags }] = await Promise.all([
+        supabase.from("post_media").select("*").eq("post_id", postData.id),
+        supabase.from("post_tags").select("tag").eq("post_id", postData.id),
+      ]);
 
+      return {
+        id: postData.id,
+        user_id: postData.user_id,
+        category: postData.category,
+        comment: postData.comment,
+        location: { latitude: 0, longitude: 0 },
+        address: postData.address,
+        is_anonymous: postData.is_anonymous,
+        status: postData.status,
+        is_sensitive: postData.is_sensitive,
+        confirmations: postData.confirmations || 0,
+        views: postData.views || 0,
+        comment_count: postData.comment_count || 0,
+        created_at: postData.created_at,
+        media: media?.map((m: any) => ({
+          id: m.id,
+          post_id: postData.id,
+          url: m.url,
+          media_type: m.media_type,
+          is_sensitive: m.is_sensitive,
+        })) || [],
+        tags: tags?.map((t: any) => t.tag) || [],
+      };
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const fetchPosts = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -97,13 +121,6 @@ export default function Home() {
       }));
 
       setPosts(formattedPosts);
-      
-      // Update cache
-      postsCache = {
-        posts: formattedPosts,
-        tab: activeTab,
-        timestamp: Date.now(),
-      };
     } catch (err) {
       console.error("Fetch error:", err);
       setPosts([]);
@@ -111,17 +128,52 @@ export default function Home() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [activeTab]);
 
-  // Fetch on mount and tab change
+  // Initial fetch
   useEffect(() => {
     if (!authLoading) {
       fetchPosts();
     }
-  }, [activeTab, authLoading]);
+  }, [activeTab, authLoading, fetchPosts]);
+
+  // Real-time subscription
+  useEffect(() => {
+    const unsubscribe = realtimeManager.subscribeToPosts(
+      // On new post
+      async (newPost) => {
+        if (newPost.status === "live") {
+          const formatted = await formatPost(newPost);
+          if (formatted) {
+            setPosts(prev => [formatted, ...prev]);
+          }
+        }
+      },
+      // On post update
+      (updatedPost) => {
+        setPosts(prev => prev.map(p => {
+          if (p.id === updatedPost.id) {
+            return {
+              ...p,
+              confirmations: updatedPost.confirmations || p.confirmations,
+              views: updatedPost.views || p.views,
+              comment_count: updatedPost.comment_count || p.comment_count,
+              status: updatedPost.status,
+            };
+          }
+          return p;
+        }).filter(p => p.status === "live"));
+      },
+      // On post delete
+      (deletedPost) => {
+        setPosts(prev => prev.filter(p => p.id !== deletedPost.id));
+      }
+    );
+
+    return () => unsubscribe();
+  }, [formatPost]);
 
   const handleRefresh = () => {
-    postsCache = null; // Clear cache
     fetchPosts(true);
   };
 
@@ -137,8 +189,7 @@ export default function Home() {
     }
   };
 
-  // Show loading only on initial load, not on every auth check
-  if (authLoading && !postsCache) {
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />

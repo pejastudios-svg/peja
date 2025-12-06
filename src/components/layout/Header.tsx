@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Bell, Menu, Plus, User, Search } from "lucide-react";
 import { Button } from "../ui/Button";
 import { useAuth } from "@/context/AuthContext";
-import { getUnreadCount } from "@/lib/notifications";
+import { supabase } from "@/lib/supabase";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -20,16 +20,54 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
 
   useEffect(() => {
     if (user) {
-      getUnreadCount(user.id).then(setUnreadCount);
-      
-      // Refresh count every 30 seconds
-      const interval = setInterval(() => {
-        getUnreadCount(user.id).then(setUnreadCount);
-      }, 30000);
-
-      return () => clearInterval(interval);
+      fetchUnreadCount();
+      setupRealtime();
     }
   }, [user]);
+
+  const fetchUnreadCount = async () => {
+    if (!user) return;
+
+    try {
+      const { count, error } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false);
+
+      if (!error) {
+        setUnreadCount(count || 0);
+      }
+    } catch (error) {
+      console.error("Error fetching unread count:", error);
+    }
+  };
+
+  // Real-time subscription
+  const setupRealtime = () => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('header-notifications')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all changes
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          // Refetch count on any change
+          fetchUnreadCount();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 glass-header">

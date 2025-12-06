@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, memo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   MapPin,
@@ -38,6 +38,9 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [localConfirmations, setLocalConfirmations] = useState(post.confirmations);
   const [videoError, setVideoError] = useState(false);
+  
+  // Prevent double-click on confirm
+  const confirmingRef = useRef(false);
 
   const isExpired = differenceInHours(new Date(), new Date(post.created_at)) >= 24;
 
@@ -69,71 +72,99 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
     return () => { mounted = false; };
   }, [post.id]);
 
-
-const handleConfirmClick = async (e: React.MouseEvent) => {
-  e.stopPropagation();
-  setConfirmLoading(true);
-
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      router.push("/login");
+  const handleConfirmClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Prevent double-click
+    if (confirmingRef.current) {
       return;
     }
+    confirmingRef.current = true;
+    setConfirmLoading(true);
 
-    if (isConfirmed) {
-      // Unlike - no notification needed
-      setIsConfirmed(false);
-      setLocalConfirmations((prev) => Math.max(0, prev - 1));
-
-      await supabase
-        .from("post_confirmations")
-        .delete()
-        .eq("post_id", post.id)
-        .eq("user_id", user.id);
-
-      await supabase
-        .from("posts")
-        .update({ confirmations: Math.max(0, localConfirmations - 1) })
-        .eq("id", post.id);
-    } else {
-      // Confirm
-      setIsConfirmed(true);
-      setLocalConfirmations((prev) => prev + 1);
-
-      await supabase
-        .from("post_confirmations")
-        .insert({ post_id: post.id, user_id: user.id });
-
-      await supabase
-        .from("posts")
-        .update({ confirmations: localConfirmations + 1 })
-        .eq("id", post.id);
-
-      // Notify post owner (if not self)
-      if (post.user_id && post.user_id !== user.id) {
-        const { data: userData } = await supabase
-          .from("users")
-          .select("full_name")
-          .eq("id", user.id)
-          .single();
-        
-        notifyPostConfirmed(
-          post.id,
-          post.user_id,
-          userData?.full_name || "Someone"
-        );
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/login");
+        return;
       }
-    }
 
-    onConfirm?.(post.id);
-  } catch (error) {
-    setIsConfirmed(!isConfirmed);
-    setLocalConfirmations(post.confirmations);
-  } finally {
-    setConfirmLoading(false);
-  }
-};
+      const wasConfirmed = isConfirmed;
+      const prevCount = localConfirmations;
+
+      if (wasConfirmed) {
+        // Unconfirm - optimistic update
+        setIsConfirmed(false);
+        setLocalConfirmations(Math.max(0, prevCount - 1));
+
+        const { error: deleteError } = await supabase
+          .from("post_confirmations")
+          .delete()
+          .eq("post_id", post.id)
+          .eq("user_id", user.id);
+
+        if (deleteError) {
+          // Rollback on error
+          setIsConfirmed(true);
+          setLocalConfirmations(prevCount);
+          throw deleteError;
+        }
+
+        await supabase
+          .from("posts")
+          .update({ confirmations: Math.max(0, prevCount - 1) })
+          .eq("id", post.id);
+
+      } else {
+        // Confirm - optimistic update
+        setIsConfirmed(true);
+        setLocalConfirmations(prevCount + 1);
+
+        const { error: insertError } = await supabase
+          .from("post_confirmations")
+          .insert({ post_id: post.id, user_id: user.id });
+
+        if (insertError) {
+          // Rollback on error (might be duplicate)
+          if (insertError.code !== "23505") {
+            setIsConfirmed(false);
+            setLocalConfirmations(prevCount);
+            throw insertError;
+          }
+        }
+
+        await supabase
+          .from("posts")
+          .update({ confirmations: prevCount + 1 })
+          .eq("id", post.id);
+
+        // Notify post owner (if not self)
+        if (post.user_id && post.user_id !== user.id) {
+          const { data: userData } = await supabase
+            .from("users")
+            .select("full_name")
+            .eq("id", user.id)
+            .single();
+          
+          notifyPostConfirmed(
+            post.id,
+            post.user_id,
+            userData?.full_name || "Someone"
+          );
+        }
+      }
+
+      onConfirm?.(post.id);
+    } catch (error) {
+      console.error("Confirm error:", error);
+    } finally {
+      setConfirmLoading(false);
+      // Allow clicking again after a short delay
+      setTimeout(() => {
+        confirmingRef.current = false;
+      }, 300);
+    }
+  };
 
   const category = CATEGORIES.find((c) => c.id === post.category);
   const badgeVariant = category?.color === "danger" ? "danger" : category?.color === "warning" ? "warning" : "info";

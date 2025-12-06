@@ -28,9 +28,65 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Simple in-memory cache for user profile
+// Cache for user profile
 let userProfileCache: { userId: string; profile: User; timestamp: number } | null = null;
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// Update user location in background
+async function updateUserLocationInBackground(userId: string) {
+  try {
+    if (!navigator.geolocation) {
+      console.log("Geolocation not supported");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        
+        // Get address from coordinates
+        let address = "Unknown location";
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
+            { headers: { "User-Agent": "Peja App" } }
+          );
+          const data = await response.json();
+          if (data?.address) {
+            const addr = data.address;
+            const parts = [];
+            if (addr.road) parts.push(addr.road);
+            if (addr.neighbourhood) parts.push(addr.neighbourhood);
+            if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
+            if (addr.state) parts.push(addr.state);
+            address = parts.length > 0 ? parts.join(", ") : "Location found";
+          }
+        } catch (e) {
+          console.log("Could not get address");
+        }
+
+        // Update user location in database
+        await supabase
+          .from("users")
+          .update({
+            last_latitude: latitude,
+            last_longitude: longitude,
+            last_address: address,
+            last_location_updated_at: new Date().toISOString(),
+          })
+          .eq("id", userId);
+
+        console.log("User location updated:", latitude, longitude, address);
+      },
+      (error) => {
+        console.log("Could not get location:", error.message);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  } catch (error) {
+    console.error("Error updating location:", error);
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -39,9 +95,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const initRef = useRef(false);
   const fetchingRef = useRef(false);
+  const locationUpdateRef = useRef(false);
 
   useEffect(() => {
-    // Prevent double initialization in strict mode
     if (initRef.current) return;
     initRef.current = true;
 
@@ -53,30 +109,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(currentSession);
           setSupabaseUser(currentSession.user);
           await fetchUserProfile(currentSession.user.id);
+          
+          // Update location in background (only once per session)
+          if (!locationUpdateRef.current) {
+            locationUpdateRef.current = true;
+            updateUserLocationInBackground(currentSession.user.id);
+          }
         }
       } catch (error) {
         console.error("Auth init error:", error);
       } finally {
-        // ALWAYS set loading to false, no matter what
         setLoading(false);
       }
     };
 
-    // Set a timeout to ensure loading NEVER stays true forever
     const timeoutId = setTimeout(() => {
       setLoading(false);
-    }, 5000); // Max 5 seconds to initialize
+    }, 5000);
 
     initAuth().finally(() => {
       clearTimeout(timeoutId);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
         console.log("Auth event:", event);
 
-        // Ignore token refresh events - they don't need full reload
         if (event === 'TOKEN_REFRESHED') {
           setSession(newSession);
           return;
@@ -86,23 +144,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (newSession?.user) {
           setSupabaseUser(newSession.user);
-          // Don't block on profile fetch during navigation
           fetchUserProfile(newSession.user.id).catch(() => {});
+          
+          // Update location on sign in
+          if (event === 'SIGNED_IN' && !locationUpdateRef.current) {
+            locationUpdateRef.current = true;
+            updateUserLocationInBackground(newSession.user.id);
+          }
         } else {
           setUser(null);
           setSupabaseUser(null);
           userProfileCache = null;
+          locationUpdateRef.current = false;
         }
       }
     );
 
+    // Update location every 5 minutes while app is open
+    const locationInterval = setInterval(() => {
+      if (user?.id) {
+        updateUserLocationInBackground(user.id);
+      }
+    }, 5 * 60 * 1000);
+
     return () => {
       subscription.unsubscribe();
+      clearInterval(locationInterval);
     };
   }, []);
 
   async function fetchUserProfile(userId: string) {
-    // Check cache first
     if (userProfileCache && 
         userProfileCache.userId === userId && 
         Date.now() - userProfileCache.timestamp < CACHE_DURATION) {
@@ -110,7 +181,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Prevent concurrent fetches
     if (fetchingRef.current) return;
     fetchingRef.current = true;
 
@@ -123,7 +193,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) {
         console.error("Profile fetch error:", error);
-        // Don't return - still set basic user info
       }
 
       const profile: User = data ? {
@@ -144,7 +213,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setUser(profile);
       
-      // Cache the profile
       userProfileCache = {
         userId,
         profile,
@@ -152,7 +220,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     } catch (error) {
       console.error("Profile error:", error);
-      // Set minimal user info on error
       setUser({
         id: userId,
         email: supabaseUser?.email || "",
@@ -165,7 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function refreshUser() {
-    userProfileCache = null; // Clear cache
+    userProfileCache = null;
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (authUser) {
       await fetchUserProfile(authUser.id);
@@ -185,7 +252,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (authError) return { error: authError };
       if (!authData.user) return { error: new Error("Failed to create user") };
 
-      // Create profile - don't fail signup if this fails
       try {
         await supabase.from("users").insert({
           id: authData.user.id,
@@ -206,6 +272,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(authData.session);
         setSupabaseUser(authData.user);
         await fetchUserProfile(authData.user.id);
+        
+        // Update location after signup
+        updateUserLocationInBackground(authData.user.id);
       }
 
       return { error: null };
@@ -227,6 +296,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(data.session);
         setSupabaseUser(data.user);
         await fetchUserProfile(data.user.id);
+        
+        // Update location after login
+        locationUpdateRef.current = true;
+        updateUserLocationInBackground(data.user.id);
       }
 
       return { error: null };
@@ -237,6 +310,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signOut() {
     userProfileCache = null;
+    locationUpdateRef.current = false;
     await supabase.auth.signOut();
     setUser(null);
     setSupabaseUser(null);
