@@ -117,8 +117,8 @@ function extractStateFromAddress(address: string | null): string | null {
 }
 
 // Category classification
-const DANGER_CATEGORIES = ["crime", "fire", "accident", "police"];
-const CAUTION_CATEGORIES = ["roadwork", "traffic", "outage", "flooding"];
+const DANGER_CATEGORIES = ["crime", "fire", "accident", "police", "flooding"]; // ← Added flooding
+const CAUTION_CATEGORIES = ["roadwork", "traffic", "outage"];
 const AWARENESS_CATEGORIES = ["protest", "event", "animal", "noise"];
 const INFO_CATEGORIES = ["general", "closure", "transport"];
 
@@ -173,6 +173,9 @@ interface UserWithSettings {
   } | null;
 }
 
+// =====================================================
+// UPDATED shouldNotifyUser FUNCTION
+// =====================================================
 async function shouldNotifyUser(
   user: UserWithSettings,
   category: string,
@@ -183,36 +186,61 @@ async function shouldNotifyUser(
   const settings = user.settings;
   const catType = getCategoryType(category);
 
+  console.log(`\n🔍 Checking user ${user.id.slice(0, 8)}...`);
+
   // ============================================
-  // CASE 1: No settings - use defaults
+  // CASE 1: No settings - BLOCK ALL
+  // User must explicitly save settings to receive notifications
   // ============================================
   if (!settings) {
-    // Default: danger and caution alerts ON, all of Nigeria
-    return catType === "danger" || catType === "caution";
+    console.log(`  ✗ No settings found - BLOCKING (user must configure settings)`);
+    return false;
   }
 
   // ============================================
-  // CASE 2: Push notifications disabled
+  // CASE 2: Push notifications disabled - BLOCK ALL
   // ============================================
   if (settings.push_enabled === false) {
+    console.log(`  ✗ Push notifications DISABLED`);
     return false;
   }
 
   // ============================================
   // CASE 3: Check category preferences
   // ============================================
+  console.log(`  📂 Category: ${category} (type: ${catType})`);
+  
   switch (catType) {
     case "danger":
-      if (settings.danger_alerts === false) return false;
+      if (settings.danger_alerts === false) {
+        console.log(`  ✗ 🔴 Danger alerts DISABLED`);
+        return false;
+      }
+      console.log(`  ✓ 🔴 Danger alerts enabled`);
       break;
+      
     case "caution":
-      if (settings.caution_alerts === false) return false;
+      if (settings.caution_alerts === false) {
+        console.log(`  ✗ 🟠 Caution alerts DISABLED`);
+        return false;
+      }
+      console.log(`  ✓ 🟠 Caution alerts enabled`);
       break;
+      
     case "awareness":
-      if (settings.awareness_alerts === false) return false;
+      if (settings.awareness_alerts === false) {
+        console.log(`  ✗ 🟡 Awareness alerts DISABLED`);
+        return false;
+      }
+      console.log(`  ✓ 🟡 Awareness alerts enabled`);
       break;
+      
     case "info":
-      if (settings.info_alerts === false) return false;
+      if (settings.info_alerts === false) {
+        console.log(`  ✗ 🔵 Info alerts DISABLED`);
+        return false;
+      }
+      console.log(`  ✓ 🔵 Info alerts enabled`);
       break;
   }
 
@@ -224,10 +252,11 @@ async function shouldNotifyUser(
     const end = settings.quiet_hours_end || "07:00";
     
     if (isInQuietHours(start, end)) {
-      // During quiet hours, ONLY danger alerts get through
       if (catType !== "danger") {
+        console.log(`  ✗ Quiet hours active (${start}-${end}) - only danger alerts allowed`);
         return false;
       }
+      console.log(`  ✓ Quiet hours active but this is danger alert`);
     }
   }
 
@@ -235,58 +264,60 @@ async function shouldNotifyUser(
   // CASE 5: Check location/zone preferences
   // ============================================
   const alertZoneType = settings.alert_zone_type || "all_nigeria";
+  console.log(`  📍 Zone type: ${alertZoneType}`);
 
   switch (alertZoneType) {
     // -----------------------------------------
-    // ALL OF NIGERIA - No location filtering
+    // ALL OF NIGERIA
     // -----------------------------------------
     case "all_nigeria":
+      console.log(`  ✓ All Nigeria - ALLOWED`);
       return true;
 
     // -----------------------------------------
-    // SELECTED STATES - Check if post is in user's selected states
+    // SELECTED STATES
     // -----------------------------------------
     case "states": {
       const selectedStates = settings.selected_states || [];
+      console.log(`  📍 Selected states: [${selectedStates.join(', ')}]`);
+      console.log(`  📍 Post address: ${postAddress}`);
       
-      // If no states selected, treat as "all"
       if (selectedStates.length === 0) {
+        console.log(`  ✓ No states selected - allowing all`);
         return true;
       }
       
-      // Get the state from the post address
       const postState = extractStateFromAddress(postAddress);
+      console.log(`  📍 Extracted state: ${postState}`);
       
       if (!postState) {
-        // Can't determine state - don't notify
+        console.log(`  ✗ Cannot determine post state - BLOCKING`);
         return false;
       }
       
-      // Check if post state is in user's selected states
       const isInSelectedState = selectedStates.some(
-        s => s.toLowerCase() === postState.toLowerCase()
+        s => s.trim().toLowerCase() === postState.trim().toLowerCase()
       );
       
+      console.log(`  ${isInSelectedState ? '✓' : '✗'} State match: ${isInSelectedState}`);
       return isInSelectedState;
     }
 
     // -----------------------------------------
-    // CUSTOM RADIUS - Check distance from user
+    // CUSTOM RADIUS
     // -----------------------------------------
     case "radius": {
-      // Need both user location and post location
       if (!user.last_latitude || !user.last_longitude) {
-        // User has no saved location - can't check radius
+        console.log(`  ✗ User has no saved location (lat: ${user.last_latitude}, lng: ${user.last_longitude})`);
         return false;
       }
       
       if (!postLatitude || !postLongitude) {
-        // Post has no coordinates - can't check radius
+        console.log(`  ✗ Post has no coordinates`);
         return false;
       }
       
       const radiusKm = settings.alert_radius_km || 5;
-      
       const distance = calculateDistanceKm(
         user.last_latitude,
         user.last_longitude,
@@ -294,17 +325,19 @@ async function shouldNotifyUser(
         postLongitude
       );
       
-      // User is within radius if distance is less than or equal to their setting
-      return distance <= radiusKm;
+      const withinRadius = distance <= radiusKm;
+      console.log(`  📍 Distance: ${distance.toFixed(2)}km, Radius: ${radiusKm}km - ${withinRadius ? 'WITHIN ✓' : 'OUTSIDE ✗'}`);
+      return withinRadius;
     }
 
     default:
+      console.log(`  ✓ Unknown zone type - allowing`);
       return true;
   }
 }
 
 // ============================================
-// NOTIFY USERS ABOUT NEW INCIDENT
+// NOTIFY USERS ABOUT NEW INCIDENT (FIXED)
 // ============================================
 export async function notifyUsersAboutIncident(
   postId: string,
@@ -324,14 +357,12 @@ export async function notifyUsersAboutIncident(
   console.log("========================================");
 
   try {
-    // Get all active users with their settings and location
+    // =====================================================
+    // STEP 1: GET ALL ACTIVE USERS
+    // =====================================================
     const { data: users, error: usersError } = await supabase
       .from("users")
-      .select(`
-        id,
-        last_latitude,
-        last_longitude
-      `)
+      .select("id, last_latitude, last_longitude")
       .neq("id", posterId)
       .eq("status", "active");
 
@@ -347,12 +378,22 @@ export async function notifyUsersAboutIncident(
 
     console.log(`Found ${users.length} potential users`);
 
-    // Get settings for all users in one query
+    // =====================================================
+    // STEP 2: GET SETTINGS FOR ALL USERS IN ONE QUERY
+    // =====================================================
     const userIds = users.map(u => u.id);
-    const { data: allSettings } = await supabase
+    
+    const { data: allSettings, error: settingsError } = await supabase
       .from("user_settings")
       .select("*")
       .in("user_id", userIds);
+
+    if (settingsError) {
+      console.error("Error fetching settings:", settingsError);
+      return 0;
+    }
+
+    console.log(`Fetched settings for ${allSettings?.length || 0} users`);
 
     // Create a map of user_id -> settings
     const settingsMap: Record<string, any> = {};
@@ -362,7 +403,9 @@ export async function notifyUsersAboutIncident(
       });
     }
 
-    // Prepare notification content
+    // =====================================================
+    // STEP 3: CHECK EACH USER AND NOTIFY
+    // =====================================================
     const categoryName = getCategoryName(category);
     const shortAddress = address 
       ? address.split(",").slice(0, 2).join(",").trim() 
@@ -370,7 +413,6 @@ export async function notifyUsersAboutIncident(
 
     let notifiedCount = 0;
 
-    // Check each user
     for (const user of users) {
       const userWithSettings: UserWithSettings = {
         id: user.id,
@@ -400,10 +442,10 @@ export async function notifyUsersAboutIncident(
 
         if (success) {
           notifiedCount++;
-          console.log(`✓ Notified user ${user.id}`);
+          console.log(`✓ Notified user ${user.id.slice(0, 8)}`);
         }
       } else {
-        console.log(`✗ Skipped user ${user.id} (settings filter)`);
+        console.log(`✗ Skipped user ${user.id.slice(0, 8)} (settings filter)`);
       }
     }
 

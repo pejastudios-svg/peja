@@ -176,35 +176,73 @@ export default function MapPage() {
 };
 
   const fetchSOSAlerts = async () => {
-    try {
-      const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+  try {
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
 
-      const { data, error } = await supabase
-        .from("sos_alerts")
-        .select("id, user_id, latitude, longitude, address, status, created_at")
-        .eq("status", "active")
-        .gte("created_at", fiveHoursAgo);
+    // STEP 1: Get SOS alerts
+    const { data: sosData, error: sosError } = await supabase
+      .from("sos_alerts")
+      .select("*")
+      .eq("status", "active")
+      .gte("created_at", fiveHoursAgo);
 
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        const userIds = [...new Set(data.map(s => s.user_id))];
-        const { data: users } = await supabase
-          .from("users")
-          .select("id, full_name, avatar_url")
-          .in("id", userIds);
-
-        const userMap: Record<string, any> = {};
-        users?.forEach(u => { userMap[u.id] = u; });
-
-        setSOSAlerts(data.map(sos => ({ ...sos, user: userMap[sos.user_id] })));
-      } else {
-        setSOSAlerts([]);
-      }
-    } catch (error) {
-      console.error("Error fetching SOS:", error);
+    if (sosError) {
+      console.error("SOS query error:", sosError);
+      setSOSAlerts([]);
+      return;
     }
-  };
+
+    if (!sosData || sosData.length === 0) {
+      console.log("No active SOS alerts");
+      setSOSAlerts([]);
+      return;
+    }
+
+    console.log(`Found ${sosData.length} active SOS alerts`);
+
+    // STEP 2: Get user details for each SOS
+    const userIds = [...new Set(sosData.map(s => s.user_id))];
+    
+    const { data: users, error: usersError } = await supabase
+      .from("users")
+      .select("id, full_name, avatar_url")
+      .in("id", userIds);
+
+    if (usersError) {
+      console.error("Users query error:", usersError);
+    }
+
+    // Create user map
+    const userMap: Record<string, any> = {};
+    if (users && users.length > 0) {
+      users.forEach(u => {
+        userMap[u.id] = {
+          full_name: u.full_name,
+          avatar_url: u.avatar_url,
+        };
+      });
+    }
+
+    // Combine data
+    const formattedSOSAlerts = sosData.map(sos => ({
+      id: sos.id,
+      user_id: sos.user_id,
+      latitude: sos.latitude,
+      longitude: sos.longitude,
+      address: sos.address,
+      status: sos.status,
+      created_at: sos.created_at,
+      last_updated: sos.last_updated,
+      user: userMap[sos.user_id],
+    }));
+
+    console.log("Formatted SOS alerts:", formattedSOSAlerts);
+    setSOSAlerts(formattedSOSAlerts);
+  } catch (error) {
+    console.error("Error fetching SOS:", error);
+    setSOSAlerts([]);
+  }
+};
 
   const handlePostClick = (postId: string) => router.push(`/post/${postId}`);
 

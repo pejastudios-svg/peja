@@ -284,49 +284,68 @@ export default function SettingsPage() {
         )}
 
         {/* Notifications Section */}
-        <section className="py-6 border-b border-white/5">
-          <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Notifications</h2>
+<section className="py-6 border-b border-white/5">
+  <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Notifications</h2>
 
-          <SettingRow icon={Bell} label="Push Notifications" description="Receive alerts on your device">
-            <ToggleSwitch enabled={pushEnabled} onChange={setPushEnabled} />
-          </SettingRow>
+  <SettingRow icon={Bell} label="Push Notifications" description="Receive alerts on your device">
+    <ToggleSwitch enabled={pushEnabled} onChange={setPushEnabled} />
+  </SettingRow>
 
-          {pushEnabled && (
-            <div className="ml-4 mt-2 space-y-3 p-4 glass-sm rounded-xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-dark-100">🔴 Danger Alerts</p>
-                  <p className="text-xs text-dark-400">Crime, Fire, Accidents</p>
-                </div>
-                <ToggleSwitch enabled={dangerAlerts} onChange={setDangerAlerts} />
-              </div>
+  {pushEnabled && (
+    <div className="ml-4 mt-2 space-y-4 p-4 glass-sm rounded-xl">
+      {/* 🔴 DANGER ALERTS */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-dark-100 font-medium">🔴 Danger Alerts</p>
+            <p className="text-xs text-dark-400">Crime, Fire, Accidents, Police, Flooding</p>
+          </div>
+          <ToggleSwitch enabled={dangerAlerts} onChange={setDangerAlerts} />
+        </div>
+      </div>
 
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-dark-100">🟠 Caution Alerts</p>
-                  <p className="text-xs text-dark-400">Traffic, Outages, Flooding</p>
-                </div>
-                <ToggleSwitch enabled={cautionAlerts} onChange={setCautionAlerts} />
-              </div>
+      {/* 🟠 CAUTION ALERTS */}
+      <div className="pt-3 border-t border-white/5">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-dark-100 font-medium">🟠 Caution Alerts</p>
+            <p className="text-xs text-dark-400">Road Work, Traffic, Power Outages</p>
+          </div>
+          <ToggleSwitch enabled={cautionAlerts} onChange={setCautionAlerts} />
+        </div>
+      </div>
 
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-dark-100">🟡 Awareness Alerts</p>
-                  <p className="text-xs text-dark-400">Protests, Events</p>
-                </div>
-                <ToggleSwitch enabled={awarenessAlerts} onChange={setAwarenessAlerts} />
-              </div>
+      {/* 🟡 AWARENESS ALERTS */}
+      <div className="pt-3 border-t border-white/5">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-dark-100 font-medium">🟡 Awareness Alerts</p>
+            <p className="text-xs text-dark-400">Protests, Events, Animal Hazards, Disturbances</p>
+          </div>
+          <ToggleSwitch enabled={awarenessAlerts} onChange={setAwarenessAlerts} />
+        </div>
+      </div>
 
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-dark-100">🔵 Info Alerts</p>
-                  <p className="text-xs text-dark-400">General information</p>
-                </div>
-                <ToggleSwitch enabled={infoAlerts} onChange={setInfoAlerts} />
-              </div>
-            </div>
-          )}
-        </section>
+      {/* 🔵 INFO ALERTS */}
+      <div className="pt-3 border-t border-white/5">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-dark-100 font-medium">🔵 Info Alerts</p>
+            <p className="text-xs text-dark-400">General Info, Store Closures, Transport Issues</p>
+          </div>
+          <ToggleSwitch enabled={infoAlerts} onChange={setInfoAlerts} />
+        </div>
+      </div>
+
+      {/* Info message about defaults */}
+      <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+        <p className="text-xs text-blue-400">
+          💡 Danger and Caution alerts are enabled by default for your safety
+        </p>
+      </div>
+    </div>
+  )}
+</section>
 
         {/* Alert Zone Section */}
         <section className="py-6 border-b border-white/5">
