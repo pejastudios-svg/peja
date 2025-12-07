@@ -1,21 +1,69 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
-import { Post, CATEGORIES, SOSAlert } from "@/lib/types";
+import { Post, CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { createNotification } from "@/lib/notifications";
+import { useAuth } from "@/context/AuthContext";
 
-// =====================================================
-// CUSTOM MARKER ICONS
-// =====================================================
+// Fix Leaflet default icon issue
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
 
-// Create incident markers based on category color
-const createCustomIcon = (color: string) => {
+// SOS Tags
+const SOS_TAGS = [
+  { id: "medical", label: "Medical Emergency", suggestion: "Call an ambulance or get the person to a hospital immediately." },
+  { id: "accident", label: "Car Accident", suggestion: "Check for injuries. Do not move injured unless necessary." },
+  { id: "robbery", label: "Armed Robbery", suggestion: "DANGER: Do NOT approach. Contact police at 112 or 767." },
+  { id: "kidnapping", label: "Kidnapping", suggestion: "EXTREME DANGER: Do NOT approach. Contact police immediately." },
+  { id: "fire", label: "Fire", suggestion: "Call fire service. Evacuate the area. Do not enter burning buildings." },
+  { id: "assault", label: "Physical Assault", suggestion: "Ensure scene is safe. Call police and provide first aid if trained." },
+  { id: "flood", label: "Flooding", suggestion: "Avoid flooded areas. Help evacuate to higher ground if safe." },
+  { id: "stuck", label: "Stuck or Stranded", suggestion: "User may need transport or help. Safe to approach." },
+  { id: "health", label: "Health Crisis", suggestion: "Person may need medication. Ask before administering help." },
+  { id: "other", label: "Other Emergency", suggestion: "Assess carefully. Your safety comes first." },
+];
+
+// Types
+interface SOSAlert {
+  id: string;
+  user_id: string;
+  latitude: number;
+  longitude: number;
+  address?: string;
+  status: string;
+  created_at: string;
+  last_updated?: string;
+  tag?: string;
+  voice_note_url?: string;
+  message?: string;
+  user?: {
+    full_name: string;
+    avatar_url?: string;
+  };
+}
+
+interface IncidentMapProps {
+  posts: Post[];
+  userLocation: { lat: number; lng: number } | null;
+  onPostClick: (id: string) => void;
+  sosAlerts?: SOSAlert[];
+  onSOSClick?: (id: string) => void;
+  centerOnUser?: boolean;
+}
+
+// Incident marker icons
+const createIncidentIcon = (color: string) => {
   return L.divIcon({
-    className: "custom-marker",
+    className: "incident-marker",
     html: `
       <div style="
         width: 32px;
@@ -24,7 +72,7 @@ const createCustomIcon = (color: string) => {
         border-radius: 50% 50% 50% 0;
         transform: rotate(-45deg);
         border: 3px solid white;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        box-shadow: 0 3px 12px rgba(0,0,0,0.4);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -44,368 +92,412 @@ const createCustomIcon = (color: string) => {
   });
 };
 
-// Map category colors to actual hex colors
-const dangerIcon = createCustomIcon("#ef4444");    // Red
-const warningIcon = createCustomIcon("#f97316");   // Orange
-const awarenessIcon = createCustomIcon("#eab308"); // Yellow
-const infoIcon = createCustomIcon("#3b82f6");      // Blue
+const dangerIcon = createIncidentIcon("#ef4444");
+const warningIcon = createIncidentIcon("#f97316");
+const awarenessIcon = createIncidentIcon("#eab308");
+const infoIcon = createIncidentIcon("#3b82f6");
 
-// =====================================================
-// SOS MARKER WITH PROFILE PICTURE
-// =====================================================
-const createSOSMarkerIcon = (avatarUrl?: string) => {
-  const imageHtml = avatarUrl
-    ? `<img src="${avatarUrl}" style="width: 100%; height: 100%; object-fit: cover;" />`
-    : `<div style="width: 100%; height: 100%; background: #dc2626; display: flex; align-items: center; justify-content: center; font-size: 24px;">🚨</div>`;
+// SOS marker with profile picture and directional arrow
+const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
+  const img = avatarUrl || "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff";
 
   return L.divIcon({
-    className: "custom-sos-marker",
+    className: "sos-marker",
     html: `
-      <div class="sos-marker-wrapper">
-        <div class="sos-marker-container">
-          ${imageHtml}
-        </div>
-        <div class="sos-pulse"></div>
-      </div>
-      <style>
-        .sos-marker-wrapper {
-          position: relative;
-          width: 50px;
-          height: 50px;
-        }
-        
-        .sos-marker-container {
-          position: relative;
-          width: 50px;
-          height: 50px;
-          border-radius: 50%;
-          border: 4px solid #dc2626;
-          overflow: hidden;
-          background: white;
-          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-          animation: sos-bounce 1s infinite;
-        }
-        
-        .sos-pulse {
+      <div style="position: relative; width: 60px; height: 76px;">
+        <!-- Directional Arrow -->
+        <div style="
           position: absolute;
           top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
+          left: 50%;
+          transform: translateX(-50%) rotate(${bearing}deg);
+          transform-origin: center bottom;
+        ">
+          <div style="
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-bottom: 16px solid #dc2626;
+          "></div>
+        </div>
+        
+        <!-- Profile Picture Circle -->
+        <div style="
+          position: absolute;
+          top: 16px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 44px;
+          height: 44px;
+          border-radius: 50%;
+          overflow: hidden;
+          border: 4px solid #dc2626;
+          box-shadow: 0 0 0 6px rgba(220,38,38,0.3), 0 4px 15px rgba(0,0,0,0.4);
+          background: white;
+        ">
+          <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" />
+        </div>
+        
+        <!-- Pulsing Ring -->
+        <div style="
+          position: absolute;
+          top: 16px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 44px;
+          height: 44px;
           border-radius: 50%;
           border: 3px solid #dc2626;
-          animation: sos-pulse 2s infinite;
+          animation: pulse 2s infinite;
           pointer-events: none;
-        }
-        
-        @keyframes sos-pulse {
-          0% {
-            transform: scale(1);
-            opacity: 1;
-          }
-          100% {
-            transform: scale(1.8);
-            opacity: 0;
-          }
-        }
-        
-        @keyframes sos-bounce {
-          0%, 100% {
-            transform: translateY(0);
-          }
-          50% {
-            transform: translateY(-10px);
-          }
+        "></div>
+      </div>
+      
+      <style>
+        @keyframes pulse {
+          0% { transform: translateX(-50%) scale(1); opacity: 1; }
+          100% { transform: translateX(-50%) scale(1.8); opacity: 0; }
         }
       </style>
     `,
-    iconSize: [50, 50],
-    iconAnchor: [25, 50],
-    popupAnchor: [0, -50],
+    iconSize: [60, 76],
+    iconAnchor: [30, 60],
+    popupAnchor: [0, -60],
   });
 };
 
-// =====================================================
-// MAP UPDATER COMPONENT
-// =====================================================
-function MapUpdater({ center }: { center: [number, number] }) {
+// User location marker
+const userLocationIcon = L.divIcon({
+  className: "user-location",
+  html: `
+    <div style="
+      width: 20px;
+      height: 20px;
+      background: #7c3aed;
+      border: 4px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 0 6px rgba(124,58,237,0.3), 0 2px 8px rgba(0,0,0,0.3);
+    "></div>
+  `,
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+});
+
+// Map controller - prevents jumping
+function MapController({ center, shouldCenter }: { center: [number, number]; shouldCenter: boolean }) {
   const map = useMap();
+  const initialized = useRef(false);
+
   useEffect(() => {
-    map.setView(center, map.getZoom());
-  }, [center, map]);
+    if (!initialized.current) {
+      map.setView(center, 14, { animate: false });
+      initialized.current = true;
+    } else if (shouldCenter) {
+      map.setView(center, 16, { animate: true });
+    }
+  }, [center, shouldCenter, map]);
+
   return null;
 }
 
-// =====================================================
-// USER LOCATION MARKER
-// =====================================================
-function UserLocationMarker({ position }: { position: [number, number] }) {
-  const userIcon = L.divIcon({
-    className: "user-marker",
-    html: `
-      <div style="
-        width: 20px;
-        height: 20px;
-        background: #7c3aed;
-        border-radius: 50%;
-        border: 3px solid white;
-        box-shadow: 0 0 0 8px rgba(124, 58, 237, 0.2), 0 2px 8px rgba(0,0,0,0.3);
-      "></div>
-    `,
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
-  });
-
-  return (
-    <Marker position={position} icon={userIcon}>
-      <Popup>
-        <div className="text-center">
-          <p className="font-medium">You are here</p>
-        </div>
-      </Popup>
-    </Marker>
-  );
+// Calculate ETA in minutes
+function calculateETA(
+  fromLat: number, 
+  fromLng: number, 
+  toLat: number, 
+  toLng: number
+): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (toLat - fromLat) * Math.PI / 180;
+  const dLng = (toLng - fromLng) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(fromLat * Math.PI / 180) * Math.cos(toLat * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+  
+  // Assume average speed of 30 km/h in traffic
+  const minutes = Math.round((distance / 30) * 60);
+  return Math.max(1, minutes);
 }
 
-// =====================================================
-// REAL-TIME SOS MARKER COMPONENT
-// =====================================================
-function RealtimeSOSMarker({ sos }: { sos: SOSAlert }) {
-  const router = useRouter();
-  const [position, setPosition] = useState<[number, number]>([sos.latitude, sos.longitude]);
-  const [sosData, setSOSData] = useState(sos);
-
-  useEffect(() => {
-    // Subscribe to real-time updates for this specific SOS
-    const channel = supabase
-      .channel(`sos-${sos.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'sos_alerts',
-          filter: `id=eq.${sos.id}`,
-        },
-        (payload) => {
-          console.log('📍 SOS location updated:', payload.new);
-          const newData = payload.new as SOSAlert;
-          
-          // Smoothly update position
-          setPosition([newData.latitude, newData.longitude]);
-          setSOSData(newData);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [sos.id]);
-
-  return (
-    <Marker
-      position={position}
-      icon={createSOSMarkerIcon(sosData.user?.avatar_url)}
-      eventHandlers={{
-        click: () => router.push(`/map?sos=${sos.id}`),
-      }}
-    >
-      <Popup>
-        <div className="min-w-[200px]">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">
-              🚨 SOS ALERT
-            </span>
-            <span className="flex items-center gap-1 text-xs text-red-600">
-              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-              ACTIVE
-            </span>
-          </div>
-          
-          <p className="text-sm font-semibold text-gray-700 mb-2">
-            {sosData.user?.full_name || "Someone"} needs help!
-          </p>
-          
-          {sosData.address && (
-            <p className="text-xs text-gray-500 mb-2">
-              📍 {sosData.address}
-            </p>
-          )}
-          
-          <p className="text-xs text-gray-500 mb-2">
-            Last updated: {sosData.last_updated 
-              ? formatDistanceToNow(new Date(sosData.last_updated), { addSuffix: true })
-              : formatDistanceToNow(new Date(sosData.created_at), { addSuffix: true })
-            }
-          </p>
-          
-          <button
-            onClick={() => router.push(`/map?sos=${sos.id}`)}
-            className="w-full mt-2 py-1.5 bg-red-600 text-white text-sm rounded font-medium hover:bg-red-700"
-          >
-            View Details
-          </button>
-        </div>
-      </Popup>
-    </Marker>
-  );
-}
-
-// =====================================================
-// MAIN MAP COMPONENT
-// =====================================================
-interface IncidentMapProps {
-  posts: Post[];
-  userLocation: { lat: number; lng: number } | null;
-  onPostClick: (postId: string) => void;
-  sosAlerts?: SOSAlert[];
-  onSOSClick?: (id: string) => void;
-}
-
-export default function IncidentMap({ 
-  posts, 
-  userLocation, 
+export default function IncidentMap({
+  posts,
+  userLocation,
   onPostClick,
   sosAlerts = [],
   onSOSClick,
+  centerOnUser = false,
 }: IncidentMapProps) {
   const router = useRouter();
+  const { user, getBearing } = useAuth();
+  const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
+  const [sendingHelp, setSendingHelp] = useState(false);
   
-  // Default center (Lagos, Nigeria)
-  const defaultCenter: [number, number] = [6.5244, 3.3792];
+  const defaultCenter: [number, number] = [6.5244, 3.3792]; // Lagos
   const center: [number, number] = userLocation 
     ? [userLocation.lat, userLocation.lng] 
     : defaultCenter;
 
-  const getMarkerIcon = (categoryId: string) => {
-    const category = CATEGORIES.find((c) => c.id === categoryId);
-    if (!category) return infoIcon;
-    
-    // Use the color from categories to determine marker
-    switch (category.color) {
-      case "danger":
-        return dangerIcon;      // Red
-      case "warning":
-        return warningIcon;     // Orange
-      case "awareness":
-        return awarenessIcon;   // Yellow
-      default:
-        return infoIcon;        // Blue
+  const getIcon = (categoryId: string) => {
+    const category = CATEGORIES.find(c => c.id === categoryId);
+    switch (category?.color) {
+      case "danger": return dangerIcon;
+      case "warning": return warningIcon;
+      case "awareness": return awarenessIcon;
+      default: return infoIcon;
     }
   };
 
-  // Get post location
-  const getPostLocation = (post: Post, index: number): [number, number] | null => {
-    // If we have real location stored, use it
-    if (post.location?.latitude && post.location?.longitude) {
-      return [post.location.latitude, post.location.longitude];
+  const handleICanHelp = async (sos: SOSAlert) => {
+    if (!user || !userLocation) {
+      alert("Please enable location to help");
+      return;
     }
-    
-    // Fallback: distribute around user location
-    if (userLocation) {
-      const offset = 0.01 * (index % 10);
-      const angle = (index * 137.5) * (Math.PI / 180);
-      return [
-        userLocation.lat + offset * Math.cos(angle),
-        userLocation.lng + offset * Math.sin(angle),
-      ];
+
+    setSendingHelp(true);
+
+    try {
+      const eta = calculateETA(
+        userLocation.lat, 
+        userLocation.lng, 
+        sos.latitude, 
+        sos.longitude
+      );
+
+      // Notify the SOS user
+      await createNotification({
+        userId: sos.user_id,
+        type: "sos_alert",
+        title: "Help is on the way!",
+        body: `Someone is coming to help you. ETA: ${eta} minutes`,
+        data: { 
+          sos_id: sos.id, 
+          helper_id: user.id,
+          eta_minutes: eta,
+        },
+      });
+
+      // Notify other nearby users that someone is helping
+      const { data: nearbyUsers } = await supabase
+        .from("users")
+        .select("id")
+        .neq("id", user.id)
+        .neq("id", sos.user_id)
+        .eq("status", "active")
+        .limit(30);
+
+      if (nearbyUsers) {
+        for (const nearbyUser of nearbyUsers) {
+          await createNotification({
+            userId: nearbyUser.id,
+            type: "sos_alert",
+            title: "Someone is responding to the SOS",
+            body: `A Peja user is heading to help. You can also assist if nearby.`,
+            data: { sos_id: sos.id },
+          });
+        }
+      }
+
+      alert(`Thank you! The person has been notified. Your ETA: ${eta} minutes.`);
+      setSelectedSOS(null);
+
+    } catch (err) {
+      console.error("Error sending help notification:", err);
+      alert("Failed to notify. Please try again.");
+    } finally {
+      setSendingHelp(false);
     }
-    
-    // Fallback: random around Lagos
-    return [
-      defaultCenter[0] + (Math.random() - 0.5) * 0.1,
-      defaultCenter[1] + (Math.random() - 0.5) * 0.1,
-    ];
   };
+
+  const tagInfo = selectedSOS?.tag 
+    ? SOS_TAGS.find(t => t.id === selectedSOS.tag) 
+    : null;
 
   return (
-    <MapContainer
-      center={center}
-      zoom={14}
-      style={{ height: "100%", width: "100%" }}
-      zoomControl={false}
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      
-      <MapUpdater center={center} />
-      
-      {/* User location marker */}
-      {userLocation && (
-        <UserLocationMarker position={[userLocation.lat, userLocation.lng]} />
-      )}
-      
-      {/* Real-time SOS markers */}
-      {sosAlerts.map((sos) => (
-        <RealtimeSOSMarker key={sos.id} sos={sos} />
-      ))}
-      
-      {/* Incident markers */}
-      {posts.map((post, index) => {
-        const position = getPostLocation(post, index);
-        if (!position) return null;
+    <>
+      <MapContainer 
+        center={center} 
+        zoom={14} 
+        style={{ height: "100%", width: "100%" }}
+        zoomControl={false}
+      >
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        />
         
-        const category = CATEGORIES.find((c) => c.id === post.category);
-        
-        return (
+        <MapController center={center} shouldCenter={centerOnUser} />
+
+        {/* User Location */}
+        {userLocation && (
+          <Marker position={[userLocation.lat, userLocation.lng]} icon={userLocationIcon}>
+            <Popup>
+              <div className="text-center p-1">
+                <p className="font-medium text-gray-800">You are here</p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
+        {/* SOS Alerts */}
+        {sosAlerts.map((sos) => (
           <Marker
-            key={post.id}
-            position={position}
-            icon={getMarkerIcon(post.category)}
+            key={sos.id}
+            position={[sos.latitude, sos.longitude]}
+            icon={createSOSIcon(sos.user?.avatar_url, getBearing())}
             eventHandlers={{
-              click: () => onPostClick(post.id),
+              click: () => setSelectedSOS(sos),
             }}
           >
             <Popup>
-              <div className="min-w-[200px]">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    category?.color === "danger" ? "bg-red-100 text-red-700" :
-                    category?.color === "warning" ? "bg-orange-100 text-orange-700" :
-                    category?.color === "awareness" ? "bg-yellow-100 text-yellow-700" :
-                    "bg-blue-100 text-blue-700"
-                  }`}>
-                    {category?.name || post.category}
-                  </span>
-                  {post.status === "live" && (
-                    <span className="flex items-center gap-1 text-xs text-red-600">
-                      <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                      LIVE
-                    </span>
-                  )}
-                </div>
-                
-                {post.comment && (
-                  <p className="text-sm text-gray-700 mb-2 line-clamp-2">
-                    {post.comment}
-                  </p>
-                )}
-                
-                {post.address && (
-                  <p className="text-xs text-gray-500 mb-2">
-                    📍 {post.address}
-                  </p>
-                )}
-                
-                <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
-                  <span>✓ {post.confirmations} confirmed</span>
-                </div>
-                
+              <div className="text-center p-2 min-w-[200px]">
+                <p className="font-bold text-red-600 text-lg">SOS Alert</p>
+                <p className="font-medium text-gray-800">{sos.user?.full_name || "Someone"}</p>
+                <p className="text-xs text-gray-500 mt-1">{sos.address || "Location unavailable"}</p>
                 <button
-                  onClick={() => router.push(`/post/${post.id}`)}
-                  className="w-full mt-2 py-1.5 bg-purple-600 text-white text-sm rounded font-medium hover:bg-purple-700"
+                  onClick={() => setSelectedSOS(sos)}
+                  className="mt-3 w-full py-2 bg-red-600 text-white rounded-lg text-sm font-medium"
                 >
                   View Details
                 </button>
               </div>
             </Popup>
           </Marker>
-        );
-      })}
-    </MapContainer>
+        ))}
+
+        {/* Post Markers */}
+        {posts.map((post) => {
+          if (!post.location?.latitude || !post.location?.longitude) return null;
+          
+          return (
+            <Marker
+              key={post.id}
+              position={[post.location.latitude, post.location.longitude]}
+              icon={getIcon(post.category)}
+              eventHandlers={{ click: () => onPostClick(post.id) }}
+            />
+          );
+        })}
+      </MapContainer>
+
+      {/* SOS Details Modal */}
+      {selectedSOS && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div 
+            className="absolute inset-0 bg-black/70" 
+            onClick={() => setSelectedSOS(null)} 
+          />
+          <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[80vh] overflow-y-auto p-6">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-xl font-bold text-white">SOS Alert</h3>
+                <p className="text-sm text-dark-400">
+                  {formatDistanceToNow(new Date(selectedSOS.created_at), { addSuffix: true })}
+                </p>
+              </div>
+              <button 
+                onClick={() => setSelectedSOS(null)}
+                className="p-2 hover:bg-white/10 rounded-lg text-dark-400"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* User Info */}
+            <div className="flex items-center gap-3 mb-4 p-3 bg-white/5 rounded-xl">
+              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-red-500">
+                <img 
+                  src={selectedSOS.user?.avatar_url || "https://ui-avatars.com/api/?name=User"} 
+                  alt="" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div>
+                <p className="font-semibold text-white">{selectedSOS.user?.full_name || "Someone"}</p>
+                <p className="text-sm text-dark-400">{selectedSOS.address || "Location unavailable"}</p>
+              </div>
+            </div>
+
+            {/* Situation Tag */}
+            {tagInfo && (
+              <div className="mb-4">
+                <p className="text-sm text-dark-400 mb-1">Situation:</p>
+                <p className="font-semibold text-white">{tagInfo.label}</p>
+              </div>
+            )}
+
+            {/* Text Message */}
+            {selectedSOS.message && (
+              <div className="mb-4 p-3 bg-white/5 rounded-xl">
+                <p className="text-sm text-dark-400 mb-1">Message:</p>
+                <p className="text-white">{selectedSOS.message}</p>
+              </div>
+            )}
+
+            {/* Voice Note */}
+            {selectedSOS.voice_note_url && (
+              <div className="mb-4">
+                <p className="text-sm text-dark-400 mb-2">Voice message:</p>
+                <audio src={selectedSOS.voice_note_url} controls className="w-full" />
+              </div>
+            )}
+
+            {/* Suggestion */}
+            {tagInfo && (
+              <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                <p className="text-sm font-medium text-yellow-400 mb-1">How to help:</p>
+                <p className="text-sm text-yellow-200">{tagInfo.suggestion}</p>
+              </div>
+            )}
+
+            {/* Disclaimer */}
+            <div className="mb-6 p-3 bg-white/5 rounded-xl">
+              <p className="text-xs text-dark-400">
+                We urge you to help fellow Nigerians in need. However, please only click "I Can Help" 
+                if you genuinely intend to assist. Your safety is important — do not put yourself in danger.
+              </p>
+            </div>
+
+            {/* ETA */}
+            {userLocation && (
+              <div className="mb-4 text-center">
+                <p className="text-sm text-dark-400">
+                  Your estimated arrival time:
+                </p>
+                <p className="text-2xl font-bold text-primary-400">
+                  {calculateETA(
+                    userLocation.lat, 
+                    userLocation.lng, 
+                    selectedSOS.latitude, 
+                    selectedSOS.longitude
+                  )} minutes
+                </p>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setSelectedSOS(null)}
+                className="flex-1 py-3 glass-sm text-dark-300 rounded-xl font-medium"
+              >
+                Back
+              </button>
+              <button
+                onClick={() => handleICanHelp(selectedSOS)}
+                disabled={sendingHelp}
+                className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
+              >
+                {sendingHelp ? "Sending..." : "I Can Help"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

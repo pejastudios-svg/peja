@@ -259,6 +259,7 @@ export default function MapPage() {
               onPostClick={handlePostClick}
               sosAlerts={sosAlerts}
               onSOSClick={(id) => console.log("SOS:", id)}
+              centerOnUser={false}
             />
           )}
 

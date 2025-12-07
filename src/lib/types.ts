@@ -172,3 +172,25 @@ export const REPORT_REASONS = [
   { id: "harassment", label: "Harassment", description: "Targeting or threatening individuals" },
   { id: "other", label: "Other", description: "Other reason" },
 ];
+
+// SOS Emergency Types
+export const SOS_TAGS = [
+  { id: "medical", label: "Medical Emergency", icon: "🏥", suggestion: "Call an ambulance or get the person to a hospital immediately." },
+  { id: "accident", label: "Car Accident", icon: "🚗", suggestion: "Check for injuries, call emergency services, and do not move the injured unless necessary." },
+  { id: "robbery", label: "Armed Robbery", icon: "🔫", suggestion: "Do NOT approach. Contact police immediately. Stay safe and observe from a distance." },
+  { id: "kidnapping", label: "Kidnapping", icon: "⚠️", suggestion: "EXTREME DANGER. Do NOT approach. Contact police immediately at 112 or 767." },
+  { id: "fire", label: "Fire", icon: "🔥", suggestion: "Call fire service. Evacuate the area. Do not enter burning buildings." },
+  { id: "assault", label: "Physical Assault", icon: "👊", suggestion: "Ensure the scene is safe before approaching. Call police and provide first aid if trained." },
+  { id: "flood", label: "Flooding", icon: "🌊", suggestion: "Avoid flooded areas. Help evacuate people to higher ground." },
+  { id: "stuck", label: "Stuck/Stranded", icon: "📍", suggestion: "User may need transport or mechanical help. Approach if safe." },
+  { id: "health", label: "Health Crisis", icon: "💊", suggestion: "Person may need medication or medical attention. Ask before administering any help." },
+  { id: "other", label: "Other Emergency", icon: "🆘", suggestion: "Assess the situation carefully before providing help." },
+] as const;
+
+export type SOSTagId = typeof SOS_TAGS[number]["id"];
+
+export interface SOSAlertFull extends SOSAlert {
+  tag?: SOSTagId;
+  voice_note_url?: string;
+  message?: string;
+}

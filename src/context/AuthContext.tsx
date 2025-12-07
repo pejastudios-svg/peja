@@ -26,12 +26,14 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  getBearing: () => number;
+  getLastPosition: () => { lat: number; lng: number } | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // =====================================================
-// LOCATION TRACKING SERVICE
+// LOCATION TRACKER WITH COMPASS BEARING
 // =====================================================
 class LocationTracker {
   private watchId: number | null = null;
@@ -39,6 +41,8 @@ class LocationTracker {
   private lastPosition: { lat: number; lng: number } | null = null;
   private userId: string | null = null;
   private isTracking = false;
+  private currentBearing: number = 0;
+  private bearingListeners: ((bearing: number) => void)[] = [];
 
   start(userId: string) {
     if (this.isTracking) return;
@@ -47,6 +51,8 @@ class LocationTracker {
     this.isTracking = true;
     
     console.log("🌍 Starting location tracking...");
+
+    if (typeof window === "undefined") return;
 
     if (navigator.geolocation) {
       this.watchId = navigator.geolocation.watchPosition(
@@ -59,10 +65,66 @@ class LocationTracker {
         }
       );
 
+      // Update location every 10 seconds
       this.updateInterval = setInterval(() => {
         this.forceUpdate();
       }, 10000);
     }
+
+    // Start compass tracking for direction
+    this.startCompassTracking();
+  }
+
+  private startCompassTracking() {
+    if (typeof window === "undefined") return;
+
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      let bearing = 0;
+      
+      // iOS Safari
+      if ((event as any).webkitCompassHeading !== undefined) {
+        bearing = (event as any).webkitCompassHeading;
+      } 
+      // Android Chrome
+      else if (event.alpha !== null) {
+        bearing = 360 - event.alpha;
+      }
+
+      // Normalize to 0-360
+      bearing = ((bearing % 360) + 360) % 360;
+      this.currentBearing = bearing;
+      this.bearingListeners.forEach(cb => cb(bearing));
+    };
+
+    // Request permission on iOS 13+
+    if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
+      (DeviceOrientationEvent as any).requestPermission()
+        .then((response: string) => {
+          if (response === "granted") {
+            window.addEventListener("deviceorientation", handleOrientation, true);
+          }
+        })
+        .catch((err: any) => {
+          console.warn("Compass permission denied:", err);
+        });
+    } else {
+      window.addEventListener("deviceorientation", handleOrientation, true);
+    }
+  }
+
+  onBearingChange(callback: (bearing: number) => void) {
+    this.bearingListeners.push(callback);
+    return () => {
+      this.bearingListeners = this.bearingListeners.filter(cb => cb !== callback);
+    };
+  }
+
+  getBearing(): number {
+    return this.currentBearing;
+  }
+
+  getLastPosition(): { lat: number; lng: number } | null {
+    return this.lastPosition;
   }
 
   stop() {
@@ -84,6 +146,7 @@ class LocationTracker {
   private async handlePositionUpdate(position: GeolocationPosition) {
     const { latitude, longitude } = position.coords;
 
+    // Only update if moved more than 10 meters
     if (this.lastPosition) {
       const distance = this.calculateDistance(
         this.lastPosition.lat,
@@ -102,6 +165,8 @@ class LocationTracker {
   }
 
   private forceUpdate() {
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    
     navigator.geolocation.getCurrentPosition(
       (position) => this.handlePositionUpdate(position),
       (error) => this.handleError(error),
@@ -167,7 +232,7 @@ class LocationTracker {
   }
 
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371;
+    const R = 6371; // Earth's radius in km
     const dLat = (lat2 - lat1) * (Math.PI / 180);
     const dLon = (lon2 - lon1) * (Math.PI / 180);
     
@@ -197,6 +262,10 @@ class LocationTracker {
   }
 
   async getCurrentPosition(): Promise<{ lat: number; lng: number } | null> {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      return null;
+    }
+    
     return new Promise((resolve) => {
       navigator.geolocation.getCurrentPosition(
         (position) => {
@@ -491,9 +560,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }
 
+  function getBearing(): number {
+    return locationTracker.getBearing();
+  }
+
+  function getLastPosition(): { lat: number; lng: number } | null {
+    return locationTracker.getLastPosition();
+  }
+
   return (
     <AuthContext.Provider
-      value={{ user, supabaseUser, session, loading, signUp, signIn, signOut, refreshUser }}
+      value={{ 
+        user, 
+        supabaseUser, 
+        session, 
+        loading, 
+        signUp, 
+        signIn, 
+        signOut, 
+        refreshUser,
+        getBearing,
+        getLastPosition,
+      }}
     >
       {children}
     </AuthContext.Provider>

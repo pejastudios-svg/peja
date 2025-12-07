@@ -189,16 +189,15 @@ async function shouldNotifyUser(
   console.log(`\n🔍 Checking user ${user.id.slice(0, 8)}...`);
 
   // ============================================
-  // CASE 1: No settings - BLOCK ALL
-  // User must explicitly save settings to receive notifications
+  // CASE 1: No settings - BLOCK
   // ============================================
   if (!settings) {
-    console.log(`  ✗ No settings found - BLOCKING (user must configure settings)`);
+    console.log(`  ✗ No settings found - BLOCKING`);
     return false;
   }
 
   // ============================================
-  // CASE 2: Push notifications disabled - BLOCK ALL
+  // CASE 2: Push notifications disabled
   // ============================================
   if (settings.push_enabled === false) {
     console.log(`  ✗ Push notifications DISABLED`);
@@ -253,10 +252,10 @@ async function shouldNotifyUser(
     
     if (isInQuietHours(start, end)) {
       if (catType !== "danger") {
-        console.log(`  ✗ Quiet hours active (${start}-${end}) - only danger alerts allowed`);
+        console.log(`  ✗ Quiet hours active - only danger allowed`);
         return false;
       }
-      console.log(`  ✓ Quiet hours active but this is danger alert`);
+      console.log(`  ✓ Quiet hours active but danger category`);
     }
   }
 
@@ -264,75 +263,69 @@ async function shouldNotifyUser(
   // CASE 5: Check location/zone preferences
   // ============================================
   const alertZoneType = settings.alert_zone_type || "all_nigeria";
-  console.log(`  📍 Zone type: ${alertZoneType}`);
+  console.log(`  📍 Zone type: "${alertZoneType}"`);
 
-  switch (alertZoneType) {
-    // -----------------------------------------
-    // ALL OF NIGERIA
-    // -----------------------------------------
-    case "all_nigeria":
-      console.log(`  ✓ All Nigeria - ALLOWED`);
+  // FIX: Use strict comparison and handle all cases
+  if (alertZoneType === "all_nigeria") {
+    // ✅ All Nigeria - always allow
+    console.log(`  ✓ All Nigeria - ALLOWED`);
+    return true;
+  } else if (alertZoneType === "states") {
+    // ✅ Selected States
+    const selectedStates = settings.selected_states || [];
+    console.log(`  📍 Selected states: [${selectedStates.join(', ')}]`);
+    console.log(`  📍 Post address: "${postAddress}"`);
+    
+    if (selectedStates.length === 0) {
+      console.log(`  ✓ No states selected - allowing all`);
       return true;
-
-    // -----------------------------------------
-    // SELECTED STATES
-    // -----------------------------------------
-    case "states": {
-      const selectedStates = settings.selected_states || [];
-      console.log(`  📍 Selected states: [${selectedStates.join(', ')}]`);
-      console.log(`  📍 Post address: ${postAddress}`);
-      
-      if (selectedStates.length === 0) {
-        console.log(`  ✓ No states selected - allowing all`);
-        return true;
-      }
-      
-      const postState = extractStateFromAddress(postAddress);
-      console.log(`  📍 Extracted state: ${postState}`);
-      
-      if (!postState) {
-        console.log(`  ✗ Cannot determine post state - BLOCKING`);
-        return false;
-      }
-      
-      const isInSelectedState = selectedStates.some(
-        s => s.trim().toLowerCase() === postState.trim().toLowerCase()
-      );
-      
-      console.log(`  ${isInSelectedState ? '✓' : '✗'} State match: ${isInSelectedState}`);
-      return isInSelectedState;
     }
-
-    // -----------------------------------------
-    // CUSTOM RADIUS
-    // -----------------------------------------
-    case "radius": {
-      if (!user.last_latitude || !user.last_longitude) {
-        console.log(`  ✗ User has no saved location (lat: ${user.last_latitude}, lng: ${user.last_longitude})`);
-        return false;
-      }
-      
-      if (!postLatitude || !postLongitude) {
-        console.log(`  ✗ Post has no coordinates`);
-        return false;
-      }
-      
-      const radiusKm = settings.alert_radius_km || 5;
-      const distance = calculateDistanceKm(
-        user.last_latitude,
-        user.last_longitude,
-        postLatitude,
-        postLongitude
-      );
-      
-      const withinRadius = distance <= radiusKm;
-      console.log(`  📍 Distance: ${distance.toFixed(2)}km, Radius: ${radiusKm}km - ${withinRadius ? 'WITHIN ✓' : 'OUTSIDE ✗'}`);
-      return withinRadius;
+    
+    const postState = extractStateFromAddress(postAddress);
+    console.log(`  📍 Extracted state: "${postState}"`);
+    
+    if (!postState) {
+      console.log(`  ✗ Cannot determine post state - BLOCKING`);
+      return false;
     }
-
-    default:
-      console.log(`  ✓ Unknown zone type - allowing`);
-      return true;
+    
+    const isInSelectedState = selectedStates.some(
+      s => s.trim().toLowerCase() === postState.trim().toLowerCase()
+    );
+    
+    console.log(`  ${isInSelectedState ? '✓' : '✗'} State match: ${isInSelectedState}`);
+    return isInSelectedState;
+  } else if (alertZoneType === "radius") {
+    // ✅ Custom Radius
+    console.log(`  📍 Checking radius...`);
+    console.log(`  📍 User location: lat=${user.last_latitude}, lng=${user.last_longitude}`);
+    console.log(`  📍 Post location: lat=${postLatitude}, lng=${postLongitude}`);
+    
+    if (!user.last_latitude || !user.last_longitude) {
+      console.log(`  ✗ User has no saved location`);
+      return false;
+    }
+    
+    if (!postLatitude || !postLongitude) {
+      console.log(`  ✗ Post has no coordinates`);
+      return false;
+    }
+    
+    const radiusKm = settings.alert_radius_km || 5;
+    const distance = calculateDistanceKm(
+      user.last_latitude,
+      user.last_longitude,
+      postLatitude,
+      postLongitude
+    );
+    
+    const withinRadius = distance <= radiusKm;
+    console.log(`  📍 Distance: ${distance.toFixed(2)}km, Radius: ${radiusKm}km - ${withinRadius ? 'WITHIN ✓' : 'OUTSIDE ✗'}`);
+    return withinRadius;
+  } else {
+    // Unknown zone type - allow to be safe
+    console.log(`  ⚠️ Unknown zone type "${alertZoneType}" - allowing`);
+    return true;
   }
 }
 

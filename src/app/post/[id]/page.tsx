@@ -10,6 +10,7 @@ import { Modal } from "@/components/ui/Modal";
 import { formatDistanceToNow, differenceInHours } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
 import { notifyPostComment, notifyCommentLiked } from "@/lib/notifications";
+import { notifyPostConfirmed } from "@/lib/notifications";
 import {
   ArrowLeft,
   MapPin,
@@ -337,33 +338,52 @@ export default function PostDetailPage() {
 
   // Handle confirm
   const handleConfirm = async () => {
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+  if (!user) {
+    router.push("/login");
+    return;
+  }
 
-    const wasConfirmed = isConfirmed;
-    const prevCount = post?.confirmations || 0;
+  const wasConfirmed = isConfirmed;
+  const prevCount = post?.confirmations || 0;
 
-    setIsConfirmed(!wasConfirmed);
-    setPost(p => p ? { ...p, confirmations: wasConfirmed ? Math.max(0, prevCount - 1) : prevCount + 1 } : null);
+  // Optimistic update
+  setIsConfirmed(!wasConfirmed);
+  setPost(p => p ? { ...p, confirmations: wasConfirmed ? Math.max(0, prevCount - 1) : prevCount + 1 } : null);
 
-    setConfirmLoading(true);
-    try {
-      if (wasConfirmed) {
-        await supabase.from("post_confirmations").delete().eq("post_id", postId).eq("user_id", user.id);
-        await supabase.from("posts").update({ confirmations: Math.max(0, prevCount - 1) }).eq("id", postId);
-      } else {
-        await supabase.from("post_confirmations").insert({ post_id: postId, user_id: user.id });
-        await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", postId);
+  setConfirmLoading(true);
+  try {
+    if (wasConfirmed) {
+      // Unconfirm
+      await supabase.from("post_confirmations").delete().eq("post_id", postId).eq("user_id", user.id);
+      await supabase.from("posts").update({ confirmations: Math.max(0, prevCount - 1) }).eq("id", postId);
+    } else {
+      // Confirm
+      const { error: insertError } = await supabase.from("post_confirmations").insert({ post_id: postId, user_id: user.id });
+      
+      if (insertError && insertError.code !== "23505") {
+        throw insertError;
       }
-    } catch (err) {
-      setIsConfirmed(wasConfirmed);
-      setPost(p => p ? { ...p, confirmations: prevCount } : null);
-    } finally {
-      setConfirmLoading(false);
+      
+      await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", postId);
+
+      // ✅ SEND NOTIFICATION TO POST OWNER
+      if (post?.user_id && post.user_id !== user.id) {
+        notifyPostConfirmed(
+          postId,
+          post.user_id,
+          user.full_name || "Someone"
+        );
+      }
     }
-  };
+  } catch (err) {
+    // Rollback on error
+    setIsConfirmed(wasConfirmed);
+    setPost(p => p ? { ...p, confirmations: prevCount } : null);
+    console.error("Confirm error:", err);
+  } finally {
+    setConfirmLoading(false);
+  }
+};
 
   // ========================================
   // FIXED LIKE HANDLER - Prevents double likes
