@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import { Post, CATEGORIES } from "@/lib/types";
@@ -97,90 +97,110 @@ const warningIcon = createIncidentIcon("#f97316");
 const awarenessIcon = createIncidentIcon("#eab308");
 const infoIcon = createIncidentIcon("#3b82f6");
 
-// User location marker WITH directional arrow
+// =====================================================
+// USER LOCATION MARKER - Arrow orbits around circle
+// =====================================================
 const createUserLocationIcon = (bearing: number) => {
   return L.divIcon({
     className: "user-location-marker",
     html: `
-      <div style="position: relative; width: 40px; height: 56px;">
-        <!-- Directional Arrow -->
+      <div style="position: relative; width: 48px; height: 48px;">
+        <!-- Rotating container - arrow orbits around center -->
         <div style="
           position: absolute;
           top: 0;
-          left: 50%;
-          transform: translateX(-50%) rotate(${bearing}deg);
-          transform-origin: center bottom;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          transform: rotate(${bearing}deg);
+          transition: transform 0.2s ease-out;
         ">
+          <!-- Arrow at top, pointing outward -->
           <div style="
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
             width: 0;
             height: 0;
             border-left: 8px solid transparent;
             border-right: 8px solid transparent;
             border-bottom: 14px solid #7c3aed;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
           "></div>
         </div>
         
-        <!-- User Dot -->
+        <!-- Circle stays fixed in center -->
         <div style="
           position: absolute;
-          top: 14px;
+          top: 50%;
           left: 50%;
-          transform: translateX(-50%);
-          width: 20px;
-          height: 20px;
+          transform: translate(-50%, -50%);
+          width: 18px;
+          height: 18px;
           background: #7c3aed;
-          border: 4px solid white;
+          border: 3px solid white;
           border-radius: 50%;
-          box-shadow: 0 0 0 6px rgba(124,58,237,0.3), 0 2px 8px rgba(0,0,0,0.3);
+          box-shadow: 0 0 0 4px rgba(124,58,237,0.25), 0 2px 6px rgba(0,0,0,0.3);
+          z-index: 2;
         "></div>
       </div>
     `,
-    iconSize: [40, 56],
-    iconAnchor: [20, 34],
-    popupAnchor: [0, -34],
+    iconSize: [48, 48],
+    iconAnchor: [24, 24],
+    popupAnchor: [0, -24],
   });
 };
 
-// SOS marker with profile picture and directional arrow
+// =====================================================
+// SOS MARKER - Arrow orbits around profile picture
+// =====================================================
 const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
   const img = avatarUrl || "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff";
 
   return L.divIcon({
     className: "sos-marker",
     html: `
-      <div style="position: relative; width: 60px; height: 76px;">
-        <!-- Directional Arrow -->
+      <div style="position: relative; width: 64px; height: 64px;">
+        <!-- Rotating container - arrow orbits around center -->
         <div style="
           position: absolute;
           top: 0;
-          left: 50%;
-          transform: translateX(-50%) rotate(${bearing}deg);
-          transform-origin: center bottom;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          transform: rotate(${bearing}deg);
+          transition: transform 0.2s ease-out;
         ">
+          <!-- Arrow at top, pointing outward -->
           <div style="
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
             width: 0;
             height: 0;
             border-left: 10px solid transparent;
             border-right: 10px solid transparent;
             border-bottom: 16px solid #dc2626;
-            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+            filter: drop-shadow(0 1px 3px rgba(0,0,0,0.3));
           "></div>
         </div>
         
-        <!-- Profile Picture Circle -->
+        <!-- Profile picture stays fixed in center -->
         <div style="
           position: absolute;
-          top: 16px;
+          top: 50%;
           left: 50%;
-          transform: translateX(-50%);
-          width: 44px;
-          height: 44px;
+          transform: translate(-50%, -50%);
+          width: 40px;
+          height: 40px;
           border-radius: 50%;
           overflow: hidden;
           border: 4px solid #dc2626;
-          box-shadow: 0 0 0 6px rgba(220,38,38,0.3), 0 4px 15px rgba(0,0,0,0.4);
+          box-shadow: 0 0 0 4px rgba(220,38,38,0.25), 0 3px 10px rgba(0,0,0,0.4);
           background: white;
+          z-index: 2;
         ">
           <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff'" />
         </div>
@@ -188,32 +208,38 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
         <!-- Pulsing Ring -->
         <div style="
           position: absolute;
-          top: 16px;
+          top: 50%;
           left: 50%;
-          transform: translateX(-50%);
-          width: 44px;
-          height: 44px;
+          width: 40px;
+          height: 40px;
           border-radius: 50%;
           border: 3px solid #dc2626;
           animation: sos-pulse-ring 2s infinite;
           pointer-events: none;
+          z-index: 1;
         "></div>
       </div>
       
       <style>
         @keyframes sos-pulse-ring {
-          0% { transform: translateX(-50%) scale(1); opacity: 1; }
-          100% { transform: translateX(-50%) scale(1.8); opacity: 0; }
+          0% { 
+            transform: translate(-50%, -50%) scale(1); 
+            opacity: 1; 
+          }
+          100% { 
+            transform: translate(-50%, -50%) scale(2); 
+            opacity: 0; 
+          }
         }
       </style>
     `,
-    iconSize: [60, 76],
-    iconAnchor: [30, 60],
-    popupAnchor: [0, -60],
+    iconSize: [64, 64],
+    iconAnchor: [32, 32],
+    popupAnchor: [0, -32],
   });
 };
 
-// Map controller - prevents jumping
+// Map controller - prevents jumping on re-render
 function MapController({ center, shouldCenter }: { center: [number, number]; shouldCenter: boolean }) {
   const map = useMap();
   const initialized = useRef(false);
@@ -250,12 +276,17 @@ function calculateETA(
   return Math.max(1, minutes);
 }
 
-// Real-time bearing hook
+// =====================================================
+// REAL-TIME COMPASS BEARING HOOK
+// =====================================================
 function useBearing() {
   const [bearing, setBearing] = useState(0);
+  const lastBearing = useRef(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    let permissionGranted = false;
 
     const handleOrientation = (event: DeviceOrientationEvent) => {
       let newBearing = 0;
@@ -271,7 +302,16 @@ function useBearing() {
 
       // Normalize to 0-360
       newBearing = ((newBearing % 360) + 360) % 360;
-      setBearing(newBearing);
+      
+      // Only update if bearing changed significantly (reduces jitter)
+      if (Math.abs(newBearing - lastBearing.current) > 3) {
+        lastBearing.current = newBearing;
+        setBearing(newBearing);
+      }
+    };
+
+    const startListening = () => {
+      window.addEventListener("deviceorientation", handleOrientation, true);
     };
 
     // Request permission on iOS 13+
@@ -279,12 +319,16 @@ function useBearing() {
       (DeviceOrientationEvent as any).requestPermission()
         .then((response: string) => {
           if (response === "granted") {
-            window.addEventListener("deviceorientation", handleOrientation, true);
+            permissionGranted = true;
+            startListening();
           }
         })
-        .catch(console.error);
+        .catch((err: any) => {
+          console.warn("Compass permission error:", err);
+        });
     } else {
-      window.addEventListener("deviceorientation", handleOrientation, true);
+      // Android and older iOS
+      startListening();
     }
 
     return () => {
@@ -295,6 +339,9 @@ function useBearing() {
   return bearing;
 }
 
+// =====================================================
+// MAIN MAP COMPONENT
+// =====================================================
 export default function IncidentMap({
   posts,
   userLocation,
@@ -389,9 +436,6 @@ export default function IncidentMap({
     ? SOS_TAGS.find(t => t.id === selectedSOS.tag) 
     : null;
 
-  // Memoize user icon to update with bearing
-  const userIcon = createUserLocationIcon(bearing);
-
   return (
     <>
       <MapContainer 
@@ -407,11 +451,11 @@ export default function IncidentMap({
         
         <MapController center={center} shouldCenter={centerOnUser} />
 
-        {/* User Location with Directional Arrow */}
+        {/* User Location with Orbiting Directional Arrow */}
         {userLocation && (
           <Marker 
             position={[userLocation.lat, userLocation.lng]} 
-            icon={userIcon}
+            icon={createUserLocationIcon(bearing)}
           >
             <Popup>
               <div className="text-center p-1">
@@ -421,7 +465,7 @@ export default function IncidentMap({
           </Marker>
         )}
 
-        {/* SOS Alerts with Directional Arrows */}
+        {/* SOS Alerts with Orbiting Directional Arrows */}
         {sosAlerts.map((sos) => (
           <Marker
             key={sos.id}
@@ -471,7 +515,7 @@ export default function IncidentMap({
           />
           <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
             {/* Header */}
-            <div className="sticky top-0 bg-dark-900 border-b border-white/10 p-4 flex items-center justify-between">
+            <div className="sticky top-0 bg-dark-900 border-b border-white/10 p-4 flex items-center justify-between z-10">
               <div>
                 <h3 className="text-xl font-bold text-white">SOS Alert</h3>
                 <p className="text-sm text-dark-400">
@@ -480,9 +524,9 @@ export default function IncidentMap({
               </div>
               <button 
                 onClick={() => setSelectedSOS(null)}
-                className="p-2 hover:bg-white/10 rounded-lg text-dark-400"
+                className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-dark-400 text-xl"
               >
-                ✕
+                ×
               </button>
             </div>
 
@@ -577,7 +621,7 @@ export default function IncidentMap({
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setSelectedSOS(null)}
-                  className="flex-1 py-3 glass-sm text-dark-300 rounded-xl font-medium"
+                  className="flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium"
                 >
                   Back
                 </button>
