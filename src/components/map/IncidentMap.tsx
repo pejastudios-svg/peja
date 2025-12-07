@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import { Post, CATEGORIES } from "@/lib/types";
@@ -97,6 +97,51 @@ const warningIcon = createIncidentIcon("#f97316");
 const awarenessIcon = createIncidentIcon("#eab308");
 const infoIcon = createIncidentIcon("#3b82f6");
 
+// User location marker WITH directional arrow
+const createUserLocationIcon = (bearing: number) => {
+  return L.divIcon({
+    className: "user-location-marker",
+    html: `
+      <div style="position: relative; width: 40px; height: 56px;">
+        <!-- Directional Arrow -->
+        <div style="
+          position: absolute;
+          top: 0;
+          left: 50%;
+          transform: translateX(-50%) rotate(${bearing}deg);
+          transform-origin: center bottom;
+        ">
+          <div style="
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 14px solid #7c3aed;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+          "></div>
+        </div>
+        
+        <!-- User Dot -->
+        <div style="
+          position: absolute;
+          top: 14px;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 20px;
+          height: 20px;
+          background: #7c3aed;
+          border: 4px solid white;
+          border-radius: 50%;
+          box-shadow: 0 0 0 6px rgba(124,58,237,0.3), 0 2px 8px rgba(0,0,0,0.3);
+        "></div>
+      </div>
+    `,
+    iconSize: [40, 56],
+    iconAnchor: [20, 34],
+    popupAnchor: [0, -34],
+  });
+};
+
 // SOS marker with profile picture and directional arrow
 const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
   const img = avatarUrl || "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff";
@@ -119,6 +164,7 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
             border-left: 10px solid transparent;
             border-right: 10px solid transparent;
             border-bottom: 16px solid #dc2626;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
           "></div>
         </div>
         
@@ -136,7 +182,7 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
           box-shadow: 0 0 0 6px rgba(220,38,38,0.3), 0 4px 15px rgba(0,0,0,0.4);
           background: white;
         ">
-          <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" />
+          <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff'" />
         </div>
         
         <!-- Pulsing Ring -->
@@ -149,13 +195,13 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
           height: 44px;
           border-radius: 50%;
           border: 3px solid #dc2626;
-          animation: pulse 2s infinite;
+          animation: sos-pulse-ring 2s infinite;
           pointer-events: none;
         "></div>
       </div>
       
       <style>
-        @keyframes pulse {
+        @keyframes sos-pulse-ring {
           0% { transform: translateX(-50%) scale(1); opacity: 1; }
           100% { transform: translateX(-50%) scale(1.8); opacity: 0; }
         }
@@ -166,23 +212,6 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
     popupAnchor: [0, -60],
   });
 };
-
-// User location marker
-const userLocationIcon = L.divIcon({
-  className: "user-location",
-  html: `
-    <div style="
-      width: 20px;
-      height: 20px;
-      background: #7c3aed;
-      border: 4px solid white;
-      border-radius: 50%;
-      box-shadow: 0 0 0 6px rgba(124,58,237,0.3), 0 2px 8px rgba(0,0,0,0.3);
-    "></div>
-  `,
-  iconSize: [28, 28],
-  iconAnchor: [14, 14],
-});
 
 // Map controller - prevents jumping
 function MapController({ center, shouldCenter }: { center: [number, number]; shouldCenter: boolean }) {
@@ -208,7 +237,7 @@ function calculateETA(
   toLat: number, 
   toLng: number
 ): number {
-  const R = 6371; // Earth radius in km
+  const R = 6371;
   const dLat = (toLat - fromLat) * Math.PI / 180;
   const dLng = (toLng - fromLng) * Math.PI / 180;
   const a = 
@@ -217,10 +246,53 @@ function calculateETA(
     Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   const distance = R * c;
-  
-  // Assume average speed of 30 km/h in traffic
   const minutes = Math.round((distance / 30) * 60);
   return Math.max(1, minutes);
+}
+
+// Real-time bearing hook
+function useBearing() {
+  const [bearing, setBearing] = useState(0);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      let newBearing = 0;
+      
+      // iOS Safari
+      if ((event as any).webkitCompassHeading !== undefined) {
+        newBearing = (event as any).webkitCompassHeading;
+      } 
+      // Android Chrome
+      else if (event.alpha !== null) {
+        newBearing = 360 - event.alpha;
+      }
+
+      // Normalize to 0-360
+      newBearing = ((newBearing % 360) + 360) % 360;
+      setBearing(newBearing);
+    };
+
+    // Request permission on iOS 13+
+    if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
+      (DeviceOrientationEvent as any).requestPermission()
+        .then((response: string) => {
+          if (response === "granted") {
+            window.addEventListener("deviceorientation", handleOrientation, true);
+          }
+        })
+        .catch(console.error);
+    } else {
+      window.addEventListener("deviceorientation", handleOrientation, true);
+    }
+
+    return () => {
+      window.removeEventListener("deviceorientation", handleOrientation, true);
+    };
+  }, []);
+
+  return bearing;
 }
 
 export default function IncidentMap({
@@ -232,11 +304,12 @@ export default function IncidentMap({
   centerOnUser = false,
 }: IncidentMapProps) {
   const router = useRouter();
-  const { user, getBearing } = useAuth();
+  const { user } = useAuth();
+  const bearing = useBearing();
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
   const [sendingHelp, setSendingHelp] = useState(false);
   
-  const defaultCenter: [number, number] = [6.5244, 3.3792]; // Lagos
+  const defaultCenter: [number, number] = [6.5244, 3.3792];
   const center: [number, number] = userLocation 
     ? [userLocation.lat, userLocation.lng] 
     : defaultCenter;
@@ -316,6 +389,9 @@ export default function IncidentMap({
     ? SOS_TAGS.find(t => t.id === selectedSOS.tag) 
     : null;
 
+  // Memoize user icon to update with bearing
+  const userIcon = createUserLocationIcon(bearing);
+
   return (
     <>
       <MapContainer 
@@ -331,9 +407,12 @@ export default function IncidentMap({
         
         <MapController center={center} shouldCenter={centerOnUser} />
 
-        {/* User Location */}
+        {/* User Location with Directional Arrow */}
         {userLocation && (
-          <Marker position={[userLocation.lat, userLocation.lng]} icon={userLocationIcon}>
+          <Marker 
+            position={[userLocation.lat, userLocation.lng]} 
+            icon={userIcon}
+          >
             <Popup>
               <div className="text-center p-1">
                 <p className="font-medium text-gray-800">You are here</p>
@@ -342,12 +421,12 @@ export default function IncidentMap({
           </Marker>
         )}
 
-        {/* SOS Alerts */}
+        {/* SOS Alerts with Directional Arrows */}
         {sosAlerts.map((sos) => (
           <Marker
             key={sos.id}
             position={[sos.latitude, sos.longitude]}
-            icon={createSOSIcon(sos.user?.avatar_url, getBearing())}
+            icon={createSOSIcon(sos.user?.avatar_url, 0)}
             eventHandlers={{
               click: () => setSelectedSOS(sos),
             }}
@@ -390,9 +469,9 @@ export default function IncidentMap({
             className="absolute inset-0 bg-black/70" 
             onClick={() => setSelectedSOS(null)} 
           />
-          <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[80vh] overflow-y-auto p-6">
+          <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
             {/* Header */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="sticky top-0 bg-dark-900 border-b border-white/10 p-4 flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-bold text-white">SOS Alert</h3>
                 <p className="text-sm text-dark-400">
@@ -407,93 +486,109 @@ export default function IncidentMap({
               </button>
             </div>
 
-            {/* User Info */}
-            <div className="flex items-center gap-3 mb-4 p-3 bg-white/5 rounded-xl">
-              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-red-500">
-                <img 
-                  src={selectedSOS.user?.avatar_url || "https://ui-avatars.com/api/?name=User"} 
-                  alt="" 
-                  className="w-full h-full object-cover"
-                />
+            <div className="p-4 space-y-4">
+              {/* User Info */}
+              <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-red-500 flex-shrink-0">
+                  <img 
+                    src={selectedSOS.user?.avatar_url || "https://ui-avatars.com/api/?name=User"} 
+                    alt="" 
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-white truncate">{selectedSOS.user?.full_name || "Someone"}</p>
+                  <p className="text-sm text-dark-400 truncate">{selectedSOS.address || "Location unavailable"}</p>
+                </div>
               </div>
-              <div>
-                <p className="font-semibold text-white">{selectedSOS.user?.full_name || "Someone"}</p>
-                <p className="text-sm text-dark-400">{selectedSOS.address || "Location unavailable"}</p>
-              </div>
-            </div>
 
-            {/* Situation Tag */}
-            {tagInfo && (
-              <div className="mb-4">
-                <p className="text-sm text-dark-400 mb-1">Situation:</p>
-                <p className="font-semibold text-white">{tagInfo.label}</p>
-              </div>
-            )}
+              {/* Situation Tag */}
+              {tagInfo && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl">
+                  <p className="text-sm text-dark-400">Situation:</p>
+                  <p className="font-semibold text-white">{tagInfo.label}</p>
+                </div>
+              )}
 
-            {/* Text Message */}
-            {selectedSOS.message && (
-              <div className="mb-4 p-3 bg-white/5 rounded-xl">
-                <p className="text-sm text-dark-400 mb-1">Message:</p>
-                <p className="text-white">{selectedSOS.message}</p>
-              </div>
-            )}
+              {/* Text Message */}
+              {selectedSOS.message && (
+                <div className="p-3 bg-white/5 rounded-xl">
+                  <p className="text-sm text-dark-400 mb-1">Message:</p>
+                  <p className="text-white">{selectedSOS.message}</p>
+                </div>
+              )}
 
-            {/* Voice Note */}
-            {selectedSOS.voice_note_url && (
-              <div className="mb-4">
-                <p className="text-sm text-dark-400 mb-2">Voice message:</p>
-                <audio src={selectedSOS.voice_note_url} controls className="w-full" />
-              </div>
-            )}
+              {/* Voice Note */}
+              {selectedSOS.voice_note_url && (
+                <div>
+                  <p className="text-sm text-dark-400 mb-2">Voice message:</p>
+                  <audio src={selectedSOS.voice_note_url} controls className="w-full" />
+                </div>
+              )}
 
-            {/* Suggestion */}
-            {tagInfo && (
-              <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
-                <p className="text-sm font-medium text-yellow-400 mb-1">How to help:</p>
-                <p className="text-sm text-yellow-200">{tagInfo.suggestion}</p>
-              </div>
-            )}
+              {/* Suggestion */}
+              {tagInfo && (
+                <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                  <p className="text-sm font-medium text-yellow-400 mb-1">How to help:</p>
+                  <p className="text-sm text-yellow-200">{tagInfo.suggestion}</p>
+                </div>
+              )}
 
-            {/* Disclaimer */}
-            <div className="mb-6 p-3 bg-white/5 rounded-xl">
-              <p className="text-xs text-dark-400">
-                We urge you to help fellow Nigerians in need. However, please only click "I Can Help" 
-                if you genuinely intend to assist. Your safety is important — do not put yourself in danger.
-              </p>
-            </div>
-
-            {/* ETA */}
-            {userLocation && (
-              <div className="mb-4 text-center">
-                <p className="text-sm text-dark-400">
-                  Your estimated arrival time:
-                </p>
-                <p className="text-2xl font-bold text-primary-400">
-                  {calculateETA(
-                    userLocation.lat, 
-                    userLocation.lng, 
-                    selectedSOS.latitude, 
-                    selectedSOS.longitude
-                  )} minutes
+              {/* Disclaimer */}
+              <div className="p-3 bg-white/5 rounded-xl">
+                <p className="text-xs text-dark-400">
+                  We urge you to help fellow Nigerians in need. However, please only click "I Can Help" 
+                  if you genuinely intend to assist. Your safety is important — do not put yourself in danger.
                 </p>
               </div>
-            )}
 
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => setSelectedSOS(null)}
-                className="flex-1 py-3 glass-sm text-dark-300 rounded-xl font-medium"
-              >
-                Back
-              </button>
-              <button
-                onClick={() => handleICanHelp(selectedSOS)}
-                disabled={sendingHelp}
-                className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
-              >
-                {sendingHelp ? "Sending..." : "I Can Help"}
-              </button>
+              {/* ETA */}
+              {userLocation && (
+                <div className="text-center py-2">
+                  <p className="text-sm text-dark-400">Your estimated arrival time:</p>
+                  <p className="text-3xl font-bold text-primary-400">
+                    {calculateETA(
+                      userLocation.lat, 
+                      userLocation.lng, 
+                      selectedSOS.latitude, 
+                      selectedSOS.longitude
+                    )} min
+                  </p>
+                </div>
+              )}
+
+              {/* Emergency Call Buttons */}
+              <div className="flex gap-2">
+                <a 
+                  href="tel:112" 
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium text-center"
+                >
+                  Call 112
+                </a>
+                <a 
+                  href="tel:767" 
+                  className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium text-center"
+                >
+                  Call 767
+                </a>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setSelectedSOS(null)}
+                  className="flex-1 py-3 glass-sm text-dark-300 rounded-xl font-medium"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => handleICanHelp(selectedSOS)}
+                  disabled={sendingHelp}
+                  className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
+                >
+                  {sendingHelp ? "Sending..." : "I Can Help"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
