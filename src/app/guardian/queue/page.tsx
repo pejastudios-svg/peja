@@ -76,10 +76,26 @@ export default function GuardianQueuePage() {
 
       if (error) throw error;
 
-      setItems((data || []).map(item => ({
-        ...item,
-        post: item.posts,
-      })));
+      // Map the data correctly - posts is a single object, not an array
+      const formattedItems: FlaggedItem[] = (data || []).map((item: any) => ({
+        id: item.id,
+        post_id: item.post_id,
+        reason: item.reason,
+        priority: item.priority,
+        status: item.status,
+        created_at: item.created_at,
+        post: item.posts ? {
+          id: item.posts.id,
+          category: item.posts.category,
+          comment: item.posts.comment,
+          address: item.posts.address,
+          is_sensitive: item.posts.is_sensitive,
+          post_media: item.posts.post_media || [],
+          users: item.posts.users,
+        } : undefined,
+      }));
+
+      setItems(formattedItems);
     } catch (error) {
       console.error("Error fetching queue:", error);
     } finally {
@@ -92,7 +108,6 @@ export default function GuardianQueuePage() {
 
     setActionLoading(true);
     try {
-      // Update flagged content status
       const newStatus = action === "escalate" ? "escalated" : action === "approve" ? "approved" : "removed";
       
       await supabase
@@ -104,7 +119,6 @@ export default function GuardianQueuePage() {
         })
         .eq("id", selectedItem.id);
 
-      // If removing, update post status
       if (action === "remove" && selectedItem.post_id) {
         await supabase
           .from("posts")
@@ -112,7 +126,6 @@ export default function GuardianQueuePage() {
           .eq("id", selectedItem.post_id);
       }
 
-      // If adding blur, update post
       if (action === "blur" && selectedItem.post_id) {
         await supabase
           .from("posts")
@@ -120,7 +133,6 @@ export default function GuardianQueuePage() {
           .eq("id", selectedItem.post_id);
       }
 
-      // Log guardian action
       await supabase.from("guardian_actions").insert({
         guardian_id: user.id,
         action,
@@ -128,7 +140,6 @@ export default function GuardianQueuePage() {
         reason: selectedItem.reason,
       });
 
-      // Remove from list
       setItems(items.filter(i => i.id !== selectedItem.id));
       setShowReviewModal(false);
       setSelectedItem(null);
