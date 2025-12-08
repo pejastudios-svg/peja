@@ -164,13 +164,13 @@ export default function MapPage() {
 
   const fetchSOSAlerts = async () => {
     try {
-      const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-      const { data: sosData, error: sosError } = await supabase
-        .from("sos_alerts")
-        .select("*")
-        .eq("status", "active")
-        .gte("created_at", fiveHoursAgo);
+const { data: sosData, error: sosError } = await supabase
+  .from("sos_alerts")
+  .select("*")
+  .eq("status", "active")
+  .gte("created_at", twentyFourHoursAgo);
 
       if (sosError) {
         console.error("SOS query error:", sosError);
@@ -254,14 +254,13 @@ export default function MapPage() {
             </div>
           ) : (
             <IncidentMap
-              posts={filteredPosts}
-              userLocation={userLocation}
-              onPostClick={handlePostClick}
-              sosAlerts={sosAlerts}
-              onSOSClick={(id) => console.log("SOS:", id)}
-              centerOnUser={false}
-            />
-          )}
+  posts={filteredPosts}
+  userLocation={userLocation}
+  onPostClick={handlePostClick}
+  sosAlerts={sosAlerts}
+  onSOSClick={(id) => console.log("SOS:", id)}
+  centerOnUser={false} // keep this
+/>
 
           {sosAlerts.length > 0 && (
   <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
