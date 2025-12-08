@@ -19,6 +19,16 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { CATEGORIES } from "@/lib/types";
 
+interface PostData {
+  id: string;
+  category: string;
+  comment: string;
+  address: string;
+  is_sensitive: boolean;
+  post_media?: { url: string; media_type: string }[];
+  users?: { full_name: string };
+}
+
 interface FlaggedItem {
   id: string;
   post_id: string;
@@ -26,15 +36,7 @@ interface FlaggedItem {
   priority: string;
   status: string;
   created_at: string;
-  post?: {
-    id: string;
-    category: string;
-    comment: string;
-    address: string;
-    is_sensitive: boolean;
-    post_media?: { url: string; media_type: string }[];
-    users?: { full_name: string };
-  };
+  post?: PostData;
 }
 
 export default function GuardianQueuePage() {
@@ -76,28 +78,34 @@ export default function GuardianQueuePage() {
 
       if (error) throw error;
 
-      // Map the data correctly - posts is a single object, not an array
-      const formattedItems: FlaggedItem[] = (data || []).map((item: any) => ({
-        id: item.id,
-        post_id: item.post_id,
-        reason: item.reason,
-        priority: item.priority,
-        status: item.status,
-        created_at: item.created_at,
-        post: item.posts ? {
-          id: item.posts.id,
-          category: item.posts.category,
-          comment: item.posts.comment,
-          address: item.posts.address,
-          is_sensitive: item.posts.is_sensitive,
-          post_media: item.posts.post_media || [],
-          users: item.posts.users,
-        } : undefined,
-      }));
+      // Properly map the data - posts is a single object from Supabase join
+      const formattedItems: FlaggedItem[] = (data || []).map((item: any) => {
+        // item.posts is the joined post data (single object, not array)
+        const postData = item.posts;
+        
+        return {
+          id: item.id,
+          post_id: item.post_id,
+          reason: item.reason,
+          priority: item.priority,
+          status: item.status,
+          created_at: item.created_at,
+          post: postData ? {
+            id: postData.id,
+            category: postData.category,
+            comment: postData.comment,
+            address: postData.address,
+            is_sensitive: postData.is_sensitive,
+            post_media: postData.post_media || [],
+            users: postData.users || undefined,
+          } : undefined,
+        };
+      });
 
       setItems(formattedItems);
     } catch (error) {
       console.error("Error fetching queue:", error);
+      setItems([]);
     } finally {
       setLoading(false);
     }
@@ -133,12 +141,17 @@ export default function GuardianQueuePage() {
           .eq("id", selectedItem.post_id);
       }
 
-      await supabase.from("guardian_actions").insert({
-        guardian_id: user.id,
-        action,
-        post_id: selectedItem.post_id,
-        reason: selectedItem.reason,
-      });
+      // Log guardian action (table might not exist yet, so wrap in try-catch)
+      try {
+        await supabase.from("guardian_actions").insert({
+          guardian_id: user.id,
+          action,
+          post_id: selectedItem.post_id,
+          reason: selectedItem.reason,
+        });
+      } catch (e) {
+        console.log("Guardian actions table may not exist yet");
+      }
 
       setItems(items.filter(i => i.id !== selectedItem.id));
       setShowReviewModal(false);
