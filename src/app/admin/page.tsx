@@ -26,13 +26,6 @@ interface Stats {
   pendingApplications: number;
 }
 
-interface RecentActivity {
-  id: string;
-  type: string;
-  description: string;
-  created_at: string;
-}
-
 export default function AdminOverviewPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [recentPosts, setRecentPosts] = useState<any[]>([]);
@@ -45,7 +38,6 @@ export default function AdminOverviewPage() {
 
   const fetchData = async () => {
     try {
-      // Fetch all stats in parallel
       const [
         { count: totalUsers },
         { count: activeUsers },

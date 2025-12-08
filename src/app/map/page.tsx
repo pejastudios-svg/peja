@@ -16,7 +16,6 @@ import {
   List,
   Map as MapIcon,
   Clock,
-  ChevronUp,
   AlertTriangle,
 } from "lucide-react";
 import { formatDistanceToNow, subHours } from "date-fns";
@@ -29,9 +28,6 @@ const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
     </div>
   ),
 });
-
-// ❌ REMOVED - Already imported from @/lib/types above
-// interface SOSAlert { ... }
 
 export default function MapPage() {
   const router = useRouter();
@@ -166,11 +162,11 @@ export default function MapPage() {
     try {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-const { data: sosData, error: sosError } = await supabase
-  .from("sos_alerts")
-  .select("*")
-  .eq("status", "active")
-  .gte("created_at", twentyFourHoursAgo);
+      const { data: sosData, error: sosError } = await supabase
+        .from("sos_alerts")
+        .select("*")
+        .eq("status", "active")
+        .gte("created_at", twentyFourHoursAgo);
 
       if (sosError) {
         console.error("SOS query error:", sosError);
@@ -254,27 +250,30 @@ const { data: sosData, error: sosError } = await supabase
             </div>
           ) : (
             <IncidentMap
-  posts={filteredPosts}
-  userLocation={userLocation}
-  onPostClick={handlePostClick}
-  sosAlerts={sosAlerts}
-  onSOSClick={(id) => console.log("SOS:", id)}
-  centerOnUser={false} // keep this
-/>
+              posts={filteredPosts}
+              userLocation={userLocation}
+              onPostClick={handlePostClick}
+              sosAlerts={sosAlerts}
+              onSOSClick={(id) => console.log("SOS:", id)}
+              centerOnUser={false}
+            />
+          )}
 
-{soSAlerts.length > 0 && (
-  <div className="absolute top-4 left-1/2 -translate-x-1/2 z-,[object Object],">
-    <div className="glass-float rounded-xl px-4 py-2.5 flex items-center gap-3">
-      <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
-        <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
-      </div>
-      <span className="text-sm font-semibold text-red-400 whitespace-nowrap">
-        {sosAlerts.length} Active SOS
-      </span>
-    </div>
-  </div>
-)}
+          {/* SOS Alert Banner */}
+          {sosAlerts.length > 0 && (
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
+              <div className="glass-float rounded-xl px-4 py-2.5 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                  <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
+                </div>
+                <span className="text-sm font-semibold text-red-400 whitespace-nowrap">
+                  {sosAlerts.length} Active SOS
+                </span>
+              </div>
+            </div>
+          )}
 
+          {/* Category Filter */}
           <div className="absolute top-16 left-4 right-4 z-[1000]">
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               <button
@@ -288,6 +287,7 @@ const { data: sosData, error: sosError } = await supabase
             </div>
           </div>
 
+          {/* Navigation Button */}
           <button
             onClick={getUserLocation}
             disabled={gettingLocation}
@@ -300,6 +300,7 @@ const { data: sosData, error: sosError } = await supabase
             )}
           </button>
 
+          {/* List Toggle Button */}
           <button
             onClick={() => setShowList(!showList)}
             className="absolute bottom-24 left-4 z-[1000] p-3 glass-float rounded-full shadow-lg"
@@ -307,6 +308,7 @@ const { data: sosData, error: sosError } = await supabase
             {showList ? <MapIcon className="w-5 h-5 text-primary-400" /> : <List className="w-5 h-5 text-primary-400" />}
           </button>
 
+          {/* Bottom Sheet */}
           <div
             className={`absolute bottom-0 left-0 right-0 z-[1000] glass-strong rounded-t-2xl shadow-2xl transition-transform duration-300 ${
               showList ? "translate-y-0" : "translate-y-[calc(100%-60px)]"
@@ -321,6 +323,7 @@ const { data: sosData, error: sosError } = await supabase
             </button>
 
             <div className="overflow-y-auto px-4 pb-4" style={{ maxHeight: "calc(60vh - 60px)" }}>
+              {/* SOS Alerts in List */}
               {sosAlerts.map((sos) => (
                 <div key={sos.id} className="flex gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl mb-2">
                   <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center overflow-hidden">
@@ -337,6 +340,7 @@ const { data: sosData, error: sosError } = await supabase
                 </div>
               ))}
 
+              {/* Posts in List */}
               {filteredPosts.map((post) => {
                 const category = CATEGORIES.find((c) => c.id === post.category);
                 return (
@@ -361,6 +365,7 @@ const { data: sosData, error: sosError } = await supabase
             </div>
           </div>
 
+          {/* Legend */}
           <div className="absolute top-32 right-4 z-[1000] glass-float rounded-lg p-3 text-xs space-y-2">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full" />

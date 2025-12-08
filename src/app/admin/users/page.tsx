@@ -104,7 +104,7 @@ export default function AdminUsersPage() {
         </div>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as any)}
+          onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "suspended" | "banned")}
           className="px-4 py-2.5 glass-input md:w-48"
         >
           <option value="all">All Status</option>
