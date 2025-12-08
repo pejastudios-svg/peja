@@ -1,7 +1,10 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
 import {
   Home,
   Map,
@@ -12,6 +15,8 @@ import {
   HelpCircle,
   Search,
   X,
+  LayoutDashboard,
+  Users,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -34,6 +39,34 @@ const secondaryItems = [
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isGuardian, setIsGuardian] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      checkRoles();
+    }
+  }, [user]);
+
+  const checkRoles = async () => {
+    if (!user) return;
+
+    try {
+      const { data } = await supabase
+        .from("users")
+        .select("is_admin, is_guardian")
+        .eq("id", user.id)
+        .single();
+
+      if (data) {
+        setIsAdmin(data.is_admin || false);
+        setIsGuardian(data.is_guardian || false);
+      }
+    } catch (error) {
+      console.error("Error checking roles:", error);
+    }
+  };
 
   return (
     <>
@@ -83,13 +116,56 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             })}
           </div>
 
-          <div className="mt-8 pt-4 border-t border-white/5">
+          {/* Admin & Guardian Links */}
+          {(isAdmin || isGuardian) && (
+            <div className="mt-6 pt-4 border-t border-white/5">
+              <p className="px-3 text-xs font-medium text-dark-500 uppercase tracking-wider mb-2">
+                Management
+              </p>
+              <div className="space-y-1">
+                {isAdmin && (
+                  <Link
+                    href="/admin"
+                    onClick={onClose}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+                      pathname.startsWith("/admin")
+                        ? "bg-red-600/20 text-red-400 border border-red-500/30"
+                        : "text-dark-300 hover:bg-white/5 hover:text-dark-100"
+                    }`}
+                  >
+                    <LayoutDashboard className="w-5 h-5" />
+                    <span className="font-medium">Admin Dashboard</span>
+                  </Link>
+                )}
+                {isGuardian && (
+                  <Link
+                    href="/guardian"
+                    onClick={onClose}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+                      pathname.startsWith("/guardian")
+                        ? "bg-primary-600/20 text-primary-400 border border-primary-500/30"
+                        : "text-dark-300 hover:bg-white/5 hover:text-dark-100"
+                    }`}
+                  >
+                    <Shield className="w-5 h-5" />
+                    <span className="font-medium">Guardian Hub</span>
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-6 pt-4 border-t border-white/5">
             <p className="px-3 text-xs font-medium text-dark-500 uppercase tracking-wider mb-2">
               More
             </p>
             <div className="space-y-1">
               {secondaryItems.map((item) => {
                 const Icon = item.icon;
+                // Hide "Become a Guardian" if already a guardian
+                if (item.href === "/become-guardian" && isGuardian) {
+                  return null;
+                }
 
                 return (
                   <Link

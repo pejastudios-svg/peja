@@ -45,6 +45,7 @@ interface SOSAlert {
   tag?: string;
   voice_note_url?: string;
   message?: string;
+  bearing?: number;
   user?: {
     full_name: string;
     avatar_url?: string;
@@ -97,15 +98,12 @@ const warningIcon = createIncidentIcon("#f97316");
 const awarenessIcon = createIncidentIcon("#eab308");
 const infoIcon = createIncidentIcon("#3b82f6");
 
-// =====================================================
-// USER LOCATION MARKER - Arrow orbits around circle
-// =====================================================
+// User location marker with orbiting arrow
 const createUserLocationIcon = (bearing: number) => {
   return L.divIcon({
     className: "user-location-marker",
     html: `
       <div style="position: relative; width: 48px; height: 48px;">
-        <!-- Rotating container - arrow orbits around center -->
         <div style="
           position: absolute;
           top: 0;
@@ -113,9 +111,8 @@ const createUserLocationIcon = (bearing: number) => {
           width: 100%;
           height: 100%;
           transform: rotate(${bearing}deg);
-          transition: transform 0.2s ease-out;
+          transition: transform 0.3s ease-out;
         ">
-          <!-- Arrow at top, pointing outward -->
           <div style="
             position: absolute;
             top: 0;
@@ -129,8 +126,6 @@ const createUserLocationIcon = (bearing: number) => {
             filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
           "></div>
         </div>
-        
-        <!-- Circle stays fixed in center -->
         <div style="
           position: absolute;
           top: 50%;
@@ -152,9 +147,7 @@ const createUserLocationIcon = (bearing: number) => {
   });
 };
 
-// =====================================================
-// SOS MARKER - Arrow orbits around profile picture
-// =====================================================
+// SOS marker with profile picture and orbiting arrow - uses SOS user's bearing
 const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
   const img = avatarUrl || "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff";
 
@@ -162,7 +155,6 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
     className: "sos-marker",
     html: `
       <div style="position: relative; width: 64px; height: 64px;">
-        <!-- Rotating container - arrow orbits around center -->
         <div style="
           position: absolute;
           top: 0;
@@ -170,9 +162,8 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
           width: 100%;
           height: 100%;
           transform: rotate(${bearing}deg);
-          transition: transform 0.2s ease-out;
+          transition: transform 0.3s ease-out;
         ">
-          <!-- Arrow at top, pointing outward -->
           <div style="
             position: absolute;
             top: 0;
@@ -186,8 +177,6 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
             filter: drop-shadow(0 1px 3px rgba(0,0,0,0.3));
           "></div>
         </div>
-        
-        <!-- Profile picture stays fixed in center -->
         <div style="
           position: absolute;
           top: 50%;
@@ -204,8 +193,6 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
         ">
           <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff'" />
         </div>
-        
-        <!-- Pulsing Ring -->
         <div style="
           position: absolute;
           top: 50%;
@@ -219,17 +206,10 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
           z-index: 1;
         "></div>
       </div>
-      
       <style>
         @keyframes sos-pulse-ring {
-          0% { 
-            transform: translate(-50%, -50%) scale(1); 
-            opacity: 1; 
-          }
-          100% { 
-            transform: translate(-50%, -50%) scale(2); 
-            opacity: 0; 
-          }
+          0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+          100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
         }
       </style>
     `,
@@ -239,7 +219,7 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
   });
 };
 
-// Map controller - prevents jumping on re-render
+// Map controller
 function MapController({ center, shouldCenter }: { center: [number, number]; shouldCenter: boolean }) {
   const map = useMap();
   const initialized = useRef(false);
@@ -256,18 +236,12 @@ function MapController({ center, shouldCenter }: { center: [number, number]; sho
   return null;
 }
 
-// Calculate ETA in minutes
-function calculateETA(
-  fromLat: number, 
-  fromLng: number, 
-  toLat: number, 
-  toLng: number
-): number {
+// Calculate ETA
+function calculateETA(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
   const R = 6371;
   const dLat = (toLat - fromLat) * Math.PI / 180;
   const dLng = (toLng - fromLng) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(fromLat * Math.PI / 180) * Math.cos(toLat * Math.PI / 180) *
     Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
@@ -276,9 +250,7 @@ function calculateETA(
   return Math.max(1, minutes);
 }
 
-// =====================================================
-// REAL-TIME COMPASS BEARING HOOK
-// =====================================================
+// Compass bearing hook for current user
 function useBearing() {
   const [bearing, setBearing] = useState(0);
   const lastBearing = useRef(0);
@@ -286,49 +258,33 @@ function useBearing() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    let permissionGranted = false;
-
     const handleOrientation = (event: DeviceOrientationEvent) => {
       let newBearing = 0;
       
-      // iOS Safari
       if ((event as any).webkitCompassHeading !== undefined) {
         newBearing = (event as any).webkitCompassHeading;
-      } 
-      // Android Chrome
-      else if (event.alpha !== null) {
+      } else if (event.alpha !== null) {
         newBearing = 360 - event.alpha;
       }
 
-      // Normalize to 0-360
       newBearing = ((newBearing % 360) + 360) % 360;
       
-      // Only update if bearing changed significantly (reduces jitter)
       if (Math.abs(newBearing - lastBearing.current) > 3) {
         lastBearing.current = newBearing;
         setBearing(newBearing);
       }
     };
 
-    const startListening = () => {
-      window.addEventListener("deviceorientation", handleOrientation, true);
-    };
-
-    // Request permission on iOS 13+
     if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
       (DeviceOrientationEvent as any).requestPermission()
         .then((response: string) => {
           if (response === "granted") {
-            permissionGranted = true;
-            startListening();
+            window.addEventListener("deviceorientation", handleOrientation, true);
           }
         })
-        .catch((err: any) => {
-          console.warn("Compass permission error:", err);
-        });
+        .catch(console.error);
     } else {
-      // Android and older iOS
-      startListening();
+      window.addEventListener("deviceorientation", handleOrientation, true);
     }
 
     return () => {
@@ -339,9 +295,7 @@ function useBearing() {
   return bearing;
 }
 
-// =====================================================
-// MAIN MAP COMPONENT
-// =====================================================
+// Main component
 export default function IncidentMap({
   posts,
   userLocation,
@@ -352,14 +306,46 @@ export default function IncidentMap({
 }: IncidentMapProps) {
   const router = useRouter();
   const { user } = useAuth();
-  const bearing = useBearing();
+  const userBearing = useBearing();
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
   const [sendingHelp, setSendingHelp] = useState(false);
+  const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   
   const defaultCenter: [number, number] = [6.5244, 3.3792];
   const center: [number, number] = userLocation 
     ? [userLocation.lat, userLocation.lng] 
     : defaultCenter;
+
+  // Subscribe to real-time SOS updates
+  useEffect(() => {
+    setLiveSOSAlerts(sosAlerts);
+
+    const channel = supabase
+      .channel('sos-realtime-map')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'sos_alerts' },
+        (payload) => {
+          const updatedSOS = payload.new as SOSAlert;
+          setLiveSOSAlerts(prev => 
+            prev.map(sos => 
+              sos.id === updatedSOS.id 
+                ? { ...sos, ...updatedSOS }
+                : sos
+            )
+          );
+          // Also update selected SOS if it's the one being viewed
+          if (selectedSOS?.id === updatedSOS.id) {
+            setSelectedSOS(prev => prev ? { ...prev, ...updatedSOS } : null);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sosAlerts, selectedSOS?.id]);
 
   const getIcon = (categoryId: string) => {
     const category = CATEGORIES.find(c => c.id === categoryId);
@@ -380,27 +366,16 @@ export default function IncidentMap({
     setSendingHelp(true);
 
     try {
-      const eta = calculateETA(
-        userLocation.lat, 
-        userLocation.lng, 
-        sos.latitude, 
-        sos.longitude
-      );
+      const eta = calculateETA(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
 
-      // Notify the SOS user
       await createNotification({
         userId: sos.user_id,
         type: "sos_alert",
         title: "Help is on the way!",
         body: `Someone is coming to help you. ETA: ${eta} minutes`,
-        data: { 
-          sos_id: sos.id, 
-          helper_id: user.id,
-          eta_minutes: eta,
-        },
+        data: { sos_id: sos.id, helper_id: user.id, eta_minutes: eta },
       });
 
-      // Notify other nearby users that someone is helping
       const { data: nearbyUsers } = await supabase
         .from("users")
         .select("id")
@@ -432,9 +407,7 @@ export default function IncidentMap({
     }
   };
 
-  const tagInfo = selectedSOS?.tag 
-    ? SOS_TAGS.find(t => t.id === selectedSOS.tag) 
-    : null;
+  const tagInfo = selectedSOS?.tag ? SOS_TAGS.find(t => t.id === selectedSOS.tag) : null;
 
   return (
     <>
@@ -451,11 +424,11 @@ export default function IncidentMap({
         
         <MapController center={center} shouldCenter={centerOnUser} />
 
-        {/* User Location with Orbiting Directional Arrow */}
+        {/* User Location - uses current user's bearing */}
         {userLocation && (
           <Marker 
             position={[userLocation.lat, userLocation.lng]} 
-            icon={createUserLocationIcon(bearing)}
+            icon={createUserLocationIcon(userBearing)}
           >
             <Popup>
               <div className="text-center p-1">
@@ -465,12 +438,12 @@ export default function IncidentMap({
           </Marker>
         )}
 
-        {/* SOS Alerts with Orbiting Directional Arrows */}
-        {sosAlerts.map((sos) => (
+        {/* SOS Alerts - uses each SOS user's bearing from database */}
+        {liveSOSAlerts.map((sos) => (
           <Marker
             key={sos.id}
             position={[sos.latitude, sos.longitude]}
-            icon={createSOSIcon(sos.user?.avatar_url, 0)}
+            icon={createSOSIcon(sos.user?.avatar_url, sos.bearing || 0)}
             eventHandlers={{
               click: () => setSelectedSOS(sos),
             }}
@@ -509,12 +482,8 @@ export default function IncidentMap({
       {/* SOS Details Modal */}
       {selectedSOS && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-          <div 
-            className="absolute inset-0 bg-black/70" 
-            onClick={() => setSelectedSOS(null)} 
-          />
+          <div className="absolute inset-0 bg-black/70" onClick={() => setSelectedSOS(null)} />
           <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
-            {/* Header */}
             <div className="sticky top-0 bg-dark-900 border-b border-white/10 p-4 flex items-center justify-between z-10">
               <div>
                 <h3 className="text-xl font-bold text-white">SOS Alert</h3>
@@ -546,7 +515,17 @@ export default function IncidentMap({
                 </div>
               </div>
 
-              {/* Situation Tag */}
+              {/* Live indicator */}
+              <div className="flex items-center gap-2 text-sm">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-green-400">Live tracking active</span>
+                {selectedSOS.last_updated && (
+                  <span className="text-dark-500">
+                    • Updated {formatDistanceToNow(new Date(selectedSOS.last_updated), { addSuffix: true })}
+                  </span>
+                )}
+              </div>
+
               {tagInfo && (
                 <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl">
                   <p className="text-sm text-dark-400">Situation:</p>
@@ -554,7 +533,6 @@ export default function IncidentMap({
                 </div>
               )}
 
-              {/* Text Message */}
               {selectedSOS.message && (
                 <div className="p-3 bg-white/5 rounded-xl">
                   <p className="text-sm text-dark-400 mb-1">Message:</p>
@@ -562,7 +540,6 @@ export default function IncidentMap({
                 </div>
               )}
 
-              {/* Voice Note */}
               {selectedSOS.voice_note_url && (
                 <div>
                   <p className="text-sm text-dark-400 mb-2">Voice message:</p>
@@ -570,7 +547,6 @@ export default function IncidentMap({
                 </div>
               )}
 
-              {/* Suggestion */}
               {tagInfo && (
                 <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
                   <p className="text-sm font-medium text-yellow-400 mb-1">How to help:</p>
@@ -578,46 +554,31 @@ export default function IncidentMap({
                 </div>
               )}
 
-              {/* Disclaimer */}
               <div className="p-3 bg-white/5 rounded-xl">
                 <p className="text-xs text-dark-400">
                   We urge you to help fellow Nigerians in need. However, please only click "I Can Help" 
-                  if you genuinely intend to assist. Your safety is important — do not put yourself in danger.
+                  if you genuinely intend to assist. Your safety is important - do not put yourself in danger.
                 </p>
               </div>
 
-              {/* ETA */}
               {userLocation && (
                 <div className="text-center py-2">
                   <p className="text-sm text-dark-400">Your estimated arrival time:</p>
                   <p className="text-3xl font-bold text-primary-400">
-                    {calculateETA(
-                      userLocation.lat, 
-                      userLocation.lng, 
-                      selectedSOS.latitude, 
-                      selectedSOS.longitude
-                    )} min
+                    {calculateETA(userLocation.lat, userLocation.lng, selectedSOS.latitude, selectedSOS.longitude)} min
                   </p>
                 </div>
               )}
 
-              {/* Emergency Call Buttons */}
               <div className="flex gap-2">
-                <a 
-                  href="tel:112" 
-                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium text-center"
-                >
+                <a href="tel:112" className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium text-center">
                   Call 112
                 </a>
-                <a 
-                  href="tel:767" 
-                  className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium text-center"
-                >
+                <a href="tel:767" className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium text-center">
                   Call 767
                 </a>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setSelectedSOS(null)}

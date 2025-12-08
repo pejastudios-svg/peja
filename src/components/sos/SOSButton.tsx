@@ -67,6 +67,76 @@ export function SOSButton({ className = "" }: { className?: string }) {
     return () => cleanup();
   }, [user]);
 
+  // Add this useEffect after the first one
+useEffect(() => {
+  if (!sosActive || !sosId) return;
+
+  // Update bearing every 2 seconds while SOS is active
+  const updateBearing = () => {
+    if (typeof window === "undefined") return;
+
+    const handleOrientation = async (event: DeviceOrientationEvent) => {
+      let bearing = 0;
+      
+      if ((event as any).webkitCompassHeading !== undefined) {
+        bearing = (event as any).webkitCompassHeading;
+      } else if (event.alpha !== null) {
+        bearing = 360 - event.alpha;
+      }
+
+      bearing = ((bearing % 360) + 360) % 360;
+
+      // Update bearing in database
+      await supabase
+        .from("sos_alerts")
+        .update({ 
+          bearing,
+          last_updated: new Date().toISOString(),
+        })
+        .eq("id", sosId);
+    };
+
+    window.addEventListener("deviceorientation", handleOrientation, true);
+
+    return () => {
+      window.removeEventListener("deviceorientation", handleOrientation, true);
+    };
+  };
+
+  const cleanup = updateBearing();
+
+  // Also update location every 5 seconds
+  const locationInterval = setInterval(async () => {
+    try {
+      const pos = await new Promise<GeolocationPosition>((res, rej) =>
+        navigator.geolocation.getCurrentPosition(res, rej, { 
+          enableHighAccuracy: true, 
+          timeout: 10000 
+        })
+      );
+      
+      const address = await getAddress(pos.coords.latitude, pos.coords.longitude);
+      
+      await supabase
+        .from("sos_alerts")
+        .update({ 
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          address,
+          last_updated: new Date().toISOString(),
+        })
+        .eq("id", sosId);
+    } catch (err) {
+      console.warn("Location update failed:", err);
+    }
+  }, 5000);
+
+  return () => {
+    cleanup?.();
+    clearInterval(locationInterval);
+  };
+}, [sosActive, sosId]);
+
   const cleanup = () => {
     if (holdTimer.current) clearTimeout(holdTimer.current);
     if (progressInterval.current) clearInterval(progressInterval.current);
