@@ -15,19 +15,22 @@ import {
   Navigation,
   List,
   Map as MapIcon,
-  Clock,
   AlertTriangle,
 } from "lucide-react";
 import { formatDistanceToNow, subHours } from "date-fns";
 
-const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
-  ssr: false,
-  loading: () => (
-    <div className="h-full flex items-center justify-center bg-dark-800">
-      <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-    </div>
-  ),
-});
+// Dynamic import with SSR disabled - THIS IS THE KEY FIX
+const IncidentMap = dynamic(
+  () => import("@/components/map/IncidentMap"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="h-full flex items-center justify-center bg-dark-800">
+        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+      </div>
+    ),
+  }
+);
 
 export default function MapPage() {
   const router = useRouter();
@@ -39,8 +42,15 @@ export default function MapPage() {
   const [showList, setShowList] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [shouldCenterOnUser, setShouldCenterOnUser] = useState(false);
 
   useEffect(() => {
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(() => {
+      setMapReady(true);
+    }, 100);
+
     getUserLocation();
     fetchPosts();
     fetchSOSAlerts();
@@ -55,6 +65,7 @@ export default function MapPage() {
     const interval = setInterval(fetchSOSAlerts, 30000);
 
     return () => {
+      clearTimeout(timer);
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
@@ -92,12 +103,19 @@ export default function MapPage() {
         }
       },
       (error) => {
-        console.error("Location error:", error);
+        console.warn("Location error:", error.message);
         setGettingLocation(false);
       },
       { enableHighAccuracy: true, timeout: 30000, maximumAge: 30000 }
     );
   }, []);
+
+  const handleCenterOnUser = useCallback(() => {
+    getUserLocation();
+    setShouldCenterOnUser(true);
+    // Reset after a short delay
+    setTimeout(() => setShouldCenterOnUser(false), 1000);
+  }, [getUserLocation]);
 
   const fetchPosts = async () => {
     try {
@@ -180,10 +198,9 @@ export default function MapPage() {
         return;
       }
 
-      console.log(`Found ${sosData.length} active SOS alerts:`, sosData);
+      console.log(`Found ${sosData.length} active SOS alerts`);
 
       const userIds = [...new Set(sosData.map(s => s.user_id))];
-      console.log("Fetching users:", userIds);
       
       const { data: users, error: usersError } = await supabase
         .from("users")
@@ -193,8 +210,6 @@ export default function MapPage() {
       if (usersError) {
         console.error("Users query error:", usersError);
       }
-
-      console.log("Fetched users:", users);
 
       const userMap: Record<string, any> = {};
       if (users && users.length > 0) {
@@ -206,8 +221,6 @@ export default function MapPage() {
         });
       }
 
-      console.log("User map:", userMap);
-
       const formattedSOSAlerts: SOSAlert[] = sosData.map(sos => ({
         id: sos.id,
         user_id: sos.user_id,
@@ -215,13 +228,16 @@ export default function MapPage() {
         longitude: sos.longitude,
         address: sos.address,
         status: sos.status as "active" | "resolved" | "false_alarm" | "cancelled",
+        tag: sos.tag,
+        message: sos.message,
+        voice_note_url: sos.voice_note_url,
+        bearing: sos.bearing,
         created_at: sos.created_at,
         last_updated: sos.last_updated,
         resolved_at: sos.resolved_at,
         user: userMap[sos.user_id],
       }));
 
-      console.log("Formatted SOS alerts:", formattedSOSAlerts);
       setSOSAlerts(formattedSOSAlerts);
     } catch (error) {
       console.error("Error fetching SOS:", error);
@@ -235,8 +251,6 @@ export default function MapPage() {
     ? posts.filter((p) => p.category === selectedCategory)
     : posts;
 
-  const defaultCenter: [number, number] = [6.5244, 3.3792];
-
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header onMenuClick={() => setSidebarOpen(true)} onCreateClick={() => router.push("/create")} />
@@ -244,7 +258,7 @@ export default function MapPage() {
 
       <main className="pt-16 lg:pl-64 h-screen">
         <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">
-          {loading ? (
+          {loading || !mapReady ? (
             <div className="h-full flex items-center justify-center bg-dark-800">
               <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
             </div>
@@ -255,7 +269,7 @@ export default function MapPage() {
               onPostClick={handlePostClick}
               sosAlerts={sosAlerts}
               onSOSClick={(id) => console.log("SOS:", id)}
-              centerOnUser={false}
+              centerOnUser={shouldCenterOnUser}
             />
           )}
 
@@ -289,7 +303,7 @@ export default function MapPage() {
 
           {/* Navigation Button */}
           <button
-            onClick={getUserLocation}
+            onClick={handleCenterOnUser}
             disabled={gettingLocation}
             className="absolute bottom-24 right-4 z-[1000] p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
           >

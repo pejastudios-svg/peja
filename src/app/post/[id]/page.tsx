@@ -389,87 +389,87 @@ export default function PostDetailPage() {
   // FIXED LIKE HANDLER - Prevents double likes
   // ========================================
   const handleLikeComment = async (commentId: string) => {
-    if (!user) {
-      router.push("/login");
-      return;
+  if (!user) {
+    router.push("/login");
+    return;
+  }
+
+  // CRITICAL: Check if already processing this comment
+  if (likingInProgress.current.has(commentId)) {
+    console.log("Like already in progress for:", commentId);
+    return;
+  }
+
+  // Mark as in progress
+  likingInProgress.current.add(commentId);
+
+  const comment = allComments.find(c => c.id === commentId);
+  if (!comment) {
+    likingInProgress.current.delete(commentId);
+    return;
+  }
+
+  // Store previous state for rollback
+  const previousLiked = comment.isLiked;
+  const previousCount = comment.likes_count;
+
+  // Optimistic update
+  setAllComments(prev => prev.map(c => {
+    if (c.id === commentId) {
+      return { 
+        ...c, 
+        isLiked: !previousLiked, 
+        likes_count: previousLiked ? Math.max(0, previousCount - 1) : previousCount + 1 
+      };
+    }
+    return c;
+  }));
+
+  try {
+    // Call the RPC function
+    const { data, error } = await supabase.rpc('toggle_comment_like', {
+      p_comment_id: commentId,
+      p_user_id: user.id
+    });
+
+    if (error) {
+      throw error;
     }
 
-    // CRITICAL: Check if already processing this comment
-    if (likingInProgress.current.has(commentId)) {
-      console.log("Like already in progress for:", commentId);
-      return;
-    }
-
-    // Mark as in progress
-    likingInProgress.current.add(commentId);
-
-    const comment = allComments.find(c => c.id === commentId);
-    if (!comment) {
-      likingInProgress.current.delete(commentId);
-      return;
-    }
-
-    // Store previous state for rollback
-    const previousLiked = comment.isLiked;
-    const previousCount = comment.likes_count;
-
-    // Optimistic update
-    setAllComments(prev => prev.map(c => {
-      if (c.id === commentId) {
-        return { 
-          ...c, 
-          isLiked: !previousLiked, 
-          likes_count: previousLiked ? Math.max(0, previousCount - 1) : previousCount + 1 
-        };
-      }
-      return c;
-    }));
-
-    try {
-      // Call the RPC function
-      const { data, error } = await supabase.rpc('toggle_comment_like', {
-        p_comment_id: commentId,
-        p_user_id: user.id
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      // Update with actual server values
-      if (data && data.length > 0) {
-        const serverLiked = data[0].liked;
-        const serverCount = data[0].new_count;
-        
-        setAllComments(prev => prev.map(c => {
-          if (c.id === commentId) {
-            return { ...c, isLiked: serverLiked, likes_count: serverCount };
-          }
-          return c;
-        }));
-
-        // Send notification only if we liked (not unliked) and it's not our own comment
-        if (serverLiked && comment.user_id !== user.id) {
-          notifyCommentLiked(postId, comment.user_id, user.full_name || "Someone");
-        }
-      }
-
-    } catch (err) {
-      console.error("Like error:", err);
-      // Rollback on error
+    // Update with actual server values
+    if (data && data.length > 0) {
+      const serverLiked = data[0].liked;
+      const serverCount = data[0].new_count;
+      
       setAllComments(prev => prev.map(c => {
         if (c.id === commentId) {
-          return { ...c, isLiked: previousLiked, likes_count: previousCount };
+          return { ...c, isLiked: serverLiked, likes_count: serverCount };
         }
         return c;
       }));
-    } finally {
-      // Remove from in-progress after a delay to prevent rapid clicks
-      setTimeout(() => {
-        likingInProgress.current.delete(commentId);
-      }, 300);
+
+      // Send notification only if we liked (not unliked) and it's not our own comment
+      if (serverLiked && comment.user_id !== user.id) {
+        notifyCommentLiked(postId, comment.user_id, user.full_name || "Someone");
+      }
     }
-  };
+
+  } catch (err) {
+    console.error("Like error:", err);
+    // Rollback on error
+    setAllComments(prev => prev.map(c => {
+      if (c.id === commentId) {
+        return { ...c, isLiked: previousLiked, likes_count: previousCount };
+      }
+      return c;
+    }));
+  } finally {
+    // Remove from in-progress after a delay to prevent rapid clicks
+    setTimeout(() => {
+      likingInProgress.current.delete(commentId);
+    }, 300);
+  }
+};
 
   // Handle media select - IMAGES ONLY
   const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {

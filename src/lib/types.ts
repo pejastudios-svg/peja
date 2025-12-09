@@ -21,27 +21,28 @@ export interface User {
 
 export interface Post {
   id: string;
-  user_id?: string;
+  userid: string;
   category: string;
-  comment?: string;
-  location: {
-    latitude: number;
-    longitude: number;
-  };
-  address?: string;
-  is_anonymous: boolean;
-  status: "live" | "resolved" | "archived";
-  is_sensitive: boolean;
+  comment?: string | null;
+  latitude: number;
+  longitude: number;
+  address?: string | null;
+  isanonymous: boolean;
+  status: 'live' | 'resolved' | 'cancelled';
+  issensitive: boolean;
   confirmations: number;
   views: number;
-  comment_count?: number;
-  report_count?: number;
-  expires_at?: string;
-  created_at: string;
-  media?: PostMedia[];
+  commentcount: number;
+  reportcount: number;
+  createdat: string;
+  media?: Array<{
+    id: string;
+    postid: string;
+    url: string;
+    mediatype: 'photo' | 'video';
+    issensitive: boolean;
+  }>;
   tags?: string[];
-  user?: User;
-  distance?: number;
 }
 
 export interface PostMedia {
@@ -112,6 +113,10 @@ export interface SOSAlert {
   longitude: number;
   address?: string;
   status: "active" | "resolved" | "false_alarm" | "cancelled";
+  tag?: string;
+  message?: string;
+  voice_note_url?: string;
+  bearing?: number;
   created_at: string;
   resolved_at?: string;
   last_updated?: string;

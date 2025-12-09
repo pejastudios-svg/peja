@@ -349,19 +349,19 @@ useEffect(() => {
       }
 
       const { data: sosData, error } = await supabase
-        .from("sos_alerts")
-        .insert({ 
-          user_id: user.id, 
-          latitude: lat, 
-          longitude: lng, 
-          address, 
-          status: "active",
-          tag: selectedTag,
-          voice_note_url: voiceNoteUrl,
-          message: textMessage || null,
-        })
-        .select()
-        .single();
+  .from("sos_alerts")
+  .insert({ 
+    user_id: user.id, 
+    latitude: lat, 
+    longitude: lng, 
+    address, 
+    status: "active",
+    tag: selectedTag, // ← ADD THIS
+    voice_note_url: voiceNoteUrl, // ← ADD THIS
+    message: textMessage || null, // ← ADD THIS
+  })
+  .select()
+  .single();
 
       if (error) throw error;
 

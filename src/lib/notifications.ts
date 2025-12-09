@@ -539,13 +539,13 @@ export async function markAllAsRead(userId: string): Promise<boolean> {
 
 export async function cleanupOldSOSNotifications(): Promise<void> {
   try {
-    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     
     await supabase
       .from("notifications")
       .delete()
       .eq("type", "sos_alert")
-      .lt("created_at", fiveHoursAgo);
+      .lt("created_at", twentyFourHoursAgo);
   } catch (error) {
     console.error("Error cleaning up SOS notifications:", error);
   }
