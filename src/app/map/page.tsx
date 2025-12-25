@@ -124,11 +124,11 @@ export default function MapPage() {
       const { data, error } = await supabase
         .from("posts")
         .select(`
-          id, user_id, category, comment, address, 
-          latitude, longitude,
-          is_anonymous, status, is_sensitive, 
-          confirmations, views, created_at,
-          post_media (id, post_id, url, media_type, is_sensitive)
+        id, user_id, category, comment, address, 
+        latitude, longitude,
+        is_anonymous, status, is_sensitive, 
+        confirmations, views, comment_count, report_count, created_at,
+        post_media (id, post_id, url, media_type, is_sensitive)
         `)
         .eq("status", "live")
         .gte("created_at", twentyFourHoursAgo)
@@ -156,6 +156,8 @@ export default function MapPage() {
           is_sensitive: post.is_sensitive,
           confirmations: post.confirmations || 0,
           views: post.views || 0,
+          comment_count: post.comment_count || 0,
+          report_count: post.report_count || 0,
           created_at: post.created_at,
           media: post.post_media?.map((m: any) => ({
             id: m.id,
