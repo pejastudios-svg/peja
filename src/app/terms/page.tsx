@@ -116,18 +116,7 @@ export default function TermsPage() {
           </section>
 
           <section className="mb-8">
-            <h2 className="text-xl font-semibold text-dark-100 mb-3">10. Contact Us</h2>
-            <p className="text-dark-300 leading-relaxed">
-              If you have questions about these terms, contact us at:
-              <br />
-              <a href="mailto:pejastudios@gmail.com" className="text-primary-400 hover:underline">
-                pejastudios@gmail.com
-              </a>
-            </p>
-          </section>
-
-          <section className="mb-8">
-  <h2 className="text-xl font-semibold text-dark-100 mb-3">11. Emergency Response Disclaimer</h2>
+  <h2 className="text-xl font-semibold text-dark-100 mb-3">10. Emergency Response Disclaimer</h2>
   <div className="text-dark-300 leading-relaxed space-y-4">
     <p>
       Peja is a community-driven platform designed to facilitate communication and awareness 
@@ -193,7 +182,7 @@ export default function TermsPage() {
 </section>
 
 <section className="mb-8">
-  <h2 className="text-xl font-semibold text-dark-100 mb-3">12. Indemnification</h2>
+  <h2 className="text-xl font-semibold text-dark-100 mb-3">11. Indemnification</h2>
   <p className="text-dark-300 leading-relaxed">
     You agree to indemnify, defend, and hold harmless Peja, its parent company, officers, 
     directors, employees, agents, and affiliates from and against any and all claims, damages, 
@@ -205,6 +194,17 @@ export default function TermsPage() {
     to any SOS alert, incident report, or emergency situation communicated through the platform.
   </p>
 </section>
+
+<section className="mb-8">
+            <h2 className="text-xl font-semibold text-dark-100 mb-3">12. Contact Us</h2>
+            <p className="text-dark-300 leading-relaxed">
+              If you have questions about these terms, contact us at:
+              <br />
+              <a href="mailto:pejastudios@gmail.com" className="text-primary-400 hover:underline">
+                pejastudios@gmail.com
+              </a>
+            </p>
+          </section>
         </div>
       </main>
     </div>
