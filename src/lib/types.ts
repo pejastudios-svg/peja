@@ -39,8 +39,8 @@ export interface Post {
   confirmations: number;
   views: number;
 
-  comment_count: number;
-  report_count: number;
+  comment_count?: number;
+  report_count?: number;
 
   created_at: string;
 

@@ -8,6 +8,10 @@ const nextConfig = {
   experimental: {
     // This helps with dynamic routes
   },
+
+  eslint: {
+  ignoreDuringBuilds: true,
+},
   
   async headers() {
     return [

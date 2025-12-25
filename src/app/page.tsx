@@ -46,6 +46,7 @@ export default function Home() {
         confirmations: postData.confirmations || 0,
         views: postData.views || 0,
         comment_count: postData.comment_count || 0,
+        report_count: postData.report_count || 0,
         created_at: postData.created_at,
         media: media?.map((m: any) => ({
           id: m.id,
@@ -75,7 +76,7 @@ export default function Home() {
         .from("posts")
         .select(`
           id, user_id, category, comment, address, is_anonymous,
-          status, is_sensitive, confirmations, views, comment_count, created_at,
+          status, is_sensitive, confirmations, views, comment_count, report_count, created_at,
           post_media (id, url, media_type, is_sensitive),
           post_tags (tag)
         `)
@@ -109,6 +110,7 @@ export default function Home() {
         confirmations: post.confirmations || 0,
         views: post.views || 0,
         comment_count: post.comment_count || 0,
+        report_count: post.report_count || 0,
         created_at: post.created_at,
         media: post.post_media?.map((m: any) => ({
           id: m.id,
