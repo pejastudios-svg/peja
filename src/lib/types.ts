@@ -21,27 +21,30 @@ export interface User {
 
 export interface Post {
   id: string;
-  userid: string;
+  user_id: string;
   category: string;
   comment?: string | null;
-  latitude: number;
-  longitude: number;
+
+  location: {
+    latitude: number;
+    longitude: number;
+  };
+
   address?: string | null;
-  isanonymous: boolean;
-  status: 'live' | 'resolved' | 'cancelled';
-  issensitive: boolean;
+  is_anonymous: boolean;
+
+  status: "live" | "resolved" | "archived" | "cancelled";
+
+  is_sensitive: boolean;
   confirmations: number;
   views: number;
-  commentcount: number;
-  reportcount: number;
-  createdat: string;
-  media?: Array<{
-    id: string;
-    postid: string;
-    url: string;
-    mediatype: 'photo' | 'video';
-    issensitive: boolean;
-  }>;
+
+  comment_count: number;
+  report_count: number;
+
+  created_at: string;
+
+  media?: PostMedia[];
   tags?: string[];
 }
 
