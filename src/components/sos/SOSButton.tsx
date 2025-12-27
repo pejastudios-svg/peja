@@ -185,7 +185,7 @@ useEffect(() => {
     if (!user) return;
     const { data } = await supabase
       .from("sos_alerts")
-      .select("id, tag, voice_note_url, message")
+      .select("id, selectedTag, voice_note_url, message")
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
@@ -193,7 +193,7 @@ useEffect(() => {
     if (data) {
       setSosActive(true);
       setSosId(data.id);
-      if (data.tag) setSelectedTag(data.tag);
+      if (data.selectedTag) setSelectedTag(data.selectedTag);
       if (data.voice_note_url) setAudioUrl(data.voice_note_url);
       if (data.message) setTextMessage(data.message);
     }
@@ -283,7 +283,8 @@ const notifyContacts = async (
   }
 ) => {    if (!user) return 0;
 
-    const tagInfo = tag ? SOS_TAGS.find(t => t.id === tag) : null;
+    const tagId = selectedTag || null;
+    const tagInfo = tagId ? SOS_TAGS.find(t => t.id === tagId) : null;
 
     const { data: contacts } = await supabase
       .from("emergency_contacts")
