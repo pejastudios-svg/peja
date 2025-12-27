@@ -8,6 +8,7 @@ import { markAllAsRead } from "@/lib/notifications";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { SOS_TAGS } from "@/lib/types";
 import {
   Bell,
   AlertTriangle,
@@ -301,6 +302,29 @@ export default function NotificationsPage() {
                             </p>
                           )}
                         </div>
+                        {notification.type === "sos_alert" && (
+  <div className="mt-2 space-y-2">
+    {notification.data?.tag && (
+      <p className="text-xs text-red-300">
+        {SOS_TAGS.find(t => t.id === notification.data.tag)?.label || "Emergency"}
+      </p>
+    )}
+
+    {notification.data?.message && (
+      <p className="text-sm text-dark-300">
+        {notification.data.message}
+      </p>
+    )}
+
+    {notification.data?.voice_note_url && (
+      <audio
+        src={notification.data.voice_note_url}
+        controls
+        className="w-full"
+      />
+    )}
+  </div>
+)}
                         
                         <button
                           onClick={(e) => handleDeleteNotification(e, notification.id)}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { createNotification } from "@/lib/notifications";
+import { Portal } from "@/components/ui/Portal";
 import { 
   AlertTriangle, X, Phone, Loader2, CheckCircle, Users, 
   Mic, Square, ChevronRight, ArrowLeft
@@ -52,6 +53,26 @@ export function SOSButton({ className = "" }: { className?: string }) {
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+
+// iPhone fallback: if MediaRecorder isn't supported, use file input
+const supportsMediaRecorder =
+  typeof window !== "undefined" && typeof MediaRecorder !== "undefined";
+
+  const handleAudioFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  // cleanup old preview url
+  if (audioUrl) URL.revokeObjectURL(audioUrl);
+
+  setAudioFile(file);
+  setAudioBlob(null);
+  setAudioUrl(URL.createObjectURL(file));
+
+  e.target.value = "";
+};
   
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
@@ -74,6 +95,20 @@ useEffect(() => {
   // Update bearing every 2 seconds while SOS is active
   const updateBearing = () => {
     if (typeof window === "undefined") return;
+
+    const handleAudioFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  // Clean up previous preview URL
+  if (audioUrl) URL.revokeObjectURL(audioUrl);
+
+  setAudioFile(file);
+  setAudioBlob(null); // if we have a file, we don't use blob
+  setAudioUrl(URL.createObjectURL(file));
+
+  e.target.value = "";
+};
 
     const handleOrientation = async (event: DeviceOrientationEvent) => {
       let bearing = 0;
@@ -227,15 +262,26 @@ useEffect(() => {
     setIsRecording(false);
   };
 
-  const removeRecording = () => {
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    setAudioBlob(null);
-    setAudioUrl(null);
-    setRecordingTime(0);
-  };
+const removeRecording = () => {
+  if (audioUrl) URL.revokeObjectURL(audioUrl);
+  setAudioBlob(null);
+  setAudioFile(null);
+  setAudioUrl(null);
+  setRecordingTime(0);
+};
 
-  const notifyContacts = async (userName: string, address: string, sosId: string, tag?: SOSTagId) => {
-    if (!user) return 0;
+const notifyContacts = async (
+  userName: string,
+  address: string,
+  sosId: string,
+  payload: {
+    tag?: SOSTagId | null;
+    message?: string | null;
+    voice_note_url?: string | null;
+    latitude: number;
+    longitude: number;
+  }
+) => {    if (!user) return 0;
 
     const tagInfo = tag ? SOS_TAGS.find(t => t.id === tag) : null;
 
@@ -255,7 +301,15 @@ useEffect(() => {
           type: "sos_alert",
           title: `SOS Alert: ${tagInfo?.label || "Emergency"}`,
           body: `${userName} needs immediate help at ${address}`,
-          data: { sos_id: sosId, tag },
+          data: {
+          sos_id: sosId,
+          tag: payload.tag || null,
+          message: payload.message || null,
+          voice_note_url: payload.voice_note_url || null,
+          address,
+          latitude: payload.latitude,
+          longitude: payload.longitude,
+          },
         });
         if (success) notifiedCount++;
       }
@@ -335,19 +389,35 @@ useEffect(() => {
       const userName = userData?.full_name || "Someone";
 
       // Upload voice note if exists
-      let voiceNoteUrl = null;
-      if (audioBlob) {
-        const fileName = `sos/${user.id}/${Date.now()}.webm`;
-        const { error: uploadError } = await supabase.storage
-          .from("media")
-          .upload(fileName, audioBlob, { contentType: "audio/webm" });
-        
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage.from("media").getPublicUrl(fileName);
-          voiceNoteUrl = urlData.publicUrl;
-        }
-      }
+      // Upload voice note if exists (supports iPhone file fallback)
+let voiceNoteUrl: string | null = null;
 
+if (audioFile) {
+  const ext = audioFile.name.split(".").pop()?.toLowerCase() || "m4a";
+  const fileName = `sos/${user.id}/${Date.now()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("media")
+    .upload(fileName, audioFile, { contentType: audioFile.type });
+
+  if (!uploadError) {
+    const { data: urlData } = supabase.storage.from("media").getPublicUrl(fileName);
+    voiceNoteUrl = urlData.publicUrl;
+  }
+} else if (audioBlob) {
+  const fileName = `sos/${user.id}/${Date.now()}.webm`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("media")
+    .upload(fileName, audioBlob, { contentType: "audio/webm" });
+
+  if (!uploadError) {
+    const { data: urlData } = supabase.storage.from("media").getPublicUrl(fileName);
+    voiceNoteUrl = urlData.publicUrl;
+  }
+}
+
+      console.log("VOICE NOTE URL ABOUT TO SAVE:", voiceNoteUrl);
       const { data: sosData, error } = await supabase
   .from("sos_alerts")
   .insert({ 
@@ -368,8 +438,13 @@ useEffect(() => {
       setSosActive(true);
       setSosId(sosData.id);
 
-      const contactsNotified = await notifyContacts(userName, address, sosData.id, selectedTag || undefined);
-
+const contactsNotified = await notifyContacts(userName, address, sosData.id, {
+  tag: selectedTag,
+  message: textMessage || null,
+  voice_note_url: voiceNoteUrl,
+  latitude: lat,
+  longitude: lng,
+});
       // Notify nearby users
       const { data: nearbyUsers } = await supabase
         .from("users")
@@ -388,7 +463,15 @@ useEffect(() => {
             type: "sos_alert",
             title: `SOS Alert: ${tagInfo?.label || "Emergency"}`,
             body: `Someone needs help at ${address}`,
-            data: { sos_id: sosData.id, latitude: lat, longitude: lng, tag: selectedTag },
+            data: {
+            sos_id: sosId,
+            tag: selectedTag,
+            message: textMessage || null,
+            voice_note_url: voiceNoteUrl,
+            address,
+            latitude: lat,
+            longitude: lng,
+            },
           });
           if (success) nearbyNotified++;
         }
@@ -439,6 +522,7 @@ useEffect(() => {
   // ============================================
   if (showOptions) {
     return (
+        <Portal>
       <div className="fixed inset-0 z-50 flex items-end justify-center">
         <div className="absolute inset-0 bg-black/70" onClick={closeOptions} />
         <div className="relative glass-card w-full max-w-lg rounded-t-3xl rounded-b-none max-h-[85vh] overflow-y-auto pb-8">
@@ -488,48 +572,69 @@ useEffect(() => {
               />
             </div>
 
-            {/* Voice Note */}
-            <div>
-              <label className="block text-sm font-medium text-dark-300 mb-2">
-                Record a voice note (Optional, max 30s)
-              </label>
-              <p className="text-xs text-dark-500 mb-3">
-                State your situation quickly and clearly
-              </p>
+           {/* Voice Note */}
+<div>
+  <label className="block text-sm font-medium text-dark-300 mb-2">
+    Record a voice note (Optional, max 30s)
+  </label>
+  <p className="text-xs text-dark-500 mb-3">
+    State your situation quickly and clearly
+  </p>
 
-              {!audioUrl ? (
-                <button
-                  onClick={isRecording ? stopRecording : startRecording}
-                  className={`w-full flex items-center justify-center gap-3 py-3 rounded-xl font-medium transition-all ${
-                    isRecording
-                      ? "bg-red-600 text-white"
-                      : "glass-sm text-dark-200 hover:bg-white/10"
-                  }`}
-                >
-                  {isRecording ? (
-                    <>
-                      <Square className="w-5 h-5" />
-                      Stop Recording ({MAX_RECORDING_TIME - recordingTime}s remaining)
-                    </>
-                  ) : (
-                    <>
-                      <Mic className="w-5 h-5" />
-                      Start Recording
-                    </>
-                  )}
-                </button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <audio src={audioUrl} controls className="flex-1 h-10" />
-                  <button
-                    onClick={removeRecording}
-                    className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              )}
-            </div>
+  {/* Hidden input for iPhone fallback */}
+  <input
+    ref={audioFileInputRef}
+    type="file"
+    accept="audio/*"
+    capture
+    className="hidden"
+    onChange={handleAudioFilePicked}
+  />
+
+  {!audioUrl ? (
+    supportsMediaRecorder ? (
+      <button
+        onClick={isRecording ? stopRecording : startRecording}
+        className={`w-full flex items-center justify-center gap-3 py-3 rounded-xl font-medium transition-all ${
+          isRecording
+            ? "bg-red-600 text-white"
+            : "glass-sm text-dark-200 hover:bg-white/10"
+        }`}
+      >
+        {isRecording ? (
+          <>
+            <Square className="w-5 h-5" />
+            Stop Recording ({MAX_RECORDING_TIME - recordingTime}s remaining)
+          </>
+        ) : (
+          <>
+            <Mic className="w-5 h-5" />
+            Start Recording
+          </>
+        )}
+      </button>
+    ) : (
+      <button
+        type="button"
+        onClick={() => audioFileInputRef.current?.click()}
+        className="w-full flex items-center justify-center gap-3 py-3 rounded-xl font-medium glass-sm text-dark-200 hover:bg-white/10"
+      >
+        <Mic className="w-5 h-5" />
+        Record Voice Note
+      </button>
+    )
+  ) : (
+    <div className="flex items-center gap-2">
+      <audio src={audioUrl} controls className="flex-1 h-10" />
+      <button
+        onClick={removeRecording}
+        className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg"
+      >
+        <X className="w-5 h-5" />
+      </button>
+    </div>
+  )}
+</div>
 
             {/* Hold to Send Button */}
             <div className="pt-4">
@@ -565,6 +670,7 @@ useEffect(() => {
           </div>
         </div>
       </div>
+        </Portal>
     );
   }
 
@@ -577,7 +683,7 @@ useEffect(() => {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div className="absolute inset-0 bg-black/70" onClick={() => setShowActivePopup(false)} />
-        <div className="relative glass-card max-w-md w-full">
+        <div className="relative glass-card max-w-md w-full max-h-[85vh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />

@@ -39,6 +39,8 @@ interface IncidentMapInnerProps {
   sosAlerts?: SOSAlert[];
   onSOSClick?: (id: string) => void;
   centerOnUser?: boolean;
+  centerOnCoords?: { lat: number; lng: number } | null;
+  openSOSId?: string | null;
 }
 
 // Create icons
@@ -194,12 +196,15 @@ export default function IncidentMapInner({
   sosAlerts = [],
   onSOSClick,
   centerOnUser = false,
+  centerOnCoords = null,
+  openSOSId = null,
 }: IncidentMapInnerProps) {
   const { user } = useAuth();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const userMarkerRef = useRef<L.Marker | null>(null);
+  const autoOpenedRef = useRef(false);
   const sosMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
@@ -239,12 +244,34 @@ export default function IncidentMapInner({
     };
   }, []);
 
+  useEffect(() => {
+  if (!openSOSId) return;
+  if (autoOpenedRef.current) return;
+
+  const match = liveSOSAlerts.find((s) => s.id === openSOSId);
+  if (match) {
+    setSelectedSOS(match);
+    autoOpenedRef.current = true;
+  }
+}, [openSOSId, liveSOSAlerts]);
+
   // Center on user when requested
   useEffect(() => {
     if (centerOnUser && mapInstanceRef.current && userLocation) {
       mapInstanceRef.current.setView([userLocation.lat, userLocation.lng], 16, { animate: true });
     }
   }, [centerOnUser, userLocation]);
+
+  useEffect(() => {
+  if (!centerOnCoords || !mapInstanceRef.current) return;
+  mapInstanceRef.current.setView([centerOnCoords.lat, centerOnCoords.lng], 16, { animate: true });
+}, [centerOnCoords]);
+
+useEffect(() => {
+  if (!openSOSId) return;
+  const match = liveSOSAlerts.find(s => s.id === openSOSId);
+  if (match) setSelectedSOS(match);
+}, [openSOSId, liveSOSAlerts]);
 
   // Update user location marker
   useEffect(() => {

@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase";
 
 export default function EditProfilePage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, refreshUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState({
@@ -94,6 +94,13 @@ export default function EditProfilePage() {
         ...formData,
         avatar_url: publicUrl.publicUrl,
       });
+      // Save immediately so Profile updates without refresh
+await supabase
+  .from("users")
+  .update({ avatar_url: publicUrl.publicUrl })
+  .eq("id", user.id);
+
+await refreshUser();
     } catch (err) {
       setError("Failed to upload image");
     } finally {
@@ -130,7 +137,7 @@ export default function EditProfilePage() {
         setLoading(false);
         return;
       }
-
+await refreshUser();
       setSuccess(true);
       setTimeout(() => {
         router.push("/profile");

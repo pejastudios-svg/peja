@@ -9,6 +9,7 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Badge } from "@/components/ui/Badge";
+import { useSearchParams } from "next/navigation";
 import {
   Loader2,
   MapPin,
@@ -34,6 +35,8 @@ const IncidentMap = dynamic(
 
 export default function MapPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sosIdFromUrl = searchParams.get("sos"); 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [sosAlerts, setSOSAlerts] = useState<SOSAlert[]>([]);
@@ -44,6 +47,8 @@ export default function MapPage() {
   const [gettingLocation, setGettingLocation] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [shouldCenterOnUser, setShouldCenterOnUser] = useState(false);
+  const [centerOnSOS, setCenterOnSOS] = useState<{ lat: number; lng: number } | null>(null);
+  const [openSOSId, setOpenSOSId] = useState<string | null>(null);
 
   useEffect(() => {
     // Small delay to ensure DOM is ready
@@ -55,20 +60,80 @@ export default function MapPage() {
     fetchPosts();
     fetchSOSAlerts();
 
-    const channel = supabase
-      .channel('sos-map')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sos_alerts' }, () => {
-        fetchSOSAlerts();
-      })
-      .subscribe();
+const sosChannel = supabase
+  .channel("sos-map")
+  .on("postgres_changes", { event: "*", schema: "public", table: "sos_alerts" }, (payload) => {
+    const newRow: any = payload.new;
+    const oldRow: any = payload.old;
 
-    const interval = setInterval(fetchSOSAlerts, 30000);
+    // INSERT
+    if (payload.eventType === "INSERT") {
+      if (newRow?.status === "active") {
+        setSOSAlerts((prev) => {
+          // prevent duplicates
+          if (prev.some((s) => s.id === newRow.id)) return prev;
+          return [
+            {
+              id: newRow.id,
+              user_id: newRow.user_id,
+              latitude: newRow.latitude,
+              longitude: newRow.longitude,
+              address: newRow.address,
+              status: newRow.status,
+              tag: newRow.tag,
+              message: newRow.message,
+              voice_note_url: newRow.voice_note_url,
+              bearing: newRow.bearing,
+              created_at: newRow.created_at,
+              last_updated: newRow.last_updated,
+              resolved_at: newRow.resolved_at,
+              user: undefined,
+            },
+            ...prev,
+          ];
+        });
+      }
+      return;
+    }
+
+    // UPDATE
+    if (payload.eventType === "UPDATE") {
+      // If it stops being active, remove it
+      if (newRow?.status && newRow.status !== "active") {
+        setSOSAlerts((prev) => prev.filter((s) => s.id !== newRow.id));
+        return;
+      }
+
+      setSOSAlerts((prev) =>
+        prev.map((s) =>
+          s.id === newRow.id
+            ? {
+                ...s,
+                latitude: newRow.latitude ?? s.latitude,
+                longitude: newRow.longitude ?? s.longitude,
+                address: newRow.address ?? s.address,
+                tag: newRow.tag ?? s.tag,
+                message: newRow.message ?? s.message,
+                voice_note_url: newRow.voice_note_url ?? s.voice_note_url,
+                bearing: newRow.bearing ?? s.bearing,
+                last_updated: newRow.last_updated ?? s.last_updated,
+              }
+            : s
+        )
+      );
+      return;
+    }
+
+    // DELETE
+    if (payload.eventType === "DELETE") {
+      setSOSAlerts((prev) => prev.filter((s) => s.id !== oldRow?.id));
+    }
+  })
+  .subscribe();
 
     return () => {
       clearTimeout(timer);
-      supabase.removeChannel(channel);
-      clearInterval(interval);
-    };
+supabase.removeChannel(sosChannel);    };
   }, []);
 
   const getUserLocation = useCallback(() => {
@@ -178,74 +243,56 @@ export default function MapPage() {
     }
   };
 
-  const fetchSOSAlerts = async () => {
-    try {
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+const fetchSOSAlerts = async () => {
+  try {
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-      const { data: sosData, error: sosError } = await supabase
-        .from("sos_alerts")
-        .select("*")
-        .eq("status", "active")
-        .gte("created_at", twentyFourHoursAgo);
+    const { data: sosData, error: sosError } = await supabase
+      .from("sos_alerts")
+      .select(`
+        id, user_id, latitude, longitude, address, status, tag, message, voice_note_url,
+        bearing, created_at, last_updated, resolved_at
+      `)
+      .eq("status", "active")
+      .gte("created_at", twentyFourHoursAgo)
+      .order("created_at", { ascending: false })
+      .limit(200);
 
-      if (sosError) {
-        console.error("SOS query error:", sosError);
-        setSOSAlerts([]);
-        return;
-      }
+    if (sosError) {
+      console.error("SOS query error:", {
+        message: (sosError as any)?.message,
+        details: (sosError as any)?.details,
+        code: (sosError as any)?.code,
+        hint: (sosError as any)?.hint,
+      });
 
-      if (!sosData || sosData.length === 0) {
-        console.log("No active SOS alerts");
-        setSOSAlerts([]);
-        return;
-      }
-
-      console.log(`Found ${sosData.length} active SOS alerts`);
-
-      const userIds = [...new Set(sosData.map(s => s.user_id))];
-      
-      const { data: users, error: usersError } = await supabase
-        .from("users")
-        .select("id, full_name, avatar_url")
-        .in("id", userIds);
-
-      if (usersError) {
-        console.error("Users query error:", usersError);
-      }
-
-      const userMap: Record<string, any> = {};
-      if (users && users.length > 0) {
-        users.forEach(u => {
-          userMap[u.id] = {
-            full_name: u.full_name,
-            avatar_url: u.avatar_url,
-          };
-        });
-      }
-
-      const formattedSOSAlerts: SOSAlert[] = sosData.map(sos => ({
-        id: sos.id,
-        user_id: sos.user_id,
-        latitude: sos.latitude,
-        longitude: sos.longitude,
-        address: sos.address,
-        status: sos.status as "active" | "resolved" | "false_alarm" | "cancelled",
-        tag: sos.tag,
-        message: sos.message,
-        voice_note_url: sos.voice_note_url,
-        bearing: sos.bearing,
-        created_at: sos.created_at,
-        last_updated: sos.last_updated,
-        resolved_at: sos.resolved_at,
-        user: userMap[sos.user_id],
-      }));
-
-      setSOSAlerts(formattedSOSAlerts);
-    } catch (error) {
-      console.error("Error fetching SOS:", error);
-      setSOSAlerts([]);
+      // IMPORTANT: do NOT wipe current list on network failure
+      return;
     }
-  };
+
+    const formatted = (sosData || []).map((sos: any) => ({
+      id: sos.id,
+      user_id: sos.user_id,
+      latitude: sos.latitude,
+      longitude: sos.longitude,
+      address: sos.address,
+      status: sos.status,
+      tag: sos.tag,
+      message: sos.message,
+      voice_note_url: sos.voice_note_url,
+      bearing: sos.bearing,
+      created_at: sos.created_at,
+      last_updated: sos.last_updated,
+      resolved_at: sos.resolved_at,
+      user: undefined, // optional; map UI falls back if missing
+    }));
+
+    setSOSAlerts(formatted);
+  } catch (e) {
+    // This catches "TypeError: Failed to fetch" and prevents spammy resets
+    console.error("SOS fetch failed:", e);
+  }
+};
 
   const handlePostClick = (postId: string) => router.push(`/post/${postId}`);
 
@@ -266,13 +313,15 @@ export default function MapPage() {
             </div>
           ) : (
             <IncidentMap
-              posts={filteredPosts}
-              userLocation={userLocation}
-              onPostClick={handlePostClick}
-              sosAlerts={sosAlerts}
-              onSOSClick={(id) => console.log("SOS:", id)}
-              centerOnUser={shouldCenterOnUser}
-            />
+  posts={filteredPosts}
+  userLocation={userLocation}
+  onPostClick={handlePostClick}
+  sosAlerts={sosAlerts}
+  onSOSClick={(id) => console.log("SOS:", id)}
+  centerOnUser={shouldCenterOnUser}
+  centerOnCoords={centerOnSOS}
+  openSOSId={openSOSId}
+/>
           )}
 
           {/* SOS Alert Banner */}

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, memo, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import {
   MapPin,
   Clock,
@@ -38,6 +39,8 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [localConfirmations, setLocalConfirmations] = useState(post.confirmations);
   const [videoError, setVideoError] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   
   // Prevent double-click on confirm
   const confirmingRef = useRef(false);
@@ -231,7 +234,22 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
 
       {/* Media */}
       {post.media && post.media.length > 0 && (
-        <div className="relative -mx-6 mb-3" onClick={(e) => e.stopPropagation()}>
+<div
+  className="relative -mx-6 mb-3"
+  onClick={(e) => {
+    e.stopPropagation();
+    if (!currentMedia) return;
+
+    if (currentMedia.media_type === "video") {
+      router.push(`/watch?postId=${post.id}&source=home`);
+      return;
+    }
+
+    // image
+    setLightboxUrl(currentMedia.url);
+    setLightboxOpen(true);
+  }}
+>
           {post.is_sensitive && !showSensitive ? (
             <div className="aspect-video bg-dark-800 flex flex-col items-center justify-center">
               <AlertTriangle className="w-8 h-8 text-orange-400 mb-2" />
@@ -319,7 +337,7 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
       {/* Comment */}
       {post.comment && (
         <div className="mb-3">
-          <p className="text-dark-200 text-sm">{displayedComment}</p>
+          <p className="text-dark-200 text-sm break-words">{displayedComment}</p>
           {isLongComment && (
             <button
               onClick={(e) => {
@@ -394,6 +412,12 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
           <Share2 className="w-4 h-4" />
         </button>
       </div>
+      <ImageLightbox
+  isOpen={lightboxOpen}
+  onClose={() => setLightboxOpen(false)}
+  imageUrl={lightboxUrl}
+  caption={post.comment || null}
+/>
     </article>
   );
 }

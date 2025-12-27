@@ -23,9 +23,11 @@ import { PostCard } from "@/components/posts/PostCard";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, signOut, loading: authLoading } = useAuth();
+  const { user, signOut, loading: authLoading, } = useAuth();
   const [userPosts, setUserPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
+  const [confirmedPosts, setConfirmedPosts] = useState<Post[]>([]);
+  const [confirmedLoading, setConfirmedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"posts" | "confirmed">("posts");
 
   useEffect(() => {
@@ -60,6 +62,7 @@ export default function ProfilePage() {
         return;
       }
 
+      
       const formattedPosts: Post[] = (postsData || []).map((post) => ({
         id: post.id,
         user_id: post.user_id,
@@ -93,6 +96,78 @@ export default function ProfilePage() {
     }
   };
 
+  const fetchConfirmedPosts = async () => {
+  if (!user) return;
+
+  setConfirmedLoading(true);
+  try {
+    const { data, error } = await supabase
+      .from("post_confirmations")
+      .select(`
+        post_id,
+        posts:post_id (
+          *,
+          post_media (*),
+          post_tags (tag)
+        )
+      `)
+      .eq("user_id", user.id);
+
+    if (error) {
+      console.error("Error fetching confirmed posts:", error);
+      setConfirmedPosts([]);
+      return;
+    }
+
+    // Extract posts from the joined result
+    const rawPosts = (data || [])
+      .map((row: any) => row.posts)
+      .filter(Boolean);
+
+    // Remove duplicates (just in case)
+    const unique = new Map<string, any>();
+    rawPosts.forEach((p: any) => unique.set(p.id, p));
+
+    const formatted: Post[] = Array.from(unique.values())
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .map((post: any) => ({
+        id: post.id,
+        user_id: post.user_id,
+        category: post.category,
+        comment: post.comment,
+        location: {
+          latitude: post.latitude ?? 0,
+          longitude: post.longitude ?? 0,
+        },
+        address: post.address,
+        is_anonymous: post.is_anonymous,
+        status: post.status,
+        is_sensitive: post.is_sensitive,
+        confirmations: post.confirmations || 0,
+        views: post.views || 0,
+        comment_count: post.comment_count || 0,
+        report_count: post.report_count || 0,
+        created_at: post.created_at,
+        media: post.post_media?.map((m: any) => ({
+          id: m.id,
+          post_id: m.post_id,
+          url: m.url,
+          media_type: m.media_type,
+          is_sensitive: m.is_sensitive,
+          thumbnail_url: m.thumbnail_url,
+        })) || [],
+        tags: post.post_tags?.map((t: any) => t.tag) || [],
+      }));
+
+    setConfirmedPosts(formatted);
+  } catch (e) {
+    console.error(e);
+    setConfirmedPosts([]);
+  } finally {
+    setConfirmedLoading(false);
+  }
+};
+
   const handleSignOut = async () => {
     await signOut();
     router.push("/login");
@@ -109,6 +184,10 @@ export default function ProfilePage() {
   if (!user) {
     return null;
   }
+
+  const showingConfirmed = activeTab === "confirmed";
+  const list = showingConfirmed ? confirmedPosts : userPosts;
+  const listLoading = showingConfirmed ? confirmedLoading : postsLoading;
 
   return (
     <div className="min-h-screen pb-20">
@@ -260,38 +339,42 @@ export default function ProfilePage() {
               <Button
                 variant={activeTab === "confirmed" ? "primary" : "secondary"}
                 size="sm"
-                onClick={() => setActiveTab("confirmed")}
+                onClick={() => {
+                setActiveTab("confirmed");
+                if (confirmedPosts.length === 0) fetchConfirmedPosts();
+                }}
               >
                 Confirmed
               </Button>
             </div>
 
-            {postsLoading ? (
-              <div className="flex justify-center py-8">
-                <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
-              </div>
-            ) : userPosts.length === 0 ? (
-              <div className="text-center py-8">
-                <p className="text-dark-400 mb-4">No posts yet</p>
-                <Button
-                  variant="primary"
-                  onClick={() => router.push("/create")}
-                >
-                  Create Your First Post
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {userPosts.map((post) => (
-                  <PostCard
-                    key={post.id}
-                    post={post}
-                    onConfirm={() => {}}
-                    onShare={() => {}}
-                  />
-                ))}
-              </div>
-            )}
+            {listLoading ? (
+  <div className="flex justify-center py-8">
+    <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+  </div>
+) : list.length === 0 ? (
+  <div className="text-center py-8">
+    <p className="text-dark-400 mb-4">
+      {showingConfirmed ? "No confirmed posts yet" : "No posts yet"}
+    </p>
+    {!showingConfirmed && (
+      <Button variant="primary" onClick={() => router.push("/create")}>
+        Create Your First Post
+      </Button>
+    )}
+  </div>
+) : (
+  <div className="space-y-4">
+    {list.map((post) => (
+      <PostCard
+        key={post.id}
+        post={post}
+        onConfirm={() => {}}
+        onShare={() => {}}
+      />
+    ))}
+  </div>
+)}
           </div>
         </div>
       </main>

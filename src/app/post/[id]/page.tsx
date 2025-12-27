@@ -11,6 +11,8 @@ import { formatDistanceToNow, differenceInHours } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
 import { notifyPostComment, notifyCommentLiked } from "@/lib/notifications";
 import { notifyPostConfirmed } from "@/lib/notifications";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { useLongPress } from "@/components/hooks/useLongPress";
 import {
   ArrowLeft,
   MapPin,
@@ -81,6 +83,7 @@ export default function PostDetailPage() {
   const [showSensitive, setShowSensitive] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   // Confirmation
   const [isConfirmed, setIsConfirmed] = useState(false);
@@ -98,6 +101,9 @@ export default function PostDetailPage() {
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const [visibleReplyCounts, setVisibleReplyCounts] = useState<Record<string, number>>({});
   const [sortBy, setSortBy] = useState<"top" | "recent">("top");
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxCaption, setLightboxCaption] = useState<string | null>(null); 
 
   // Modals
   const [showReportModal, setShowReportModal] = useState(false);
@@ -110,6 +116,7 @@ export default function PostDetailPage() {
 
   const isOwner = user?.id === post?.user_id;
   const isExpired = post ? differenceInHours(new Date(), new Date(post.created_at)) >= 24 : false;
+  const avatarHoldTimer = useRef<number | null>(null);
 
   // Cleanup
   useEffect(() => {
@@ -751,7 +758,8 @@ export default function PostDetailPage() {
       setShowReportModal(false);
       setReportReason("");
       setReportDescription("");
-      alert("Report submitted!");
+      setToast("Report submitted!");
+      setTimeout(() => setToast(null), 2500);
     } catch (err: any) {
       alert(err.code === "23505" ? "Already reported." : "Failed to report.");
     } finally {
@@ -827,13 +835,35 @@ export default function PostDetailPage() {
       className={`${isReply ? "ml-10 py-2" : "py-3"} ${comment.isPending ? "opacity-60" : ""}`}
     >
       <div className="flex gap-3">
-        <div className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center flex-shrink-0 overflow-hidden">
-          {comment.user_avatar ? (
-            <img src={comment.user_avatar} alt="" className="w-8 h-8 object-cover" />
-          ) : (
-            <User className="w-4 h-4 text-dark-400" />
-          )}
-        </div>
+        <div
+  onPointerDown={() => {
+    if (!comment.user_avatar) return;
+    avatarHoldTimer.current = window.setTimeout(() => {
+      setLightboxUrl(comment.user_avatar!);
+      setLightboxCaption(comment.user_name);
+      setLightboxOpen(true);
+    }, 350);
+  }}
+  onPointerUp={() => {
+    if (avatarHoldTimer.current) window.clearTimeout(avatarHoldTimer.current);
+    avatarHoldTimer.current = null;
+  }}
+  onPointerCancel={() => {
+    if (avatarHoldTimer.current) window.clearTimeout(avatarHoldTimer.current);
+    avatarHoldTimer.current = null;
+  }}
+  onPointerLeave={() => {
+    if (avatarHoldTimer.current) window.clearTimeout(avatarHoldTimer.current);
+    avatarHoldTimer.current = null;
+  }}
+  className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center flex-shrink-0 overflow-hidden"
+>
+  {comment.user_avatar ? (
+    <img src={comment.user_avatar} alt="" className="w-8 h-8 object-cover" />
+  ) : (
+    <User className="w-4 h-4 text-dark-400" />
+  )}
+</div>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -843,7 +873,7 @@ export default function PostDetailPage() {
             </span>
           </div>
 
-          <p className="text-dark-200 text-sm mt-1">
+          <p className="text-dark-200 text-sm mt-1 break-words whitespace-pre-wrap">
             {comment.reply_to_name && (
               <span className="text-primary-400 mr-1">@{comment.reply_to_name}</span>
             )}
@@ -858,7 +888,11 @@ export default function PostDetailPage() {
                     src={m.url} 
                     alt="" 
                     className="w-full h-full object-cover cursor-pointer" 
-                    onClick={() => window.open(m.url)} 
+                    onClick={() => {
+                    setLightboxUrl(m.url);
+                    setLightboxCaption(comment.content || null);
+                    setLightboxOpen(true);
+                    }}
                   />
                 </div>
               ))}
@@ -1094,7 +1128,7 @@ export default function PostDetailPage() {
 
           {displayDesc && (
             <div>
-              <p className="text-dark-100">{displayDesc}</p>
+              <p className="text-dark-100 break-words whitespace-pre-wrap">{displayDesc}</p>
               {isLongDesc && (
                 <button onClick={() => setShowFullDescription(!showFullDescription)} className="text-primary-400 text-sm mt-1">
                   {showFullDescription ? "Less" : "More"}
@@ -1342,6 +1376,17 @@ export default function PostDetailPage() {
           </Button>
         </div>
       </Modal>
+      <ImageLightbox
+  isOpen={lightboxOpen}
+  onClose={() => setLightboxOpen(false)}
+  imageUrl={lightboxUrl}
+  caption={lightboxCaption}
+/>
+{toast && (
+  <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 rounded-xl glass-float text-dark-100">
+    {toast}
+  </div>
+)}
     </div>
   );
 }

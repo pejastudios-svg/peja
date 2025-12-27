@@ -11,6 +11,8 @@ interface MapWrapperProps {
   sosAlerts?: SOSAlert[];
   onSOSClick?: (id: string) => void;
   centerOnUser?: boolean;
+  centerOnCoords?: { lat: number; lng: number } | null;
+  openSOSId?: string | null;
 }
 
 export default function MapWrapper(props: MapWrapperProps) {

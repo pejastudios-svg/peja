@@ -52,7 +52,7 @@ body {
 }
 
 .glass-card {
-  background: rgba(30, 16, 51, 0.8);
+  background: rgba(30, 16, 51, 1);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(139, 92, 246, 0.2);
@@ -65,7 +65,7 @@ body {
 .glass-strong {
   background: rgba(30, 16, 51, 0.95);
   backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(60px);
   border: 1px solid rgba(139, 92, 246, 0.3);
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
 }

@@ -502,8 +502,11 @@ const { data: post, error: postError } = await supabase
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {tags.map((tag) => (
-                <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary-600/20 text-primary-400 text-sm">
-                  #{tag}
+                <span
+                key={tag}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary-600/20 text-primary-400 text-sm max-w-full break-all"
+                >
+                #{tag}
                   <button type="button" onClick={() => handleRemoveTag(tag)}>
                     <X className="w-3 h-3" />
                   </button>
