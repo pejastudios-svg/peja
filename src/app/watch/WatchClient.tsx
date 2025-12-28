@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
 import { CheckCircle, MessageCircle, Share2, Eye, X, Loader2 } from "lucide-react";
 
-export default function WatchClient() {
+export default function WatchClient({
+  startId,
+  source,
+}: {
+  startId: string | null;
+  source: string | null;
+}) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const startId = searchParams.get("postId");
-
   const { user } = useAuth();
 
   const [posts, setPosts] = useState<Post[]>([]);
@@ -24,7 +27,7 @@ export default function WatchClient() {
     const load = async () => {
       setLoading(true);
 
-      const { data, error } = await supabase
+      const q = supabase
         .from("posts")
         .select(`
           id, user_id, category, comment, address, latitude, longitude,
@@ -32,9 +35,10 @@ export default function WatchClient() {
           confirmations, views, comment_count, report_count, created_at,
           post_media (id, post_id, url, media_type, is_sensitive)
         `)
-        .eq("status", "live")
-        .order("created_at", { ascending: false })
-        .limit(50);
+        .eq("status", "live");
+
+      // later: use "source" to change ordering (nearby vs trending)
+      const { data, error } = await q.order("created_at", { ascending: false }).limit(50);
 
       if (error) {
         console.error(error);
@@ -73,15 +77,15 @@ export default function WatchClient() {
     };
 
     load();
-  }, []);
+  }, [source]);
 
-  // load which posts I confirmed
   useEffect(() => {
     const loadConfirmed = async () => {
       if (!user) return;
       if (posts.length === 0) return;
 
       const ids = posts.map((p) => p.id);
+
       const { data, error } = await supabase
         .from("post_confirmations")
         .select("post_id")
@@ -132,7 +136,6 @@ export default function WatchClient() {
     const wasConfirmed = confirmedSet.has(post.id);
     const prevCount = post.confirmations || 0;
 
-    // optimistic UI
     setConfirmedSet((prev) => {
       const next = new Set(prev);
       if (wasConfirmed) next.delete(post.id);
@@ -150,10 +153,21 @@ export default function WatchClient() {
 
     try {
       if (wasConfirmed) {
-        await supabase.from("post_confirmations").delete().eq("post_id", post.id).eq("user_id", user.id);
-        await supabase.from("posts").update({ confirmations: Math.max(0, prevCount - 1) }).eq("id", post.id);
+        await supabase
+          .from("post_confirmations")
+          .delete()
+          .eq("post_id", post.id)
+          .eq("user_id", user.id);
+
+        await supabase
+          .from("posts")
+          .update({ confirmations: Math.max(0, prevCount - 1) })
+          .eq("id", post.id);
       } else {
-        const { error } = await supabase.from("post_confirmations").insert({ post_id: post.id, user_id: user.id });
+        const { error } = await supabase
+          .from("post_confirmations")
+          .insert({ post_id: post.id, user_id: user.id });
+
         if (error && error.code !== "23505") throw error;
 
         await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", post.id);
@@ -169,7 +183,9 @@ export default function WatchClient() {
         return next;
       });
 
-      setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, confirmations: prevCount } : p)));
+      setPosts((prev) =>
+        prev.map((p) => (p.id === post.id ? { ...p, confirmations: prevCount } : p))
+      );
     } finally {
       confirmingRef.current.delete(post.id);
     }
@@ -224,12 +240,18 @@ export default function WatchClient() {
 
                 <div className="mt-3 flex items-center justify-between text-white/90 text-sm pointer-events-auto">
                   <div className="flex items-center gap-4">
-                    <button onClick={() => toggleConfirm(post)} className={`flex items-center gap-1 ${isConfirmed ? "text-primary-300" : ""}`}>
+                    <button
+                      onClick={() => toggleConfirm(post)}
+                      className={`flex items-center gap-1 ${isConfirmed ? "text-primary-300" : ""}`}
+                    >
                       <CheckCircle className={`w-5 h-5 ${isConfirmed ? "fill-current" : ""}`} />
                       {post.confirmations || 0}
                     </button>
 
-                    <button onClick={() => router.push(`/post/${post.id}`)} className="flex items-center gap-1">
+                    <button
+                      onClick={() => router.push(`/post/${post.id}`)}
+                      className="flex items-center gap-1"
+                    >
                       <MessageCircle className="w-5 h-5" />
                       {post.comment_count || 0}
                     </button>
