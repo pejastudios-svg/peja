@@ -23,20 +23,21 @@ export function ImageLightbox({
         <div className="absolute inset-0 flex items-center justify-center p-4">
           <div className="relative w-full max-w-xl glass-card p-3">
             <button
-              onClick={onClose}
-              className="absolute right-3 top-3 p-2 rounded-lg hover:bg-white/10"
-            >
-              <X className="w-5 h-5 text-dark-200" />
-            </button>
+  onClick={onClose}
+  className="fixed top-4 right-4 z-[10000] p-2 rounded-full bg-black/50 hover:bg-black/70"
+  style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top, 0px))" }}
+>
+  <X className="w-6 h-6 text-white" />
+</button>
 
             <div className="rounded-xl overflow-hidden bg-black">
               <img src={imageUrl} alt="" className="w-full h-auto object-contain" />
             </div>
 
             {caption ? (
-              <div className="mt-3 text-sm text-dark-200">
-                {caption}
-              </div>
+              <div className="mt-3 text-sm text-dark-200 break-words whitespace-pre-wrap">
+  {caption}
+</div>
             ) : null}
           </div>
         </div>

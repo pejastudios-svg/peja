@@ -244,11 +244,11 @@ export default function IncidentMapInner({
     };
   }, []);
 
-  useEffect(() => {
+useEffect(() => {
   if (!openSOSId) return;
   if (autoOpenedRef.current) return;
 
-  const match = liveSOSAlerts.find((s) => s.id === openSOSId);
+  const match = liveSOSAlerts.find(s => s.id === openSOSId);
   if (match) {
     setSelectedSOS(match);
     autoOpenedRef.current = true;
