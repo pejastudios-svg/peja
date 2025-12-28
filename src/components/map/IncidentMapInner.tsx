@@ -41,6 +41,7 @@ interface IncidentMapInnerProps {
   centerOnUser?: boolean;
   centerOnCoords?: { lat: number; lng: number } | null;
   openSOSId?: string | null;
+  compassEnabled?: boolean;
 }
 
 // Create icons
@@ -198,6 +199,7 @@ export default function IncidentMapInner({
   centerOnUser = false,
   centerOnCoords = null,
   openSOSId = null,
+  compassEnabled = false,
 }: IncidentMapInnerProps) {
   const { user } = useAuth();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -211,6 +213,7 @@ export default function IncidentMapInner({
   const [sendingHelp, setSendingHelp] = useState(false);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [bearing, setBearing] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
 
   const defaultCenter: [number, number] = [6.5244, 3.3792];
   const center = useMemo(() => 
@@ -387,7 +390,8 @@ useEffect(() => {
 
   // Compass bearing
   useEffect(() => {
-    if (typeof window === "undefined") return;
+  if (!compassEnabled) return;
+  if (typeof window === "undefined") return;
 
     const handleOrientation = (event: DeviceOrientationEvent) => {
       let newBearing = 0;
@@ -414,7 +418,7 @@ useEffect(() => {
     return () => {
       window.removeEventListener("deviceorientation", handleOrientation, true);
     };
-  }, []);
+}, [compassEnabled]);
 
   const handleICanHelp = async (sos: SOSAlert) => {
     if (!user || !userLocation) {
@@ -432,11 +436,13 @@ useEffect(() => {
         body: `Someone is coming to help you. ETA: ${eta} minutes`,
         data: { sos_id: sos.id, helper_id: user.id, eta_minutes: eta },
       });
-      alert(`Thank you! The person has been notified. Your ETA: ${eta} minutes.`);
+      setToast(`Thank you! The person has been notified. ETA: ${eta} minutes.`);
+      setTimeout(() => setToast(null), 2500);
       setSelectedSOS(null);
     } catch (err) {
       console.error("Error:", err);
-      alert("Failed to notify. Please try again.");
+      setToast("Failed to notify. Please try again.");
+      setTimeout(() => setToast(null), 2500);
     } finally {
       setSendingHelp(false);
     }
@@ -506,13 +512,6 @@ useEffect(() => {
                 </div>
               )}
 
-              {selectedSOS.voice_note_url && (
-                <div>
-                  <p className="text-sm text-dark-400 mb-2">Voice Note:</p>
-                  <audio src={selectedSOS.voice_note_url} controls className="w-full" />
-                </div>
-              )}
-
               {tagInfo && (
                 <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
                   <p className="text-sm font-medium text-yellow-400 mb-1">How to help:</p>
@@ -552,6 +551,11 @@ useEffect(() => {
                 >
                   {sendingHelp ? "Sending..." : "I Can Help"}
                 </button>
+                {toast && (
+  <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[3000] glass-float px-4 py-2 rounded-xl text-dark-100">
+    {toast}
+  </div>
+)}
               </div>
             </div>
           </div>

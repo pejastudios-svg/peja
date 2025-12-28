@@ -13,6 +13,7 @@ interface MapWrapperProps {
   centerOnUser?: boolean;
   centerOnCoords?: { lat: number; lng: number } | null;
   openSOSId?: string | null;
+  compassEnabled?: boolean;
 }
 
 export default function MapWrapper(props: MapWrapperProps) {

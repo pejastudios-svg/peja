@@ -43,7 +43,8 @@ export default function NotificationsPage() {
   useEffect(() => {
     if (!authLoading && user) {
       fetchNotifications();
-      setupRealtime();
+     const cleanup = setupRealtime();
+     return cleanup;
     } else if (!authLoading && !user) {
       router.push("/login");
     }
@@ -80,29 +81,48 @@ export default function NotificationsPage() {
   }
 };
 
-  const setupRealtime = () => {
-    if (!user) return;
+const setupRealtime = () => {
+  if (!user) return () => {};
 
-    const channel = supabase
-      .channel('notifications-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          setNotifications(prev => [payload.new as Notification, ...prev]);
-        }
-      )
-      .subscribe();
+  const channel = supabase
+    .channel("notifications-changes")
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
+      (payload) => {
+        const n = payload.new as Notification;
+        setNotifications((prev) => [n, ...prev]);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+        // tell header to refresh count
+        window.dispatchEvent(new Event("peja-notifications-changed"));
+      }
+    )
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
+      (payload) => {
+        const updated = payload.new as Notification;
+        setNotifications((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+
+        window.dispatchEvent(new Event("peja-notifications-changed"));
+      }
+    )
+    .on(
+      "postgres_changes",
+      { event: "DELETE", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` },
+      (payload) => {
+        const old = payload.old as Notification;
+        setNotifications((prev) => prev.filter((x) => x.id !== old.id));
+
+        window.dispatchEvent(new Event("peja-notifications-changed"));
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
   };
+};
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {

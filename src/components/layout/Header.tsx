@@ -22,6 +22,12 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
     if (user) {
       fetchUnreadCount();
       setupRealtime();
+      const handler = () => fetchUnreadCount();
+     window.addEventListener("peja-notifications-changed", handler);
+
+    return () => {
+    window.removeEventListener("peja-notifications-changed", handler);
+    };
     }
   }, [user]);
 

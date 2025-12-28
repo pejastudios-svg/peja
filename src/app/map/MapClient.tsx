@@ -47,6 +47,7 @@ export default function MapClient() {
   const [shouldCenterOnUser, setShouldCenterOnUser] = useState(false);
   const [centerOnSOS, setCenterOnSOS] = useState<{ lat: number; lng: number } | null>(null);
   const [openSOSId, setOpenSOSId] = useState<string | null>(null);
+  const [compassEnabled, setCompassEnabled] = useState(false);
   const [myUserId, setMyUserId] = useState<string | null>(null);
 
 useEffect(() => {
@@ -93,7 +94,23 @@ useEffect(() => {
     );
   }, []);
 
-  
+  const requestCompassPermission = async () => {
+  try {
+    // iOS 13+ requires permission request on user gesture
+    const DOE: any = DeviceOrientationEvent;
+    if (typeof DOE?.requestPermission === "function") {
+      const res = await DOE.requestPermission();
+      if (res === "granted") {
+        setCompassEnabled(true);
+      }
+    } else {
+      // Android / browsers that don't require permission
+      setCompassEnabled(true);
+    }
+  } catch (e) {
+    console.warn("Compass permission denied:", e);
+  }
+};
 
   const handleCenterOnUser = useCallback(() => {
     getUserLocation();
@@ -359,6 +376,7 @@ useEffect(() => {
               centerOnUser={shouldCenterOnUser}
               centerOnCoords={centerOnSOS}
               openSOSId={openSOSId}
+              compassEnabled={compassEnabled}
             />
           )}
 
@@ -389,7 +407,10 @@ useEffect(() => {
           </div>
 
           <button
-            onClick={handleCenterOnUser}
+            onClick={async () => {
+            await requestCompassPermission();
+            handleCenterOnUser();
+            }}
             disabled={gettingLocation}
             className="absolute bottom-24 right-4 z-1000 p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
           >
