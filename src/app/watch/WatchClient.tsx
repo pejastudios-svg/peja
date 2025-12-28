@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { Post } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
 import { CheckCircle, MessageCircle, Share2, Eye, X, Loader2 } from "lucide-react";
+import { notifyPostConfirmed } from "@/lib/notifications";
 
 export default function WatchClient({
   startId,
@@ -164,13 +165,28 @@ export default function WatchClient({
           .update({ confirmations: Math.max(0, prevCount - 1) })
           .eq("id", post.id);
       } else {
-        const { error } = await supabase
-          .from("post_confirmations")
-          .insert({ post_id: post.id, user_id: user.id });
+ const { error } = await supabase
+  .from("post_confirmations")
+  .insert({ post_id: post.id, user_id: user.id });
 
-        if (error && error.code !== "23505") throw error;
+// If already confirmed, do NOT double-increment or notify
+if (error && error.code === "23505") {
+  // rollback count to what it was
+  setPosts((prev) =>
+    prev.map((p) => (p.id === post.id ? { ...p, confirmations: prevCount } : p))
+  );
+  return;
+}
 
-        await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", post.id);
+if (error) throw error;
+
+await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", post.id);
+
+// ✅ notify post owner (same behavior as PostCard)
+if (post.user_id && post.user_id !== user.id) {
+  const confirmerName = user.full_name || "Someone";
+  notifyPostConfirmed(post.id, post.user_id, confirmerName).catch(() => {});
+}
       }
     } catch (e) {
       console.error(e);

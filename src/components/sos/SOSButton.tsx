@@ -625,26 +625,46 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
 );
   }
 
-  // ============================================
-  // CONFIRMATION POPUP
-  // ============================================
-  if (showConfirmation) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-black/60" onClick={() => setShowConfirmation(false)} />
-        <div className="relative glass-card text-center max-w-sm">
+// ============================================
+// CONFIRMATION POPUP (iPhone safe-area fixed)
+// ============================================
+if (showConfirmation) {
+  return (
+    <Portal>
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center px-4"
+        style={{
+          paddingTop: "calc(16px + env(safe-area-inset-top, 0px))",
+          paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
+        }}
+      >
+        <div
+          className="absolute inset-0 bg-black/60"
+          onClick={() => setShowConfirmation(false)}
+        />
+
+        <div
+          className="relative glass-card text-center max-w-sm w-full"
+          style={{
+            maxHeight:
+              "calc(100dvh - (32px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)))",
+            overflowY: "auto",
+          }}
+        >
           <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-dark-100 mb-2">SOS Sent</h3>
-          <p className="text-dark-400 text-sm">
-            {notifyStatus.contacts + notifyStatus.nearby > 0 
+
+          <p className="text-dark-400 text-sm break-words">
+            {notifyStatus.contacts + notifyStatus.nearby > 0
               ? `${notifyStatus.contacts + notifyStatus.nearby} Peja users have been notified`
-              : "Your location is being shared"
-            }
+              : "Your location is being shared"}
           </p>
-          <p className="text-xs text-dark-500 mt-2">
+
+          <p className="text-xs text-dark-500 mt-2 break-words">
             Please also call 112 or 767 for official emergency response
           </p>
-          <button 
+
+          <button
             onClick={() => setShowConfirmation(false)}
             className="mt-4 px-6 py-2 bg-primary-600 text-white rounded-xl font-medium"
           >
@@ -652,8 +672,9 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
           </button>
         </div>
       </div>
-    );
-  }
+    </Portal>
+  );
+}
 
   // ============================================
   // MAIN BUTTON (Pulsing if active)
