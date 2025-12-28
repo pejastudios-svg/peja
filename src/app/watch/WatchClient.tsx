@@ -200,7 +200,7 @@ export default function WatchClient({
   }
 
   return (
-    <div className="fixed inset-0 bg-black z-[9999]">
+    <div className="fixed inset-0 bg-black z-9999">
       <button
         onClick={() => router.back()}
         className="fixed top-4 right-4 z-50 p-2 rounded-full bg-black/60"
@@ -233,8 +233,8 @@ export default function WatchClient({
                 <img src={media?.url || ""} className="h-full w-full object-contain" alt="" />
               )}
 
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
-                <p className="text-white text-sm break-words whitespace-pre-wrap line-clamp-3">
+              <div className="absolute bottom-0 left-0 right-0 p-4 bg-linear-to-t from-black/80 to-transparent pointer-events-none">
+                <p className="text-white text-sm wrap-break-word whitespace-pre-wrap line-clamp-3">
                   {post.comment || ""}
                 </p>
 

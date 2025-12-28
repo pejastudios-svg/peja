@@ -279,7 +279,7 @@ export default function NotificationsPage() {
                 >
                   <div className="flex gap-3">
                     {/* Icon */}
-                    <div className={`p-2 rounded-lg flex-shrink-0 ${
+                    <div className={`p-2 rounded-lg shrink-0 ${
                       notification.type === "sos_alert" 
                         ? "bg-red-500/20" 
                         : "bg-dark-700"
@@ -328,7 +328,7 @@ export default function NotificationsPage() {
                         
                         <button
                           onClick={(e) => handleDeleteNotification(e, notification.id)}
-                          className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-400 active:bg-white/20 flex-shrink-0"
+                          className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-400 active:bg-white/20 shrink-0"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

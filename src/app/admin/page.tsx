@@ -141,7 +141,7 @@ export default function AdminOverviewPage() {
             <div className="space-y-3">
               {activeSOS.map((sos) => (
                 <div key={sos.id} className="flex items-center gap-3 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
-                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0 overflow-hidden">
                     {sos.users?.avatar_url ? (
                       <img src={sos.users.avatar_url} alt="" className="w-full h-full object-cover" />
                     ) : (
@@ -175,7 +175,7 @@ export default function AdminOverviewPage() {
             <div className="space-y-3">
               {recentPosts.map((post) => (
                 <div key={post.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
-                  <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center flex-shrink-0">
+                  <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center shrink-0">
                     <FileText className="w-5 h-5 text-primary-400" />
                   </div>
                   <div className="flex-1 min-w-0">

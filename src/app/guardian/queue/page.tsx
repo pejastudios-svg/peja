@@ -228,7 +228,7 @@ export default function GuardianQueuePage() {
               >
                 <div className="flex items-center gap-4">
                   {/* Thumbnail */}
-                  <div className="w-16 h-16 rounded-lg bg-dark-800 flex-shrink-0 overflow-hidden">
+                  <div className="w-16 h-16 rounded-lg bg-dark-800 shrink-0 overflow-hidden">
                     {item.post?.post_media?.[0] ? (
                       item.post.post_media[0].media_type === "video" ? (
                         <div className="w-full h-full flex items-center justify-center bg-dark-700">
@@ -265,7 +265,7 @@ export default function GuardianQueuePage() {
                   </div>
 
                   {/* Action */}
-                  <button className="p-2 hover:bg-white/10 rounded-lg flex-shrink-0">
+                  <button className="p-2 hover:bg-white/10 rounded-lg shrink-0">
                     <Eye className="w-5 h-5 text-primary-400" />
                   </button>
                 </div>

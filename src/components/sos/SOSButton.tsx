@@ -185,7 +185,7 @@ useEffect(() => {
     if (!user) return;
     const { data } = await supabase
       .from("sos_alerts")
-      .select("id, selectedTag, voice_note_url, message")
+      .select("id, tag, message")
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
@@ -193,8 +193,7 @@ useEffect(() => {
     if (data) {
       setSosActive(true);
       setSosId(data.id);
-      if (data.selectedTag) setSelectedTag(data.selectedTag);
-      if (data.voice_note_url) setAudioUrl(data.voice_note_url);
+      if (data.tag) setSelectedTag(data.tag);
       if (data.message) setTextMessage(data.message);
     }
   };
@@ -277,7 +276,6 @@ const notifyContacts = async (
   payload: {
     tag?: SOSTagId | null;
     message?: string | null;
-    voice_note_url?: string | null;
     latitude: number;
     longitude: number;
   }
@@ -306,7 +304,6 @@ const tagInfo = tagId ? SOS_TAGS.find(t => t.id === tagId) : null;
           sos_id: sosId,
           tag: payload.tag || null,
           message: payload.message || null,
-          voice_note_url: payload.voice_note_url || null,
           address,
           latitude: payload.latitude,
           longitude: payload.longitude,
@@ -389,34 +386,7 @@ const tagInfo = tagId ? SOS_TAGS.find(t => t.id === tagId) : null;
         .single();
       const userName = userData?.full_name || "Someone";
 
-      // Upload voice note if exists
-      // Upload voice note if exists (supports iPhone file fallback)
-let voiceNoteUrl: string | null = null;
-
-if (audioFile) {
-  const ext = audioFile.name.split(".").pop()?.toLowerCase() || "m4a";
-  const fileName = `sos/${user.id}/${Date.now()}.${ext}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from("media")
-    .upload(fileName, audioFile, { contentType: audioFile.type });
-
-  if (!uploadError) {
-    const { data: urlData } = supabase.storage.from("media").getPublicUrl(fileName);
-    voiceNoteUrl = urlData.publicUrl;
-  }
-} else if (audioBlob) {
-  const fileName = `sos/${user.id}/${Date.now()}.webm`;
-
-  const { error: uploadError } = await supabase.storage
-    .from("media")
-    .upload(fileName, audioBlob, { contentType: "audio/webm" });
-
-  if (!uploadError) {
-    const { data: urlData } = supabase.storage.from("media").getPublicUrl(fileName);
-    voiceNoteUrl = urlData.publicUrl;
-  }
-}
+const voiceNoteUrl = null;
 
       console.log("VOICE NOTE URL ABOUT TO SAVE:", voiceNoteUrl);
       const { data: sosData, error } = await supabase
@@ -428,7 +398,6 @@ if (audioFile) {
     address, 
     status: "active",
     tag: selectedTag, // ← ADD THIS
-    voice_note_url: voiceNoteUrl, // ← ADD THIS
     message: textMessage || null, // ← ADD THIS
   })
   .select()
@@ -442,7 +411,6 @@ if (audioFile) {
 const contactsNotified = await notifyContacts(userName, address, sosData.id, {
   tag: selectedTag,
   message: textMessage || null,
-  voice_note_url: voiceNoteUrl,
   latitude: lat,
   longitude: lng,
 });
@@ -468,7 +436,6 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
             sos_id: sosId,
             tag: selectedTag,
             message: textMessage || null,
-            voice_note_url: voiceNoteUrl,
             address,
             latitude: lat,
             longitude: lng,
@@ -524,7 +491,7 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
   if (showOptions) {
     return (
         <Portal>
-      <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
         <div className="absolute inset-0 bg-black/70" onClick={closeOptions} />
         <div className="relative glass-card w-full max-w-lg rounded-t-3xl rounded-b-none max-h-[85vh] overflow-y-auto pb-8">
           {/* Header */}
@@ -573,70 +540,6 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
               />
             </div>
 
-           {/* Voice Note */}
-<div>
-  <label className="block text-sm font-medium text-dark-300 mb-2">
-    Record a voice note (Optional, max 30s)
-  </label>
-  <p className="text-xs text-dark-500 mb-3">
-    State your situation quickly and clearly
-  </p>
-
-  {/* Hidden input for iPhone fallback */}
-  <input
-    ref={audioFileInputRef}
-    type="file"
-    accept="audio/*"
-    capture
-    className="hidden"
-    onChange={handleAudioFilePicked}
-  />
-
-  {!audioUrl ? (
-    supportsMediaRecorder ? (
-      <button
-        onClick={isRecording ? stopRecording : startRecording}
-        className={`w-full flex items-center justify-center gap-3 py-3 rounded-xl font-medium transition-all ${
-          isRecording
-            ? "bg-red-600 text-white"
-            : "glass-sm text-dark-200 hover:bg-white/10"
-        }`}
-      >
-        {isRecording ? (
-          <>
-            <Square className="w-5 h-5" />
-            Stop Recording ({MAX_RECORDING_TIME - recordingTime}s remaining)
-          </>
-        ) : (
-          <>
-            <Mic className="w-5 h-5" />
-            Start Recording
-          </>
-        )}
-      </button>
-    ) : (
-      <button
-        type="button"
-        onClick={() => audioFileInputRef.current?.click()}
-        className="w-full flex items-center justify-center gap-3 py-3 rounded-xl font-medium glass-sm text-dark-200 hover:bg-white/10"
-      >
-        <Mic className="w-5 h-5" />
-        Record Voice Note
-      </button>
-    )
-  ) : (
-    <div className="flex items-center gap-2">
-      <audio src={audioUrl} controls className="flex-1 h-10" />
-      <button
-        onClick={removeRecording}
-        className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg"
-      >
-        <X className="w-5 h-5" />
-      </button>
-    </div>
-  )}
-</div>
-
             {/* Hold to Send Button */}
             <div className="pt-4">
               <p className="text-center text-sm text-dark-400 mb-3">
@@ -649,7 +552,7 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
                 onTouchStart={handleHoldStart}
                 onTouchEnd={handleHoldEnd}
                 className={`relative w-full py-5 rounded-2xl font-bold text-lg text-white transition-all overflow-hidden ${
-                  isHolding ? "bg-red-700" : "bg-gradient-to-r from-red-600 to-red-700"
+                  isHolding ? "bg-red-700" : "bg-linear-to-r from-red-600 to-red-700"
                 }`}
               >
                 {/* Progress bar */}
@@ -684,8 +587,7 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div className="absolute inset-0 bg-black/70" onClick={() => setShowActivePopup(false)} />
-        <div className="relative glass-card max-w-md w-full max-h-[85vh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
-          <div className="flex items-center justify-between mb-4">
+<div className="relative glass-card max-w-md w-full max-h-[85vh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">          <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
               <span className="text-red-400 font-semibold">SOS Active</span>
@@ -792,8 +694,8 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
       disabled={loading}
       className={`relative w-16 h-16 rounded-full shadow-lg flex items-center justify-center transition-transform ${
         sosActive 
-          ? "bg-gradient-to-br from-red-500 to-red-700 animate-pulse" 
-          : "bg-gradient-to-br from-red-500 to-red-700"
+          ? "bg-linear-to-br from-red-500 to-red-700 animate-pulse" 
+          : "bg-linear-to-br from-red-500 to-red-700"
       } ${className}`}
       style={sosActive ? { animation: "sos-pulse 2s infinite" } : {}}
     >

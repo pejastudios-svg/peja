@@ -450,7 +450,7 @@ useEffect(() => {
 
       {/* SOS Details Modal */}
       {selectedSOS && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-2000 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70" onClick={() => setSelectedSOS(null)} />
           <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
             <div className="sticky top-0 bg-dark-900 border-b border-white/10 p-4 flex items-center justify-between z-10">
@@ -470,7 +470,7 @@ useEffect(() => {
 
             <div className="p-4 space-y-4">
               <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
-                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-red-500 flex-shrink-0">
+                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-red-500 shrink-0">
                   <img
                     src={selectedSOS.user?.avatar_url || "https://ui-avatars.com/api/?name=User"}
                     alt=""

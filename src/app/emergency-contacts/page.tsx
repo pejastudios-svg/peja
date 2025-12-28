@@ -300,7 +300,7 @@ export default function EmergencyContactsPage() {
       <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
         {/* Info Card */}
         <div className="glass-card mb-6 flex gap-3">
-          <AlertTriangle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
+          <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
           <div>
             <p className="text-dark-200 text-sm">
               These Peja users will be notified when you trigger an SOS alert.
@@ -325,7 +325,7 @@ export default function EmergencyContactsPage() {
                 key={contact.id}
                 className="glass-card flex items-center gap-4"
               >
-                <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
                   {contact.contact_user?.avatar_url ? (
                     <img 
                       src={contact.contact_user.avatar_url} 
@@ -431,7 +431,7 @@ export default function EmergencyContactsPage() {
                       onClick={() => setSelectedUser(resultUser)}
                       className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/10 transition-colors text-left"
                     >
-                      <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                      <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
                         {resultUser.avatar_url ? (
                           <img src={resultUser.avatar_url} alt="" className="w-full h-full object-cover" />
                         ) : (
@@ -480,7 +480,7 @@ export default function EmergencyContactsPage() {
                 Selected Contact
               </label>
               <div className="flex items-center gap-3 p-3 glass-sm rounded-xl mb-4">
-                <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
                   {selectedUser.avatar_url ? (
                     <img src={selectedUser.avatar_url} alt="" className="w-full h-full object-cover" />
                   ) : (

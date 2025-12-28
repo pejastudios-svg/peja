@@ -341,7 +341,7 @@ const { data: post, error: postError } = await supabase
       <main className="pt-20 px-4 max-w-2xl mx-auto">
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
             <p className="text-sm text-red-400">{error}</p>
           </div>
         )}

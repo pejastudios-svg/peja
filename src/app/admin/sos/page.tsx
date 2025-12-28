@@ -179,7 +179,7 @@ export default function AdminSOSPage() {
             >
               <div className="flex items-center gap-4">
                 {/* Avatar */}
-                <div className={`w-12 h-12 rounded-full overflow-hidden flex-shrink-0 ${
+                <div className={`w-12 h-12 rounded-full overflow-hidden shrink-0 ${
                   sos.status === "active" ? "border-2 border-red-500" : "border border-dark-600"
                 }`}>
                   {sos.users?.avatar_url ? (
@@ -212,7 +212,7 @@ export default function AdminSOSPage() {
                 </div>
 
                 {/* Action */}
-                <button className="p-2 hover:bg-white/10 rounded-lg flex-shrink-0">
+                <button className="p-2 hover:bg-white/10 rounded-lg shrink-0">
                   <Eye className="w-5 h-5 text-primary-400" />
                 </button>
               </div>
@@ -232,7 +232,7 @@ export default function AdminSOSPage() {
           <div className="space-y-4">
             {/* User Info */}
             <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl">
-              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-red-500 flex-shrink-0">
+              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-red-500 shrink-0">
                 {selectedSOS.users?.avatar_url ? (
                   <img src={selectedSOS.users.avatar_url} alt="" className="w-full h-full object-cover" />
                 ) : (

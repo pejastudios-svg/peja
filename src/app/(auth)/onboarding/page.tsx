@@ -148,7 +148,7 @@ export default function OnboardingPage() {
                 <ul className="space-y-2">
                   {GUIDELINES.map((guideline, index) => (
                     <li key={index} className="flex items-start gap-2 text-sm text-dark-300">
-                      <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
+                      <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 shrink-0" />
                       {guideline}
                     </li>
                   ))}

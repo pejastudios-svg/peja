@@ -198,7 +198,7 @@ export default function SettingsPage() {
     <button
       type="button"
       onClick={() => onChange(!enabled)}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${enabled ? "bg-primary-600" : "bg-dark-600"}`}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${enabled ? "bg-primary-600" : "bg-dark-600"}`}
     >
       <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition duration-200 ease-in-out ${enabled ? "translate-x-5" : "translate-x-0"}`} />
     </button>
@@ -537,7 +537,7 @@ export default function SettingsPage() {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowStatesModal(false)} />
           <div className="fixed inset-4 z-50 max-w-md mx-auto my-auto max-h-[80vh] overflow-hidden flex flex-col">
             <div className="glass-card flex flex-col h-full">
-              <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <div className="flex items-center justify-between mb-4 shrink-0">
                 <h2 className="text-lg font-semibold text-dark-100">Select States</h2>
                 <button onClick={() => setShowStatesModal(false)} className="p-1 hover:bg-white/10 rounded-lg">
                   <X className="w-5 h-5 text-dark-400" />
@@ -563,7 +563,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="pt-4 mt-4 border-t border-white/5 flex-shrink-0">
+              <div className="pt-4 mt-4 border-t border-white/5 shrink-0">
                 <button 
                   type="button" 
                   onClick={() => setShowStatesModal(false)} 

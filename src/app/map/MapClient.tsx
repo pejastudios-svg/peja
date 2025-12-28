@@ -47,6 +47,13 @@ export default function MapClient() {
   const [shouldCenterOnUser, setShouldCenterOnUser] = useState(false);
   const [centerOnSOS, setCenterOnSOS] = useState<{ lat: number; lng: number } | null>(null);
   const [openSOSId, setOpenSOSId] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState<string | null>(null);
+
+useEffect(() => {
+  supabase.auth.getUser().then(({ data }) => {
+    setMyUserId(data.user?.id || null);
+  });
+}, []);
 
   const getUserLocation = useCallback(() => {
     setGettingLocation(true);
@@ -85,6 +92,8 @@ export default function MapClient() {
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 }
     );
   }, []);
+
+  
 
   const handleCenterOnUser = useCallback(() => {
     getUserLocation();
@@ -156,7 +165,7 @@ export default function MapClient() {
       const { data: sosData, error: sosError } = await supabase
         .from("sos_alerts")
         .select(`
-          id, user_id, latitude, longitude, address, status, tag, message, voice_note_url,
+          id, user_id, latitude, longitude, address, status, tag, message,
           bearing, created_at, last_updated, resolved_at
         `)
         .eq("status", "active")
@@ -201,7 +210,6 @@ export default function MapClient() {
         status: s.status,
         tag: s.tag,
         message: s.message,
-        voice_note_url: s.voice_note_url,
         bearing: s.bearing,
         created_at: s.created_at,
         last_updated: s.last_updated,
@@ -209,7 +217,8 @@ export default function MapClient() {
         user: sosUserCacheRef.current[s.user_id] || undefined,
       }));
 
-      setSOSAlerts(formatted);
+      const filtered = myUserId ? formatted.filter(s => s.user_id !== myUserId) : formatted;
+      setSOSAlerts(filtered);
 
       // open from notification (once)
       if (sosIdFromUrl && !handledSosParamRef.current) {
@@ -253,7 +262,6 @@ export default function MapClient() {
                   status: newRow.status,
                   tag: newRow.tag,
                   message: newRow.message,
-                  voice_note_url: newRow.voice_note_url,
                   bearing: newRow.bearing,
                   created_at: newRow.created_at,
                   last_updated: newRow.last_updated,
@@ -306,7 +314,6 @@ export default function MapClient() {
                     address: newRow.address ?? s.address,
                     tag: newRow.tag ?? s.tag,
                     message: newRow.message ?? s.message,
-                    voice_note_url: newRow.voice_note_url ?? s.voice_note_url,
                     bearing: newRow.bearing ?? s.bearing,
                     last_updated: newRow.last_updated ?? s.last_updated,
                   }
@@ -356,9 +363,9 @@ export default function MapClient() {
           )}
 
           {sosAlerts.length > 0 && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-1000">
               <div className="glass-float rounded-xl px-4 py-2.5 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
                   <AlertTriangle className="w-4 h-4 text-red-400 animate-pulse" />
                 </div>
                 <span className="text-sm font-semibold text-red-400 whitespace-nowrap">
@@ -368,7 +375,7 @@ export default function MapClient() {
             </div>
           )}
 
-          <div className="absolute top-16 left-4 right-4 z-[1000]">
+          <div className="absolute top-16 left-4 right-4 z-1000">
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               <button
                 onClick={() => setSelectedCategory(null)}
@@ -384,7 +391,7 @@ export default function MapClient() {
           <button
             onClick={handleCenterOnUser}
             disabled={gettingLocation}
-            className="absolute bottom-24 right-4 z-[1000] p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
+            className="absolute bottom-24 right-4 z-1000 p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
           >
             {gettingLocation ? (
               <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
@@ -395,13 +402,13 @@ export default function MapClient() {
 
           <button
             onClick={() => setShowList(!showList)}
-            className="absolute bottom-24 left-4 z-[1000] p-3 glass-float rounded-full shadow-lg"
+            className="absolute bottom-24 left-4 z-1000 p-3 glass-float rounded-full shadow-lg"
           >
             {showList ? <MapIcon className="w-5 h-5 text-primary-400" /> : <List className="w-5 h-5 text-primary-400" />}
           </button>
 
           <div
-            className={`absolute bottom-0 left-0 right-0 z-[1000] glass-strong rounded-t-2xl shadow-2xl transition-transform duration-300 ${
+            className={`absolute bottom-0 left-0 right-0 z-1000 glass-strong rounded-t-2xl shadow-2xl transition-transform duration-300 ${
               showList ? "translate-y-0" : "translate-y-[calc(100%-60px)]"
             }`}
             style={{ maxHeight: "60%" }}
@@ -425,10 +432,10 @@ export default function MapClient() {
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-medium text-red-400 break-words">
+                    <p className="font-medium text-red-400 wrap-break-word">
                       {sos.user?.full_name || "Someone"} needs help!
                     </p>
-                    <p className="text-xs text-dark-400 break-words">{sos.address}</p>
+                    <p className="text-xs text-dark-400 wrap-break-word">{sos.address}</p>
                   </div>
                 </div>
               ))}
@@ -449,11 +456,11 @@ export default function MapClient() {
                         {category?.name || post.category}
                       </Badge>
                       {post.comment && (
-                        <p className="text-sm text-dark-200 line-clamp-1 mt-1 break-words">
+                        <p className="text-sm text-dark-200 line-clamp-1 mt-1 wrap-break-word">
                           {post.comment}
                         </p>
                       )}
-                      <p className="text-xs text-dark-500 mt-1 break-words">{post.address}</p>
+                      <p className="text-xs text-dark-500 mt-1 wrap-break-word">{post.address}</p>
                     </div>
                   </div>
                 );
@@ -461,7 +468,7 @@ export default function MapClient() {
             </div>
           </div>
 
-          <div className="absolute top-32 right-4 z-[1000] glass-float rounded-lg p-3 text-xs space-y-2">
+          <div className="absolute top-32 right-4 z-1000 glass-float rounded-lg p-3 text-xs space-y-2">
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 bg-red-500 rounded-full" />
               <span className="text-dark-200">Danger</span>

@@ -222,7 +222,7 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
           )}
           <span className="text-dark-600">|</span>
           <span className="text-xs text-dark-400 flex items-center gap-1 truncate max-w-[150px]">
-            <MapPin className="w-3 h-3 flex-shrink-0" />
+            <MapPin className="w-3 h-3 shrink-0" />
             {post.address || "Unknown location"}
           </span>
         </div>
@@ -337,7 +337,7 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
       {/* Comment */}
       {post.comment && (
         <div className="mb-3">
-          <p className="text-dark-200 text-sm break-words">{displayedComment}</p>
+          <p className="text-dark-200 text-sm wrap-break-words">{displayedComment}</p>
           {isLongComment && (
             <button
               onClick={(e) => {
@@ -355,10 +355,12 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
 
       {/* Tags */}
       {post.tags && post.tags.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-3">
-          {post.tags.map((tag) => (
-            <span key={tag} className="text-xs text-primary-400">#{tag}</span>
-          ))}
+        <div className="flex flex-wrap gap-1 mb-3 min-w-0">
+        {post.tags.map((tag) => (
+        <span key={tag} className="text-xs text-primary-400 break-all max-w-full">
+        #{tag}
+        </span>
+        ))}
         </div>
       )}
 

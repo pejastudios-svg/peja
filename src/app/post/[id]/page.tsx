@@ -856,7 +856,7 @@ export default function PostDetailPage() {
     if (avatarHoldTimer.current) window.clearTimeout(avatarHoldTimer.current);
     avatarHoldTimer.current = null;
   }}
-  className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center flex-shrink-0 overflow-hidden"
+  className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center shrink-0 overflow-hidden"
 >
   {comment.user_avatar ? (
     <img src={comment.user_avatar} alt="" className="w-8 h-8 object-cover" />
@@ -873,7 +873,7 @@ export default function PostDetailPage() {
             </span>
           </div>
 
-          <p className="text-dark-200 text-sm mt-1 break-words whitespace-pre-wrap">
+          <p className="text-dark-200 text-sm mt-1 wrap-break-word whitespace-pre-wrap">
             {comment.reply_to_name && (
               <span className="text-primary-400 mr-1">@{comment.reply_to_name}</span>
             )}
@@ -1128,7 +1128,7 @@ export default function PostDetailPage() {
 
           {displayDesc && (
             <div>
-              <p className="text-dark-100 break-words whitespace-pre-wrap">{displayDesc}</p>
+              <p className="text-dark-100 wrap-break-word whitespace-pre-wrap">{displayDesc}</p>
               {isLongDesc && (
                 <button onClick={() => setShowFullDescription(!showFullDescription)} className="text-primary-400 text-sm mt-1">
                   {showFullDescription ? "Less" : "More"}
@@ -1248,7 +1248,7 @@ export default function PostDetailPage() {
           {commentMediaPreviews.length > 0 && (
             <div className="flex gap-2 mb-2 overflow-x-auto pb-1">
               {commentMediaPreviews.map((p, i) => (
-                <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden flex-shrink-0 bg-dark-800">
+                <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-dark-800">
                   <img src={p.url} alt="" className="w-full h-full object-cover" />
                   <button 
                     onClick={() => removeMedia(i)} 
@@ -1272,7 +1272,7 @@ export default function PostDetailPage() {
           <div className="flex items-center gap-2">
             <button 
               onClick={() => fileInputRef.current?.click()} 
-              className="p-2 hover:bg-white/10 rounded-lg text-dark-400 flex-shrink-0"
+              className="p-2 hover:bg-white/10 rounded-lg text-dark-400 shrink-0"
             >
               <ImageIcon className="w-5 h-5" />
             </button>
@@ -1304,7 +1304,7 @@ export default function PostDetailPage() {
             <button
               onClick={handleSubmitComment}
               disabled={submittingComment || (!newComment.trim() && commentMedia.length === 0)}
-              className="p-2.5 bg-primary-600 rounded-xl text-white disabled:opacity-50 flex-shrink-0"
+              className="p-2.5 bg-primary-600 rounded-xl text-white disabled:opacity-50 shrink-0"
             >
               {submittingComment ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -1383,7 +1383,7 @@ export default function PostDetailPage() {
   caption={lightboxCaption}
 />
 {toast && (
-  <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2 rounded-xl glass-float text-dark-100">
+  <div className="fixed top-16 left-1/2 -translate-x-1/2 z-9999 px-4 py-2 rounded-xl glass-float text-dark-100">
     {toast}
   </div>
 )}

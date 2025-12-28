@@ -26,23 +26,23 @@ export default function GuardianGuidelinesPage() {
           </h2>
           <ul className="space-y-3 text-dark-300">
             <li className="flex items-start gap-2">
-              <CheckCircle className="w-4 h-4 text-green-400 mt-1 flex-shrink-0" />
+              <CheckCircle className="w-4 h-4 text-green-400 mt-1 shrink-0" />
               Review flagged content for community guideline violations
             </li>
             <li className="flex items-start gap-2">
-              <CheckCircle className="w-4 h-4 text-green-400 mt-1 flex-shrink-0" />
+              <CheckCircle className="w-4 h-4 text-green-400 mt-1 shrink-0" />
               Approve legitimate incident reports
             </li>
             <li className="flex items-start gap-2">
-              <CheckCircle className="w-4 h-4 text-green-400 mt-1 flex-shrink-0" />
+              <CheckCircle className="w-4 h-4 text-green-400 mt-1 shrink-0" />
               Add blur/warning to sensitive but legitimate content
             </li>
             <li className="flex items-start gap-2">
-              <CheckCircle className="w-4 h-4 text-green-400 mt-1 flex-shrink-0" />
+              <CheckCircle className="w-4 h-4 text-green-400 mt-1 shrink-0" />
               Remove content that violates guidelines
             </li>
             <li className="flex items-start gap-2">
-              <CheckCircle className="w-4 h-4 text-green-400 mt-1 flex-shrink-0" />
+              <CheckCircle className="w-4 h-4 text-green-400 mt-1 shrink-0" />
               Escalate complex cases to Admin
             </li>
           </ul>
