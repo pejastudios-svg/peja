@@ -91,84 +91,44 @@ const supportsMediaRecorder =
   // Add this useEffect after the first one
 useEffect(() => {
   if (!sosActive || !sosId) return;
+  if (!navigator.geolocation) return;
 
-  // Update bearing every 2 seconds while SOS is active
-  const updateBearing = () => {
-    if (typeof window === "undefined") return;
+  let lastSent = 0;
 
-    const handleAudioFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+  const watchId = navigator.geolocation.watchPosition(
+    async (pos) => {
+      const now = Date.now();
+      // throttle DB updates (every 8 seconds)
+      if (now - lastSent < 8000) return;
+      lastSent = now;
 
-  // Clean up previous preview URL
-  if (audioUrl) URL.revokeObjectURL(audioUrl);
+      try {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const address = await getAddress(lat, lng);
 
-  setAudioFile(file);
-  setAudioBlob(null); // if we have a file, we don't use blob
-  setAudioUrl(URL.createObjectURL(file));
-
-  e.target.value = "";
-};
-
-    const handleOrientation = async (event: DeviceOrientationEvent) => {
-      let bearing = 0;
-      
-      if ((event as any).webkitCompassHeading !== undefined) {
-        bearing = (event as any).webkitCompassHeading;
-      } else if (event.alpha !== null) {
-        bearing = 360 - event.alpha;
+        await supabase
+          .from("sos_alerts")
+          .update({
+            latitude: lat,
+            longitude: lng,
+            address,
+            last_updated: new Date().toISOString(),
+          })
+          .eq("id", sosId);
+      } catch (err) {
+        console.warn("SOS location update failed:", err);
       }
-
-      bearing = ((bearing % 360) + 360) % 360;
-
-      // Update bearing in database
-      await supabase
-        .from("sos_alerts")
-        .update({ 
-          bearing,
-          last_updated: new Date().toISOString(),
-        })
-        .eq("id", sosId);
-    };
-
-    window.addEventListener("deviceorientation", handleOrientation, true);
-
-    return () => {
-      window.removeEventListener("deviceorientation", handleOrientation, true);
-    };
-  };
-
-  const cleanup = updateBearing();
-
-  // Also update location every 5 seconds
-  const locationInterval = setInterval(async () => {
-    try {
-      const pos = await new Promise<GeolocationPosition>((res, rej) =>
-        navigator.geolocation.getCurrentPosition(res, rej, { 
-          enableHighAccuracy: true, 
-          timeout: 10000 
-        })
-      );
-      
-      const address = await getAddress(pos.coords.latitude, pos.coords.longitude);
-      
-      await supabase
-        .from("sos_alerts")
-        .update({ 
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          address,
-          last_updated: new Date().toISOString(),
-        })
-        .eq("id", sosId);
-    } catch (err) {
-      console.warn("Location update failed:", err);
-    }
-  }, 5000);
+    },
+    (err) => {
+      // don’t spam console
+      console.warn("SOS watchPosition error:", err.code, err.message);
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+  );
 
   return () => {
-    cleanup?.();
-    clearInterval(locationInterval);
+    navigator.geolocation.clearWatch(watchId);
   };
 }, [sosActive, sosId]);
 
@@ -585,74 +545,84 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
     const tagInfo = selectedTag ? SOS_TAGS.find(t => t.id === selectedTag) : null;
 
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="absolute inset-0 bg-black/70" onClick={() => setShowActivePopup(false)} />
-<div className="relative glass-card max-w-md w-full max-h-[85vh] overflow-y-auto pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-red-400 font-semibold">SOS Active</span>
-            </div>
-            <button onClick={() => setShowActivePopup(false)} className="p-1 hover:bg-white/10 rounded">
-              <X className="w-5 h-5 text-dark-400" />
-            </button>
+  <Portal>
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center px-4"
+      style={{
+        paddingTop: "calc(16px + env(safe-area-inset-top, 0px))",
+        paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
+      }}
+    >
+      <div className="absolute inset-0 bg-black/70" onClick={() => setShowActivePopup(false)} />
+
+      <div
+        className="relative w-full max-w-md glass-card"
+        style={{
+          maxHeight: "calc(100dvh - (32px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)))",
+          overflowY: "auto",
+        }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+            <span className="text-red-400 font-semibold">SOS Active</span>
           </div>
 
-          {tagInfo && (
-            <p className="text-dark-200 mb-3">
-              <span className="font-medium">{tagInfo.label}</span>
-            </p>
-          )}
-
-          {textMessage && (
-            <div className="mb-3 p-3 glass-sm rounded-lg">
-              <p className="text-xs text-dark-400 mb-1">Your message:</p>
-              <p className="text-dark-200 text-sm">{textMessage}</p>
-            </div>
-          )}
-
-          {audioUrl && (
-            <div className="mb-3">
-              <p className="text-xs text-dark-400 mb-1">Your voice note:</p>
-              <audio src={audioUrl} controls className="w-full h-10" />
-            </div>
-          )}
-
-          <div className="flex items-center gap-4 mb-4 text-sm">
-            <div className="flex items-center gap-1 text-dark-300">
-              <Users className="w-4 h-4 text-primary-400" />
-              <span>{notifyStatus.contacts + notifyStatus.nearby} people notified</span>
-            </div>
-          </div>
-
-          <p className="text-sm text-dark-400 mb-4">
-            Your location is being shared for 24 hours. Call emergency services if needed.
-          </p>
-
-          <div className="flex gap-2 mb-4">
-            <a 
-              href="tel:112" 
-              className="flex-1 flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl font-medium"
-            >
-              <Phone className="w-4 h-4" /> Call 112
-            </a>
-            <a 
-              href="tel:767" 
-              className="flex-1 flex items-center justify-center gap-2 py-3 glass-sm text-dark-200 rounded-xl font-medium"
-            >
-              <Phone className="w-4 h-4" /> Call 767
-            </a>
-          </div>
-
-          <button 
-            onClick={cancelSOS} 
-            disabled={loading}
-            className="w-full py-3 glass-sm text-dark-300 hover:text-red-400 rounded-xl font-medium"
-          >
-            {loading ? "Cancelling..." : "Cancel SOS (I'm safe now)"}
+          <button onClick={() => setShowActivePopup(false)} className="p-1 hover:bg-white/10 rounded">
+            <X className="w-5 h-5 text-dark-400" />
           </button>
         </div>
+
+        {tagInfo && (
+          <p className="text-dark-200 mb-3 break-words">
+            <span className="font-medium">{tagInfo.label}</span>
+          </p>
+        )}
+
+        {textMessage && (
+          <div className="mb-3 p-3 glass-sm rounded-lg">
+            <p className="text-xs text-dark-400 mb-1">Your message:</p>
+            <p className="text-dark-200 text-sm break-words whitespace-pre-wrap">{textMessage}</p>
+          </div>
+        )}
+
+        <div className="flex items-center gap-4 mb-4 text-sm">
+          <div className="flex items-center gap-1 text-dark-300">
+            <Users className="w-4 h-4 text-primary-400" />
+            <span>{notifyStatus.contacts + notifyStatus.nearby} people notified</span>
+          </div>
+        </div>
+
+        <p className="text-sm text-dark-400 mb-4">
+          Your location is being shared for 24 hours. Call emergency services if needed.
+        </p>
+
+        <div className="flex gap-2 mb-4">
+          <a
+            href="tel:112"
+            className="flex-1 flex items-center justify-center gap-2 py-3 bg-red-600 text-white rounded-xl font-medium"
+          >
+            <Phone className="w-4 h-4" /> Call 112
+          </a>
+          <a
+            href="tel:767"
+            className="flex-1 flex items-center justify-center gap-2 py-3 glass-sm text-dark-200 rounded-xl font-medium"
+          >
+            <Phone className="w-4 h-4" /> Call 767
+          </a>
+        </div>
+
+        <button
+          onClick={cancelSOS}
+          disabled={loading}
+          className="w-full py-3 glass-sm text-dark-300 hover:text-red-400 rounded-xl font-medium"
+        >
+          {loading ? "Cancelling..." : "Cancel SOS (I'm safe now)"}
+        </button>
       </div>
-    );
+    </div>
+  </Portal>
+);
   }
 
   // ============================================

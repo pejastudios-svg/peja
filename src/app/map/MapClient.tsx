@@ -246,7 +246,7 @@ useEffect(() => {
       .on("postgres_changes", { event: "*", schema: "public", table: "sos_alerts" }, (payload) => {
         const newRow: any = payload.new;
         const oldRow: any = payload.old;
-
+     if (myUserId && newRow?.user_id === myUserId) return;
         if (payload.eventType === "INSERT") {
           if (newRow?.status === "active") {
             setSOSAlerts((prev) => {
