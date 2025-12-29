@@ -7,7 +7,6 @@ import { Post, CATEGORIES } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { Sidebar } from "@/components/layout/Sidebar";
 import {
   Search,
   X,
@@ -19,7 +18,6 @@ import {
 function SearchContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [query, setQuery] = useState(searchParams.get("q") || "");
   const [posts, setPosts] = useState<Post[]>([]);
@@ -163,12 +161,7 @@ function SearchContent() {
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
-      <Header
-        onMenuClick={() => setSidebarOpen(true)}
-        onCreateClick={() => router.push("/create")}
-      />
-
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    <Header onCreateClick={() => router.push("/create")} />
 
       <main className="pt-16 lg:pl-64">
         <div className="max-w-2xl mx-auto px-4 py-4">

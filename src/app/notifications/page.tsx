@@ -7,7 +7,6 @@ import { supabase } from "@/lib/supabase";
 import { markAllAsRead } from "@/lib/notifications";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { SOS_TAGS } from "@/lib/types";
 import {
   Bell,
@@ -36,9 +35,14 @@ interface Notification {
 export default function NotificationsPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+  router.prefetch("/map");
+  router.prefetch("/notifications");
+  router.prefetch("/profile");
+}, [router]);
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -239,11 +243,7 @@ const setupRealtime = () => {
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
-      <Header
-        onMenuClick={() => setSidebarOpen(true)}
-        onCreateClick={() => router.push("/create")}
-      />
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Header onCreateClick={() => router.push("/create")} />
 
       <main className="pt-16 lg:pl-64">
         <div className="max-w-2xl mx-auto px-4 py-4">

@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/Header";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { PostCard } from "@/components/posts/PostCard";
 import { Button } from "@/components/ui/Button";
@@ -19,7 +18,6 @@ export default function Home() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<FeedTab>("nearby");
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -175,6 +173,12 @@ export default function Home() {
     return () => unsubscribe();
   }, [formatPost]);
 
+  useEffect(() => {
+  router.prefetch("/map");
+  router.prefetch("/notifications");
+  router.prefetch("/profile");
+}, [router]);
+
   const handleRefresh = () => {
     fetchPosts(true);
   };
@@ -201,8 +205,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
-      <Header onMenuClick={() => setSidebarOpen(true)} onCreateClick={() => router.push("/create")} />
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    <Header onCreateClick={() => router.push("/create")} />
 
       <main className="pt-16 lg:pl-64">
         {user && !user.occupation && (

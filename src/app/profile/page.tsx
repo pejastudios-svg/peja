@@ -31,6 +31,12 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<"posts" | "confirmed">("posts");
 
   useEffect(() => {
+  router.prefetch("/map");
+  router.prefetch("/notifications");
+  router.prefetch("/profile");
+}, [router]);
+
+  useEffect(() => {
     if (!authLoading && !user) {
       router.push("/login");
     }

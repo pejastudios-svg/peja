@@ -79,12 +79,6 @@ export function Header({ onMenuClick, onCreateClick }: HeaderProps) {
     <header className="fixed top-0 left-0 right-0 z-50 glass-header">
       <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <button
-            onClick={onMenuClick}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors lg:hidden"
-          >
-            <Menu className="w-5 h-5 text-dark-200" />
-          </button>
           <Link href="/" className="flex items-center">
             <span className="text-2xl font-bold text-gradient">Peja</span>
           </Link>

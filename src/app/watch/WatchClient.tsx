@@ -7,6 +7,7 @@ import { Post } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
 import { notifyPostConfirmed } from "@/lib/notifications";
 import { CheckCircle, MessageCircle, Share2, Eye, X, Loader2 } from "lucide-react";
+import { ReelVideo } from "@/components/reels/ReelVideo";
 
 export default function WatchClient({
   startId,
@@ -20,6 +21,7 @@ export default function WatchClient({
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activePostId, setActivePostId] = useState<string | null>(null);
 
   const [confirmedSet, setConfirmedSet] = useState<Set<string>>(new Set());
   const confirmingRef = useRef<Set<string>>(new Set());
@@ -239,28 +241,36 @@ export default function WatchClient({
   };
 
   // Observe which slide is active
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+useEffect(() => {
+  if (typeof window === "undefined") return;
 
-    const els = Array.from(document.querySelectorAll<HTMLElement>("[data-postid]"));
-    if (els.length === 0) return;
+  const els = Array.from(document.querySelectorAll<HTMLElement>("[data-postid]"));
+  if (els.length === 0) return;
 
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          if (entry.intersectionRatio < 0.6) continue;
-          const id = (entry.target as HTMLElement).dataset.postid;
-          if (id) markViewed(id);
-        }
-      },
-      { threshold: [0.6] }
-    );
+  const obs = new IntersectionObserver(
+    (entries) => {
+      // choose the entry with highest intersection ratio
+      let best: { id: string; ratio: number } | null = null;
 
-    els.forEach((el) => obs.observe(el));
-    return () => obs.disconnect();
-    // re-run when the list changes
-  }, [ordered.length]);
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.postid;
+        if (!id) continue;
+        if (!entry.isIntersecting) continue;
+
+        const ratio = entry.intersectionRatio;
+        if (!best || ratio > best.ratio) best = { id, ratio };
+      }
+
+      if (best && best.ratio >= 0.6) {
+        setActivePostId(best.id);
+      }
+    },
+    { threshold: [0.6, 0.75, 0.9] }
+  );
+
+  els.forEach((el) => obs.observe(el));
+  return () => obs.disconnect();
+}, [ordered.length]);
 
   if (loading) {
     return (
@@ -294,17 +304,16 @@ export default function WatchClient({
               style={{ scrollSnapAlign: "start" }}
             >
               {isVideo ? (
-                <video
-                  src={media?.url}
-                  className="h-full w-full object-contain"
-                  controls
-                  playsInline
-                  preload="metadata"
-                  controlsList="nodownload noplaybackrate noremoteplayback"
-                  disablePictureInPicture
-                />
+             <ReelVideo
+             src={media?.url || ""}
+              active={activePostId === post.id}
+              onWatched2s={() => {
+              // your existing markViewed logic can be reused here
+              markViewed(post.id);
+              }}
+               />
               ) : (
-                <img src={media?.url || ""} className="h-full w-full object-contain" alt="" />
+                 <img src={media?.url || ""} className="h-full w-full object-contain" alt="" />
               )}
 
               <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">

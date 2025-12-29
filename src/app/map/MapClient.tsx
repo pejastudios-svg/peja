@@ -7,7 +7,6 @@ import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES, SOSAlert } from "@/lib/types";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
-import { Sidebar } from "@/components/layout/Sidebar";
 import { Badge } from "@/components/ui/Badge";
 import { Loader2, Navigation, List, Map as MapIcon, AlertTriangle } from "lucide-react";
 import { subHours } from "date-fns";
@@ -33,7 +32,6 @@ export default function MapClient() {
   // ✅ IMPORTANT: full_name must be string (not null) to satisfy SOSAlert type
   const sosUserCacheRef = useRef<Record<string, SOSUserPublic>>({});
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [sosAlerts, setSOSAlerts] = useState<SOSAlert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +47,12 @@ export default function MapClient() {
   const [openSOSId, setOpenSOSId] = useState<string | null>(null);
   const [compassEnabled, setCompassEnabled] = useState(false);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+
+useEffect(() => {
+  router.prefetch("/map");
+  router.prefetch("/notifications");
+  router.prefetch("/profile");
+}, [router]);
 
 useEffect(() => {
   supabase.auth.getUser().then(({ data }) => {
@@ -358,8 +362,7 @@ useEffect(() => {
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
-      <Header onMenuClick={() => setSidebarOpen(true)} onCreateClick={() => router.push("/create")} />
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    <Header onCreateClick={() => router.push("/create")} />
 
       <main className="pt-16 lg:pl-64 h-screen">
         <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">
@@ -429,7 +432,7 @@ useEffect(() => {
           </button>
 
           <div
-            className={`absolute bottom-0 left-0 right-0 z-1000 glass-strong rounded-t-2xl shadow-2xl transition-transform duration-300 ${
+            className={`absolute bottom-0 left-0 right-0 z-2000 glass-strong rounded-t-2xl shadow-2xl transition-transform duration-300 ${
               showList ? "translate-y-0" : "translate-y-[calc(100%-60px)]"
             }`}
             style={{ maxHeight: "60%" }}
