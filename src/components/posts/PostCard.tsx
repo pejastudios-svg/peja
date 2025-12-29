@@ -27,11 +27,12 @@ import { notifyPostConfirmed } from "@/lib/notifications";
 
 interface PostCardProps {
   post: Post;
+  sourceKey?: string;
   onConfirm?: (postId: string) => void;
   onShare?: (post: Post) => void;
 }
 
-function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
+function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProps) {
   const router = useRouter();
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [showSensitive, setShowSensitive] = useState(false);
@@ -286,7 +287,9 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
                    <InlineVideo
                   src={currentMedia.url}
                   className="w-full h-full object-cover"
-                  onExpand={() => router.push(`/watch?postId=${post.id}&source=home`)}
+                  onExpand={() =>
+                  router.push(`/watch?postId=${post.id}&sourceKey=${encodeURIComponent(sourceKey || "home:nearby")}`)
+                  }
                   onError={() => setVideoError(true)}
                    />
                   )

@@ -8,6 +8,7 @@ import { markAllAsRead } from "@/lib/notifications";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { SOS_TAGS } from "@/lib/types";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
 import {
   Bell,
   AlertTriangle,
@@ -37,6 +38,7 @@ export default function NotificationsPage() {
   const { user, loading: authLoading } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  useScrollRestore("notifications");
 
   useEffect(() => {
   router.prefetch("/map");

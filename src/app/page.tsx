@@ -68,7 +68,9 @@ export default function Home() {
 if (!isRefresh && cached && cached.posts.length > 0) {
   setPosts(cached.posts);
   setLoading(false);
-  return;
+
+  // still refresh silently in background to avoid missing new posts
+  // DO NOT return here
 }
     if (isRefresh) {
       setRefreshing(true);
@@ -128,7 +130,7 @@ if (!isRefresh && cached && cached.posts.length > 0) {
         })) || [],
         tags: post.post_tags?.map((t: any) => t.tag) || [],
       }));
-
+setPosts(formattedPosts);
 feedCache.setPosts(feedKey, formattedPosts);    } catch (err) {
       console.error("Fetch error:", err);
       setPosts([]);
@@ -136,7 +138,7 @@ feedCache.setPosts(feedKey, formattedPosts);    } catch (err) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeTab]);
+  }, [activeTab, feedKey, feedCache]);
 
   // Initial fetch
   useEffect(() => {
@@ -153,33 +155,49 @@ feedCache.setPosts(feedKey, formattedPosts);    } catch (err) {
         if (newPost.status === "live") {
           const formatted = await formatPost(newPost);
           if (formatted) {
-            setPosts(prev => [formatted, ...prev]);
+            setPosts((prev) => {
+  const next = [formatted, ...prev].slice(0, 30);
+  feedCache.setPosts(feedKey, next);
+  return next;
+});
           }
         }
       },
       // On post update
       (updatedPost) => {
-        setPosts(prev => prev.map(p => {
-          if (p.id === updatedPost.id) {
-            return {
-              ...p,
-              confirmations: updatedPost.confirmations || p.confirmations,
-              views: updatedPost.views || p.views,
-              comment_count: updatedPost.comment_count || p.comment_count,
-              status: updatedPost.status,
-            };
-          }
-          return p;
-        }).filter(p => p.status === "live"));
+        setPosts((prev) => {
+  const next = prev
+    .map((p) => {
+      if (p.id === updatedPost.id) {
+        return {
+          ...p,
+          confirmations: updatedPost.confirmations || p.confirmations,
+          views: updatedPost.views || p.views,
+          comment_count: updatedPost.comment_count || p.comment_count,
+          report_count: updatedPost.report_count || p.report_count,
+          status: updatedPost.status,
+        };
+      }
+      return p;
+    })
+    .filter((p) => p.status === "live");
+     feedCache.setPosts(feedKey, next);
+  return next;
+});
       },
+      
       // On post delete
       (deletedPost) => {
-        setPosts(prev => prev.filter(p => p.id !== deletedPost.id));
+        setPosts((prev) => {
+  const next = prev.filter((p) => p.id !== deletedPost.id);
+  feedCache.setPosts(feedKey, next);
+  return next;
+});
       }
     );
 
     return () => unsubscribe();
-  }, [formatPost]);
+  }, [formatPost, feedKey, feedCache]);
 
   useEffect(() => {
   router.prefetch("/map");
@@ -302,6 +320,7 @@ useEffect(() => {
                 <PostCard 
                   key={post.id} 
                   post={post} 
+                  sourceKey={feedKey}
                   onConfirm={() => {}} 
                   onShare={handleSharePost} 
                 />

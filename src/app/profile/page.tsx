@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
 import {
   User,
   Mail,
@@ -29,7 +30,7 @@ export default function ProfilePage() {
   const [confirmedPosts, setConfirmedPosts] = useState<Post[]>([]);
   const [confirmedLoading, setConfirmedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"posts" | "confirmed">("posts");
-
+useScrollRestore("profile");
   useEffect(() => {
   router.prefetch("/map");
   router.prefetch("/notifications");

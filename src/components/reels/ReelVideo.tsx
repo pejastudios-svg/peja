@@ -7,10 +7,12 @@ export function ReelVideo({
   src,
   active,
   onWatched2s,
+  audioUnlocked = false,
 }: {
   src: string;
   active: boolean;
   onWatched2s?: () => void;
+  audioUnlocked?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const watchedTimerRef = useRef<number | null>(null);
@@ -55,7 +57,11 @@ export function ReelVideo({
         setIsPlaying(false);
       }
     };
-
+if (active) {
+  // If user has "unlocked" audio, auto-unmute when this reel becomes active
+  if (audioUnlocked) setMuted(false);
+  else setMuted(true);
+}
     play();
 
     return () => {
@@ -64,7 +70,7 @@ export function ReelVideo({
         watchedTimerRef.current = null;
       }
     };
-  }, [active, muted, onWatched2s]);
+  }, [active, muted, onWatched2s, audioUnlocked]);
 
   // progress bar
   useEffect(() => {
@@ -97,20 +103,20 @@ export function ReelVideo({
 
   return (
     <div className="relative w-full h-full bg-black select-none">
-      <video
-        ref={videoRef}
-        src={src}
-        className="w-full h-full object-contain"
-        playsInline
-        preload="metadata"
-        muted={muted}
-        controls={false}
-        // Hide obvious web download/remote controls where supported
-        controlsList="nodownload noplaybackrate noremoteplayback"
-        disablePictureInPicture
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-      />
+<video
+  ref={videoRef}
+  src={src}
+  className="w-full h-full object-contain"
+  playsInline
+  preload="metadata"
+  muted={muted}
+  controls={false}
+  controlsList="nodownload noplaybackrate noremoteplayback"
+  disablePictureInPicture
+  loop
+  onPlay={() => setIsPlaying(true)}
+  onPause={() => setIsPlaying(false)}
+/>
 
       {/* Tap-to-toggle play */}
       <button

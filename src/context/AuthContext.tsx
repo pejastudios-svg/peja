@@ -423,7 +423,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
 
       if (error) {
-        console.error("Profile fetch error:", {
+console.error("Profile fetch error:", {
   message: (error as any)?.message,
   details: (error as any)?.details,
   hint: (error as any)?.hint,

@@ -7,6 +7,8 @@ import { Post, CATEGORIES } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { useFeedCache } from "@/context/FeedContext";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
 import {
   Search,
   X,
@@ -27,20 +29,33 @@ function SearchContent() {
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all">("all");
+  const feedCache = useFeedCache();
+  const feedKey = `search:q=${query}|cat=${selectedCategory || ""}|range=${dateRange}`;
+  useScrollRestore(feedKey);
 
   const performSearch = useCallback(async () => {
+    const cached = feedCache.get(feedKey);
+if (cached && cached.posts.length > 0) {
+  setPosts(cached.posts);
+  setLoading(false);
+  return;
+}
     setLoading(true);
+    
 
     try {
       let queryBuilder = supabase
-        .from("posts")
-        .select(`
-          *,
-          post_media (*),
-          post_tags (tag)
-        `)
-        .order("created_at", { ascending: false })
-        .limit(50);
+  .from("posts")
+  .select(`
+    id, user_id, category, comment, address,
+    is_anonymous, status, is_sensitive,
+    confirmations, views, comment_count, report_count, created_at,
+    post_media (id, post_id, url, media_type, is_sensitive),
+    post_tags (tag)
+  `)
+  .eq("status", "live")
+  .order("created_at", { ascending: false })
+  .limit(50);
 
       // Category filter
       if (selectedCategory) {
@@ -71,7 +86,7 @@ function SearchContent() {
 
       const { data, error } = await queryBuilder;
 
-      if (error) throw error;
+      if (error) throw new Error(error.message);
 
       let formattedPosts: Post[] = (data || []).map((post) => ({
         id: post.id,
@@ -123,19 +138,37 @@ function SearchContent() {
           });
         }
       }
-
+feedCache.setPosts(feedKey, formattedPosts);
       setPosts(formattedPosts);
-    } catch (error) {
-      console.error("Search error:", {
-  message: (error as any)?.message,
-  details: (error as any)?.details,
-  hint: (error as any)?.hint,
-  code: (error as any)?.code,
-});
-    } finally {
+      feedCache.setPosts(feedKey, formattedPosts);
+    } catch (err) {
+  console.error("Search error raw:", err);
+  console.error("Search error details:", {
+    type: typeof err,
+    message: (err as any)?.message,
+    stack: (err as any)?.stack,
+    name: (err as any)?.name,
+  });
+} finally {
       setLoading(false);
     }
   }, [query, selectedCategory, dateRange]);
+
+  
+
+useEffect(() => {
+  const cached = feedCache.get(feedKey);
+  if (cached && cached.scrollY > 0) {
+    requestAnimationFrame(() => window.scrollTo(0, cached.scrollY));
+  }
+}, [feedKey]);
+
+useEffect(() => {
+  const save = () => feedCache.setScroll(feedKey, window.scrollY);
+  window.addEventListener("scroll", save, { passive: true });
+  return () => window.removeEventListener("scroll", save);
+}, [feedKey]);
+
 
   useEffect(() => {
     const debounce = setTimeout(() => {

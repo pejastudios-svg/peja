@@ -8,14 +8,9 @@ import { useAuth } from "@/context/AuthContext";
 import { notifyPostConfirmed } from "@/lib/notifications";
 import { ReelVideo } from "@/components/reels/ReelVideo";
 import { CheckCircle, MessageCircle, Share2, Eye, X, Loader2 } from "lucide-react";
+import { useFeedCache } from "@/context/FeedContext";
 
-export default function WatchClient({
-  startId,
-  source,
-}: {
-  startId: string | null;
-  source: string | null;
-}) {
+export default function WatchClient({ startId, source, sourceKey }: { startId: string | null; source: string | null; sourceKey: string | null; }) {
   const router = useRouter();
   const { user } = useAuth();
 
@@ -24,11 +19,13 @@ export default function WatchClient({
 
   const [confirmedSet, setConfirmedSet] = useState<Set<string>>(new Set());
   const confirmingRef = useRef<Set<string>>(new Set());
+  const feedCache = useFeedCache();
 
   // which reel is active (vertical)
   const [activePostId, setActivePostId] = useState<string | null>(null);
   // which media index is active inside a reel (horizontal carousel)
   const [mediaIndexByPost, setMediaIndexByPost] = useState<Record<string, number>>({});
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
   // view counting (once per post per session)
   const viewedRef = useRef<Set<string>>(new Set());
@@ -36,6 +33,15 @@ export default function WatchClient({
   useEffect(() => {
     postsRef.current = posts;
   }, [posts]);
+
+useEffect(() => {
+  if (!sourceKey) return;
+  const cached = feedCache.get(sourceKey);
+  if (cached && cached.posts.length > 0) {
+    setPosts(cached.posts);
+    setLoading(false);
+  }
+}, [sourceKey]);
 
   useEffect(() => {
     const load = async () => {
@@ -265,8 +271,14 @@ export default function WatchClient({
     );
   }
 
-  return (
-    <div className="fixed inset-0 bg-black z-[9999]">
+ return (
+  <div
+    className="fixed inset-0 bg-black z-[9999]"
+    onPointerDown={() => {
+      // first gesture unlocks audio for this session
+      if (!audioUnlocked) setAudioUnlocked(true);
+    }}
+  >
       <button
         onClick={() => router.back()}
         className="fixed top-4 right-4 z-50 p-2 rounded-full bg-black/60"
@@ -307,10 +319,11 @@ export default function WatchClient({
                   >
                     {m.media_type === "video" ? (
                       <ReelVideo
-                        src={m.url}
-                        active={activePostId === post.id && activeMediaIndex === idx}
-                        onWatched2s={() => markViewed(post.id)}
-                      />
+                      src={m.url}
+                      active={activePostId === post.id && activeMediaIndex === idx}
+                      onWatched2s={() => markViewed(post.id)}
+                      audioUnlocked={audioUnlocked}
+                    />
                     ) : (
                       <img src={m.url} alt="" className="h-full w-full object-contain" />
                     )}

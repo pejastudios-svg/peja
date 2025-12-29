@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { NIGERIAN_STATES } from "@/lib/types";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
 import {
   ArrowLeft,
   Bell,
@@ -56,7 +57,7 @@ export default function SettingsPage() {
 
   // Debug info
   const [debugInfo, setDebugInfo] = useState<string>("");
-
+useScrollRestore("settings");
   useEffect(() => {
     if (user) {
       loadSettings();
