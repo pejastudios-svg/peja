@@ -120,16 +120,7 @@ export function ReelVideo({
         aria-label="Toggle playback"
       />
 
-      {/* Center play/pause indicator */}
-      <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-        <div className="bg-black/40 rounded-full p-3">
-          {isPlaying ? (
-            <Pause className="w-7 h-7 text-white" />
-          ) : (
-            <Play className="w-7 h-7 text-white" />
-          )}
-        </div>
-      </div>
+    
 
       {/* Mute button */}
       <button

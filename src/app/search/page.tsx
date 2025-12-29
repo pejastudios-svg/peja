@@ -126,7 +126,12 @@ function SearchContent() {
 
       setPosts(formattedPosts);
     } catch (error) {
-      console.error("Search error:", error);
+      console.error("Search error:", {
+  message: (error as any)?.message,
+  details: (error as any)?.details,
+  hint: (error as any)?.hint,
+  code: (error as any)?.code,
+});
     } finally {
       setLoading(false);
     }

@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Portal } from "@/components/ui/Portal";
+import { useRouter } from "next/navigation";
+import { InlineVideo } from "@/components/reels/InlineVideo";
 
 type MediaItem = { url: string; type: "image" | "video" };
 
@@ -23,6 +25,7 @@ export function ImageLightbox({
   items?: MediaItem[];
   initialIndex?: number;
 }) {
+  const router = useRouter();
   const mediaItems: MediaItem[] = useMemo(() => {
     if (items && items.length > 0) return items;
     if (imageUrl) return [{ url: imageUrl, type: "image" }];
@@ -96,18 +99,24 @@ export function ImageLightbox({
                 {mediaItems.map((m, i) => (
                   <div key={i} className="w-full shrink-0 snap-center flex items-center justify-center">
                     {m.type === "video" ? (
-                      <video
-                        src={m.url}
-                        className="w-full max-h-[70vh] object-contain"
-                        controls
-                        playsInline
-                        preload="metadata"
-                        controlsList="nodownload noplaybackrate noremoteplayback"
-                        disablePictureInPicture
-                      />
-                    ) : (
-                      <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
-                    )}
+  <div className="w-full h-[70vh]">
+    <InlineVideo
+      src={m.url}
+      className="w-full h-full object-contain"
+      onExpand={() => {
+        // close the lightbox then go to watch
+        onClose();
+        // NOTE: this opens the reel at the post level (we’ll wire exact list by source later)
+        if (typeof window !== "undefined") {
+          // If you have a postId prop later we’ll use it; for now just open watch without postId
+          router.push(`/watch`);
+        }
+      }}
+    />
+  </div>
+) : (
+  <img src={m.url} alt="" className="w-full max-h-[70vh] object-contain" />
+)}
                   </div>
                 ))}
               </div>

@@ -13,6 +13,7 @@ import { notifyPostComment, notifyCommentLiked } from "@/lib/notifications";
 import { notifyPostConfirmed } from "@/lib/notifications";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useLongPress } from "@/components/hooks/useLongPress";
+import { InlineVideo } from "@/components/reels/InlineVideo";
 import {
   ArrowLeft,
   MapPin,
@@ -1072,14 +1073,10 @@ export default function PostDetailPage() {
                       </div>
                     </div>
                   ) : (
-                    <video
-                      key={currentMedia.url}
-                      className="w-full h-full object-contain bg-black"
-                      controls
-                      playsInline
-                      preload="metadata"
-                      src={currentMedia.url}
-                      onError={() => setVideoError(true)}
+                    <InlineVideo
+                    src={currentMedia.url}
+                    className="w-full h-full object-contain bg-black"
+                    onExpand={() => router.push(`/watch?postId=${postId}&source=post`)}
                     />
                   )
                 ) : (

@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { realtimeManager } from "@/lib/realtime";
 import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
+import { useFeedCache } from "@/context/FeedContext";
 
 type FeedTab = "nearby" | "trending";
 
@@ -22,6 +23,8 @@ export default function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const feedCache = useFeedCache();
+  const feedKey = `home:${activeTab}`;
 
   const formatPost = useCallback(async (postData: any): Promise<Post | null> => {
     try {
@@ -61,6 +64,12 @@ export default function Home() {
   }, []);
 
   const fetchPosts = useCallback(async (isRefresh = false) => {
+    const cached = feedCache.get(feedKey);
+if (!isRefresh && cached && cached.posts.length > 0) {
+  setPosts(cached.posts);
+  setLoading(false);
+  return;
+}
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -120,8 +129,7 @@ export default function Home() {
         tags: post.post_tags?.map((t: any) => t.tag) || [],
       }));
 
-      setPosts(formattedPosts);
-    } catch (err) {
+feedCache.setPosts(feedKey, formattedPosts);    } catch (err) {
       console.error("Fetch error:", err);
       setPosts([]);
     } finally {
@@ -182,6 +190,19 @@ export default function Home() {
   const handleRefresh = () => {
     fetchPosts(true);
   };
+
+  useEffect(() => {
+  const cached = feedCache.get(feedKey);
+  if (cached && cached.scrollY > 0) {
+    requestAnimationFrame(() => window.scrollTo(0, cached.scrollY));
+  }
+}, [feedKey]);
+
+useEffect(() => {
+  const save = () => feedCache.setScroll(feedKey, window.scrollY);
+  window.addEventListener("scroll", save, { passive: true });
+  return () => window.removeEventListener("scroll", save);
+}, [feedKey]);
 
   const handleSharePost = async (post: Post) => {
     const shareUrl = `${window.location.origin}/post/${post.id}`;

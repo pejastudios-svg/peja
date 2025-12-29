@@ -3,6 +3,7 @@
 import { useState, useEffect, memo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { InlineVideo } from "@/components/reels/InlineVideo";
 import {
   MapPin,
   Clock,
@@ -239,25 +240,21 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
 <div
   className="relative -mx-6 mb-3"
   onClick={(e) => {
-    e.stopPropagation();
-    if (!currentMedia) return;
+  e.stopPropagation();
+  if (!currentMedia) return;
 
-    if (currentMedia.media_type === "video") {
-      router.push(`/watch?postId=${post.id}&source=home`);
-      return;
-    }
-
-    // image
-const items: { url: string; type: "image" | "video" }[] = (post.media || []).map((m) => ({
-  url: m.url,
-  type: m.media_type === "video" ? "video" : "image",
-}));
-
-setLightboxItems(items);
-setLightboxIndex(currentMediaIndex);
-setLightboxUrl(currentMedia.url); // keep for compatibility
-setLightboxOpen(true);
-  }}
+  if (currentMedia.media_type !== "video") {
+    // image -> open lightbox
+    const items: { url: string; type: "image" | "video" }[] = (post.media || []).map((m) => ({
+      url: m.url,
+      type: m.media_type === "video" ? "video" : "image",
+    }));
+    setLightboxItems(items);
+    setLightboxIndex(currentMediaIndex);
+    setLightboxUrl(currentMedia.url);
+    setLightboxOpen(true);
+  }
+}}
 >
           {post.is_sensitive && !showSensitive ? (
             <div className="aspect-video bg-dark-800 flex flex-col items-center justify-center">
@@ -286,16 +283,12 @@ setLightboxOpen(true);
                       </div>
                     </div>
                   ) : (
-                    <video
-                      key={currentMedia.url}
-                      className="w-full h-full object-cover"
-                      controls
-                      playsInline
-                      muted
-                      preload="metadata"
-                      src={currentMedia.url}
-                      onError={() => setVideoError(true)}
-                    />
+                   <InlineVideo
+                  src={currentMedia.url}
+                  className="w-full h-full object-cover"
+                  onExpand={() => router.push(`/watch?postId=${post.id}&source=home`)}
+                  onError={() => setVideoError(true)}
+                   />
                   )
                 ) : (
                   <img

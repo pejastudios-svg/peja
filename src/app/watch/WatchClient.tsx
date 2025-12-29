@@ -6,8 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { Post } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
 import { notifyPostConfirmed } from "@/lib/notifications";
-import { CheckCircle, MessageCircle, Share2, Eye, X, Loader2 } from "lucide-react";
 import { ReelVideo } from "@/components/reels/ReelVideo";
+import { CheckCircle, MessageCircle, Share2, Eye, X, Loader2 } from "lucide-react";
 
 export default function WatchClient({
   startId,
@@ -21,25 +21,27 @@ export default function WatchClient({
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activePostId, setActivePostId] = useState<string | null>(null);
 
   const [confirmedSet, setConfirmedSet] = useState<Set<string>>(new Set());
   const confirmingRef = useRef<Set<string>>(new Set());
 
-  // Track viewed posts in this session
-  const viewedRef = useRef<Set<string>>(new Set());
+  // which reel is active (vertical)
+  const [activePostId, setActivePostId] = useState<string | null>(null);
+  // which media index is active inside a reel (horizontal carousel)
+  const [mediaIndexByPost, setMediaIndexByPost] = useState<Record<string, number>>({});
 
-  // Keep latest posts accessible inside callbacks
+  // view counting (once per post per session)
+  const viewedRef = useRef<Set<string>>(new Set());
   const postsRef = useRef<Post[]>([]);
   useEffect(() => {
     postsRef.current = posts;
   }, [posts]);
 
-  // Load posts (you can later change ordering depending on "source")
   useEffect(() => {
     const load = async () => {
       setLoading(true);
 
+      // NOTE: Later we’ll use "source" to load only posts from the page you came from.
       const { data, error } = await supabase
         .from("posts")
         .select(`
@@ -91,7 +93,7 @@ export default function WatchClient({
     load();
   }, [source]);
 
-  // Load which posts are confirmed by the current user
+  // load confirmed state
   useEffect(() => {
     const loadConfirmed = async () => {
       if (!user) return;
@@ -125,6 +127,35 @@ export default function WatchClient({
     return [posts[idx], ...posts.slice(0, idx), ...posts.slice(idx + 1)];
   }, [posts, startId]);
 
+  // detect active reel (vertical)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const els = Array.from(document.querySelectorAll<HTMLElement>("[data-postid]"));
+    if (els.length === 0) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        let best: { id: string; ratio: number } | null = null;
+
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).dataset.postid;
+          if (!id) continue;
+          if (!entry.isIntersecting) continue;
+
+          const ratio = entry.intersectionRatio;
+          if (!best || ratio > best.ratio) best = { id, ratio };
+        }
+
+        if (best && best.ratio >= 0.6) setActivePostId(best.id);
+      },
+      { threshold: [0.6, 0.75, 0.9] }
+    );
+
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+  }, [ordered.length]);
+
   const handleShare = async (postId: string) => {
     const url = `${window.location.origin}/post/${postId}`;
     if (navigator.share) {
@@ -134,7 +165,6 @@ export default function WatchClient({
       } catch {}
     }
     await navigator.clipboard.writeText(url);
-    // optional: replace with toast later
     alert("Link copied!");
   };
 
@@ -183,28 +213,17 @@ export default function WatchClient({
           .from("post_confirmations")
           .insert({ post_id: post.id, user_id: user.id });
 
-        // If duplicate, rollback optimistic change
-        if (error && error.code === "23505") {
-          setConfirmedSet((prev) => {
-            const next = new Set(prev);
-            next.add(post.id);
-            return next;
-          });
-          setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, confirmations: prevCount } : p)));
-          return;
-        }
+        if (error && error.code === "23505") return;
         if (error) throw error;
 
         await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", post.id);
 
-        // notify post owner
         if (post.user_id && post.user_id !== user.id) {
           notifyPostConfirmed(post.id, post.user_id, user.full_name || "Someone").catch(() => {});
         }
       }
     } catch (e) {
       console.error(e);
-
       // rollback
       setConfirmedSet((prev) => {
         const next = new Set(prev);
@@ -218,7 +237,7 @@ export default function WatchClient({
     }
   };
 
-  // Increment views when a post is in view (60% visible)
+  // count view once per post
   const markViewed = async (postId: string) => {
     if (viewedRef.current.has(postId)) return;
     viewedRef.current.add(postId);
@@ -226,10 +245,8 @@ export default function WatchClient({
     const current = postsRef.current.find((p) => p.id === postId);
     if (!current) return;
 
-    // optimistic local update
     setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, views: (p.views || 0) + 1 } : p)));
 
-    // best-effort DB update (no .catch; await works)
     try {
       await supabase
         .from("posts")
@@ -239,38 +256,6 @@ export default function WatchClient({
       // ignore
     }
   };
-
-  // Observe which slide is active
-useEffect(() => {
-  if (typeof window === "undefined") return;
-
-  const els = Array.from(document.querySelectorAll<HTMLElement>("[data-postid]"));
-  if (els.length === 0) return;
-
-  const obs = new IntersectionObserver(
-    (entries) => {
-      // choose the entry with highest intersection ratio
-      let best: { id: string; ratio: number } | null = null;
-
-      for (const entry of entries) {
-        const id = (entry.target as HTMLElement).dataset.postid;
-        if (!id) continue;
-        if (!entry.isIntersecting) continue;
-
-        const ratio = entry.intersectionRatio;
-        if (!best || ratio > best.ratio) best = { id, ratio };
-      }
-
-      if (best && best.ratio >= 0.6) {
-        setActivePostId(best.id);
-      }
-    },
-    { threshold: [0.6, 0.75, 0.9] }
-  );
-
-  els.forEach((el) => obs.observe(el));
-  return () => obs.disconnect();
-}, [ordered.length]);
 
   if (loading) {
     return (
@@ -292,30 +277,48 @@ useEffect(() => {
 
       <div className="h-full w-full overflow-y-scroll" style={{ scrollSnapType: "y mandatory" }}>
         {ordered.map((post) => {
-          const media = post.media?.[0];
-          const isVideo = media?.media_type === "video";
           const isConfirmed = confirmedSet.has(post.id);
+          const activeMediaIndex = mediaIndexByPost[post.id] ?? 0;
 
           return (
             <div
               key={post.id}
               data-postid={post.id}
-              className="h-screen w-full flex items-center justify-center relative"
+              className="h-screen w-full relative"
               style={{ scrollSnapAlign: "start" }}
             >
-              {isVideo ? (
-             <ReelVideo
-             src={media?.url || ""}
-              active={activePostId === post.id}
-              onWatched2s={() => {
-              // your existing markViewed logic can be reused here
-              markViewed(post.id);
-              }}
-               />
-              ) : (
-                 <img src={media?.url || ""} className="h-full w-full object-contain" alt="" />
-              )}
+              {/* Horizontal carousel inside vertical reel */}
+              <div
+                className="w-full h-full overflow-x-auto flex snap-x snap-mandatory"
+                style={{ WebkitOverflowScrolling: "touch" }}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  const w = el.clientWidth || 1;
+                  const idx = Math.round(el.scrollLeft / w);
+                  if (idx !== activeMediaIndex) {
+                    setMediaIndexByPost((prev) => ({ ...prev, [post.id]: idx }));
+                  }
+                }}
+              >
+                {(post.media || []).map((m, idx) => (
+                  <div
+                    key={m.id}
+                    className="w-full h-full shrink-0 snap-center flex items-center justify-center"
+                  >
+                    {m.media_type === "video" ? (
+                      <ReelVideo
+                        src={m.url}
+                        active={activePostId === post.id && activeMediaIndex === idx}
+                        onWatched2s={() => markViewed(post.id)}
+                      />
+                    ) : (
+                      <img src={m.url} alt="" className="h-full w-full object-contain" />
+                    )}
+                  </div>
+                ))}
+              </div>
 
+              {/* Bottom overlay */}
               <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
                 <p className="text-white text-sm break-words whitespace-pre-wrap line-clamp-3">
                   {post.comment || ""}
