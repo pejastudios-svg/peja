@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
-import { CheckCircle, MessageCircle, Share2, Eye, X, Loader2 } from "lucide-react";
 import { notifyPostConfirmed } from "@/lib/notifications";
+import { CheckCircle, MessageCircle, Share2, Eye, X, Loader2 } from "lucide-react";
 
 export default function WatchClient({
   startId,
@@ -24,11 +24,21 @@ export default function WatchClient({
   const [confirmedSet, setConfirmedSet] = useState<Set<string>>(new Set());
   const confirmingRef = useRef<Set<string>>(new Set());
 
+  // Track viewed posts in this session
+  const viewedRef = useRef<Set<string>>(new Set());
+
+  // Keep latest posts accessible inside callbacks
+  const postsRef = useRef<Post[]>([]);
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
+
+  // Load posts (you can later change ordering depending on "source")
   useEffect(() => {
     const load = async () => {
       setLoading(true);
 
-      const q = supabase
+      const { data, error } = await supabase
         .from("posts")
         .select(`
           id, user_id, category, comment, address, latitude, longitude,
@@ -36,10 +46,9 @@ export default function WatchClient({
           confirmations, views, comment_count, report_count, created_at,
           post_media (id, post_id, url, media_type, is_sensitive)
         `)
-        .eq("status", "live");
-
-      // later: use "source" to change ordering (nearby vs trending)
-      const { data, error } = await q.order("created_at", { ascending: false }).limit(50);
+        .eq("status", "live")
+        .order("created_at", { ascending: false })
+        .limit(50);
 
       if (error) {
         console.error(error);
@@ -80,6 +89,7 @@ export default function WatchClient({
     load();
   }, [source]);
 
+  // Load which posts are confirmed by the current user
   useEffect(() => {
     const loadConfirmed = async () => {
       if (!user) return;
@@ -122,6 +132,7 @@ export default function WatchClient({
       } catch {}
     }
     await navigator.clipboard.writeText(url);
+    // optional: replace with toast later
     alert("Link copied!");
   };
 
@@ -137,6 +148,7 @@ export default function WatchClient({
     const wasConfirmed = confirmedSet.has(post.id);
     const prevCount = post.confirmations || 0;
 
+    // optimistic UI
     setConfirmedSet((prev) => {
       const next = new Set(prev);
       if (wasConfirmed) next.delete(post.id);
@@ -165,28 +177,28 @@ export default function WatchClient({
           .update({ confirmations: Math.max(0, prevCount - 1) })
           .eq("id", post.id);
       } else {
- const { error } = await supabase
-  .from("post_confirmations")
-  .insert({ post_id: post.id, user_id: user.id });
+        const { error } = await supabase
+          .from("post_confirmations")
+          .insert({ post_id: post.id, user_id: user.id });
 
-// If already confirmed, do NOT double-increment or notify
-if (error && error.code === "23505") {
-  // rollback count to what it was
-  setPosts((prev) =>
-    prev.map((p) => (p.id === post.id ? { ...p, confirmations: prevCount } : p))
-  );
-  return;
-}
+        // If duplicate, rollback optimistic change
+        if (error && error.code === "23505") {
+          setConfirmedSet((prev) => {
+            const next = new Set(prev);
+            next.add(post.id);
+            return next;
+          });
+          setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, confirmations: prevCount } : p)));
+          return;
+        }
+        if (error) throw error;
 
-if (error) throw error;
+        await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", post.id);
 
-await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", post.id);
-
-// ✅ notify post owner (same behavior as PostCard)
-if (post.user_id && post.user_id !== user.id) {
-  const confirmerName = user.full_name || "Someone";
-  notifyPostConfirmed(post.id, post.user_id, confirmerName).catch(() => {});
-}
+        // notify post owner
+        if (post.user_id && post.user_id !== user.id) {
+          notifyPostConfirmed(post.id, post.user_id, user.full_name || "Someone").catch(() => {});
+        }
       }
     } catch (e) {
       console.error(e);
@@ -198,14 +210,57 @@ if (post.user_id && post.user_id !== user.id) {
         else next.delete(post.id);
         return next;
       });
-
-      setPosts((prev) =>
-        prev.map((p) => (p.id === post.id ? { ...p, confirmations: prevCount } : p))
-      );
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, confirmations: prevCount } : p)));
     } finally {
       confirmingRef.current.delete(post.id);
     }
   };
+
+  // Increment views when a post is in view (60% visible)
+  const markViewed = async (postId: string) => {
+    if (viewedRef.current.has(postId)) return;
+    viewedRef.current.add(postId);
+
+    const current = postsRef.current.find((p) => p.id === postId);
+    if (!current) return;
+
+    // optimistic local update
+    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, views: (p.views || 0) + 1 } : p)));
+
+    // best-effort DB update (no .catch; await works)
+    try {
+      await supabase
+        .from("posts")
+        .update({ views: (current.views || 0) + 1 })
+        .eq("id", postId);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Observe which slide is active
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const els = Array.from(document.querySelectorAll<HTMLElement>("[data-postid]"));
+    if (els.length === 0) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          if (entry.intersectionRatio < 0.6) continue;
+          const id = (entry.target as HTMLElement).dataset.postid;
+          if (id) markViewed(id);
+        }
+      },
+      { threshold: [0.6] }
+    );
+
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
+    // re-run when the list changes
+  }, [ordered.length]);
 
   if (loading) {
     return (
@@ -216,7 +271,7 @@ if (post.user_id && post.user_id !== user.id) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black z-9999">
+    <div className="fixed inset-0 bg-black z-[9999]">
       <button
         onClick={() => router.back()}
         className="fixed top-4 right-4 z-50 p-2 rounded-full bg-black/60"
@@ -234,6 +289,7 @@ if (post.user_id && post.user_id !== user.id) {
           return (
             <div
               key={post.id}
+              data-postid={post.id}
               className="h-screen w-full flex items-center justify-center relative"
               style={{ scrollSnapAlign: "start" }}
             >
@@ -244,13 +300,15 @@ if (post.user_id && post.user_id !== user.id) {
                   controls
                   playsInline
                   preload="metadata"
+                  controlsList="nodownload noplaybackrate noremoteplayback"
+                  disablePictureInPicture
                 />
               ) : (
                 <img src={media?.url || ""} className="h-full w-full object-contain" alt="" />
               )}
 
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-linear-to-t from-black/80 to-transparent pointer-events-none">
-                <p className="text-white text-sm wrap-break-word whitespace-pre-wrap line-clamp-3">
+              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
+                <p className="text-white text-sm break-words whitespace-pre-wrap line-clamp-3">
                   {post.comment || ""}
                 </p>
 
@@ -264,10 +322,7 @@ if (post.user_id && post.user_id !== user.id) {
                       {post.confirmations || 0}
                     </button>
 
-                    <button
-                      onClick={() => router.push(`/post/${post.id}`)}
-                      className="flex items-center gap-1"
-                    >
+                    <button onClick={() => router.push(`/post/${post.id}`)} className="flex items-center gap-1">
                       <MessageCircle className="w-5 h-5" />
                       {post.comment_count || 0}
                     </button>

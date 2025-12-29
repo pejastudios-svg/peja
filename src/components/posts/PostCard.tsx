@@ -41,6 +41,8 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
   const [videoError, setVideoError] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [lightboxItems, setLightboxItems] = useState<{ url: string; type: "image" | "video" }[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   
   // Prevent double-click on confirm
   const confirmingRef = useRef(false);
@@ -246,8 +248,15 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
     }
 
     // image
-    setLightboxUrl(currentMedia.url);
-    setLightboxOpen(true);
+const items: { url: string; type: "image" | "video" }[] = (post.media || []).map((m) => ({
+  url: m.url,
+  type: m.media_type === "video" ? "video" : "image",
+}));
+
+setLightboxItems(items);
+setLightboxIndex(currentMediaIndex);
+setLightboxUrl(currentMedia.url); // keep for compatibility
+setLightboxOpen(true);
   }}
 >
           {post.is_sensitive && !showSensitive ? (
@@ -414,11 +423,13 @@ function PostCardComponent({ post, onConfirm, onShare }: PostCardProps) {
           <Share2 className="w-4 h-4" />
         </button>
       </div>
-      <ImageLightbox
+<ImageLightbox
   isOpen={lightboxOpen}
   onClose={() => setLightboxOpen(false)}
   imageUrl={lightboxUrl}
   caption={post.comment || null}
+  items={lightboxItems}
+  initialIndex={lightboxIndex}
 />
     </article>
   );
