@@ -30,6 +30,19 @@ type AdminUserFull = {
   created_at: string | null;
 };
 
+type AdminEmergencyContact = {
+  id: string;
+  relationship: string | null;
+  created_at: string | null;
+  contact_user: {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    phone: string | null;
+    avatar_url: string | null;
+  } | null;
+};
+
 export default function AdminUserDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -45,6 +58,37 @@ export default function AdminUserDetailPage() {
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+    const [contacts, setContacts] = useState<AdminEmergencyContact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(true);
+
+  const fetchEmergencyContacts = async () => {
+    setContactsLoading(true);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth.session?.access_token;
+      if (!token) throw new Error("Session expired");
+
+      const res = await fetch("/api/admin/user-emergency-contacts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Failed to load contacts");
+
+      setContacts((json.contacts || []) as AdminEmergencyContact[]);
+    } catch (e) {
+      console.error("fetchEmergencyContacts error:", e);
+      setContacts([]);
+    } finally {
+      setContactsLoading(false);
+    }
+  };
 
   const fetchUser = async () => {
     const { data, error } = await supabase
@@ -145,6 +189,7 @@ export default function AdminUserDetailPage() {
       setLoading(true);
       try {
         await fetchUser();
+        await fetchEmergencyContacts();
         await fetchUserPosts();
       } catch (e) {
         console.error(e);
@@ -304,6 +349,63 @@ export default function AdminUserDetailPage() {
           </div>
         )}
       </div>
+
+            {/* Emergency Contacts */}
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
+          Emergency Contacts ({contacts.length})
+        </h2>
+        <Button variant="secondary" size="sm" onClick={fetchEmergencyContacts}>
+          Refresh
+        </Button>
+      </div>
+
+      {contactsLoading ? (
+        <div className="glass-card text-center py-8">
+          <p className="text-dark-400">Loading emergency contacts…</p>
+        </div>
+      ) : contacts.length === 0 ? (
+        <div className="glass-card text-center py-8">
+          <p className="text-dark-400">No emergency contacts</p>
+        </div>
+      ) : (
+        <div className="space-y-2 mb-6">
+          {contacts.map((c) => (
+            <div
+              key={c.id}
+              className="glass-card flex items-center justify-between gap-4 cursor-pointer hover:bg-white/5 transition-colors"
+              onClick={() => {
+                const cid = c.contact_user?.id;
+                if (cid) router.push(`/admin/users/${cid}`);
+              }}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0 flex items-center justify-center">
+                  {c.contact_user?.avatar_url ? (
+                    <img src={c.contact_user.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-5 h-5 text-dark-400" />
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-dark-100 font-medium truncate">
+                    {c.contact_user?.full_name || "Unknown"}
+                  </p>
+                  <p className="text-xs text-dark-500 truncate">
+                    {c.relationship || "Emergency contact"}
+                  </p>
+                  <p className="text-xs text-dark-500 truncate">
+                    {c.contact_user?.email || ""}{c.contact_user?.phone ? ` • ${c.contact_user.phone}` : ""}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-xs text-dark-500">View</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Posts */}
       <div className="mb-4 flex items-center justify-between">

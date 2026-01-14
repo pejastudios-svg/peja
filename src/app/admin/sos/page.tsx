@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   MapPin,
@@ -38,12 +39,39 @@ interface SOSData {
 
 export default function AdminSOSPage() {
   useScrollRestore("admin:sos");
+    const router = useRouter();
   const [sosAlerts, setSOSAlerts] = useState<SOSData[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedSOS, setSelectedSOS] = useState<SOSData | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+    const [sosContacts, setSosContacts] = useState<any[]>([]);
+  const [sosContactsLoading, setSosContactsLoading] = useState(false);
+
+  const fetchSOSUserContacts = async (userId: string) => {
+    setSosContactsLoading(true);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth.session?.access_token;
+      if (!token) throw new Error("Session expired");
+
+      const res = await fetch("/api/admin/user-emergency-contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
+      setSosContacts(json.contacts || []);
+    } catch (e) {
+      console.error("fetchSOSUserContacts error:", e);
+      setSosContacts([]);
+    } finally {
+      setSosContactsLoading(false);
+    }
+  };
   const { session } = useAuth();
 
   useEffect(() => {
@@ -294,7 +322,11 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
     {sosAlerts.map((sos) => (
             <div
               key={sos.id}
-              onClick={() => { setSelectedSOS(sos); setShowModal(true); }}
+              onClick={() => {
+              setSelectedSOS(sos);
+             setShowModal(true);
+             fetchSOSUserContacts(sos.user_id);
+            }}
               className={`glass-card cursor-pointer hover:bg-white/5 transition-colors ${
                 sos.status === "active" ? "border-red-500/30" : ""
               }`}
@@ -360,7 +392,11 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
       {/* SOS Detail Modal */}
       <Modal
         isOpen={showModal}
-        onClose={() => { setShowModal(false); setSelectedSOS(null); }}
+        onClose={() => {
+        setShowModal(false);
+        setSelectedSOS(null);
+       setSosContacts([]);
+       }}
         title="SOS Alert Details"
         size="lg"
       >
@@ -387,6 +423,79 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
                   </a>
                 )}
               </div>
+            </div>
+
+                        {/* Emergency Contacts (Peja users) */}
+            <div className="glass-sm rounded-xl p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-dark-200 font-medium">Emergency Contacts</p>
+                {selectedSOS && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => fetchSOSUserContacts(selectedSOS.user_id)}
+                    disabled={sosContactsLoading}
+                  >
+                    Refresh
+                  </Button>
+                )}
+              </div>
+
+              {sosContactsLoading ? (
+                <p className="text-sm text-dark-400">Loading contacts…</p>
+              ) : sosContacts.length === 0 ? (
+                <p className="text-sm text-dark-400">No emergency contacts</p>
+              ) : (
+                <div className="space-y-2">
+                  {sosContacts.map((c: any) => (
+                    <div
+                      key={c.id}
+                      className="p-3 rounded-xl bg-white/5 border border-white/10"
+                    >
+                      <p className="text-sm text-dark-100 font-medium">
+                        {c.contact_user?.full_name || "Unknown"}{" "}
+                        <span className="text-xs text-dark-500">
+                          • {c.relationship || "Contact"}
+                        </span>
+                      </p>
+
+                      {c.contact_user?.email && (
+                        <p className="text-xs text-dark-400">{c.contact_user.email}</p>
+                      )}
+                      {c.contact_user?.phone && (
+                        <p className="text-xs text-dark-400">{c.contact_user.phone}</p>
+                      )}
+
+                      <div className="flex gap-2 mt-2">
+                        {c.contact_user?.phone && (
+                          <a
+                            className="text-xs px-3 py-1 rounded-lg bg-green-500/15 text-green-300"
+                            href={`tel:${c.contact_user.phone}`}
+                          >
+                            Call
+                          </a>
+                        )}
+                        {c.contact_user?.email && (
+                          <a
+                            className="text-xs px-3 py-1 rounded-lg bg-primary-500/15 text-primary-300"
+                            href={`mailto:${c.contact_user.email}`}
+                          >
+                            Email
+                          </a>
+                        )}
+                        {c.contact_user?.id && (
+                          <button
+                            className="text-xs px-3 py-1 rounded-lg bg-white/10 text-dark-200"
+                            onClick={() => router.push(`/admin/users/${c.contact_user.id}`)}
+                          >
+                            View User
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* SOS Details */}

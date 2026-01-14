@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
@@ -49,7 +50,9 @@ export default function RootLayout({
         <FeedProvider>
         <AnalyticsTracker />
         <RoutePrefetcher />
+        <Suspense fallback={null}>
         <HistorySyncGuard />
+        </Suspense>
         {children}
         {overlay}
         {watch}
