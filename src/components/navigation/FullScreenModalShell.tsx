@@ -31,6 +31,9 @@ export default function FullScreenModalShell({
   const [mounted, setMounted] = useState(false);
   const closingRef = useRef(false);
 
+  const aliveRef = useRef(false);
+  const mountUrlRef = useRef<string>("");
+
   const close = () => {
     if (closingRef.current) return;
     closingRef.current = true;
@@ -47,11 +50,52 @@ export default function FullScreenModalShell({
   useEffect(() => {
     const t = requestAnimationFrame(() => setMounted(true));
 
+    aliveRef.current = true;
+    mountUrlRef.current = window.location.pathname + window.location.search;
+
     // Lock body scroll
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    (window as any).__pejaOverlayOpen = true;
+        const onPopState = () => {
+      // If we pressed back/forward and the URL changed, the overlay should unmount.
+      // If it doesn't (rare app-router mismatch after refresh), force a resync.
+      const nextUrl = window.location.pathname + window.location.search;
+
+      window.setTimeout(() => {
+        if (!aliveRef.current) return;
+
+        // If we're in the middle of our own close(), ignore.
+        if (closingRef.current) return;
+
+        // If URL didn't change, nothing to do.
+        if (nextUrl === mountUrlRef.current) return;
+
+        // If overlay still exists after navigation, router state is stuck.
+                const anyLayerOpen =
+          (window as any).__pejaOverlayOpen === true ||
+          (window as any).__pejaModalOpen === true ||
+          (window as any).__pejaPostModalOpen === true;
+
+        if (anyLayerOpen) {
+          router.refresh();
+
+          // Last resort: if still stuck, hard reload to match the URL.
+          window.setTimeout(() => {
+            if (!aliveRef.current) return;
+            if ((window as any).__pejaOverlayOpen === true) {
+              window.location.reload();
+            }
+          }, 350);
+        }
+      }, 180);
+    };
+
+    window.addEventListener("popstate", onPopState);
+
+        // Track what kind of layer is open
+    if (emitOverlayEvents) (window as any).__pejaOverlayOpen = true;
+    if (emitModalEvents) (window as any).__pejaModalOpen = true;
 
     // ✅ Emit pause events so videos under overlays stop immediately
     if (emitOverlayEvents) window.dispatchEvent(new Event("peja-overlay-open"));
@@ -64,10 +108,14 @@ export default function FullScreenModalShell({
     }
 
     return () => {
+      aliveRef.current = false;
+      window.removeEventListener("popstate", onPopState);
+
       cancelAnimationFrame(t);
       document.body.style.overflow = prev;
 
-      (window as any).__pejaOverlayOpen = false;
+      if (emitOverlayEvents) (window as any).__pejaOverlayOpen = false;
+      if (emitModalEvents) (window as any).__pejaModalOpen = false;
 
       if (emitOverlayEvents) window.dispatchEvent(new Event("peja-overlay-close"));
       if (emitModalEvents) window.dispatchEvent(new Event("peja-modal-close"));

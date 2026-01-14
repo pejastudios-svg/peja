@@ -7,6 +7,7 @@ import AnalyticsTracker from "@/components/analytics/AnalyticsTracker";
 import { ConfirmProvider } from "@/context/ConfirmContext";
 import { AudioProvider } from "@/context/AudioContext";
 import RoutePrefetcher from "@/components/navigation/RoutePrefetcher";
+import HistorySyncGuard from "@/components/navigation/HistorySyncGuard";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -45,14 +46,15 @@ export default function RootLayout({
 <AuthProvider>
   <ConfirmProvider>
     <AudioProvider>
-      <FeedProvider>
-      <AnalyticsTracker />
-      <RoutePrefetcher />
-      {children}
-      {overlay}
-      {watch}
-      {modal}
-     </FeedProvider>
+        <FeedProvider>
+        <AnalyticsTracker />
+        <RoutePrefetcher />
+        <HistorySyncGuard />
+        {children}
+        {overlay}
+        {watch}
+        {modal}
+      </FeedProvider>
     </AudioProvider>
   </ConfirmProvider>
 </AuthProvider>
