@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { useSearchParams } from "next/navigation";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   Flag,
   CheckCircle,
@@ -13,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Play,
+  Search,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Modal } from "@/components/ui/Modal";
@@ -40,6 +44,27 @@ interface FlaggedItem {
 }
 
 export default function GuardianQueuePage() {
+  function QueueRowSkeleton() {
+  return (
+    <div className="glass-card">
+      <div className="flex items-center gap-4">
+        <Skeleton className="h-16 w-16 rounded-lg shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <Skeleton className="h-5 w-20 rounded-full" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+          <Skeleton className="h-4 w-40 mb-2" />
+          <Skeleton className="h-3 w-64" />
+        </div>
+        <Skeleton className="h-8 w-8 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+  useScrollRestore("guardian:queue");
+  const sp = useSearchParams();
+  const reviewId = sp.get("review"); 
   const { user } = useAuth();
   const [items, setItems] = useState<FlaggedItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,68 +73,158 @@ export default function GuardianQueuePage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [priorityFilter, setPriorityFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const visibleItems = items.filter((item) => {
+  const q = search.trim().toLowerCase();
+  if (!q) return true;
+
+  const haystack = [
+    item.reason,
+    item.priority,
+    item.post?.category,
+    item.post?.comment,
+    item.post?.address,
+    item.post?.users?.full_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes(q);
+});
+
+  const openReview = (item: FlaggedItem) => {
+    setSelectedItem(item);
+    setCurrentMediaIndex(0);
+    setShowReviewModal(true);
+  };
 
   useEffect(() => {
     fetchQueue();
   }, [priorityFilter]);
 
-  const fetchQueue = async () => {
-    setLoading(true);
-    try {
-      let query = supabase
-        .from("flagged_content")
-        .select(`
-          id, post_id, reason, priority, status, created_at,
-          posts:post_id (
-            id, category, comment, address, is_sensitive,
-            post_media (url, media_type),
-            users:user_id (full_name)
-          )
-        `)
-        .eq("status", "pending")
-        .order("priority", { ascending: false })
-        .order("created_at", { ascending: true });
+  useEffect(() => {
+  let t: any = null;
 
-      if (priorityFilter !== "all") {
-        query = query.eq("priority", priorityFilter);
-      }
-
-      const { data, error } = await query.limit(50);
-
-      if (error) throw error;
-
-      // Properly map the data - posts is a single object from Supabase join
-      const formattedItems: FlaggedItem[] = (data || []).map((item: any) => {
-        // item.posts is the joined post data (single object, not array)
-        const postData = item.posts;
-        
-        return {
-          id: item.id,
-          post_id: item.post_id,
-          reason: item.reason,
-          priority: item.priority,
-          status: item.status,
-          created_at: item.created_at,
-          post: postData ? {
-            id: postData.id,
-            category: postData.category,
-            comment: postData.comment,
-            address: postData.address,
-            is_sensitive: postData.is_sensitive,
-            post_media: postData.post_media || [],
-            users: postData.users || undefined,
-          } : undefined,
-        };
-      });
-
-      setItems(formattedItems);
-    } catch (error) {
-      console.error("Error fetching queue:", error);
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
+  const refresh = () => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fetchQueue(), 400);
   };
+
+  const ch = supabase
+    .channel("guardian-queue-rt")
+    .on("postgres_changes", { event: "*", schema: "public", table: "flagged_content" }, refresh)
+    .subscribe();
+
+  return () => {
+    if (t) clearTimeout(t);
+    supabase.removeChannel(ch);
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [priorityFilter]);
+
+const fetchQueue = async () => {
+  setLoading(true);
+
+  try {
+    // 1) fetch queue items (no embeds)
+    let query = supabase
+      .from("flagged_content")
+      .select("id,post_id,reason,priority,status,created_at")
+      .eq("status", "pending")
+      .order("priority", { ascending: false })
+      .order("created_at", { ascending: true });
+
+    if (priorityFilter !== "all") query = query.eq("priority", priorityFilter);
+
+    const { data: flagged, error } = await query.limit(50);
+
+    if (error) {
+      console.error("Guardian queue fetch error:", error);
+      setItems([]);
+      return;
+    }
+
+    const flaggedRows = (flagged || []) as any[];
+    const postIds = Array.from(new Set(flaggedRows.map((f) => f.post_id).filter(Boolean)));
+
+    // 2) fetch posts
+    const { data: postsData, error: postsErr } = postIds.length
+      ? await supabase
+          .from("posts")
+          .select("id,user_id,category,comment,address,is_sensitive")
+          .in("id", postIds)
+      : { data: [], error: null };
+
+    if (postsErr) console.error("Guardian queue posts fetch error:", postsErr);
+
+    const postsMap: Record<string, any> = {};
+    (postsData || []).forEach((p: any) => (postsMap[p.id] = p));
+
+    // 3) fetch media
+    const { data: mediaData, error: mediaErr } = postIds.length
+      ? await supabase.from("post_media").select("post_id,url,media_type").in("post_id", postIds)
+      : { data: [], error: null };
+
+    if (mediaErr) console.error("Guardian queue media fetch error:", mediaErr);
+
+    const mediaMap: Record<string, { url: string; media_type: string }[]> = {};
+    (mediaData || []).forEach((m: any) => {
+      if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
+      mediaMap[m.post_id].push({ url: m.url, media_type: m.media_type });
+    });
+
+    // 4) fetch users (names only)
+    const userIds = Array.from(
+      new Set((postsData || []).map((p: any) => p.user_id).filter(Boolean))
+    );
+
+    const { data: usersData, error: usersErr } = userIds.length
+      ? await supabase.from("users").select("id,full_name").in("id", userIds)
+      : { data: [], error: null };
+
+    if (usersErr) console.error("Guardian queue users fetch error:", usersErr);
+
+    const usersMap: Record<string, { full_name: string }> = {};
+    (usersData || []).forEach((u: any) => (usersMap[u.id] = { full_name: u.full_name }));
+
+    // 5) merge into your FlaggedItem shape
+    const formattedItems: FlaggedItem[] = flaggedRows.map((f) => {
+      const p = postsMap[f.post_id];
+      return {
+        id: f.id,
+        post_id: f.post_id,
+        reason: f.reason,
+        priority: f.priority,
+        status: f.status,
+        created_at: f.created_at,
+        post: p
+          ? {
+              id: p.id,
+              category: p.category,
+              comment: p.comment,
+              address: p.address,
+              is_sensitive: p.is_sensitive,
+              post_media: mediaMap[p.id] || [],
+              users: usersMap[p.user_id] || undefined,
+            }
+          : undefined,
+      };
+    });
+
+    setItems(formattedItems);
+    if (reviewId) {
+  const match = formattedItems.find((x) => x.id === reviewId);
+  if (match) openReview(match);
+}
+  } catch (e) {
+    console.error("Guardian queue exception:", e);
+    setItems([]);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") => {
     if (!selectedItem || !user) return;
@@ -135,11 +250,9 @@ export default function GuardianQueuePage() {
       }
 
       if (action === "blur" && selectedItem.post_id) {
-        await supabase
-          .from("posts")
-          .update({ is_sensitive: true })
-          .eq("id", selectedItem.post_id);
-      }
+  await supabase.from("posts").update({ is_sensitive: true }).eq("id", selectedItem.post_id);
+  await supabase.from("post_media").update({ is_sensitive: true }).eq("post_id", selectedItem.post_id);
+}
 
       // Log guardian action (table might not exist yet, so wrap in try-catch)
       try {
@@ -165,12 +278,6 @@ export default function GuardianQueuePage() {
     }
   };
 
-  const openReview = (item: FlaggedItem) => {
-    setSelectedItem(item);
-    setCurrentMediaIndex(0);
-    setShowReviewModal(true);
-  };
-
   const getPriorityColor = (priority: string) => {
     switch (priority) {
       case "critical": return "bg-red-500/20 text-red-400";
@@ -186,6 +293,28 @@ export default function GuardianQueuePage() {
         <h1 className="text-2xl font-bold text-dark-100">Review Queue</h1>
         <p className="text-dark-400 mt-1">Flagged content waiting for review</p>
       </div>
+<div className="mb-4">
+  <div className="relative">
+    <button
+      type="button"
+      onClick={() => searchRef.current?.focus()}
+      className="absolute left-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10"
+      aria-label="Focus search"
+    >
+      <Search className="w-5 h-5 text-dark-400" />
+    </button>
+
+    <input
+      ref={searchRef}
+      type="text"
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+      placeholder="Search flagged content..."
+      className="w-full pl-10 pr-4 py-2.5 glass-input"
+    />
+  </div>
+</div>
+
 
       {/* Filter */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
@@ -205,21 +334,27 @@ export default function GuardianQueuePage() {
       </div>
 
       {/* Queue List */}
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-        </div>
-      ) : items.length === 0 ? (
-        <div className="glass-card text-center py-12">
-          <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-dark-100 mb-2">Queue is Empty!</h3>
-          <p className="text-dark-400">No flagged content to review right now.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {items.map((item) => {
+      {loading && items.length === 0 ? (
+  <div className="space-y-3">
+    {Array.from({ length: 8 }).map((_, i) => (
+      <QueueRowSkeleton key={i} />
+    ))}
+  </div>
+) : visibleItems.length === 0 ? (
+  <div className="glass-card text-center py-12">
+    <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
+    <h3 className="text-lg font-semibold text-dark-100 mb-2">Queue is Empty!</h3>
+    <p className="text-dark-400">No flagged content to review right now.</p>
+  </div>
+) : (
+  <div className="space-y-3">
+    {loading && (
+      <div className="flex justify-center py-2">
+        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+      </div>
+    )}
+    {visibleItems.map((item) => {
             const category = CATEGORIES.find(c => c.id === item.post?.category);
-            
             return (
               <div
                 key={item.id}

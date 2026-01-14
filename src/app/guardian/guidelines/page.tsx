@@ -1,5 +1,6 @@
 "use client";
 
+import { useScrollRestore } from "@/hooks/useScrollRestore";
 import {
   CheckCircle,
   XCircle,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 
 export default function GuardianGuidelinesPage() {
+  useScrollRestore("guardian:guidelines");
   return (
     <div className="p-6 max-w-3xl">
       <div className="mb-8">

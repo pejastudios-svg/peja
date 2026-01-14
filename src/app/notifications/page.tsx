@@ -9,6 +9,7 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { SOS_TAGS } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   Bell,
   AlertTriangle,
@@ -86,6 +87,22 @@ export default function NotificationsPage() {
     setLoading(false);
   }
 };
+
+function NotificationRowSkeleton() {
+  return (
+    <div className="glass-card p-4">
+      <div className="flex gap-3">
+        <Skeleton className="h-10 w-10 rounded-lg shrink-0" />
+        <div className="flex-1 min-w-0">
+          <Skeleton className="h-4 w-2/3 mb-2" />
+          <Skeleton className="h-3 w-full mb-2" />
+          <Skeleton className="h-3 w-24" />
+        </div>
+        <Skeleton className="h-8 w-8 rounded-lg shrink-0" />
+      </div>
+    </div>
+  );
+}
 
 const setupRealtime = () => {
   if (!user) return () => {};
@@ -245,7 +262,7 @@ const setupRealtime = () => {
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
-      <Header onCreateClick={() => router.push("/create")} />
+      <Header variant="back" title="Notifications" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
 
       <main className="pt-16 lg:pl-64">
         <div className="max-w-2xl mx-auto px-4 py-4">
@@ -269,11 +286,13 @@ const setupRealtime = () => {
           </div>
 
           {/* Notifications List */}
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-            </div>
-          ) : notifications.length === 0 ? (
+          {loading && notifications.length === 0 ? (
+  <div className="space-y-2">
+    {Array.from({ length: 8 }).map((_, i) => (
+      <NotificationRowSkeleton key={i} />
+    ))}
+  </div>
+) : notifications.length === 0 ? (
             <div className="text-center py-12">
               <Bell className="w-12 h-12 text-dark-600 mx-auto mb-4" />
               <p className="text-dark-400 mb-2">No notifications yet</p>
@@ -282,7 +301,13 @@ const setupRealtime = () => {
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
+             <div className="space-y-2">
+    {/* subtle background refresh indicator if loading but we already have items */}
+    {loading && (
+      <div className="flex justify-center py-2">
+        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+      </div>
+    )}
               {notifications.map((notification) => (
                 <div
                   key={notification.id}

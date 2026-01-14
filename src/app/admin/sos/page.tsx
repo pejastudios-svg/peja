@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/context/AuthContext";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   AlertTriangle,
   MapPin,
@@ -12,6 +15,7 @@ import {
   XCircle,
   Eye,
   Phone,
+  Trash2,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { Modal } from "@/components/ui/Modal";
@@ -33,12 +37,14 @@ interface SOSData {
 }
 
 export default function AdminSOSPage() {
+  useScrollRestore("admin:sos");
   const [sosAlerts, setSOSAlerts] = useState<SOSData[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedSOS, setSelectedSOS] = useState<SOSData | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const { session } = useAuth();
 
   useEffect(() => {
     fetchSOS();
@@ -56,59 +62,168 @@ export default function AdminSOSPage() {
     };
   }, [statusFilter]);
 
+  function AdminSOSRowSkeleton() {
+  return (
+    <div className="glass-card">
+      <div className="flex items-center gap-4">
+        <Skeleton className="h-12 w-12 rounded-full shrink-0" />
+        <div className="flex-1">
+          <Skeleton className="h-4 w-40 mb-2" />
+          <Skeleton className="h-3 w-64" />
+        </div>
+        <Skeleton className="h-6 w-20 rounded-full" />
+      </div>
+    </div>
+  );
+}
+
   const fetchSOS = async () => {
-    setLoading(true);
-    try {
-      let query = supabase
-        .from("sos_alerts")
-        .select(`
-          *,
-          users:user_id (full_name, email, phone, avatar_url)
-        `)
-        .order("created_at", { ascending: false });
+  setLoading(true);
+  try {
+    // Auto-resolve active SOS older than 24 hours
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { error: expireErr } = await supabase
+      .from("sos_alerts")
+      .update({ status: "resolved", resolved_at: new Date().toISOString() })
+      .eq("status", "active")
+      .lt("created_at", cutoff);
 
-      if (statusFilter !== "all") {
-        query = query.eq("status", statusFilter);
-      }
+    if (expireErr) console.error("Auto-expire SOS failed:", expireErr);
 
-      const { data, error } = await query.limit(100);
+    // Fetch SOS (no embedded joins)
+    let query = supabase
+      .from("sos_alerts")
+      .select("id,user_id,latitude,longitude,address,status,tag,message,voice_note_url,created_at,resolved_at")
+      .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      setSOSAlerts(data || []);
-    } catch (error) {
-      console.error("Error fetching SOS:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    if (statusFilter !== "all") query = query.eq("status", statusFilter);
 
-  const handleStatusChange = async (sosId: string, newStatus: string) => {
-    setActionLoading(true);
-    try {
-      const updates: any = { status: newStatus };
-      if (newStatus === "resolved" || newStatus === "false_alarm" || newStatus === "cancelled") {
-        updates.resolved_at = new Date().toISOString();
-      }
 
-      await supabase.from("sos_alerts").update(updates).eq("id", sosId);
+    
+    const { data: sosData, error } = await query.limit(100);
+    if (error) throw error;
 
-      await supabase.from("admin_logs").insert({
-        admin_id: (await supabase.auth.getUser()).data.user?.id,
-        action: `Changed SOS status to ${newStatus}`,
-        target_type: "sos",
-        target_id: sosId,
-      });
+    const rows = (sosData || []) as any[];
+    const userIds = Array.from(new Set(rows.map(r => r.user_id).filter(Boolean)));
 
-      fetchSOS();
+    const { data: usersData, error: usersErr } = userIds.length
+      ? await supabase.from("users").select("id,full_name,email,phone,avatar_url").in("id", userIds)
+      : { data: [], error: null };
+
+    if (usersErr) console.error("SOS users fetch error:", usersErr);
+
+    const usersMap: Record<string, any> = {};
+    (usersData || []).forEach((u: any) => (usersMap[u.id] = u));
+
+    setSOSAlerts(rows.map((s) => ({ ...s, users: usersMap[s.user_id] })));
+  } catch (e) {
+    console.error("Error fetching SOS:", e);
+    setSOSAlerts([]);
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleDeleteSOS = async (sosId: string) => {
+  if (!session?.access_token) {
+    alert("No session token. Please sign in again.");
+    return;
+  }
+  if (!confirm("Delete this SOS permanently?")) return;
+
+  setActionLoading(true);
+  try {
+    const res = await fetch("/api/admin/sos/delete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ sosId }),
+    });
+
+    const json = await res.json();
+    if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
+
+    await fetchSOS();
+    setShowModal(false);
+    setSelectedSOS(null);
+  } catch (e: any) {
+    console.error(e);
+    alert(e.message || "Failed");
+  } finally {
+    setActionLoading(false);
+  }
+};
+
+
+const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => { 
+  e.preventDefault();
+  e.stopPropagation();
+
+
+  setActionLoading(true);
+  try {
+    const { data: auth } = await supabase.auth.getSession();
+    const token = auth.session?.access_token;
+    if (!token) throw new Error("Session expired. Please sign in again.");
+
+    const res = await fetch("/api/admin/sos/delete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ sosId }),
+    });
+
+    const json = await res.json();
+    if (!res.ok || !json.ok) throw new Error(json.error || "Failed to delete SOS");
+
+    // remove from UI
+    setSOSAlerts((prev) => prev.filter((x) => x.id !== sosId));
+    if (selectedSOS?.id === sosId) {
       setShowModal(false);
       setSelectedSOS(null);
-    } catch (error) {
-      console.error("Error updating SOS:", error);
-      alert("Failed to update SOS status");
-    } finally {
-      setActionLoading(false);
     }
-  };
+  } catch (err) {
+    console.error(err);
+    alert("Failed to delete SOS");
+  } finally {
+    setActionLoading(false);
+  }
+};
+
+  const handleStatusChange = async (sosId: string, newStatus: string) => {
+  if (!session?.access_token) {
+    alert("No session token. Please sign in again.");
+    return;
+  }
+
+  setActionLoading(true);
+  try {
+    const res = await fetch("/api/admin/sos/set-status", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ sosId, status: newStatus }),
+    });
+
+    const json = await res.json();
+    if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
+
+    await fetchSOS();
+    setShowModal(false);
+    setSelectedSOS(null);
+  } catch (e: any) {
+    console.error(e);
+    alert(e.message || "Failed");
+  } finally {
+    setActionLoading(false);
+  }
+};
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -158,18 +273,25 @@ export default function AdminSOSPage() {
       </div>
 
       {/* SOS List */}
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-        </div>
-      ) : sosAlerts.length === 0 ? (
-        <div className="glass-card text-center py-12">
-          <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
-          <p className="text-dark-400">No SOS alerts found</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {sosAlerts.map((sos) => (
+     {loading && sosAlerts.length === 0 ? (
+  <div className="space-y-3">
+    {Array.from({ length: 6 }).map((_, i) => (
+      <AdminSOSRowSkeleton key={i} />
+    ))}
+  </div>
+) : sosAlerts.length === 0 ? (
+  <div className="glass-card text-center py-12">
+    <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
+    <p className="text-dark-400">No SOS alerts found</p>
+  </div>
+) : (
+  <div className="space-y-3">
+    {loading && (
+      <div className="flex justify-center py-2">
+        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+      </div>
+    )}
+    {sosAlerts.map((sos) => (
             <div
               key={sos.id}
               onClick={() => { setSelectedSOS(sos); setShowModal(true); }}
@@ -212,9 +334,23 @@ export default function AdminSOSPage() {
                 </div>
 
                 {/* Action */}
-                <button className="p-2 hover:bg-white/10 rounded-lg shrink-0">
-                  <Eye className="w-5 h-5 text-primary-400" />
-                </button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+  {/* Show delete only if NOT active */}
+  {sos.status !== "active" && (
+    <button
+      onClick={(e) => handleDeleteSOSRecord(e, sos.id)}
+      className="p-2 hover:bg-white/10 rounded-lg"
+      title="Delete SOS"
+      aria-label="Delete SOS"
+    >
+      <Trash2 className="w-5 h-5 text-red-400" />
+    </button>
+  )}
+
+  <button className="p-2 hover:bg-white/10 rounded-lg">
+    <Eye className="w-5 h-5 text-primary-400" />
+  </button>
+</div>
               </div>
             </div>
           ))}
@@ -330,6 +466,14 @@ export default function AdminSOSPage() {
                   >
                     <AlertTriangle className="w-4 h-4 mr-1" />
                     False Alarm
+                  </Button>
+                  <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleDeleteSOS(selectedSOS.id)}
+                  disabled={actionLoading}
+                    >
+                 Delete SOS
                   </Button>
                 </div>
               </div>

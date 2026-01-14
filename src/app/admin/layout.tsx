@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { Bell } from "lucide-react";
 import {
   LayoutDashboard,
   Users,
@@ -15,7 +16,6 @@ import {
   BarChart3,
   Settings,
   ScrollText,
-  Megaphone,
   LogOut,
   Menu,
   X,
@@ -24,15 +24,13 @@ import {
 
 const navItems = [
   { href: "/admin", icon: LayoutDashboard, label: "Overview" },
+  { href: "/admin/notifications", icon: Bell, label: "Notifications" },
   { href: "/admin/users", icon: Users, label: "Users" },
   { href: "/admin/posts", icon: FileText, label: "Posts" },
   { href: "/admin/sos", icon: AlertTriangle, label: "SOS Alerts" },
   { href: "/admin/flagged", icon: Flag, label: "Flagged Content" },
   { href: "/admin/guardians", icon: Shield, label: "Guardians" },
-  { href: "/admin/ads", icon: Megaphone, label: "Ads" },
   { href: "/admin/analytics", icon: BarChart3, label: "Analytics" },
-  { href: "/admin/logs", icon: ScrollText, label: "Logs" },
-  { href: "/admin/settings", icon: Settings, label: "Settings" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

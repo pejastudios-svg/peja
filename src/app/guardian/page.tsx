@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   Flag,
   CheckCircle,
@@ -23,6 +25,7 @@ interface GuardianStats {
 }
 
 export default function GuardianDashboardPage() {
+  useScrollRestore("guardian:dashboard");
   const { user } = useAuth();
   const [stats, setStats] = useState<GuardianStats | null>(null);
   const [recentQueue, setRecentQueue] = useState<any[]>([]);
@@ -72,12 +75,62 @@ export default function GuardianDashboardPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+  return (
+    <div className="p-6">
+      <div className="mb-8">
+        <Skeleton className="h-6 w-52 mb-2" />
+        <Skeleton className="h-4 w-64" />
       </div>
-    );
-  }
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="glass-card">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-11 w-11 rounded-xl" />
+              <div className="flex-1">
+                <Skeleton className="h-6 w-14 mb-2" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6 mb-8">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="glass-card">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-14 w-14 rounded-xl" />
+                <div>
+                  <Skeleton className="h-5 w-36 mb-2" />
+                  <Skeleton className="h-3 w-44" />
+                </div>
+              </div>
+              <Skeleton className="h-6 w-6 rounded-lg" />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="glass-card">
+        <Skeleton className="h-5 w-44 mb-4" />
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+              <Skeleton className="h-2 w-2 rounded-full" />
+              <div className="flex-1">
+                <Skeleton className="h-4 w-40 mb-2" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+              <Skeleton className="h-5 w-16 rounded-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
   return (
     <div className="p-6">

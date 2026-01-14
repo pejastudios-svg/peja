@@ -278,6 +278,12 @@ const tagInfo = tagId ? SOS_TAGS.find(t => t.id === tagId) : null;
 
   // TAP to open options
   const handleButtonTap = () => {
+
+    if (user?.status === "suspended") {
+  alert("Your account is suspended. SOS is disabled.");
+  return;
+}
+
     if (!user) { 
       router.push("/login"); 
       return; 
@@ -351,14 +357,14 @@ const voiceNoteUrl = null;
       console.log("VOICE NOTE URL ABOUT TO SAVE:", voiceNoteUrl);
       const { data: sosData, error } = await supabase
   .from("sos_alerts")
-  .insert({ 
-    user_id: user.id, 
-    latitude: lat, 
-    longitude: lng, 
-    address, 
+  .insert({
+    user_id: user.id,
+    latitude: lat,
+    longitude: lng,
+    address: "Locating...",
     status: "active",
-    tag: selectedTag, // ← ADD THIS
-    message: textMessage || null, // ← ADD THIS
+    tag: selectedTag,
+    message: textMessage || null,
   })
   .select()
   .single();
@@ -374,36 +380,42 @@ const contactsNotified = await notifyContacts(userName, address, sosData.id, {
   latitude: lat,
   longitude: lng,
 });
-      // Notify nearby users
-      const { data: nearbyUsers } = await supabase
-        .from("users")
-        .select("id")
-        .neq("id", user.id)
-        .eq("status", "active")
-        .limit(50);
+// Notify nearby users within 5km (cap 200)
+const { data: nearby, error: nearbyErr } = await supabase.rpc("users_within_radius", {
+  lat,
+  lng,
+  radius_m: 5000,
+  max_results: 200,
+});
 
-      const tagInfo = selectedTag ? SOS_TAGS.find(t => t.id === selectedTag) : null;
+if (nearbyErr) console.error("nearby rpc error:", nearbyErr);
 
-      let nearbyNotified = 0;
-      if (nearbyUsers) {
-        for (const nearbyUser of nearbyUsers) {
-          const success = await createNotification({
-            userId: nearbyUser.id,
-            type: "sos_alert",
-            title: `SOS Alert: ${tagInfo?.label || "Emergency"}`,
-            body: `Someone needs help at ${address}`,
-            data: {
-            sos_id: sosId,
-            tag: selectedTag,
-            message: textMessage || null,
-            address,
-            latitude: lat,
-            longitude: lng,
-            },
-          });
-          if (success) nearbyNotified++;
-        }
-      }
+const nearbyIds =
+  (nearby || [])
+    .map((r: any) => r.id)
+    .filter((id: string) => id && id !== user.id);
+
+const tagInfo = selectedTag ? SOS_TAGS.find(t => t.id === selectedTag) : null;
+
+let nearbyNotified = 0;
+for (const uid of nearbyIds) {
+  const success = await createNotification({
+    userId: uid,
+    type: "sos_alert",
+    title: `SOS Alert: ${tagInfo?.label || "Emergency"}`,
+    body: `Someone needs help at ${address}`,
+    data: {
+      sos_id: sosData.id,
+      tag: selectedTag,
+      message: textMessage || null,
+      address,
+      latitude: lat,
+      longitude: lng,
+    },
+  });
+
+  if (success) nearbyNotified++;
+}
 
       setNotifyStatus({ contacts: contactsNotified, nearby: nearbyNotified });
       setShowConfirmation(true);

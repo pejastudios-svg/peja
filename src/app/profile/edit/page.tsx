@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -148,13 +149,31 @@ await refreshUser();
     }
   };
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
+if (authLoading) {
+  return (
+    <div className="min-h-screen pb-8">
+      <header className="fixed top-0 left-0 right-0 z-40 glass-header">
+        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+          <Skeleton className="h-9 w-9 rounded-lg" />
+          <Skeleton className="h-4 w-28" />
+          <Skeleton className="h-9 w-9 rounded-lg" />
+        </div>
+      </header>
+
+      <main className="pt-20 px-4 max-w-2xl mx-auto space-y-4">
+        <div className="flex justify-center">
+          <Skeleton className="h-24 w-24 rounded-full" />
+        </div>
+
+        <Skeleton className="h-16 w-full rounded-2xl" />
+        <Skeleton className="h-16 w-full rounded-2xl" />
+        <Skeleton className="h-16 w-full rounded-2xl" />
+        <Skeleton className="h-16 w-full rounded-2xl" />
+        <Skeleton className="h-12 w-full rounded-2xl" />
+      </main>
+    </div>
+  );
+}
 
   if (!user) {
     return null;

@@ -10,6 +10,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Badge } from "@/components/ui/Badge";
 import { Loader2, Navigation, List, Map as MapIcon, AlertTriangle } from "lucide-react";
 import { subHours } from "date-fns";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
@@ -135,7 +136,7 @@ useEffect(() => {
           confirmations, views, comment_count, report_count, created_at,
           post_media (id, post_id, url, media_type, is_sensitive)
         `)
-        .eq("status", "live")
+        .eq("status","live")
         .gte("created_at", twentyFourHoursAgo)
         .not("latitude", "is", null)
         .not("longitude", "is", null)
@@ -362,14 +363,14 @@ useEffect(() => {
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
-    <Header onCreateClick={() => router.push("/create")} />
+    <Header variant="back" title="Map" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
 
       <main className="pt-16 lg:pl-64 h-screen">
         <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">
           {loading || !mapReady ? (
-            <div className="h-full flex items-center justify-center bg-dark-800">
-              <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-            </div>
+  <div className="h-full bg-dark-800 flex items-center justify-center">
+    <Skeleton className="h-[70vh] w-[92vw] max-w-5xl rounded-2xl" />
+  </div>
           ) : (
             <IncidentMap
               posts={filteredPosts}

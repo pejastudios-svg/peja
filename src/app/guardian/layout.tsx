@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import {  Bell } from "lucide-react";
 import {
   LayoutDashboard,
   Flag,
@@ -20,6 +21,7 @@ import {
 
 const navItems = [
   { href: "/guardian", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/guardian/notifications", icon: Bell, label: "Notifications" },
   { href: "/guardian/queue", icon: Flag, label: "Review Queue" },
   { href: "/guardian/actions", icon: CheckCircle, label: "My Actions" },
   { href: "/guardian/guidelines", icon: BookOpen, label: "Guidelines" },

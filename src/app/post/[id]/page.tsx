@@ -13,7 +13,11 @@ import { notifyPostComment, notifyCommentLiked } from "@/lib/notifications";
 import { notifyPostConfirmed } from "@/lib/notifications";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useLongPress } from "@/components/hooks/useLongPress";
+import { useSearchParams } from "next/navigation";
 import { InlineVideo } from "@/components/reels/InlineVideo";
+import { useConfirm } from "@/context/ConfirmContext";
+import { PostDetailSkeleton } from "@/components/posts/PostDetailSkeleton";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   ArrowLeft,
   MapPin,
@@ -63,15 +67,70 @@ interface Comment {
   isPending?: boolean;
 }
 
+const SEEN_KEY = "peja-seen-posts-v1";
+const SEEN_GRACE_MS = 30 * 60 * 1000;
+
+type SeenStore = Record<string, number>;
+
+function readSeenStore(): SeenStore {
+  try {
+    const raw = localStorage.getItem(SEEN_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+
+    // Backwards compatibility: old format was string[]
+    if (Array.isArray(parsed)) {
+      const m: SeenStore = {};
+      for (const id of parsed) if (typeof id === "string") m[id] = 0;
+      return m;
+    }
+
+    if (parsed && typeof parsed === "object") return parsed as SeenStore;
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSeenStore(store: SeenStore) {
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify(store));
+  } catch {}
+}
+
+function markSeen(postId: string) {
+  try {
+    const store = readSeenStore();
+    store[postId] = Date.now();
+
+    // keep last 1000 by most recent
+    const trimmed = Object.fromEntries(
+      Object.entries(store)
+        .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+        .slice(0, 1000)
+    ) as SeenStore;
+
+    writeSeenStore(trimmed);
+  } catch {}
+}
+
 export default function PostDetailPage() {
+  const confirmCtx = useConfirm();
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
+  const sourceKey = searchParams.get("sourceKey");
   const { user } = useAuth();
   const postId = params.id as string;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const commentInputRef = useRef<HTMLInputElement>(null);
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+  if (!postId) return;
+  markSeen(postId);
+}, [postId]);
   
   // CRITICAL: Track ongoing like operations to prevent double-clicks
   const likingInProgress = useRef<Set<string>>(new Set());
@@ -87,7 +146,6 @@ export default function PostDetailPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   // Confirmation
-  const [isConfirmed, setIsConfirmed] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
   // Comments
@@ -105,6 +163,11 @@ export default function PostDetailPage() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxCaption, setLightboxCaption] = useState<string | null>(null); 
+  const [likeBusy, setLikeBusy] = useState<Set<string>>(new Set());
+  
+  //Post
+  const [lightboxItems, setLightboxItems] = useState<{ url: string; type: "image" | "video" }[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   // Modals
   const [showReportModal, setShowReportModal] = useState(false);
@@ -118,6 +181,8 @@ export default function PostDetailPage() {
   const isOwner = user?.id === post?.user_id;
   const isExpired = post ? differenceInHours(new Date(), new Date(post.created_at)) >= 24 : false;
   const avatarHoldTimer = useRef<number | null>(null);
+  const isConfirmed = confirmCtx.isConfirmed(postId);
+  const confirmCount = post ? confirmCtx.getCount(postId, post.confirmations || 0) : 0;
 
   // Cleanup
   useEffect(() => {
@@ -156,7 +221,7 @@ export default function PostDetailPage() {
           setLoading(false);
           return;
         }
-
+confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
         setPost({
           id: data.id,
           user_id: data.user_id,
@@ -175,6 +240,8 @@ export default function PostDetailPage() {
           media: data.post_media || [],
           tags: data.post_tags?.map((t: any) => t.tag) || [],
         });
+
+        confirmCtx.loadConfirmedFor([postId]);
 
         // Update views (fire and forget)
         supabase.from("posts").update({ views: (data.views || 0) + 1 }).eq("id", postId).then(() => {});
@@ -195,7 +262,8 @@ export default function PostDetailPage() {
         abortController.current.abort();
       }
     };
-  }, [postId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [postId]);
 
   // Fetch comments
   const fetchComments = useCallback(async () => {
@@ -300,23 +368,7 @@ export default function PostDetailPage() {
     fetchComments();
   }, [fetchComments]);
 
-  // Check if confirmed
-  useEffect(() => {
-    if (!postId || !user) return;
-
-    const checkConfirmed = async () => {
-      const { data } = await supabase
-        .from("post_confirmations")
-        .select("id")
-        .eq("post_id", postId)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (isMounted.current) setIsConfirmed(!!data);
-    };
-
-    checkConfirmed();
-  }, [postId, user]);
+  
 
   // Get top-level comments (sorted based on toggle)
   const parentComments = allComments
@@ -345,48 +397,26 @@ export default function PostDetailPage() {
   };
 
   // Handle confirm
-  const handleConfirm = async () => {
+const handleConfirm = async () => {
+  if (user?.status === "suspended") {
+    alert("Your account is suspended. You cannot perform this action.");
+    return;
+  }
+
   if (!user) {
     router.push("/login");
     return;
   }
 
-  const wasConfirmed = isConfirmed;
-  const prevCount = post?.confirmations || 0;
-
-  // Optimistic update
-  setIsConfirmed(!wasConfirmed);
-  setPost(p => p ? { ...p, confirmations: wasConfirmed ? Math.max(0, prevCount - 1) : prevCount + 1 } : null);
-
   setConfirmLoading(true);
   try {
-    if (wasConfirmed) {
-      // Unconfirm
-      await supabase.from("post_confirmations").delete().eq("post_id", postId).eq("user_id", user.id);
-      await supabase.from("posts").update({ confirmations: Math.max(0, prevCount - 1) }).eq("id", postId);
-    } else {
-      // Confirm
-      const { error: insertError } = await supabase.from("post_confirmations").insert({ post_id: postId, user_id: user.id });
-      
-      if (insertError && insertError.code !== "23505") {
-        throw insertError;
-      }
-      
-      await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", postId);
+    const res = await confirmCtx.toggle(postId, post?.confirmations || 0);
 
-      // ✅ SEND NOTIFICATION TO POST OWNER
-      if (post?.user_id && post.user_id !== user.id) {
-        notifyPostConfirmed(
-          postId,
-          post.user_id,
-          user.full_name || "Someone"
-        );
-      }
+    // notify owner only when confirming (not unconfirm)
+    if (res?.confirmed && post?.user_id && post.user_id !== user.id) {
+      notifyPostConfirmed(postId, post.user_id, user.full_name || "Someone");
     }
   } catch (err) {
-    // Rollback on error
-    setIsConfirmed(wasConfirmed);
-    setPost(p => p ? { ...p, confirmations: prevCount } : null);
     console.error("Confirm error:", err);
   } finally {
     setConfirmLoading(false);
@@ -397,16 +427,24 @@ export default function PostDetailPage() {
   // FIXED LIKE HANDLER - Prevents double likes
   // ========================================
   const handleLikeComment = async (commentId: string) => {
+
+    if (user?.status === "suspended") {
+  alert("Your account is suspended. You cannot perform this action.");
+  return;
+}
+
   if (!user) {
     router.push("/login");
     return;
   }
 
   // CRITICAL: Check if already processing this comment
-  if (likingInProgress.current.has(commentId)) {
-    console.log("Like already in progress for:", commentId);
-    return;
-  }
+ if (likeBusy.has(commentId)) return;
+setLikeBusy(prev => {
+  const next = new Set(prev);
+  next.add(commentId);
+  return next;
+});
 
   // Mark as in progress
   likingInProgress.current.add(commentId);
@@ -473,9 +511,13 @@ export default function PostDetailPage() {
     }));
   } finally {
     // Remove from in-progress after a delay to prevent rapid clicks
-    setTimeout(() => {
-      likingInProgress.current.delete(commentId);
-    }, 300);
+   setTimeout(() => {
+  setLikeBusy(prev => {
+    const next = new Set(prev);
+    next.delete(commentId);
+    return next;
+  });
+}, 250);
   }
 };
 
@@ -518,6 +560,12 @@ export default function PostDetailPage() {
 
   // Submit comment
   const handleSubmitComment = async () => {
+
+    if (user?.status === "suspended") {
+  alert("Your account is suspended. You cannot perform this action.");
+  return;
+}
+
     if (!newComment.trim() && commentMedia.length === 0) {
       alert("Please add a comment or media");
       return;
@@ -687,7 +735,7 @@ export default function PostDetailPage() {
 
   // Delete comment
   const handleDeleteComment = async (commentId: string) => {
-    if (!confirm("Delete this comment?")) return;
+    if (!window.confirm("Delete this comment?")) return;
 
     const commentToDelete = allComments.find(c => c.id === commentId);
     if (!commentToDelete) return;
@@ -737,35 +785,46 @@ export default function PostDetailPage() {
   const handleReport = async () => {
     if (!reportReason || !user) return;
 
-    setSubmittingReport(true);
-    try {
-      await supabase.from("post_reports").insert({
-        post_id: postId,
-        user_id: user.id,
-        reason: reportReason,
-        description: reportDescription,
-      });
+      const { data: auth } = await supabase.auth.getSession();
+const token = auth.session?.access_token;
 
-      const newCount = (post?.report_count || 0) + 1;
-      await supabase.from("posts").update({ report_count: newCount }).eq("id", postId);
+if (!token) {
+  alert("Session expired. Please sign in again.");
+  return;
+}
 
-      if (newCount >= 3) {
-        await supabase.from("posts").update({ status: "archived" }).eq("id", postId);
-        alert("Post removed due to reports.");
-        router.push("/");
-        return;
-      }
+const res = await fetch("/api/report-post", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  },
+  body: JSON.stringify({
+    postId,
+    reason: reportReason,
+    description: reportDescription,
+  }),
+});
 
-      setShowReportModal(false);
-      setReportReason("");
-      setReportDescription("");
-      setToast("Report submitted!");
-      setTimeout(() => setToast(null), 2500);
-    } catch (err: any) {
-      alert(err.code === "23505" ? "Already reported." : "Failed to report.");
-    } finally {
-      setSubmittingReport(false);
-    }
+const json = await res.json();
+if (!res.ok || !json.ok) {
+  throw new Error(json.error || "Failed to report");
+}
+
+if (json.archived) {
+  setShowReportModal(false);
+  setToast("Post removed due to reports.");
+  setTimeout(() => {
+    router.push("/");
+  }, 600);
+  return;
+}
+
+setShowReportModal(false);
+setReportReason("");
+setReportDescription("");
+setToast("Report submitted!");
+setTimeout(() => setToast(null), 2500);
   };
 
   // Delete post
@@ -908,7 +967,7 @@ export default function PostDetailPage() {
                   e.stopPropagation();
                   handleLikeComment(comment.id);
                 }}
-                disabled={likingInProgress.current.has(comment.id)}
+                disabled={likeBusy.has(comment.id)}
                 className={`flex items-center gap-1.5 text-xs transition-colors ${
                   comment.isLiked ? "text-red-400" : "text-dark-400 hover:text-red-400"
                 }`}
@@ -988,13 +1047,9 @@ export default function PostDetailPage() {
   };
 
   // Loading
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-      </div>
-    );
-  }
+ if (loading) {
+  return <PostDetailSkeleton />;
+}
 
   // Error
   if (error || !post) {
@@ -1020,7 +1075,17 @@ export default function PostDetailPage() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 glass-header">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg">
+          <button
+  onClick={() => {
+    // If we are inside the modal wrapper, close via event (so it animates)
+    if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
+      window.dispatchEvent(new Event("peja-close-post"));
+      return;
+    }
+    router.back();
+  }}
+  className="p-2 -ml-2 hover:bg-white/10 rounded-lg"
+>
             <ArrowLeft className="w-5 h-5 text-dark-200" />
           </button>
           <h1 className="text-lg font-semibold text-dark-100">Incident Details</h1>
@@ -1076,11 +1141,37 @@ export default function PostDetailPage() {
                     <InlineVideo
                     src={currentMedia.url}
                     className="w-full h-full object-contain bg-black"
-                    onExpand={() => router.push(`/watch?postId=${postId}&source=post`)}
+onExpand={() => {
+  const rt =
+    typeof window !== "undefined"
+      ? window.location.pathname + window.location.search
+      : `/post/${postId}`;
+
+  const sk = sourceKey ? `&sourceKey=${encodeURIComponent(sourceKey)}` : "";
+
+  router.push(`/watch?postId=${postId}${sk}&returnTo=${encodeURIComponent(rt)}`, { scroll: false });
+}}
                     />
                   )
                 ) : (
-                  <img src={currentMedia?.url} alt="" className="w-full h-full object-contain" />
+                  <img
+  src={currentMedia?.url}
+  alt=""
+  className="w-full h-full object-contain cursor-pointer"
+  onClick={() => {
+    const items =
+  (post.media || []).map((m) => ({
+    url: m.url,
+    type: (m.media_type === "video" ? "video" : "image") as "video" | "image",
+  })) || [];
+
+    setLightboxItems(items);
+    setLightboxIndex(currentMediaIndex);
+    setLightboxUrl(currentMedia?.url || null);
+    setLightboxCaption(post.comment || null);
+    setLightboxOpen(true);
+  }}
+/>
                 )}
                 
                 {post.media.length > 1 && (
@@ -1174,7 +1265,7 @@ export default function PostDetailPage() {
               ) : (
                 <CheckCircle className={`w-4 h-4 ${isConfirmed ? "fill-current" : ""}`} />
               )}
-              {isConfirmed ? "Confirmed" : "Confirm"} ({post.confirmations})
+              {isConfirmed ? "Confirmed" : "Confirm"} ({confirmCount})
             </button>
             <button onClick={handleShare} className="p-2.5 rounded-xl glass-sm text-dark-300 hover:bg-white/10">
               <Share2 className="w-5 h-5" />
@@ -1213,9 +1304,18 @@ export default function PostDetailPage() {
           </div>
 
           {commentsLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
-            </div>
+  <div className="space-y-4 py-4">
+    {Array.from({ length: 5 }).map((_, i) => (
+      <div key={i} className="flex gap-3">
+        <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+        <div className="flex-1">
+          <Skeleton className="h-3 w-28 mb-2" />
+          <Skeleton className="h-4 w-full mb-2" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      </div>
+    ))}
+  </div>
           ) : parentComments.length === 0 ? (
             <div className="text-center py-8">
               <MessageCircle className="w-10 h-10 text-dark-600 mx-auto mb-2" />
@@ -1373,11 +1473,13 @@ export default function PostDetailPage() {
           </Button>
         </div>
       </Modal>
-      <ImageLightbox
+<ImageLightbox
   isOpen={lightboxOpen}
   onClose={() => setLightboxOpen(false)}
   imageUrl={lightboxUrl}
   caption={lightboxCaption}
+  items={lightboxItems}
+  initialIndex={lightboxIndex}
 />
 {toast && (
   <div className="fixed top-16 left-1/2 -translate-x-1/2 z-9999 px-4 py-2 rounded-xl glass-float text-dark-100">

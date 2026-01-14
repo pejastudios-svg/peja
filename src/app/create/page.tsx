@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   Camera,
   Video,
@@ -38,6 +39,7 @@ export default function CreatePostPage() {
   const [location, setLocation] = useState<{ latitude: number; longitude: number; address?: string } | null>(null);
   const [error, setError] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -61,12 +63,26 @@ export default function CreatePostPage() {
   }, [user, authLoading, router]);
 
   if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+  return (
+    <div className="min-h-screen pb-8">
+      <div className="fixed top-0 left-0 right-0 z-40 glass-header">
+        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+          <Skeleton className="h-9 w-9 rounded-lg" />
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-9 w-9 rounded-lg" />
+        </div>
       </div>
-    );
-  }
+
+      <main className="pt-20 px-4 max-w-2xl mx-auto space-y-4">
+        <Skeleton className="h-40 w-full rounded-2xl" />
+        <Skeleton className="h-20 w-full rounded-2xl" />
+        <Skeleton className="h-40 w-full rounded-2xl" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <Skeleton className="h-12 w-full rounded-2xl" />
+      </main>
+    </div>
+  );
+}
 
   if (!user) return null;
 
@@ -91,6 +107,47 @@ export default function CreatePostPage() {
       return "Location found";
     }
   };
+
+  async function createVideoThumbnail(file: File): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.src = url;
+    video.muted = true;
+    video.playsInline = true;
+
+    const cleanup = () => URL.revokeObjectURL(url);
+
+    video.addEventListener("loadeddata", async () => {
+      try {
+        video.currentTime = Math.min(0.2, video.duration || 0.2);
+      } catch {}
+    });
+
+    video.addEventListener("seeked", () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 360;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { cleanup(); return resolve(null); }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((b) => {
+          cleanup();
+          resolve(b || null);
+        }, "image/jpeg", 0.8);
+      } catch {
+        cleanup();
+        resolve(null);
+      }
+    });
+
+    video.addEventListener("error", () => {
+      cleanup();
+      resolve(null);
+    });
+  });
+}
 
   const handleGetLocation = () => {
     setLocationLoading(true);
@@ -181,6 +238,15 @@ export default function CreatePostPage() {
   const handleSubmit = async () => {
     setError("");
 
+    if (user?.status === "suspended") {
+  setError("Your account is suspended. You can still receive alerts, but you cannot post.");
+  return;
+}
+if (user?.status === "banned") {
+  setError("Your account is banned.");
+  return;
+}
+
     if (media.length === 0) {
       setError("Please add at least one photo or video");
       return;
@@ -208,38 +274,42 @@ export default function CreatePostPage() {
     setUploadProgress(0);
 
     try {
-      const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
-      const totalFiles = media.length;
+const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
+const totalFiles = media.length;
 
-      // Upload media files one by one
-      for (let i = 0; i < media.length; i++) {
-        const file = media[i];
-        const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
-        const fileName = `posts/${authUser.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+let done = 0;
+let cursor = 0;
+const concurrency = 3;
 
-        console.log(`Uploading ${i + 1}/${totalFiles}: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`);
+const uploadOne = async (file: File) => {
+  const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  const fileName = `posts/${authUser.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from("media")
-          .upload(fileName, file, {
-            cacheControl: "3600",
-            upsert: false,
-          });
+  const { error: uploadError } = await supabase.storage
+    .from("media")
+    .upload(fileName, file, { cacheControl: "3600", upsert: false });
 
-        if (uploadError) {
-          console.error("Upload error:", uploadError);
-          throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
-        }
+  if (uploadError) throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
 
-        const { data: publicUrl } = supabase.storage.from("media").getPublicUrl(fileName);
+  const { data: publicUrl } = supabase.storage.from("media").getPublicUrl(fileName);
 
-        mediaUrls.push({
-          url: publicUrl.publicUrl,
-          type: file.type.startsWith("video/") ? "video" : "photo",
-        });
+  mediaUrls.push({
+    url: publicUrl.publicUrl,
+    type: file.type.startsWith("video/") ? "video" : "photo",
+  });
 
-        setUploadProgress(Math.round(((i + 1) / totalFiles) * 80));
-      }
+  done++;
+  setUploadProgress(Math.round((done / totalFiles) * 80));
+};
+
+const worker = async () => {
+  while (cursor < media.length) {
+    const i = cursor++;
+    await uploadOne(media[i]);
+  }
+};
+
+await Promise.all(Array.from({ length: Math.min(concurrency, media.length) }, worker));
 
       // Create post with proper coordinates
 const { data: post, error: postError } = await supabase
@@ -314,8 +384,14 @@ const { data: post, error: postError } = await supabase
         console.error("Error notifying users:", err);
       });
 
-      setUploadProgress(100);
-      router.push("/");
+setUploadProgress(100);
+setToast("Post uploaded ✓");
+
+setTimeout(() => {
+  const inOverlay = typeof window !== "undefined" && (window as any).__pejaOverlayOpen;
+  if (inOverlay) router.back();
+  else router.push("/");
+}, 650);
       
     } catch (err: any) {
       console.error("Submit error:", err);
@@ -542,6 +618,11 @@ const { data: post, error: postError } = await supabase
         >
           {isLoading ? `Uploading... ${uploadProgress}%` : "Post to Peja"}
         </Button>
+        {toast && (
+  <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[99999] px-4 py-2 rounded-xl glass-float text-dark-100">
+    {toast}
+  </div>
+)}
       </main>
     </div>
   );

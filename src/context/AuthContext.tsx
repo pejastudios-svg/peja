@@ -15,6 +15,7 @@ interface User {
   phone_verified: boolean;
   last_latitude?: number;
   last_longitude?: number;
+  status?: "active" | "suspended" | "banned";
 }
 
 interface AuthContextType {
@@ -438,6 +439,7 @@ console.error("Profile fetch error:", {
         full_name: data.full_name,
         avatar_url: data.avatar_url,
         occupation: data.occupation,
+        status: data.status,
         email_verified: data.email_verified || false,
         phone_verified: data.phone_verified || false,
         last_latitude: data.last_latitude,
@@ -450,6 +452,18 @@ console.error("Profile fetch error:", {
       };
 
       setUser(profile);
+
+      if (profile.status === "banned") {
+  await supabase.auth.signOut();
+  setUser(null);
+  setSupabaseUser(null);
+  setSession(null);
+  if (typeof window !== "undefined") {
+    alert("Your account has been banned.");
+    window.location.href = "/login";
+  }
+  return;
+}
       
       userProfileCache = {
         userId,

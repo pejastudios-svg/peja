@@ -1,0 +1,134 @@
+"use client";
+
+import React, { createContext, useContext, useMemo, useRef, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/context/AuthContext";
+
+type ConfirmCtx = {
+  confirmed: Set<string>;
+  counts: Record<string, number>;
+  hydrateCounts: (pairs: { postId: string; confirmations: number }[]) => void;
+  loadConfirmedFor: (postIds: string[]) => Promise<void>;
+  isConfirmed: (postId: string) => boolean;
+  getCount: (postId: string, fallback: number) => number;
+  toggle: (postId: string, fallbackCount: number) => Promise<{ confirmed: boolean; newCount: number } | null>;
+};
+
+const Ctx = createContext<ConfirmCtx | null>(null);
+
+export function ConfirmProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const inFlight = useRef<Set<string>>(new Set());
+
+  const hydrateCounts = (pairs: { postId: string; confirmations: number }[]) => {
+    setCounts((prev) => {
+      const next = { ...prev };
+      for (const p of pairs) {
+        if (typeof next[p.postId] !== "number") next[p.postId] = p.confirmations || 0;
+      }
+      return next;
+    });
+  };
+
+  const loadConfirmedFor = async (postIds: string[]) => {
+    if (!user?.id) return;
+    const ids = Array.from(new Set(postIds)).filter(Boolean);
+    if (!ids.length) return;
+
+    const { data, error } = await supabase
+      .from("post_confirmations")
+      .select("post_id")
+      .eq("user_id", user.id)
+      .in("post_id", ids);
+
+    if (error) {
+      console.error("loadConfirmedFor error:", error);
+      return;
+    }
+
+    setConfirmed((prev) => {
+      const next = new Set(prev);
+      (data || []).forEach((r: any) => next.add(r.post_id));
+      return next;
+    });
+  };
+
+  const isConfirmed = (postId: string) => confirmed.has(postId);
+  const getCount = (postId: string, fallback: number) =>
+    typeof counts[postId] === "number" ? counts[postId] : fallback;
+
+  const toggle = async (postId: string, fallbackCount: number) => {
+    if (!user?.id) return null;
+    if (inFlight.current.has(postId)) return null;
+    inFlight.current.add(postId);
+
+    const was = confirmed.has(postId);
+    const current = getCount(postId, fallbackCount);
+
+    // optimistic
+    setConfirmed((prev) => {
+      const next = new Set(prev);
+      if (was) next.delete(postId);
+      else next.add(postId);
+      return next;
+    });
+
+    setCounts((prev) => ({
+      ...prev,
+      [postId]: was ? Math.max(0, current - 1) : current + 1,
+    }));
+
+    try {
+      const { data, error } = await supabase.rpc("toggle_post_confirmation", {
+        p_post_id: postId,
+        p_user_id: user.id,
+      });
+
+      if (error) throw error;
+
+      const row = data?.[0];
+      const serverConfirmed = !!row?.confirmed;
+      const serverCount = Number(row?.new_count ?? 0);
+
+      setConfirmed((prev) => {
+        const next = new Set(prev);
+        if (serverConfirmed) next.add(postId);
+        else next.delete(postId);
+        return next;
+      });
+      setCounts((prev) => ({ ...prev, [postId]: serverCount }));
+
+      return { confirmed: serverConfirmed, newCount: serverCount };
+    } catch (e) {
+      console.error("toggle_post_confirmation error:", e);
+
+      // rollback
+      setConfirmed((prev) => {
+        const next = new Set(prev);
+        if (was) next.add(postId);
+        else next.delete(postId);
+        return next;
+      });
+      setCounts((prev) => ({ ...prev, [postId]: current }));
+
+      return null;
+    } finally {
+      inFlight.current.delete(postId);
+    }
+  };
+
+  const value = useMemo(
+    () => ({ confirmed, counts, hydrateCounts, loadConfirmedFor, isConfirmed, getCount, toggle }),
+    [confirmed, counts]
+  );
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+export function useConfirm() {
+  const ctx = useContext(Ctx);
+  if (!ctx) throw new Error("useConfirm must be used within ConfirmProvider");
+  return ctx;
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
@@ -9,59 +9,206 @@ import { notifyPostConfirmed } from "@/lib/notifications";
 import { ReelVideo } from "@/components/reels/ReelVideo";
 import { CheckCircle, MessageCircle, Share2, Eye, X, Loader2 } from "lucide-react";
 import { useFeedCache } from "@/context/FeedContext";
+import { useConfirm } from "@/context/ConfirmContext";
+import { useAudio } from "@/context/AudioContext";
+import { Skeleton } from "@/components/ui/Skeleton";
 
-export default function WatchClient({ startId, source, sourceKey }: { startId: string | null; source: string | null; sourceKey: string | null; }) {
+const SEEN_KEY = "peja-seen-posts-v1";
+type SeenStore = Record<string, number>;
+
+function readSeenStore(): SeenStore {
+  try {
+    const raw = localStorage.getItem(SEEN_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const m: SeenStore = {};
+      for (const id of parsed) if (typeof id === "string") m[id] = 0;
+      return m;
+    }
+    if (parsed && typeof parsed === "object") return parsed as SeenStore;
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSeenStore(store: SeenStore) {
+  try {
+    localStorage.setItem(SEEN_KEY, JSON.stringify(store));
+  } catch {}
+}
+
+function markSeen(postId: string) {
+  try {
+    const store = readSeenStore();
+    store[postId] = Date.now();
+    const trimmed = Object.fromEntries(
+      Object.entries(store)
+        .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+        .slice(0, 1000)
+    ) as SeenStore;
+    writeSeenStore(trimmed);
+  } catch {}
+}
+
+export default function WatchClient({
+  startId,
+  source,
+  sourceKey,
+}: {
+  startId: string | null;
+  source: string | null;
+  sourceKey: string | null;
+}) {
   const router = useRouter();
+  const sp = useSearchParams();
+const scrollerRef = useRef<HTMLDivElement | null>(null);
+const WATCH_SCROLL_KEY = "peja-watch-scrollTop-v1";  
+useEffect(() => {
+  const el = scrollerRef.current;
+  if (!el) return;
+
+  // ✅ If watch opened for a specific post, start at top
+  if (startId) {
+    requestAnimationFrame(() => {
+      el.scrollTop = 0;
+      sessionStorage.setItem(WATCH_SCROLL_KEY, "0");
+    });
+    return;
+  }
+
+  // Otherwise restore
+  const raw = sessionStorage.getItem(WATCH_SCROLL_KEY);
+  const y = raw ? Number(raw) : 0;
+
+  if (Number.isFinite(y) && y > 0) {
+    requestAnimationFrame(() => {
+      el.scrollTop = y;
+    });
+  }
+}, [startId]);
+
+useEffect(() => {
+  const el = scrollerRef.current;
+  if (!el) return;
+
+  const onScroll = () => {
+    sessionStorage.setItem(WATCH_SCROLL_KEY, String(el.scrollTop));
+  };
+
+  el.addEventListener("scroll", onScroll, { passive: true });
+  return () => el.removeEventListener("scroll", onScroll);
+}, []);
+
+useEffect(() => {
+  (window as any).__pejaWatchOpen = true;
+  return () => {
+    (window as any).__pejaWatchOpen = false;
+  };
+}, []);
+
   const { user } = useAuth();
+  const { setSoundEnabled } = useAudio();
+
+  const confirm = useConfirm();
+  const confirmRef = useRef(confirm);
+
+  useEffect(() => {
+    confirmRef.current = confirm;
+  }, [confirm]);
+
+  const feedCache = useFeedCache();
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [confirmedSet, setConfirmedSet] = useState<Set<string>>(new Set());
-  const confirmingRef = useRef<Set<string>>(new Set());
-  const feedCache = useFeedCache();
+  // for edge swipe close
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  // which reel is active (vertical)
+  // active reel detection
   const [activePostId, setActivePostId] = useState<string | null>(null);
-  // which media index is active inside a reel (horizontal carousel)
-  const [mediaIndexByPost, setMediaIndexByPost] = useState<Record<string, number>>({});
-  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
-  // view counting (once per post per session)
+  // horizontal carousel index per post
+  const [mediaIndexByPost, setMediaIndexByPost] = useState<Record<string, number>>({});
+
+  // when a *real modal* opens on top of watch (post detail), pause watch videos
+  const [modalOpen, setModalOpen] = useState(false);
+  useEffect(() => {
+    const onOpen = () => setModalOpen(true);
+    const onClose = () => setModalOpen(false);
+
+    window.addEventListener("peja-modal-open", onOpen);
+    window.addEventListener("peja-modal-close", onClose);
+
+    return () => {
+      window.removeEventListener("peja-modal-open", onOpen);
+      window.removeEventListener("peja-modal-close", onClose);
+    };
+  }, []);
+
+  // sensitive reveal
+  const [revealedSensitive, setRevealedSensitive] = useState<Set<string>>(new Set());
+  const revealPost = (postId: string) => {
+    setRevealedSensitive((prev) => {
+      const next = new Set(prev);
+      next.add(postId);
+      return next;
+    });
+  };
+
+  // views (once per watch session)
   const viewedRef = useRef<Set<string>>(new Set());
   const postsRef = useRef<Post[]>([]);
   useEffect(() => {
     postsRef.current = posts;
   }, [posts]);
 
-useEffect(() => {
-  if (!sourceKey) return;
-  const cached = feedCache.get(sourceKey);
-  if (cached && cached.posts.length > 0) {
-    setPosts(cached.posts);
-    setLoading(false);
-  }
-}, [sourceKey]);
+const closeWatch = () => {
+  window.dispatchEvent(new Event("peja-close-watch"));
+};
 
+  // LOAD POSTS (cache-first)
   useEffect(() => {
+    let cancelled = false;
+
     const load = async () => {
+      // cache-first if sourceKey exists
+      if (sourceKey) {
+        const cached = feedCache.get(sourceKey);
+        if (cached && cached.posts.length > 0) {
+          const list = cached.posts;
+
+          confirmRef.current.hydrateCounts(list.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+          confirmRef.current.loadConfirmedFor(list.map((p) => p.id));
+
+          if (!cancelled) {
+            setPosts(list);
+            setLoading(false);
+          }
+          return;
+        }
+      }
+
+      // fallback fetch
       setLoading(true);
 
-      // NOTE: Later we’ll use "source" to load only posts from the page you came from.
       const { data, error } = await supabase
         .from("posts")
         .select(`
           id, user_id, category, comment, address, latitude, longitude,
           is_anonymous, status, is_sensitive,
           confirmations, views, comment_count, report_count, created_at,
-          post_media (id, post_id, url, media_type, is_sensitive)
+          post_media (id, post_id, url, media_type, is_sensitive, thumbnail_url)
         `)
-        .eq("status", "live")
+        .in("status", ["live", "resolved"])
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(80);
+
+      if (cancelled) return;
 
       if (error) {
-        console.error(error);
+        console.error("Watch fetch error:", error);
         setPosts([]);
         setLoading(false);
         return;
@@ -88,43 +235,24 @@ useEffect(() => {
           url: m.url,
           media_type: m.media_type,
           is_sensitive: m.is_sensitive,
+          thumbnail_url: m.thumbnail_url,
         })),
         tags: [],
       }));
+
+      confirmRef.current.hydrateCounts(formatted.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+      confirmRef.current.loadConfirmedFor(formatted.map((p) => p.id));
 
       setPosts(formatted);
       setLoading(false);
     };
 
     load();
-  }, [source]);
-
-  // load confirmed state
-  useEffect(() => {
-    const loadConfirmed = async () => {
-      if (!user) return;
-      if (posts.length === 0) return;
-
-      const ids = posts.map((p) => p.id);
-
-      const { data, error } = await supabase
-        .from("post_confirmations")
-        .select("post_id")
-        .eq("user_id", user.id)
-        .in("post_id", ids);
-
-      if (error) {
-        console.error(error);
-        return;
-      }
-
-      const s = new Set<string>();
-      (data || []).forEach((r: any) => s.add(r.post_id));
-      setConfirmedSet(s);
+    return () => {
+      cancelled = true;
     };
-
-    loadConfirmed();
-  }, [user, posts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceKey, feedCache, startId]);
 
   const ordered = useMemo(() => {
     if (!startId) return posts;
@@ -162,6 +290,12 @@ useEffect(() => {
     return () => obs.disconnect();
   }, [ordered.length]);
 
+  useEffect(() => {
+  if (!activePostId && ordered.length > 0) {
+    setActivePostId(ordered[0].id);
+  }
+}, [ordered.length, activePostId]);
+
   const handleShare = async (postId: string) => {
     const url = `${window.location.origin}/post/${postId}`;
     if (navigator.share) {
@@ -180,73 +314,17 @@ useEffect(() => {
       return;
     }
 
-    if (confirmingRef.current.has(post.id)) return;
-    confirmingRef.current.add(post.id);
+    const res = await confirm.toggle(post.id, post.confirmations || 0);
 
-    const wasConfirmed = confirmedSet.has(post.id);
-    const prevCount = post.confirmations || 0;
-
-    // optimistic UI
-    setConfirmedSet((prev) => {
-      const next = new Set(prev);
-      if (wasConfirmed) next.delete(post.id);
-      else next.add(post.id);
-      return next;
-    });
-
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === post.id
-          ? { ...p, confirmations: wasConfirmed ? Math.max(0, prevCount - 1) : prevCount + 1 }
-          : p
-      )
-    );
-
-    try {
-      if (wasConfirmed) {
-        await supabase
-          .from("post_confirmations")
-          .delete()
-          .eq("post_id", post.id)
-          .eq("user_id", user.id);
-
-        await supabase
-          .from("posts")
-          .update({ confirmations: Math.max(0, prevCount - 1) })
-          .eq("id", post.id);
-      } else {
-        const { error } = await supabase
-          .from("post_confirmations")
-          .insert({ post_id: post.id, user_id: user.id });
-
-        if (error && error.code === "23505") return;
-        if (error) throw error;
-
-        await supabase.from("posts").update({ confirmations: prevCount + 1 }).eq("id", post.id);
-
-        if (post.user_id && post.user_id !== user.id) {
-          notifyPostConfirmed(post.id, post.user_id, user.full_name || "Someone").catch(() => {});
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      // rollback
-      setConfirmedSet((prev) => {
-        const next = new Set(prev);
-        if (wasConfirmed) next.add(post.id);
-        else next.delete(post.id);
-        return next;
-      });
-      setPosts((prev) => prev.map((p) => (p.id === post.id ? { ...p, confirmations: prevCount } : p)));
-    } finally {
-      confirmingRef.current.delete(post.id);
+    if (res?.confirmed && post.user_id && post.user_id !== user.id) {
+      notifyPostConfirmed(post.id, post.user_id, user.full_name || "Someone").catch(() => {});
     }
   };
 
-  // count view once per post
   const markViewed = async (postId: string) => {
     if (viewedRef.current.has(postId)) return;
     viewedRef.current.add(postId);
+    markSeen(postId);
 
     const current = postsRef.current.find((p) => p.id === postId);
     if (!current) return;
@@ -258,39 +336,76 @@ useEffect(() => {
         .from("posts")
         .update({ views: (current.views || 0) + 1 })
         .eq("id", postId);
-    } catch {
-      // ignore
-    }
+    } catch {}
   };
 
-  if (loading) {
-    return (
-      <div className="fixed inset-0 bg-black flex items-center justify-center">
-        <Loader2 className="w-7 h-7 text-white animate-spin" />
+if (loading) {
+  return (
+    <div className="fixed inset-0 bg-black z-[9999]">
+      <div className="absolute top-4 right-4 z-50">
+        <Skeleton className="h-10 w-10 rounded-full" />
       </div>
-    );
-  }
 
- return (
-  <div
-    className="fixed inset-0 bg-black z-[9999]"
-    onPointerDown={() => {
-      // first gesture unlocks audio for this session
-      if (!audioUnlocked) setAudioUnlocked(true);
-    }}
-  >
+      {/* fake reel */}
+      <div className="h-full w-full flex items-center justify-center">
+        <Skeleton className="h-[70vh] w-[92vw] max-w-xl rounded-2xl" />
+      </div>
+
+      {/* fake bottom overlay */}
+      <div className="absolute bottom-0 left-0 right-0 p-4">
+        <Skeleton className="h-4 w-4/5 mb-2" />
+        <Skeleton className="h-4 w-3/5 mb-4" />
+        <div className="flex gap-3">
+          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-5 w-16" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+  return (
+    <div
+      className="fixed inset-0 bg-black z-[9999]"
+      onPointerDown={(e) => {
+        // user gesture => allow global unmute
+        setSoundEnabled(true);
+        swipeStartRef.current = { x: e.clientX, y: e.clientY };
+      }}
+      onPointerUp={(e) => {
+        const s = swipeStartRef.current;
+        swipeStartRef.current = null;
+        if (!s) return;
+
+        const dx = e.clientX - s.x;
+        const dy = e.clientY - s.y;
+
+        const fromLeftEdge = s.x <= 24;
+        const fromRightEdge = s.x >= window.innerWidth - 24;
+        const strongHorizontal = Math.abs(dx) > 90 && Math.abs(dx) > Math.abs(dy) * 1.3;
+
+        if (strongHorizontal && ((fromLeftEdge && dx > 0) || (fromRightEdge && dx < 0))) {
+          closeWatch();
+        }
+      }}
+    >
       <button
-        onClick={() => router.back()}
+        onClick={closeWatch}
         className="fixed top-4 right-4 z-50 p-2 rounded-full bg-black/60"
         style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top, 0px))" }}
       >
         <X className="w-6 h-6 text-white" />
       </button>
 
-      <div className="h-full w-full overflow-y-scroll" style={{ scrollSnapType: "y mandatory" }}>
+<div ref={scrollerRef} className="h-full w-full overflow-y-scroll" style={{ scrollSnapType: "y mandatory" }}>
         {ordered.map((post) => {
-          const isConfirmed = confirmedSet.has(post.id);
+          const isConfirmed = confirm.isConfirmed(post.id);
+          const confirmCount = confirm.getCount(post.id, post.confirmations || 0);
+
           const activeMediaIndex = mediaIndexByPost[post.id] ?? 0;
+          const isSensitive = !!post.is_sensitive;
+          const isRevealed = revealedSensitive.has(post.id);
 
           return (
             <div
@@ -299,7 +414,6 @@ useEffect(() => {
               className="h-screen w-full relative"
               style={{ scrollSnapAlign: "start" }}
             >
-              {/* Horizontal carousel inside vertical reel */}
               <div
                 className="w-full h-full overflow-x-auto flex snap-x snap-mandatory"
                 style={{ WebkitOverflowScrolling: "touch" }}
@@ -312,26 +426,57 @@ useEffect(() => {
                   }
                 }}
               >
-                {(post.media || []).map((m, idx) => (
-                  <div
-                    key={m.id}
-                    className="w-full h-full shrink-0 snap-center flex items-center justify-center"
-                  >
-                    {m.media_type === "video" ? (
-                      <ReelVideo
-                      src={m.url}
-                      active={activePostId === post.id && activeMediaIndex === idx}
-                      onWatched2s={() => markViewed(post.id)}
-                      audioUnlocked={audioUnlocked}
-                    />
-                    ) : (
-                      <img src={m.url} alt="" className="h-full w-full object-contain" />
-                    )}
-                  </div>
-                ))}
+                {(post.media || []).map((m, idx) => {
+                  const blocked = isSensitive && !isRevealed;
+
+                  return (
+                    <div key={m.id} className="w-full h-full shrink-0 snap-center flex items-center justify-center">
+                      {blocked ? (
+                        <div className="relative w-full h-full flex items-center justify-center bg-black">
+                          {m.media_type === "video" ? (
+                            <video
+                              src={m.url}
+                              className="w-full h-full object-contain blur-2xl opacity-60"
+                              muted
+                              playsInline
+                              preload="metadata"
+                            />
+                          ) : (
+                            <img src={m.url} alt="" className="w-full h-full object-contain blur-2xl opacity-60" />
+                          )}
+
+                          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
+                            <div className="glass-float rounded-2xl px-5 py-4 max-w-sm">
+                              <p className="text-white font-semibold mb-1">Sensitive content</p>
+                              <p className="text-white/70 text-sm mb-4">
+                                This post may contain graphic or disturbing media.
+                              </p>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  revealPost(post.id);
+                                }}
+                                className="px-5 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-medium"
+                              >
+                                View
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : m.media_type === "video" ? (
+                        <ReelVideo
+                          src={m.url}
+                          active={!modalOpen && activePostId === post.id && activeMediaIndex === idx}
+                          onWatched2s={() => markViewed(post.id)}
+                        />
+                      ) : (
+                        <img src={m.url} alt="" className="h-full w-full object-contain" />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Bottom overlay */}
               <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
                 <p className="text-white text-sm break-words whitespace-pre-wrap line-clamp-3">
                   {post.comment || ""}
@@ -344,10 +489,13 @@ useEffect(() => {
                       className={`flex items-center gap-1 ${isConfirmed ? "text-primary-300" : ""}`}
                     >
                       <CheckCircle className={`w-5 h-5 ${isConfirmed ? "fill-current" : ""}`} />
-                      {post.confirmations || 0}
+                      {confirmCount}
                     </button>
 
-                    <button onClick={() => router.push(`/post/${post.id}`)} className="flex items-center gap-1">
+                    <button
+                      onClick={() => router.push(`/post/${post.id}`, { scroll: false })}
+                      className="flex items-center gap-1"
+                    >
                       <MessageCircle className="w-5 h-5" />
                       {post.comment_count || 0}
                     </button>

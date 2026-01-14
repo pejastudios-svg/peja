@@ -12,19 +12,61 @@ import { useAuth } from "@/context/AuthContext";
 import { realtimeManager } from "@/lib/realtime";
 import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
 import { useFeedCache } from "@/context/FeedContext";
+import { useConfirm } from "@/context/ConfirmContext";
+import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 
 type FeedTab = "nearby" | "trending";
 
-export default function Home() {
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+const HOME_UI_KEY = "peja-home-ui-v1";
 
-  const [activeTab, setActiveTab] = useState<FeedTab>("nearby");
+function loadHomeUI(): {
+  activeTab?: FeedTab;
+  trendingMode?: "recommended" | "top";
+  showSeenTop?: boolean;
+} {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(sessionStorage.getItem(HOME_UI_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+export default function Home() {
+  const applyCachedFeed = (key: string) => {
+  const cached = feedCache.get(key);
+  if (cached?.posts?.length) {
+    setPosts(cached.posts);
+    setLoading(false);
+  }
+};
+  const confirm = useConfirm();
+  const router = useRouter();
+  const { user, loading: authLoading, session } = useAuth();
+
+  const initialUI = loadHomeUI();
+  const [activeTab, setActiveTab] = useState<FeedTab>(initialUI.activeTab ?? "nearby");
+  type TrendingMode = "recommended" | "top";
+  const [trendingMode, setTrendingMode] = useState<TrendingMode>(initialUI.trendingMode ?? "recommended");
+  const [showSeenTop, setShowSeenTop] = useState<boolean>(initialUI.showSeenTop ?? false);
+  const [showSeenNearby, setShowSeenNearby] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const feedCache = useFeedCache();
-  const feedKey = `home:${activeTab}`;
+  const feedKey =
+  activeTab === "trending"
+    ? `home:trending:${trendingMode}:${showSeenTop ? "seen" : "unseen"}`
+    : `home:nearby:${showSeenNearby ? "seen" : "unseen"}`;
+    
+    useEffect(() => {
+  try {
+    sessionStorage.setItem(
+  HOME_UI_KEY,
+  JSON.stringify({ activeTab, trendingMode, showSeenTop, showSeenNearby })
+);
+  } catch {}
+}, [activeTab, trendingMode, showSeenTop]);
 
   const formatPost = useCallback(async (postData: any): Promise<Post | null> => {
     try {
@@ -39,7 +81,10 @@ export default function Home() {
         user_id: postData.user_id,
         category: postData.category,
         comment: postData.comment,
-        location: { latitude: 0, longitude: 0 },
+        location: {
+        latitude: postData.latitude ?? 0,
+        longitude: postData.longitude ?? 0,
+        },
         address: postData.address,
         is_anonymous: postData.is_anonymous,
         status: postData.status,
@@ -63,42 +108,152 @@ export default function Home() {
     }
   }, []);
 
-  const fetchPosts = useCallback(async (isRefresh = false) => {
-    const cached = feedCache.get(feedKey);
-if (!isRefresh && cached && cached.posts.length > 0) {
-  setPosts(cached.posts);
-  setLoading(false);
+  function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+} 
 
-  // still refresh silently in background to avoid missing new posts
-  // DO NOT return here
-}
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
+const SEEN_KEY = "peja-seen-posts-v1";
+const SEEN_GRACE_MS = 30 * 60 * 1000;
+
+type SeenStore = Record<string, number>;
+
+function readSeenStore(): SeenStore {
+  try {
+    const raw = localStorage.getItem(SEEN_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+
+    // Backwards compatibility: old format was string[]
+    if (Array.isArray(parsed)) {
+      const m: SeenStore = {};
+      for (const id of parsed) if (typeof id === "string") m[id] = 0;
+      return m;
     }
 
+    if (parsed && typeof parsed === "object") return parsed as SeenStore;
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function isHideableSeen(store: SeenStore, postId: string) {
+  const t = store[postId];
+  if (typeof t !== "number") return false;
+  return Date.now() - t >= SEEN_GRACE_MS;
+}
+
+function engagementScore(p: Post) {
+  // tune freely later
+  return (p.confirmations || 0) * 10 + (p.comment_count || 0) * 4 + Math.min(p.views || 0, 5000) * 0.2;
+}
+
+function recommendedScore(p: Post) {
+  const ageHours = (Date.now() - new Date(p.created_at).getTime()) / 36e5;
+  const e = engagementScore(p);
+  // "Hot" style: engagement decays with age
+  return e / Math.pow(ageHours + 2, 1.4);
+}
+
+  const fetchPosts = useCallback(async (isRefresh = false) => {
+    const cached = feedCache.get(feedKey);
+const usedCache = !isRefresh && cached && cached.posts.length > 0;
+
+if (usedCache) {
+  setPosts(cached.posts);
+  setLoading(false);
+  // We will refresh in background, but we should NOT turn loading back on.
+}
+
+if (isRefresh) {
+  setRefreshing(true);
+} else if (!usedCache) {
+  setLoading(true);
+}
+
     try {
-      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-      let query = supabase
-        .from("posts")
-        .select(`
-          id, user_id, category, comment, address, is_anonymous,
-          status, is_sensitive, confirmations, views, comment_count, report_count, created_at,
-          post_media (id, url, media_type, is_sensitive),
-          post_tags (tag)
-        `)
-        .eq("status", "live")
-        .gte("created_at", twentyFourHoursAgo);
+      const baseSelect = `
+  id, user_id, category, comment, address,
+  latitude, longitude,
+  is_anonymous, status, is_sensitive, confirmations, views, comment_count, report_count, created_at,
+  post_media (id, url, media_type, is_sensitive),
+  post_tags (tag)
+`;
 
-      if (activeTab === "trending") {
-        query = query.order("confirmations", { ascending: false }).order("views", { ascending: false });
-      } else {
-        query = query.order("created_at", { ascending: false });
-      }
+let data: any[] | null = null;
+let error: any = null;
 
-      const { data, error } = await query.limit(30);
+if (activeTab === "trending") {
+  // We fetch a pool then rank client-side.
+  if (trendingMode === "recommended") {
+    const newestQ = supabase
+      .from("posts")
+      .select(baseSelect)
+      .in("status", ["live", "resolved"])
+      .order("created_at", { ascending: false })
+      .limit(120);
+
+    const hotQ = supabase
+      .from("posts")
+      .select(baseSelect)
+      .in("status", ["live", "resolved"])
+      .order("confirmations", { ascending: false })
+      .order("views", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(120);
+
+    const [newestRes, hotRes] = await Promise.all([newestQ, hotQ]);
+
+    error = newestRes.error || hotRes.error;
+
+    // merge unique by id
+    const map = new Map<string, any>();
+    (newestRes.data || []).forEach((p: any) => map.set(p.id, p));
+    (hotRes.data || []).forEach((p: any) => map.set(p.id, p));
+    data = Array.from(map.values());
+  } else {
+    // "top"
+    const res = await supabase
+      .from("posts")
+      .select(baseSelect)
+      .in("status", ["live", "resolved"])
+      .order("confirmations", { ascending: false })
+      .order("views", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    data = res.data;
+    error = res.error;
+  }
+} else {
+  // nearby (we’ll sort by distance)
+  const res = await supabase
+    .from("posts")
+    .select(baseSelect)
+    .in("status", ["live", "resolved"])
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  data = res.data;
+  error = res.error;
+}
+
+if (error) {
+  console.error("Fetch error:", error);
+  setPosts([]);
+  return;
+}
 
       if (error) {
         console.error("Fetch error:", error);
@@ -111,7 +266,10 @@ if (!isRefresh && cached && cached.posts.length > 0) {
         user_id: post.user_id,
         category: post.category,
         comment: post.comment,
-        location: { latitude: 0, longitude: 0 },
+        location: {
+        latitude: (post as any).latitude ?? 0,
+        longitude: (post as any).longitude ?? 0,
+        },
         address: post.address,
         is_anonymous: post.is_anonymous,
         status: post.status,
@@ -130,15 +288,83 @@ if (!isRefresh && cached && cached.posts.length > 0) {
         })) || [],
         tags: post.post_tags?.map((t: any) => t.tag) || [],
       }));
-setPosts(formattedPosts);
-feedCache.setPosts(feedKey, formattedPosts);    } catch (err) {
+      const seenStore = readSeenStore();
+let finalPosts = formattedPosts;
+
+// Only sort by distance in Nearby tab
+if (activeTab === "nearby") {
+  const baseList = showSeenNearby ? formattedPosts : formattedPosts.filter(p => !isHideableSeen(seenStore, p.id));
+  const userLat = user?.last_latitude ?? null;
+  const userLng = user?.last_longitude ?? null;
+
+  if (userLat != null && userLng != null) {
+    finalPosts = [...baseList].sort((a, b) => {
+      const aLat = a.location?.latitude ?? 0;
+      const aLng = a.location?.longitude ?? 0;
+      const bLat = b.location?.latitude ?? 0;
+      const bLng = b.location?.longitude ?? 0;
+
+      // If a post has no coords, push it down
+      const aHas = !!aLat && !!aLng;
+      const bHas = !!bLat && !!bLng;
+
+      if (!aHas && bHas) return 1;
+      if (aHas && !bHas) return -1;
+      if (!aHas && !bHas) {
+        // fallback: newest first
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+
+      const da = distanceKm(userLat, userLng, aLat, aLng);
+      const db = distanceKm(userLat, userLng, bLat, bLng);
+
+      if (da !== db) return da - db;
+
+      // tie-breaker: newest first
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
+    // keep feed size sane
+    finalPosts = finalPosts.slice(0, 30);
+  } else {
+    // If we don't know user coords, fallback to newest
+    finalPosts = [...baseList]
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 30);
+  }
+} else {
+  // Trending tab: recommended vs top
+  if (trendingMode === "recommended") {
+    // hide seen by default
+    const unseen = formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
+    finalPosts = unseen
+      .sort((a, b) => recommendedScore(b) - recommendedScore(a))
+      .slice(0, 30);
+  } else {
+    // top: allow toggle to show seen
+    const base = showSeenTop
+  ? formattedPosts
+  : formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
+
+finalPosts = base
+  .sort((a, b) => recommendedScore(b) - recommendedScore(a))
+  .slice(0, 30);
+  }
+}
+
+confirm.hydrateCounts(finalPosts.map(p => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+confirm.loadConfirmedFor(finalPosts.map(p => p.id));
+
+setPosts(finalPosts);
+feedCache.setPosts(feedKey, finalPosts);   
+ } catch (err) {
       console.error("Fetch error:", err);
       setPosts([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeTab, feedKey, feedCache]);
+  }, [activeTab, feedKey, feedCache, trendingMode, showSeenTop, user]);
 
   // Initial fetch
   useEffect(() => {
@@ -146,6 +372,16 @@ feedCache.setPosts(feedKey, formattedPosts);    } catch (err) {
       fetchPosts();
     }
   }, [activeTab, authLoading, fetchPosts]);
+
+  useEffect(() => {
+  if (!session?.access_token) return;
+
+  fetch("/api/jobs/expire", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  }).catch(() => {});
+}, [session?.access_token]);
+
 
   // Real-time subscription
   useEffect(() => {
@@ -156,11 +392,37 @@ feedCache.setPosts(feedKey, formattedPosts);    } catch (err) {
           const formatted = await formatPost(newPost);
           if (formatted) {
             setPosts((prev) => {
-  const next = [formatted, ...prev].slice(0, 30);
+  const merged = [formatted, ...prev];
+
+  if (activeTab === "nearby") {
+    const userLat = user?.last_latitude ?? null;
+    const userLng = user?.last_longitude ?? null;
+
+    if (userLat != null && userLng != null) {
+      const sorted = merged.sort((a, b) => {
+        const aHas = !!a.location?.latitude && !!a.location?.longitude;
+        const bHas = !!b.location?.latitude && !!b.location?.longitude;
+        if (!aHas && bHas) return 1;
+        if (aHas && !bHas) return -1;
+        if (!aHas && !bHas) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+
+        const da = distanceKm(userLat, userLng, a.location.latitude, a.location.longitude);
+        const db = distanceKm(userLat, userLng, b.location.latitude, b.location.longitude);
+        if (da !== db) return da - db;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
+      const next = sorted.slice(0, 30);
+      feedCache.setPosts(feedKey, next);
+      return next;
+    }
+  }
+
+  const next = merged.slice(0, 30);
   feedCache.setPosts(feedKey, next);
   return next;
 });
-          }
+    }
         }
       },
       // On post update
@@ -180,7 +442,7 @@ feedCache.setPosts(feedKey, formattedPosts);    } catch (err) {
       }
       return p;
     })
-    .filter((p) => p.status === "live");
+    .filter((p) => p.status === "live" || p.status === "resolved");
      feedCache.setPosts(feedKey, next);
   return next;
 });
@@ -197,7 +459,7 @@ feedCache.setPosts(feedKey, formattedPosts);    } catch (err) {
     );
 
     return () => unsubscribe();
-  }, [formatPost, feedKey, feedCache]);
+  }, [formatPost, feedKey, feedCache, activeTab, user]);
 
   useEffect(() => {
   router.prefetch("/map");
@@ -274,7 +536,11 @@ useEffect(() => {
             <Button 
               variant={activeTab === "nearby" ? "primary" : "secondary"} 
               size="sm" 
-              onClick={() => setActiveTab("nearby")} 
+              onClick={() => {
+             const nextKey = `home:nearby:${showSeenNearby ? "seen" : "unseen"}`;
+             setActiveTab("nearby");
+             applyCachedFeed(nextKey);
+            }}
               leftIcon={<MapPin className="w-4 h-4" />}
             >
               Nearby
@@ -282,7 +548,11 @@ useEffect(() => {
             <Button 
               variant={activeTab === "trending" ? "primary" : "secondary"} 
               size="sm" 
-              onClick={() => setActiveTab("trending")} 
+              onClick={() => {
+              const nextKey = `home:trending:${trendingMode}:${showSeenTop ? "seen" : "unseen"}`;
+             setActiveTab("trending");
+              applyCachedFeed(nextKey);
+              }}
               leftIcon={<TrendingUp className="w-4 h-4" />}
             >
               Trending
@@ -296,37 +566,87 @@ useEffect(() => {
             </button>
           </div>
 
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-            </div>
-          ) : posts.length === 0 ? (
-            <div className="text-center py-12">
-              <MapPin className="w-12 h-12 text-dark-600 mx-auto mb-4" />
-              <p className="text-dark-400 mb-2">No recent incidents</p>
-              <p className="text-sm text-dark-500 mb-4">Be the first to report</p>
-              <Button variant="primary" onClick={() => router.push("/create")}>
-                Report Incident
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {refreshing && (
-                <div className="flex justify-center py-2">
-                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
-                </div>
-              )}
-              {posts.map((post) => (
-                <PostCard 
-                  key={post.id} 
-                  post={post} 
-                  sourceKey={feedKey}
-                  onConfirm={() => {}} 
-                  onShare={handleSharePost} 
-                />
-              ))}
-            </div>
-          )}
+          {activeTab === "trending" && (
+  <div className="flex items-center gap-2 mb-4">
+    <div className="flex gap-1 glass-sm rounded-xl p-1">
+      <button
+        type="button"
+        onClick={() => {
+  const nextMode = "recommended";
+  const nextKey = `home:trending:${nextMode}:${showSeenTop ? "seen" : "unseen"}`;
+  setTrendingMode(nextMode);
+  applyCachedFeed(nextKey);
+}}
+        className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${
+          trendingMode === "recommended" ? "bg-primary-600 text-white" : "text-dark-300 hover:bg-white/10"
+        }`}
+      >
+        Recommended
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+  const nextMode = "top";
+  const nextKey = `home:trending:${nextMode}:${showSeenTop ? "seen" : "unseen"}`;
+  setTrendingMode(nextMode);
+  applyCachedFeed(nextKey);
+}}
+        className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${
+          trendingMode === "top" ? "bg-primary-600 text-white" : "text-dark-300 hover:bg-white/10"
+        }`}
+      >
+        Top
+      </button>
+    </div>
+
+    <button
+  type="button"
+  onClick={() => setShowSeenTop((v) => !v)}
+  className="px-3 py-1.5 text-xs glass-sm rounded-xl text-dark-300 hover:bg-white/10"
+>
+  {showSeenTop ? "Hide seen" : "Show seen"}
+</button>
+  </div>
+)}
+
+{activeTab === "nearby" && (
+  <div className="flex justify-end mb-3">
+    <button
+      type="button"
+      onClick={() => setShowSeenNearby(v => !v)}
+      className="px-3 py-1.5 text-xs glass-sm rounded-xl text-dark-300 hover:bg-white/10"
+    >
+      {showSeenNearby ? "Hide seen" : "Show seen"}
+    </button>
+  </div>
+)}
+          {loading && posts.length === 0 ? (
+  <div className="space-y-4">
+    {Array.from({ length: 5 }).map((_, i) => (
+      <PostCardSkeleton key={i} />
+    ))}
+  </div>
+) : posts.length === 0 ? (
+  // keep your existing empty state
+  <div className="text-center py-12">...</div>
+) : (
+  <div className="space-y-4">
+    {refreshing && (
+      <div className="flex justify-center py-2">
+        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+      </div>
+    )}
+    {posts.map((post) => (
+      <PostCard
+        key={post.id}
+        post={post}
+        sourceKey={feedKey}
+        onConfirm={() => {}}
+        onShare={handleSharePost}
+      />
+    ))}
+  </div>
+)}
         </div>
       </main>
 

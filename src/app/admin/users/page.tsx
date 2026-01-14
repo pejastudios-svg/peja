@@ -1,8 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { Loader2, Search, Phone, Mail, Shield, Ban, CheckCircle } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 interface AdminUser {
   id: string;
@@ -17,15 +21,35 @@ interface AdminUser {
 }
 
 export default function AdminUsersPage() {
+  useScrollRestore("admin:users");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "suspended" | "banned">("all");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const { session } = useAuth();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     fetchUsers();
   }, [statusFilter]);
+
+  function AdminUserRowSkeleton() {
+  return (
+    <div className="glass-card flex items-center justify-between gap-3">
+      <div className="flex-1">
+        <Skeleton className="h-4 w-40 mb-2" />
+        <Skeleton className="h-3 w-56 mb-1" />
+        <Skeleton className="h-3 w-40" />
+      </div>
+      <div className="flex items-center gap-2">
+        <Skeleton className="h-5 w-16 rounded-full" />
+        <Skeleton className="h-7 w-20 rounded-lg" />
+      </div>
+    </div>
+  );
+}
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -52,6 +76,26 @@ export default function AdminUsersPage() {
     }
   };
 
+  useEffect(() => {
+  let t: any = null;
+
+  const schedule = () => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fetchUsers(), 500);
+  };
+
+  const ch = supabase
+    .channel("admin-users-rt")
+    .on("postgres_changes", { event: "*", schema: "public", table: "users" }, schedule)
+    .subscribe();
+
+  return () => {
+    if (t) clearTimeout(t);
+    supabase.removeChannel(ch);
+  };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [statusFilter]);
+
   const filteredUsers = users.filter((u) => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -62,26 +106,44 @@ export default function AdminUsersPage() {
     );
   });
 
-  const updateStatus = async (userId: string, newStatus: "active" | "suspended" | "banned") => {
-    setActionLoading(userId);
-    try {
-      const { error } = await supabase
-        .from("users")
-        .update({ status: newStatus })
-        .eq("id", userId);
+ const updateStatus = async (userId: string, newStatus: "active" | "suspended" | "banned") => {
+  setActionLoading(userId);
 
-      if (error) throw error;
-
-      setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, status: newStatus } : u))
-      );
-    } catch (err) {
-      console.error("Status update error:", err);
-      alert("Failed to update user status");
-    } finally {
-      setActionLoading(null);
+  try {
+    if (!session?.access_token) {
+      throw new Error("No session token. Please sign in again.");
     }
-  };
+
+    const res = await fetch("/api/admin/set-user-status", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ userId, status: newStatus }),
+    });
+
+const text = await res.text();
+let json: any;
+try {
+  json = JSON.parse(text);
+} catch {
+  console.error("API returned non-JSON:", text.slice(0, 300));
+  throw new Error("API crashed (non-JSON). Check terminal logs + service role env.");
+}
+    console.log("set-user-status response:", res.status, json);
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || `Request failed (${res.status})`);
+    }
+
+  await fetchUsers();
+  } catch (err) {
+    console.error("Status update error:", err);
+    alert("Failed to update user status");
+  } finally {
+    setActionLoading(null);
+  }
+};
 
   return (
     <div className="p-6">
@@ -92,15 +154,24 @@ export default function AdminUsersPage() {
 
       {/* Filters */}
       <div className="flex flex-col md:flex-row gap-3 mb-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, email, or phone..."
-            className="w-full pl-10 pr-4 py-2.5 glass-input"
-          />
+        <div className="relative flex-1 min-w-[280px]">
+         <button
+  type="button"
+  onClick={() => searchInputRef.current?.focus()}
+  className="absolute left-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 z-10"
+  aria-label="Focus search"
+>
+  <Search className="w-5 h-5 text-dark-400" />
+</button>
+
+<input
+  ref={searchInputRef}
+  type="text"
+  value={search}
+  onChange={(e) => setSearch(e.target.value)}
+  placeholder="Search by name, email, or phone..."
+  className="glass-input w-full h-11 pl-12 pr-4"
+/>
         </div>
         <select
           value={statusFilter}
@@ -115,18 +186,29 @@ export default function AdminUsersPage() {
       </div>
 
       {/* List */}
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-        </div>
-      ) : filteredUsers.length === 0 ? (
-        <div className="glass-card text-center py-12">
-          <p className="text-dark-400">No users found</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredUsers.map((user) => (
-            <div key={user.id} className="glass-card flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      {loading && users.length === 0 ? (
+  <div className="space-y-3">
+    {Array.from({ length: 10 }).map((_, i) => (
+      <AdminUserRowSkeleton key={i} />
+    ))}
+  </div>
+) : filteredUsers.length === 0 ? (
+  <div className="glass-card text-center py-12">
+    <p className="text-dark-400">No users found</p>
+  </div>
+) : (
+  <div className="space-y-3">
+    {loading && (
+      <div className="flex justify-center py-2">
+        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+      </div>
+    )}
+    {filteredUsers.map((user) => (
+            <div
+            key={user.id}
+            onClick={() => router.push(`/admin/users/${user.id}`)}
+            className="glass-card flex flex-col md:flex-row md:items-center md:justify-between gap-3 cursor-pointer hover:bg-white/5 transition-colors"
+            >
               <div>
                 <p className="font-medium text-dark-100">
                   {user.full_name || "Unnamed User"}
@@ -178,7 +260,10 @@ export default function AdminUsersPage() {
                 <div className="flex gap-1">
                   {user.status !== "active" && (
                     <button
-                      onClick={() => updateStatus(user.id, "active")}
+                      onClick={(e) => {
+                      e.stopPropagation();
+                      updateStatus(user.id, "active");
+                      }}
                       disabled={actionLoading === user.id}
                       className="p-1.5 rounded-lg bg-green-500/15 text-green-400 hover:bg-green-500/25 text-xs flex items-center gap-1"
                     >
@@ -187,7 +272,10 @@ export default function AdminUsersPage() {
                   )}
                   {user.status !== "suspended" && (
                     <button
-                      onClick={() => updateStatus(user.id, "suspended")}
+                      onClick={(e) => {
+                     e.stopPropagation();
+                     updateStatus(user.id, "suspended");
+                     }}
                       disabled={actionLoading === user.id}
                       className="p-1.5 rounded-lg bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25 text-xs"
                     >
@@ -196,7 +284,10 @@ export default function AdminUsersPage() {
                   )}
                   {user.status !== "banned" && (
                     <button
-                      onClick={() => updateStatus(user.id, "banned")}
+                      onClick={(e) => {
+                      e.stopPropagation();
+                      updateStatus(user.id, "banned");
+                      }}
                       disabled={actionLoading === user.id}
                       className="p-1.5 rounded-lg bg-red-500/15 text-red-400 hover:bg-red-500/25 text-xs flex items-center gap-1"
                     >

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   ArrowLeft,
   Plus,
@@ -273,13 +274,34 @@ export default function EmergencyContactsPage() {
     }
   };
 
-  if (authLoading || loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-      </div>
-    );
-  }
+if (authLoading || loading) {
+  return (
+    <div className="min-h-screen pb-20">
+      <header className="fixed top-0 left-0 right-0 z-50 glass-header">
+        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
+          <Skeleton className="h-9 w-9 rounded-lg" />
+          <Skeleton className="h-4 w-44" />
+          <Skeleton className="h-9 w-9 rounded-lg" />
+        </div>
+      </header>
+
+      <main className="pt-14 max-w-2xl mx-auto px-4 py-6 space-y-3">
+        <Skeleton className="h-16 w-full rounded-2xl" />
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="glass-card flex items-center gap-4">
+            <Skeleton className="h-12 w-12 rounded-full shrink-0" />
+            <div className="flex-1">
+              <Skeleton className="h-4 w-40 mb-2" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+            <Skeleton className="h-9 w-9 rounded-lg" />
+          </div>
+        ))}
+        <Skeleton className="h-12 w-full rounded-2xl" />
+      </main>
+    </div>
+  );
+}
 
   return (
     <div className="min-h-screen pb-20">

@@ -9,6 +9,8 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { useFeedCache } from "@/context/FeedContext";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
+import { useConfirm } from "@/context/ConfirmContext";
+import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import {
   Search,
   X,
@@ -18,6 +20,7 @@ import {
 } from "lucide-react";
 
 function SearchContent() {
+  const confirm = useConfirm();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -25,134 +28,167 @@ function SearchContent() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+    useScrollRestore("search", posts.length > 0);
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all">("all");
   const feedCache = useFeedCache();
-  const feedKey = `search:q=${query}|cat=${selectedCategory || ""}|range=${dateRange}`;
-  useScrollRestore(feedKey);
+  const feedKey = `search:q=${query}|cat=${selectedCategory ?? "all"}|range=${dateRange}`;
 
   const performSearch = useCallback(async () => {
-    const cached = feedCache.get(feedKey);
-if (cached && cached.posts.length > 0) {
-  setPosts(cached.posts);
-  setLoading(false);
-  return;
-}
-    setLoading(true);
-    
+  setLoading(true);
 
-    try {
-      let queryBuilder = supabase
-  .from("posts")
-  .select(`
-    id, user_id, category, comment, address,
-    is_anonymous, status, is_sensitive,
-    confirmations, views, comment_count, report_count, created_at,
-    post_media (id, post_id, url, media_type, is_sensitive),
-    post_tags (tag)
-  `)
-  .eq("status", "live")
-  .order("created_at", { ascending: false })
-  .limit(50);
+  try {
+    // 1) Fetch posts WITHOUT embeds (more reliable)
+    let queryBuilder = supabase
+      .from("posts")
+      .select(
+        `
+        id, user_id, category, comment, address,
+        latitude, longitude,
+        is_anonymous, status, is_sensitive,
+        confirmations, views, comment_count, report_count, created_at
+        `
+      )
+      .in("status", ["live", "resolved"]) // keep archived hidden by default
+      .order("created_at", { ascending: false })
+      .limit(200);
 
-      // Category filter
-      if (selectedCategory) {
-        queryBuilder = queryBuilder.eq("category", selectedCategory);
-      }
-
-      // Date range filter
-      if (dateRange !== "all") {
-        const now = new Date();
-        let startDate: Date;
-
-        switch (dateRange) {
-          case "today":
-            startDate = new Date(now.setHours(0, 0, 0, 0));
-            break;
-          case "week":
-            startDate = new Date(now.setDate(now.getDate() - 7));
-            break;
-          case "month":
-            startDate = new Date(now.setMonth(now.getMonth() - 1));
-            break;
-          default:
-            startDate = new Date(0);
-        }
-
-        queryBuilder = queryBuilder.gte("created_at", startDate.toISOString());
-      }
-
-      const { data, error } = await queryBuilder;
-
-      if (error) throw new Error(error.message);
-
-      let formattedPosts: Post[] = (data || []).map((post) => ({
-        id: post.id,
-        user_id: post.user_id,
-        category: post.category,
-        comment: post.comment,
-        location: { latitude: 0, longitude: 0 },
-        address: post.address,
-        is_anonymous: post.is_anonymous,
-        status: post.status,
-        is_sensitive: post.is_sensitive,
-        confirmations: post.confirmations || 0,
-        views: post.views || 0,
-        comment_count: post.comment_count || 0,
-        created_at: post.created_at,
-        media:
-          post.post_media?.map((m: any) => ({
-            id: m.id,
-            post_id: m.post_id,
-            url: m.url,
-            media_type: m.media_type,
-            is_sensitive: m.is_sensitive,
-          })) || [],
-        tags: post.post_tags?.map((t: any) => t.tag) || [],
-      }));
-
-      // Client-side filtering for better search
-      if (query.trim()) {
-        const searchTerm = query.toLowerCase().trim();
-        
-        // Check if searching for a tag
-        if (searchTerm.startsWith("#")) {
-          const tagQuery = searchTerm.slice(1);
-          formattedPosts = formattedPosts.filter((p) =>
-            p.tags?.some((t) => t.toLowerCase().includes(tagQuery))
-          );
-        } else {
-          // Search in comment, address, category name, and tags
-          formattedPosts = formattedPosts.filter((p) => {
-            const categoryName = CATEGORIES.find((c) => c.id === p.category)?.name || "";
-            
-            return (
-              p.comment?.toLowerCase().includes(searchTerm) ||
-              p.address?.toLowerCase().includes(searchTerm) ||
-              categoryName.toLowerCase().includes(searchTerm) ||
-              p.category.toLowerCase().includes(searchTerm) ||
-              p.tags?.some((t) => t.toLowerCase().includes(searchTerm))
-            );
-          });
-        }
-      }
-feedCache.setPosts(feedKey, formattedPosts);
-      setPosts(formattedPosts);
-      feedCache.setPosts(feedKey, formattedPosts);
-    } catch (err) {
-  console.error("Search error raw:", err);
-  console.error("Search error details:", {
-    type: typeof err,
-    message: (err as any)?.message,
-    stack: (err as any)?.stack,
-    name: (err as any)?.name,
-  });
-} finally {
-      setLoading(false);
+    // Category filter
+    if (selectedCategory) {
+      queryBuilder = queryBuilder.eq("category", selectedCategory);
     }
-  }, [query, selectedCategory, dateRange]);
+
+    // Date range filter
+    if (dateRange !== "all") {
+      const now = new Date();
+      let startDate: Date;
+
+      switch (dateRange) {
+        case "today":
+          startDate = new Date(now.setHours(0, 0, 0, 0));
+          break;
+        case "week":
+          startDate = new Date(now.setDate(now.getDate() - 7));
+          break;
+        case "month":
+          startDate = new Date(now.setMonth(now.getMonth() - 1));
+          break;
+        default:
+          startDate = new Date(0);
+      }
+
+      queryBuilder = queryBuilder.gte("created_at", startDate.toISOString());
+    }
+
+    const { data: postsData, error: postsErr } = await queryBuilder;
+    if (postsErr) throw postsErr;
+
+    const rows = postsData || [];
+    const postIds = rows.map((p: any) => p.id);
+
+    // 2) Fetch media + tags in bulk
+    const [{ data: mediaData, error: mediaErr }, { data: tagsData, error: tagsErr }] =
+      await Promise.all([
+        postIds.length
+          ? supabase
+              .from("post_media")
+              .select("id,post_id,url,media_type,is_sensitive,thumbnail_url")
+              .in("post_id", postIds)
+          : Promise.resolve({ data: [], error: null } as any),
+        postIds.length
+          ? supabase.from("post_tags").select("post_id,tag").in("post_id", postIds)
+          : Promise.resolve({ data: [], error: null } as any),
+      ]);
+
+    if (mediaErr) console.error("Search media error:", mediaErr);
+    if (tagsErr) console.error("Search tags error:", tagsErr);
+
+    const mediaMap: Record<string, any[]> = {};
+    (mediaData || []).forEach((m: any) => {
+      if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
+      mediaMap[m.post_id].push(m);
+    });
+
+    const tagsMap: Record<string, string[]> = {};
+    (tagsData || []).forEach((t: any) => {
+      if (!tagsMap[t.post_id]) tagsMap[t.post_id] = [];
+      tagsMap[t.post_id].push(t.tag);
+    });
+
+    // 3) Format posts
+    let formattedPosts: Post[] = rows.map((post: any) => ({
+      id: post.id,
+      user_id: post.user_id,
+      category: post.category,
+      comment: post.comment,
+      location: {
+        latitude: post.latitude ?? 0,
+        longitude: post.longitude ?? 0,
+      },
+      address: post.address,
+      is_anonymous: post.is_anonymous,
+      status: post.status,
+      is_sensitive: post.is_sensitive,
+      confirmations: post.confirmations || 0,
+      views: post.views || 0,
+      comment_count: post.comment_count || 0,
+      report_count: post.report_count || 0,
+      created_at: post.created_at,
+      media:
+        (mediaMap[post.id] || []).map((m: any) => ({
+          id: m.id,
+          post_id: m.post_id,
+          url: m.url,
+          media_type: m.media_type,
+          is_sensitive: m.is_sensitive,
+          thumbnail_url: m.thumbnail_url,
+        })) || [],
+      tags: tagsMap[post.id] || [],
+    }));
+
+    // 4) Client-side filtering for search term
+    if (query.trim()) {
+      const searchTerm = query.toLowerCase().trim();
+
+      if (searchTerm.startsWith("#")) {
+        const tagQuery = searchTerm.slice(1);
+        formattedPosts = formattedPosts.filter((p) =>
+          (p.tags || []).some((t) => (t || "").toLowerCase().includes(tagQuery))
+        );
+      } else {
+        formattedPosts = formattedPosts.filter((p) => {
+          const categoryName = CATEGORIES.find((c) => c.id === p.category)?.name || "";
+          const comment = (p.comment ?? "").toLowerCase();
+          const address = (p.address ?? "").toLowerCase();
+          const categoryId = (p.category ?? "").toLowerCase();
+          const categoryNameLower = categoryName.toLowerCase();
+          const tags = (p.tags ?? []).map((t) => (t ?? "").toLowerCase());
+
+          return (
+            comment.includes(searchTerm) ||
+            address.includes(searchTerm) ||
+            categoryNameLower.includes(searchTerm) ||
+            categoryId.includes(searchTerm) ||
+            tags.some((t) => t.includes(searchTerm))
+          );
+        });
+      }
+    }
+
+    setPosts(formattedPosts.slice(0, 50));
+    const top = formattedPosts.slice(0, 50);
+   confirm.hydrateCounts(top.map(p => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+    confirm.loadConfirmedFor(top.map(p => p.id));
+setPosts(top);
+  } catch (error) {
+    console.error("Search error:", error);
+    setPosts([]);
+  } finally {
+    setLoading(false);
+  }
+}, [query, selectedCategory, dateRange]);
 
   
 
@@ -212,7 +248,7 @@ useEffect(() => {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search incidents, #tags, locations, categories..."
               className="w-full pl-12 pr-20 py-3 glass-input"
-              autoFocus
+              autoFocus={!(typeof window !== "undefined" && sessionStorage.getItem("search-has-scrolled") === "1")}
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {query && (
@@ -352,36 +388,35 @@ useEffect(() => {
           )}
 
           {/* Results */}
-          {loading ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-            </div>
-          ) : posts.length === 0 ? (
-            <div className="text-center py-12">
-              <Search className="w-12 h-12 text-dark-600 mx-auto mb-4" />
-              <p className="text-dark-400">
-                {query ? `No results for "${query}"` : "Start typing to search"}
-              </p>
-              <p className="text-sm text-dark-500 mt-1">
-                Try searching for keywords, #tags, locations, or categories
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <p className="text-sm text-dark-400">
-                {posts.length} result{posts.length !== 1 ? "s" : ""}{" "}
-                {query && `for "${query}"`}
-              </p>
-              {posts.map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  onConfirm={() => {}}
-                  onShare={handleSharePost}
-                />
-              ))}
-            </div>
-          )}
+         {loading && posts.length === 0 ? (
+  <div className="space-y-4">
+    {Array.from({ length: 5 }).map((_, i) => (
+      <PostCardSkeleton key={i} />
+    ))}
+  </div>
+) : posts.length === 0 ? (
+  <div className="text-center py-12">...</div>
+) : (
+  <div className="space-y-4">
+    {loading && (
+      <div className="flex justify-center py-2">
+        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+      </div>
+    )}
+    <p className="text-sm text-dark-400">
+      {posts.length} result{posts.length !== 1 ? "s" : ""} {query && `for "${query}"`}
+    </p>
+    {posts.map((post) => (
+      <PostCard
+        key={post.id}
+        post={post}
+        onConfirm={() => {}}
+        onShare={handleSharePost}
+        sourceKey={feedKey}
+      />
+    ))}
+  </div>
+)}
         </div>
       </main>
 

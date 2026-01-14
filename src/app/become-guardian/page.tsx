@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { NIGERIAN_STATES } from "@/lib/types";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   ArrowLeft,
   Shield,
@@ -112,13 +113,27 @@ export default function BecomeGuardianPage() {
     );
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-      </div>
-    );
-  }
+if (loading) {
+  return (
+    <div className="min-h-screen pb-20">
+      <header className="fixed top-0 left-0 right-0 z-50 glass-header">
+        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
+          <Skeleton className="h-9 w-9 rounded-lg" />
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-9 w-9 rounded-lg" />
+        </div>
+      </header>
+
+      <main className="pt-14 max-w-2xl mx-auto px-4 py-6 space-y-4">
+        <Skeleton className="h-40 w-full rounded-2xl" />
+        <Skeleton className="h-32 w-full rounded-2xl" />
+        <Skeleton className="h-32 w-full rounded-2xl" />
+        <Skeleton className="h-28 w-full rounded-2xl" />
+        <Skeleton className="h-12 w-full rounded-2xl" />
+      </main>
+    </div>
+  );
+}
 
   // Already applied
   if (existingApplication) {

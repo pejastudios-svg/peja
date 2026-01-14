@@ -13,7 +13,7 @@ export default async function WatchPage({
     <WatchClient
       startId={sp.postId ?? null}
       source={sp.source ?? null}
-      sourceKey={sp.sourceKey ?? null}
+      sourceKey={sp.sourceKey ? decodeURIComponent(sp.sourceKey) : null}
     />
   );
 }

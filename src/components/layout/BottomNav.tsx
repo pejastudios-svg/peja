@@ -1,18 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Home, Map, Bell, User } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import { Home, Map, Bell, User, Plus, PlusCircle } from "lucide-react";
 import { SOSButton } from "../sos/SOSButton";
 
 const navItems = [
   { href: "/", icon: Home, label: "Home" },
   { href: "/map", icon: Map, label: "Map" },
-  { href: "/notifications", icon: Bell, label: "Alerts" },
+  { href: "/create", icon: PlusCircle, label: "Report" },
   { href: "/profile", icon: User, label: "Profile" },
 ];
 
 export function BottomNav() {
+  const router = useRouter();
   const pathname = usePathname();
 
   // Don't show on post detail page (has its own fixed input)
@@ -22,24 +23,46 @@ export function BottomNav() {
     <nav className="fixed bottom-0 left-0 right-0 z-50 glass-footer lg:hidden safe-bottom">
       <div className="flex items-center justify-around h-16 px-2">
         {navItems.slice(0, 2).map((item) => {
-          const isActive = pathname === item.href;
-          const Icon = item.icon;
+  const isActive = pathname === item.href;
+  const Icon = item.icon;
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
-                isActive
-                  ? "text-primary-400"
-                  : "text-dark-400 hover:text-dark-200"
-              }`}
-            >
-              <Icon className="w-5 h-5" />
-              <span className="text-xs mt-1">{item.label}</span>
-            </Link>
-          );
-        })}
+  if (item.href === "/") {
+    return (
+      <button
+        key={item.href}
+        onClick={() => {
+  // Close the top-most layer first (modal/watch/overlay) using history
+  if (typeof window !== "undefined" && window.history.length > 1 && pathname !== "/") {
+    router.back();
+    return;
+  }
+
+  router.push("/", { scroll: false });
+}}
+        className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
+          isActive ? "text-primary-400" : "text-dark-400 hover:text-dark-200"
+        }`}
+      >
+        <Icon className="w-5 h-5" />
+        <span className="text-xs mt-1">{item.label}</span>
+      </button>
+    );
+  }
+
+  return (
+    <Link
+      key={item.href}
+      href={item.href}
+      scroll={false}
+      className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
+        isActive ? "text-primary-400" : "text-dark-400 hover:text-dark-200"
+      }`}
+    >
+      <Icon className="w-5 h-5" />
+      <span className="text-xs mt-1">{item.label}</span>
+    </Link>
+  );
+})}
 
         {/* SOS Button in center */}
         <div className="flex flex-col items-center justify-center -mt-8">
@@ -53,6 +76,7 @@ export function BottomNav() {
 
           return (
             <Link
+              scroll={false}
               key={item.href}
               href={item.href}
               className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${

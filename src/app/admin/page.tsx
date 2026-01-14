@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   Users,
   FileText,
@@ -83,12 +84,59 @@ export default function AdminOverviewPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+  return (
+    <div className="p-6">
+      <div className="mb-8">
+        <Skeleton className="h-6 w-52 mb-2" />
+        <Skeleton className="h-4 w-40" />
       </div>
-    );
-  }
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="glass-card">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-11 w-11 rounded-xl" />
+              <div className="flex-1">
+                <Skeleton className="h-6 w-14 mb-2" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="glass-card">
+          <Skeleton className="h-5 w-40 mb-4" />
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl mb-2">
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="flex-1">
+                <Skeleton className="h-4 w-40 mb-2" />
+                <Skeleton className="h-3 w-56" />
+              </div>
+              <Skeleton className="h-3 w-16" />
+            </div>
+          ))}
+        </div>
+
+        <div className="glass-card">
+          <Skeleton className="h-5 w-32 mb-4" />
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl mb-2">
+              <Skeleton className="h-10 w-10 rounded-lg" />
+              <div className="flex-1">
+                <Skeleton className="h-4 w-32 mb-2" />
+                <Skeleton className="h-3 w-48" />
+              </div>
+              <Skeleton className="h-3 w-16" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
   const statCards = [
     { label: "Total Users", value: stats?.totalUsers || 0, icon: Users, color: "text-blue-400", bg: "bg-blue-500/10" },

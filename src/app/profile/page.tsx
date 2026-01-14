@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
+import { useFeedCache } from "@/context/FeedContext";
+import { useConfirm } from "@/context/ConfirmContext";
+import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import {
   User,
   Mail,
@@ -23,6 +26,8 @@ import { Post } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
 
 export default function ProfilePage() {
+  const confirm = useConfirm();
+  const feedCache = useFeedCache();
   const router = useRouter();
   const { user, signOut, loading: authLoading, } = useAuth();
   const [userPosts, setUserPosts] = useState<Post[]>([]);
@@ -50,41 +55,49 @@ useScrollRestore("profile");
   }, [user]);
 
   const fetchUserPosts = async () => {
-    if (!user) return;
+  if (!user) return;
 
-    setPostsLoading(true);
-    try {
-      const { data: postsData, error } = await supabase
-        .from("posts")
-        .select(`
+  setPostsLoading(true);
+  try {
+    const { data: postsData, error } = await supabase
+      .from("posts")
+      .select(
+        `
           *,
           post_media (*),
           post_tags (tag)
-        `)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+        `
+      )
+      .eq("user_id", user.id)
+      .in("status", ["live", "resolved"])
+      .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Error fetching user posts:", error);
-        return;
-      }
+    if (error) {
+      console.error("Error fetching user posts:", error);
+      setUserPosts([]);
+      return;
+    }
 
-      
-      const formattedPosts: Post[] = (postsData || []).map((post) => ({
-        id: post.id,
-        user_id: post.user_id,
-        category: post.category,
-        comment: post.comment,
-        location: { latitude: 0, longitude: 0 },
-        address: post.address,
-        is_anonymous: post.is_anonymous,
-        status: post.status,
-        is_sensitive: post.is_sensitive,
-        confirmations: post.confirmations || 0,
-        views: post.views || 0,
-        comment_count: post.comment_count || 0,
-        created_at: post.created_at,
-        media: post.post_media?.map((m: any) => ({
+    const formattedPosts: Post[] = (postsData || []).map((post: any) => ({
+      id: post.id,
+      user_id: post.user_id,
+      category: post.category,
+      comment: post.comment,
+      location: {
+        latitude: post.latitude ?? 0,
+        longitude: post.longitude ?? 0,
+      },
+      address: post.address,
+      is_anonymous: post.is_anonymous,
+      status: post.status,
+      is_sensitive: post.is_sensitive,
+      confirmations: post.confirmations || 0,
+      views: post.views || 0,
+      comment_count: post.comment_count || 0,
+      report_count: post.report_count || 0,
+      created_at: post.created_at,
+      media:
+        post.post_media?.map((m: any) => ({
           id: m.id,
           post_id: m.post_id,
           url: m.url,
@@ -92,32 +105,38 @@ useScrollRestore("profile");
           is_sensitive: m.is_sensitive,
           thumbnail_url: m.thumbnail_url,
         })) || [],
-        tags: post.post_tags?.map((t: any) => t.tag) || [],
-      }));
+      tags: post.post_tags?.map((t: any) => t.tag) || [],
+    }));
 
-      setUserPosts(formattedPosts);
-    } catch (error) {
-      console.error("Error:", error);
-    } finally {
-      setPostsLoading(false);
-    }
-  };
+    setUserPosts(formattedPosts);
+    confirm.hydrateCounts(formattedPosts.map(p => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+    confirm.loadConfirmedFor(formattedPosts.map(p => p.id));
+    feedCache.setPosts("profile:posts", formattedPosts);
+  } catch (e) {
+    console.error("Error:", e);
+    setUserPosts([]);
+  } finally {
+    setPostsLoading(false);
+  }
+};
 
-  const fetchConfirmedPosts = async () => {
+ const fetchConfirmedPosts = async () => {
   if (!user) return;
 
   setConfirmedLoading(true);
   try {
     const { data, error } = await supabase
       .from("post_confirmations")
-      .select(`
+      .select(
+        `
         post_id,
         posts:post_id (
           *,
           post_media (*),
           post_tags (tag)
         )
-      `)
+      `
+      )
       .eq("user_id", user.id);
 
     if (error) {
@@ -126,12 +145,10 @@ useScrollRestore("profile");
       return;
     }
 
-    // Extract posts from the joined result
     const rawPosts = (data || [])
       .map((row: any) => row.posts)
       .filter(Boolean);
 
-    // Remove duplicates (just in case)
     const unique = new Map<string, any>();
     rawPosts.forEach((p: any) => unique.set(p.id, p));
 
@@ -155,18 +172,23 @@ useScrollRestore("profile");
         comment_count: post.comment_count || 0,
         report_count: post.report_count || 0,
         created_at: post.created_at,
-        media: post.post_media?.map((m: any) => ({
-          id: m.id,
-          post_id: m.post_id,
-          url: m.url,
-          media_type: m.media_type,
-          is_sensitive: m.is_sensitive,
-          thumbnail_url: m.thumbnail_url,
-        })) || [],
+        media:
+          post.post_media?.map((m: any) => ({
+            id: m.id,
+            post_id: m.post_id,
+            url: m.url,
+            media_type: m.media_type,
+            is_sensitive: m.is_sensitive,
+            thumbnail_url: m.thumbnail_url,
+          })) || [],
         tags: post.post_tags?.map((t: any) => t.tag) || [],
       }));
 
-    setConfirmedPosts(formatted);
+    const filtered = formatted.filter(p => p.status !== "archived");
+    setConfirmedPosts(filtered);
+    confirm.hydrateCounts(filtered.map(p => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+    confirm.loadConfirmedFor(filtered.map(p => p.id));
+    feedCache.setPosts("profile:confirmed", filtered);
   } catch (e) {
     console.error(e);
     setConfirmedPosts([]);
@@ -202,7 +224,7 @@ useScrollRestore("profile");
       <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button
-            onClick={() => router.push("/")}
+          onClick={() => router.back()}
             className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
           >
             <ChevronLeft className="w-5 h-5 text-dark-200" />
@@ -355,29 +377,28 @@ useScrollRestore("profile");
               </Button>
             </div>
 
-            {listLoading ? (
-  <div className="flex justify-center py-8">
-    <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+{listLoading && list.length === 0 ? (
+  <div className="space-y-4">
+    {Array.from({ length: 4 }).map((_, i) => (
+      <PostCardSkeleton key={i} />
+    ))}
   </div>
 ) : list.length === 0 ? (
-  <div className="text-center py-8">
-    <p className="text-dark-400 mb-4">
-      {showingConfirmed ? "No confirmed posts yet" : "No posts yet"}
-    </p>
-    {!showingConfirmed && (
-      <Button variant="primary" onClick={() => router.push("/create")}>
-        Create Your First Post
-      </Button>
-    )}
-  </div>
+  <div className="text-center py-8">...</div>
 ) : (
   <div className="space-y-4">
+    {listLoading && (
+      <div className="flex justify-center py-2">
+        <div className="w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )}
     {list.map((post) => (
       <PostCard
         key={post.id}
         post={post}
         onConfirm={() => {}}
         onShare={() => {}}
+        sourceKey={showingConfirmed ? "profile:confirmed" : "profile:posts"}
       />
     ))}
   </div>

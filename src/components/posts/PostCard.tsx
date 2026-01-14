@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect, memo, useRef } from "react";
+import { useState, useEffect, memo } from "react";
 import { useRouter } from "next/navigation";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { InlineVideo } from "@/components/reels/InlineVideo";
+import { useConfirm } from "@/context/ConfirmContext";
+import { useAuth } from "@/context/AuthContext";
 import {
   MapPin,
   Clock,
@@ -22,7 +24,6 @@ import { Post, CATEGORIES } from "@/lib/types";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { formatDistanceToNow, differenceInHours } from "date-fns";
-import { supabase } from "@/lib/supabase";
 import { notifyPostConfirmed } from "@/lib/notifications";
 
 interface PostCardProps {
@@ -34,167 +35,84 @@ interface PostCardProps {
 
 function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProps) {
   const router = useRouter();
+
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [showSensitive, setShowSensitive] = useState(false);
   const [showFullComment, setShowFullComment] = useState(false);
-  const [isConfirmed, setIsConfirmed] = useState(false);
-  const [confirmLoading, setConfirmLoading] = useState(false);
-  const [localConfirmations, setLocalConfirmations] = useState(post.confirmations);
   const [videoError, setVideoError] = useState(false);
+
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxItems, setLightboxItems] = useState<{ url: string; type: "image" | "video" }[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
-  
-  // Prevent double-click on confirm
-  const confirmingRef = useRef(false);
+
+  const [confirming, setConfirming] = useState(false);
+
+  const { user } = useAuth();
+  const confirm = useConfirm();
+
+  const isConfirmed = confirm.isConfirmed(post.id);
+  const confirmations = confirm.getCount(post.id, post.confirmations || 0);
+
+  // Seed confirmation count once so it doesn't flicker
+  useEffect(() => {
+    confirm.hydrateCounts([{ postId: post.id, confirmations: post.confirmations || 0 }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.id]);
 
   const isExpired = differenceInHours(new Date(), new Date(post.created_at)) >= 24;
 
-  useEffect(() => {
-    setLocalConfirmations(post.confirmations);
-  }, [post.confirmations]);
-
-  useEffect(() => {
-    let mounted = true;
-    
-    const checkConfirmed = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user || !mounted) return;
-
-      const { data } = await supabase
-        .from("post_confirmations")
-        .select("id")
-        .eq("post_id", post.id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (mounted) {
-        setIsConfirmed(!!data);
-      }
-    };
-
-    checkConfirmed();
-    
-    return () => { mounted = false; };
-  }, [post.id]);
-
   const handleConfirmClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    
-    // Prevent double-click
-    if (confirmingRef.current) {
+
+    if (!user) {
+      router.push("/login");
       return;
     }
-    confirmingRef.current = true;
-    setConfirmLoading(true);
+
+    if (confirming) return;
+    setConfirming(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push("/login");
-        return;
-      }
+      const res = await confirm.toggle(post.id, post.confirmations || 0);
 
-      const wasConfirmed = isConfirmed;
-      const prevCount = localConfirmations;
-
-      if (wasConfirmed) {
-        // Unconfirm - optimistic update
-        setIsConfirmed(false);
-        setLocalConfirmations(Math.max(0, prevCount - 1));
-
-        const { error: deleteError } = await supabase
-          .from("post_confirmations")
-          .delete()
-          .eq("post_id", post.id)
-          .eq("user_id", user.id);
-
-        if (deleteError) {
-          // Rollback on error
-          setIsConfirmed(true);
-          setLocalConfirmations(prevCount);
-          throw deleteError;
-        }
-
-        await supabase
-          .from("posts")
-          .update({ confirmations: Math.max(0, prevCount - 1) })
-          .eq("id", post.id);
-
-      } else {
-        // Confirm - optimistic update
-        setIsConfirmed(true);
-        setLocalConfirmations(prevCount + 1);
-
-        const { error: insertError } = await supabase
-          .from("post_confirmations")
-          .insert({ post_id: post.id, user_id: user.id });
-
-        if (insertError) {
-          // Rollback on error (might be duplicate)
-          if (insertError.code !== "23505") {
-            setIsConfirmed(false);
-            setLocalConfirmations(prevCount);
-            throw insertError;
-          }
-        }
-
-        await supabase
-          .from("posts")
-          .update({ confirmations: prevCount + 1 })
-          .eq("id", post.id);
-
-        // Notify post owner (if not self)
-        if (post.user_id && post.user_id !== user.id) {
-          const { data: userData } = await supabase
-            .from("users")
-            .select("full_name")
-            .eq("id", user.id)
-            .single();
-          
-          notifyPostConfirmed(
-            post.id,
-            post.user_id,
-            userData?.full_name || "Someone"
-          );
-        }
+      if (res?.confirmed && post.user_id && post.user_id !== user.id) {
+        notifyPostConfirmed(post.id, post.user_id, user.full_name || "Someone");
       }
 
       onConfirm?.(post.id);
-    } catch (error) {
-      console.error("Confirm error:", error);
     } finally {
-      setConfirmLoading(false);
-      // Allow clicking again after a short delay
-      setTimeout(() => {
-        confirmingRef.current = false;
-      }, 300);
+      setConfirming(false);
     }
   };
 
   const category = CATEGORIES.find((c) => c.id === post.category);
-  const badgeVariant = category?.color === "danger" ? "danger" : category?.color === "warning" ? "warning" : "info";
+  const badgeVariant =
+    category?.color === "danger" ? "danger" : category?.color === "warning" ? "warning" : "info";
 
   const handlePrevMedia = (e: React.MouseEvent) => {
     e.stopPropagation();
     setVideoError(false);
-    setCurrentMediaIndex((prev) => prev === 0 ? (post.media?.length || 1) - 1 : prev - 1);
+    setCurrentMediaIndex((prev) => (prev === 0 ? (post.media?.length || 1) - 1 : prev - 1));
   };
 
   const handleNextMedia = (e: React.MouseEvent) => {
     e.stopPropagation();
     setVideoError(false);
-    setCurrentMediaIndex((prev) => prev === (post.media?.length || 1) - 1 ? 0 : prev + 1);
+    setCurrentMediaIndex((prev) =>
+      prev === (post.media?.length || 1) - 1 ? 0 : prev + 1
+    );
   };
 
   const handleCardClick = () => {
-    router.push(`/post/${post.id}`);
+    const sk = sourceKey ? `?sourceKey=${encodeURIComponent(sourceKey)}` : "";
+    router.push(`/post/${post.id}${sk}`, { scroll: false });
   };
 
   const handleAddInfo = (e: React.MouseEvent) => {
     e.stopPropagation();
-    router.push(`/post/${post.id}`);
+    const sk = sourceKey ? `?sourceKey=${encodeURIComponent(sourceKey)}` : "";
+    router.push(`/post/${post.id}${sk}`, { scroll: false });
   };
 
   const handleShareClick = (e: React.MouseEvent) => {
@@ -205,7 +123,9 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   const currentMedia = post.media?.[currentMediaIndex];
   const commentText = post.comment || "";
   const isLongComment = commentText.length > 150;
-  const displayedComment = isLongComment && !showFullComment ? commentText.slice(0, 150) + "..." : commentText;
+  const displayedComment =
+    isLongComment && !showFullComment ? commentText.slice(0, 150) + "..." : commentText;
+
   const timeAgo = formatDistanceToNow(new Date(post.created_at), { addSuffix: true });
 
   return (
@@ -238,25 +158,24 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
 
       {/* Media */}
       {post.media && post.media.length > 0 && (
-<div
-  className="relative -mx-6 mb-3"
-  onClick={(e) => {
-  e.stopPropagation();
-  if (!currentMedia) return;
+        <div
+          className="relative -mx-6 mb-3"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!currentMedia) return;
 
-  if (currentMedia.media_type !== "video") {
-    // image -> open lightbox
-    const items: { url: string; type: "image" | "video" }[] = (post.media || []).map((m) => ({
-      url: m.url,
-      type: m.media_type === "video" ? "video" : "image",
-    }));
-    setLightboxItems(items);
-    setLightboxIndex(currentMediaIndex);
-    setLightboxUrl(currentMedia.url);
-    setLightboxOpen(true);
-  }
-}}
->
+            if (currentMedia.media_type !== "video") {
+              const items: { url: string; type: "image" | "video" }[] = (post.media || []).map((m) => ({
+                url: m.url,
+                type: m.media_type === "video" ? "video" : "image",
+              }));
+              setLightboxItems(items);
+              setLightboxIndex(currentMediaIndex);
+              setLightboxUrl(currentMedia.url);
+              setLightboxOpen(true);
+            }
+          }}
+        >
           {post.is_sensitive && !showSensitive ? (
             <div className="aspect-video bg-dark-800 flex flex-col items-center justify-center">
               <AlertTriangle className="w-8 h-8 text-orange-400 mb-2" />
@@ -284,24 +203,23 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
                       </div>
                     </div>
                   ) : (
-                   <InlineVideo
-                  src={currentMedia.url}
-                  className="w-full h-full object-cover"
-                  onExpand={() =>
-                  router.push(`/watch?postId=${post.id}&sourceKey=${encodeURIComponent(sourceKey || "home:nearby")}`)
-                  }
-                  onError={() => setVideoError(true)}
-                   />
+                    <InlineVideo
+                      src={currentMedia.url}
+                      poster={currentMedia.thumbnail_url}
+                      className="w-full h-full object-cover"
+                      onExpand={() =>
+                        router.push(
+                          `/watch?postId=${post.id}&sourceKey=${encodeURIComponent(
+                            sourceKey || "home:nearby"
+                          )}`,
+                          { scroll: false }
+                        )
+                      }
+                      onError={() => setVideoError(true)}
+                    />
                   )
                 ) : (
-                  <img
-                    src={currentMedia?.url}
-                    alt=""
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "/placeholder.jpg";
-                    }}
-                  />
+                  <img src={currentMedia?.url} alt="" className="w-full h-full object-cover" />
                 )}
               </div>
 
@@ -323,7 +241,9 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
                     {post.media.map((_, idx) => (
                       <div
                         key={idx}
-                        className={`w-1.5 h-1.5 rounded-full ${idx === currentMediaIndex ? "bg-white" : "bg-white/40"}`}
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          idx === currentMediaIndex ? "bg-white" : "bg-white/40"
+                        }`}
                       />
                     ))}
                   </div>
@@ -342,7 +262,9 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       {/* Comment */}
       {post.comment && (
         <div className="mb-3">
-          <p className="text-dark-200 text-sm wrap-break-words">{displayedComment}</p>
+          <p className="text-dark-200 text-sm break-words whitespace-pre-wrap overflow-hidden">
+            {displayedComment}
+          </p>
           {isLongComment && (
             <button
               onClick={(e) => {
@@ -361,11 +283,11 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       {/* Tags */}
       {post.tags && post.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3 min-w-0">
-        {post.tags.map((tag) => (
-        <span key={tag} className="text-xs text-primary-400 break-all max-w-full">
-        #{tag}
-        </span>
-        ))}
+          {post.tags.map((tag) => (
+            <span key={tag} className="text-xs text-primary-400 break-all max-w-full">
+              #{tag}
+            </span>
+          ))}
         </div>
       )}
 
@@ -373,7 +295,7 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       <div className="flex items-center justify-between text-sm text-dark-400 mb-4">
         <span className="flex items-center gap-1">
           <CheckCircle className={`w-4 h-4 ${isConfirmed ? "text-primary-400 fill-primary-400" : ""}`} />
-          {localConfirmations}
+          {confirmations}
         </span>
         <span className="flex items-center gap-1">
           <MessageCircle className="w-4 h-4" />
@@ -389,14 +311,12 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       <div className="flex gap-2 pt-3 border-t border-white/5">
         <button
           onClick={handleConfirmClick}
-          disabled={confirmLoading}
+          disabled={confirming}
           className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-            isConfirmed
-              ? "bg-primary-600 text-white"
-              : "glass-sm text-dark-200 hover:bg-white/10"
-          } ${confirmLoading ? "opacity-70" : ""}`}
+            isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"
+          } ${confirming ? "opacity-70" : ""}`}
         >
-          {confirmLoading ? (
+          {confirming ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <CheckCircle className={`w-4 h-4 ${isConfirmed ? "fill-current" : ""}`} />
@@ -419,17 +339,17 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
           <Share2 className="w-4 h-4" />
         </button>
       </div>
-<ImageLightbox
-  isOpen={lightboxOpen}
-  onClose={() => setLightboxOpen(false)}
-  imageUrl={lightboxUrl}
-  caption={post.comment || null}
-  items={lightboxItems}
-  initialIndex={lightboxIndex}
-/>
+
+      <ImageLightbox
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        imageUrl={lightboxUrl}
+        caption={post.comment || null}
+        items={lightboxItems}
+        initialIndex={lightboxIndex}
+      />
     </article>
   );
 }
 
-// Memoize to prevent unnecessary re-renders
 export const PostCard = memo(PostCardComponent);

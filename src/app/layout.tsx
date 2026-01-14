@@ -3,6 +3,10 @@ import { Poppins } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
 import { FeedProvider } from "@/context/FeedContext";
+import AnalyticsTracker from "@/components/analytics/AnalyticsTracker";
+import { ConfirmProvider } from "@/context/ConfirmContext";
+import { AudioProvider } from "@/context/AudioContext";
+import RoutePrefetcher from "@/components/navigation/RoutePrefetcher";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -17,8 +21,14 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
   children,
+  modal,
+  overlay,
+  watch,
 }: {
   children: React.ReactNode;
+  modal: React.ReactNode;
+  overlay: React.ReactNode;
+  watch: React.ReactNode;
 }) {
   return (
     <html lang="en" className="dark">
@@ -32,11 +42,20 @@ export default function RootLayout({
         />
       </head>
       <body className={`${poppins.variable} font-sans antialiased`}>
-        <AuthProvider>
-       <FeedProvider>
-       {children}
-        </FeedProvider>
-      </AuthProvider>
+<AuthProvider>
+  <ConfirmProvider>
+    <AudioProvider>
+      <FeedProvider>
+      <AnalyticsTracker />
+      <RoutePrefetcher />
+      {children}
+      {overlay}
+      {watch}
+      {modal}
+     </FeedProvider>
+    </AudioProvider>
+  </ConfirmProvider>
+</AuthProvider>
       </body>
     </html>
   );

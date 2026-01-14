@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
+import { useScrollRestore } from "@/hooks/useScrollRestore";
+import { Skeleton } from "@/components/ui/Skeleton";
 import {
   Search,
   FileText,
@@ -39,6 +41,7 @@ interface PostData {
 }
 
 export default function AdminPostsPage() {
+  useScrollRestore("admin:posts");
   const [posts, setPosts] = useState<PostData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,74 +53,245 @@ export default function AdminPostsPage() {
   const [showPostModal, setShowPostModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
-  
+  const isSearchMode = searchQuery.trim().length > 0;
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const pageSize = 20;
 
   useEffect(() => {
+  if (isSearchMode) {
+    handleSearch(); // keep search results updated when filters change
+  } else {
     fetchPosts();
-  }, [page, statusFilter, categoryFilter]);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [page, statusFilter, categoryFilter, searchQuery]);
 
-  const fetchPosts = async () => {
-    setLoading(true);
-    try {
-      let query = supabase
-        .from("posts")
-        .select(`
-          *,
-          users:user_id (full_name, email),
-          post_media (url, media_type)
-        `, { count: "exact" })
-        .order("created_at", { ascending: false })
-        .range((page - 1) * pageSize, page * pageSize - 1);
+useEffect(() => {
+  let t: any = null;
 
-      if (statusFilter !== "all") {
-        query = query.eq("status", statusFilter);
-      }
-
-      if (categoryFilter !== "all") {
-        query = query.eq("category", categoryFilter);
-      }
-
-      const { data, count, error } = await query;
-
-      if (error) throw error;
-
-      setPosts(data || []);
-      setTotalCount(count || 0);
-    } catch (error) {
-      console.error("Error fetching posts:", error);
-    } finally {
-      setLoading(false);
-    }
+  const refresh = () => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => {
+      const q = searchQuery.trim();
+      if (q) handleSearch();
+      else fetchPosts();
+    }, 600);
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      fetchPosts();
+  const ch = supabase
+    .channel("admin-posts-rt")
+    .on("postgres_changes", { event: "*", schema: "public", table: "posts" }, refresh)
+    .subscribe();
+
+  return () => {
+    if (t) clearTimeout(t);
+    supabase.removeChannel(ch);
+  };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [searchQuery, statusFilter, categoryFilter, page]);
+
+function AdminPostCardSkeleton() {
+  return (
+    <div className="glass-card">
+      <Skeleton className="aspect-video w-full rounded-xl mb-3" />
+      <Skeleton className="h-4 w-28 mb-2" />
+      <Skeleton className="h-4 w-full mb-2" />
+      <Skeleton className="h-3 w-3/4 mb-3" />
+      <div className="flex justify-between">
+        <Skeleton className="h-3 w-28" />
+        <Skeleton className="h-3 w-20" />
+      </div>
+    </div>
+  );
+}
+
+const fetchPosts = async () => {
+  setLoading(true);
+
+  try {
+    // 1) fetch posts (no embeds)
+    let query = supabase
+      .from("posts")
+      .select(
+        "id,user_id,category,comment,address,status,confirmations,views,comment_count,report_count,is_sensitive,created_at",
+        { count: "exact" }
+      )
+      .order("created_at", { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1);
+
+    if (statusFilter !== "all") query = query.eq("status", statusFilter);
+    if (categoryFilter !== "all") query = query.eq("category", categoryFilter);
+
+    const { data: postsData, count, error } = await query;
+
+    if (error) {
+      console.error("Admin posts fetch error:", error);
+      setPosts([]);
+      setTotalCount(0);
       return;
     }
 
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("posts")
-        .select(`
-          *,
-          users:user_id (full_name, email),
-          post_media (url, media_type)
-        `)
-        .or(`comment.ilike.%${searchQuery}%,address.ilike.%${searchQuery}%`)
-        .order("created_at", { ascending: false })
-        .limit(50);
+    const rows = (postsData || []) as any[];
+    const postIds = rows.map((p) => p.id);
+    const userIds = Array.from(new Set(rows.map((p) => p.user_id).filter(Boolean)));
+    const isSearchMode = searchQuery.trim().length > 0;
 
-      if (error) throw error;
-      setPosts(data || []);
-    } catch (error) {
-      console.error("Search error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // 2) fetch users for those posts
+    const { data: usersData, error: usersErr } = userIds.length
+      ? await supabase.from("users").select("id,full_name,email").in("id", userIds)
+      : { data: [], error: null };
+
+    if (usersErr) console.error("Admin posts users fetch error:", usersErr);
+
+    const usersMap: Record<string, { full_name: string; email: string }> = {};
+    (usersData || []).forEach((u: any) => {
+      usersMap[u.id] = { full_name: u.full_name, email: u.email };
+    });
+
+    // 3) fetch media thumbnails for those posts
+    const { data: mediaData, error: mediaErr } = postIds.length
+      ? await supabase.from("post_media").select("post_id,url,media_type").in("post_id", postIds)
+      : { data: [], error: null };
+
+    if (mediaErr) console.error("Admin posts media fetch error:", mediaErr);
+
+    const mediaMap: Record<string, { url: string; media_type: string }[]> = {};
+    (mediaData || []).forEach((m: any) => {
+      if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
+      mediaMap[m.post_id].push({ url: m.url, media_type: m.media_type });
+    });
+
+    // 4) merge
+    const merged = rows.map((p) => ({
+      ...p,
+      users: usersMap[p.user_id] || undefined,
+      post_media: mediaMap[p.id] || [],
+    }));
+
+    setPosts(merged);
+    setTotalCount(count || 0);
+  } catch (e) {
+    console.error("Admin posts exception:", e);
+    setPosts([]);
+    setTotalCount(0);
+  } finally {
+    setLoading(false);
+  }
+};
+  
+ const handleSearch = async () => {
+  const q = searchQuery.trim();
+  if (!q) {
+    fetchPosts();
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const like = `%${q}%`;
+
+    // 1) Find matching users (name/email/phone)
+    const { data: userHits, error: userErr } = await supabase
+      .from("users")
+      .select("id")
+      .or(`full_name.ilike.${like},email.ilike.${like},phone.ilike.${like}`)
+      .limit(25);
+
+    if (userErr) console.error("Admin post search users error:", userErr);
+
+    const matchedUserIds = (userHits || []).map((u: any) => u.id);
+
+    // Helper to apply filters consistently
+    const applyFilters = (qb: any) => {
+      if (statusFilter !== "all") qb = qb.eq("status", statusFilter);
+      if (categoryFilter !== "all") qb = qb.eq("category", categoryFilter);
+      return qb;
+    };
+
+    // 2) Posts matching comment/address
+    const textQuery = applyFilters(
+      supabase
+        .from("posts")
+        .select(
+          "id,user_id,category,comment,address,status,confirmations,views,comment_count,report_count,is_sensitive,created_at"
+        )
+        .or(`comment.ilike.${like},address.ilike.${like}`)
+        .order("created_at", { ascending: false })
+        .limit(50)
+    );
+
+    // 3) Posts by matching users
+    const userPostsQuery =
+      matchedUserIds.length > 0
+        ? applyFilters(
+            supabase
+              .from("posts")
+              .select(
+                "id,user_id,category,comment,address,status,confirmations,views,comment_count,report_count,is_sensitive,created_at"
+              )
+              .in("user_id", matchedUserIds)
+              .order("created_at", { ascending: false })
+              .limit(50)
+          )
+        : null;
+
+    const [{ data: textPosts, error: textErr }, userPostsRes] = await Promise.all([
+      textQuery,
+      userPostsQuery ? userPostsQuery : Promise.resolve({ data: [], error: null } as any),
+    ]);
+
+    if (textErr) throw textErr;
+    if (userPostsRes?.error) throw userPostsRes.error;
+
+    // 4) Merge unique posts
+    const map = new Map<string, any>();
+    (textPosts || []).forEach((p: any) => map.set(p.id, p));
+    (userPostsRes?.data || []).forEach((p: any) => map.set(p.id, p));
+    const rows = Array.from(map.values());
+
+    const postIds = rows.map((p) => p.id);
+    const userIds = Array.from(new Set(rows.map((p) => p.user_id).filter(Boolean)));
+
+    // 5) Fetch users for display
+    const { data: usersData } = userIds.length
+      ? await supabase.from("users").select("id,full_name,email").in("id", userIds)
+      : { data: [] };
+
+    const usersMap: Record<string, { full_name: string; email: string }> = {};
+    (usersData || []).forEach((u: any) => {
+      usersMap[u.id] = { full_name: u.full_name, email: u.email };
+    });
+
+    // 6) Fetch media for display
+    const { data: mediaData } = postIds.length
+      ? await supabase.from("post_media").select("post_id,url,media_type").in("post_id", postIds)
+      : { data: [] };
+
+    const mediaMap: Record<string, { url: string; media_type: string }[]> = {};
+    (mediaData || []).forEach((m: any) => {
+      if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
+      mediaMap[m.post_id].push({ url: m.url, media_type: m.media_type });
+    });
+
+    // 7) Final merge
+    const merged = rows.map((p) => ({
+      ...p,
+      users: usersMap[p.user_id] || undefined,
+      post_media: mediaMap[p.id] || [],
+    }));
+
+    setPosts(merged);
+    setTotalCount(merged.length);
+    // Don’t mess with page here; search is a “mode”
+  } catch (error) {
+    console.error("Admin post search error:", error);
+    setPosts([]);
+    setTotalCount(0);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleDeletePost = async (postId: string) => {
     if (!confirm("Are you sure you want to delete this post? This action cannot be undone.")) {
@@ -159,7 +333,15 @@ export default function AdminPostsPage() {
   const handleStatusChange = async (postId: string, newStatus: string) => {
     setActionLoading(true);
     try {
-      await supabase.from("posts").update({ status: newStatus }).eq("id", postId);
+      const patch: any = { status: newStatus };
+
+// ✅ IMPORTANT: If you set an old post back to "live", reset the clock.
+// Otherwise /api/jobs/expire will flip it back to "resolved" within minutes.
+if (newStatus === "live") {
+  patch.created_at = new Date().toISOString();
+}
+
+await supabase.from("posts").update(patch).eq("id", postId);
 
       await supabase.from("admin_logs").insert({
         admin_id: (await supabase.auth.getUser()).data.user?.id,
@@ -186,72 +368,121 @@ export default function AdminPostsPage() {
     return CATEGORIES.find(c => c.id === categoryId);
   };
 
+
   return (
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-dark-100">Post Management</h1>
         <p className="text-dark-400 mt-1">View and manage all incident reports</p>
       </div>
+{/* Filters */}
+<div className="flex flex-col lg:flex-row gap-3 mb-6 items-stretch">
+  {/* Search */}
+  <div className="relative flex-1 min-w-[280px]">
+    <button
+      type="button"
+      onClick={() => searchInputRef.current?.focus()}
+      className="absolute left-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 z-10"
+      aria-label="Focus search"
+    >
+      <Search className="w-5 h-5 text-dark-400" />
+    </button>
 
-      {/* Filters */}
-      <div className="flex flex-col lg:flex-row gap-3 mb-6">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="Search by content or location..."
-            className="w-full pl-10 pr-4 py-2.5 glass-input"
-          />
-        </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-          className="px-4 py-2.5 glass-input"
-        >
-          <option value="all">All Status</option>
-          <option value="live">Live</option>
-          <option value="resolved">Resolved</option>
-          <option value="archived">Archived</option>
-        </select>
-        <select
-          value={categoryFilter}
-          onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-          className="px-4 py-2.5 glass-input"
-        >
-          <option value="all">All Categories</option>
-          {CATEGORIES.map(cat => (
-            <option key={cat.id} value={cat.id}>{cat.name}</option>
-          ))}
-        </select>
-        <Button variant="primary" onClick={handleSearch}>
-          Search
-        </Button>
+    <input
+      ref={searchInputRef}
+      type="text"
+      value={searchQuery}
+      onChange={(e) => setSearchQuery(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+      placeholder="Search by content or location..."
+      className="glass-input w-full h-11 pl-12 pr-4"
+    />
+  </div>
+
+  {/* Status */}
+  <select
+    value={statusFilter}
+    onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+    className="glass-input w-full lg:w-44 h-11 px-4 py-0"
+  >
+    <option value="all">All Status</option>
+    <option value="live">Live</option>
+    <option value="resolved">Resolved</option>
+    <option value="archived">Archived</option>
+  </select>
+
+  {/* Category */}
+  <select
+    value={categoryFilter}
+    onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+    className="glass-input w-full lg:w-56 h-11 px-4 py-0"
+  >
+    <option value="all">All Categories</option>
+    {CATEGORIES.map(cat => (
+      <option key={cat.id} value={cat.id}>{cat.name}</option>
+    ))}
+  </select>
+
+  {/* Button */}
+  <Button
+    variant="primary"
+    onClick={handleSearch}
+    className="w-full lg:w-28 h-11"
+  >
+    Search
+  </Button>
+</div>
+
+{/* Posts Grid */}
+{loading && posts.length === 0 ? (
+  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+    {Array.from({ length: 9 }).map((_, i) => (
+      <AdminPostCardSkeleton key={i} />
+    ))}
+  </div>
+) : posts.length === 0 ? (
+  <div className="glass-card text-center py-12">
+    <FileText className="w-12 h-12 text-dark-600 mx-auto mb-4" />
+    <p className="text-dark-400">No posts found</p>
+  </div>
+) : (
+  <>
+    {/* small "refreshing" spinner ONLY if we already have posts */}
+    {loading && (
+      <div className="flex justify-center py-2">
+        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
       </div>
+    )}
 
-      {/* Posts Grid */}
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-        </div>
-      ) : posts.length === 0 ? (
-        <div className="glass-card text-center py-12">
-          <FileText className="w-12 h-12 text-dark-600 mx-auto mb-4" />
-          <p className="text-dark-400">No posts found</p>
-        </div>
-      ) : (
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {posts.map((post) => {
-            const category = getCategoryInfo(post.category);
+    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {posts.map((post) => {
+        const category = getCategoryInfo(post.category);
+
+        const ageMs = Date.now() - new Date(post.created_at).getTime();
+        const expired = ageMs >= 24 * 60 * 60 * 1000;
+
+        const effectiveStatus =
+          post.status === "archived"
+            ? "archived"
+            : post.status === "resolved"
+            ? "resolved"
+            : post.status === "live" && expired
+            ? "resolved"
+            : "live";
+
+        const statusClass =
+          effectiveStatus === "live"
+            ? "bg-green-500/20 text-green-400"
+            : effectiveStatus === "resolved"
+            ? "bg-dark-600 text-dark-300"
+            : "bg-dark-800 text-dark-400";
             
             return (
               <div
-                key={post.id}
-                onClick={() => { setSelectedPost(post); setShowPostModal(true); setCurrentMediaIndex(0); }}
-                className="glass-card cursor-pointer hover:bg-white/5 transition-colors"
-              >
+            key={post.id}
+            onClick={() => { setSelectedPost(post); setShowPostModal(true); setCurrentMediaIndex(0); }}
+            className="glass-card cursor-pointer hover:bg-white/5 transition-colors"
+          >
                 {/* Thumbnail */}
                 <div className="aspect-video rounded-lg bg-dark-800 mb-3 overflow-hidden">
                   {post.post_media?.[0] ? (
@@ -275,13 +506,9 @@ export default function AdminPostsPage() {
 
                 {/* Info */}
                 <div className="flex items-center gap-2 mb-2">
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${
-                    post.status === "live" ? "bg-green-500/20 text-green-400" :
-                    post.status === "resolved" ? "bg-blue-500/20 text-blue-400" :
-                    "bg-dark-600 text-dark-400"
-                  }`}>
-                    {post.status}
-                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${statusClass}`}>
+                  {effectiveStatus}
+                   </span>
                   <span className="text-xs text-dark-500 capitalize">
                     {category?.name || post.category}
                   </span>
@@ -311,35 +538,18 @@ export default function AdminPostsPage() {
                   </span>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
+        );
+      })}
+    </div>
+  </>
+)}
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-6">
-          <p className="text-sm text-dark-400">
-            Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, totalCount)} of {totalCount}
-          </p>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="p-2 glass-sm rounded-lg disabled:opacity-50"
-            >
-              <ChevronLeft className="w-4 h-4 text-dark-400" />
-            </button>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="p-2 glass-sm rounded-lg disabled:opacity-50"
-            >
-              <ChevronRight className="w-4 h-4 text-dark-400" />
-            </button>
-          </div>
-        </div>
-      )}
+      {!isSearchMode && totalPages > 1 && (
+  <div className="flex items-center justify-between mt-6">
+    ...
+  </div>
+)}
 
       {/* Post Detail Modal */}
       <Modal
@@ -418,7 +628,9 @@ export default function AdminPostsPage() {
             {selectedPost.comment && (
               <div>
                 <p className="text-xs text-dark-500 mb-1">Description</p>
-                <p className="text-dark-200">{selectedPost.comment}</p>
+                <p className="text-dark-200 break-words whitespace-pre-wrap">
+                {selectedPost.comment}
+                </p>
               </div>
             )}
 
