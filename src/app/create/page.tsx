@@ -580,7 +580,7 @@ setTimeout(() => {
               {tags.map((tag) => (
                 <span
                 key={tag}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary-600/20 text-primary-400 text-sm max-w-full break-all"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary-600/20 text-primary-400 text-sm max-w-full wrap-anywhere"
                 >
                 #{tag}
                   <button type="button" onClick={() => handleRemoveTag(tag)}>

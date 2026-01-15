@@ -222,6 +222,12 @@ body {
   display: none;
 }
 
+/* Force long strings (hashtags, urls) to wrap instead of overflowing */
+.wrap-anywhere {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 /* Fixed bottom input bar */
 .fixed-bottom-input {
   position: fixed;
@@ -346,5 +352,16 @@ input, textarea, select {
 @keyframes skeleton-shimmer {
   100% {
     transform: translateX(100%);
+  }
+}
+
+@keyframes toastIn {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0px);
+    opacity: 1;
   }
 }

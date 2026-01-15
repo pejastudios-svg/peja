@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { InlineVideo } from "@/components/reels/InlineVideo";
 import {
   Flag,
   Loader2,
@@ -318,10 +319,15 @@ function FlaggedRowSkeleton() {
             {selected.media && selected.media.length > 0 && (
               <div className="relative aspect-video bg-dark-900 rounded-xl overflow-hidden">
                 {selected.media[mediaIndex].media_type === "video" ? (
-                  <video src={selected.media[mediaIndex].url} controls className="w-full h-full object-contain" />
-                ) : (
-                  <img src={selected.media[mediaIndex].url} alt="" className="w-full h-full object-contain" />
-                )}
+  <InlineVideo
+    src={selected.media[mediaIndex].url}
+    className="w-full h-full object-contain"
+    showExpand={false}
+    showMute={true}
+  />
+) : (
+  <img src={selected.media[mediaIndex].url} alt="" className="w-full h-full object-contain" />
+)}
 
                 {selected.media.length > 1 && (
                   <>

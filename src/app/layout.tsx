@@ -9,6 +9,10 @@ import { ConfirmProvider } from "@/context/ConfirmContext";
 import { AudioProvider } from "@/context/AudioContext";
 import RoutePrefetcher from "@/components/navigation/RoutePrefetcher";
 import HistorySyncGuard from "@/components/navigation/HistorySyncGuard";
+import InAppNotificationToasts from "@/components/notifications/InAppNotificationToasts";
+import UserGestureAudioUnlocker from "@/components/notifications/UserGestureAudioUnlocker";
+import AccountStatusBanner from "@/components/system/AccountStatusBanner";
+import { ToastProvider } from "@/context/ToastContext";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -44,6 +48,7 @@ export default function RootLayout({
         />
       </head>
       <body className={`${poppins.variable} font-sans antialiased`}>
+<ToastProvider>
 <AuthProvider>
   <ConfirmProvider>
     <AudioProvider>
@@ -53,6 +58,9 @@ export default function RootLayout({
         <Suspense fallback={null}>
         <HistorySyncGuard />
         </Suspense>
+        <UserGestureAudioUnlocker />
+        <InAppNotificationToasts />
+        <AccountStatusBanner />
         {children}
         {overlay}
         {watch}
@@ -61,6 +69,7 @@ export default function RootLayout({
     </AudioProvider>
   </ConfirmProvider>
 </AuthProvider>
+</ToastProvider>
       </body>
     </html>
   );

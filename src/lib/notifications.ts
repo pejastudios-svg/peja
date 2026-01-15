@@ -8,7 +8,10 @@ export type NotificationType =
   | "comment_liked"
   | "guardian_approved"
   | "guardian_rejected"
-  | "system";
+  | "system"
+  | "post_comment"
+  | "comment_reply"
+  | "comment_liked";
 
 interface CreateNotificationParams {
   userId: string;
@@ -486,6 +489,24 @@ export async function notifyPostComment(
     type: "post_comment",
     title: "💬 New comment on your post",
     body: `${commenterName}: ${preview}`,
+    data: { post_id: postId },
+  });
+}
+
+export async function notifyCommentReply(
+  postId: string,
+  commentOwnerId: string,
+  replierName: string,
+  replyPreview: string
+): Promise<boolean> {
+  const preview =
+    replyPreview.length > 60 ? replyPreview.slice(0, 60) + "..." : replyPreview;
+
+  return createNotification({
+    userId: commentOwnerId,
+    type: "comment_reply",
+    title: "↩️ New reply to your comment",
+    body: `${replierName}: ${preview}`,
     data: { post_id: postId },
   });
 }

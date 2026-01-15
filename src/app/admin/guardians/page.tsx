@@ -79,6 +79,11 @@ export default function AdminGuardiansPage() {
   const [guardiansLoading, setGuardiansLoading] = useState(false);
   const [guardianSearch, setGuardianSearch] = useState("");
 
+    // Revoke guardian confirm modal + toast
+  const [revokeModalOpen, setRevokeModalOpen] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<GuardianUser | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
   // Prevent “auto-open on filter click” bug
   const handledAppParamRef = useRef(false);
   
@@ -307,9 +312,15 @@ function GuardianUserRowSkeleton() {
     }
   };
 
-  const revokeGuardian = async (userId: string) => {
-    if (!confirm("Remove Guardian access for this user?")) return;
+   const openRevokeGuardian = (g: GuardianUser) => {
+    setRevokeTarget(g);
+    setRevokeModalOpen(true);
+  };
 
+  const confirmRevokeGuardian = async () => {
+    if (!revokeTarget?.id) return;
+
+    setActionLoading(true);
     try {
       const { data: auth } = await supabase.auth.getSession();
       const token = auth.session?.access_token;
@@ -321,16 +332,28 @@ function GuardianUserRowSkeleton() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ userId, role: "guardian", value: false }),
+        body: JSON.stringify({ userId: revokeTarget.id, role: "guardian", value: false }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
 
+      // Close modal
+      setRevokeModalOpen(false);
+      setRevokeTarget(null);
+
+      // Refresh guardians list
       await fetchGuardians();
+
+      // ✅ in-app toast
+      setToast(`Guardian access removed: ${json.user?.full_name || "User"} ✓`);
+      setTimeout(() => setToast(null), 2500);
     } catch (e: any) {
       console.error(e);
-      alert(e.message || "Failed");
+      setToast(e?.message || "Failed to remove guardian");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -527,9 +550,13 @@ function GuardianUserRowSkeleton() {
                     </div>
                   </div>
 
-                  <Button variant="danger" size="sm" onClick={() => revokeGuardian(g.id)}>
-                    Remove
-                  </Button>
+                  <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => openRevokeGuardian(g)}
+                  >
+  Remove
+</Button>
                 </div>
               ))}
             </div>
@@ -645,6 +672,11 @@ function GuardianUserRowSkeleton() {
                 </div>
               )}
             </div>
+                  {toast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[20000] px-4 py-2 rounded-xl glass-float text-dark-100">
+          {toast}
+        </div>
+      )}
           </div>
         )}
       </Modal>
@@ -655,6 +687,58 @@ function GuardianUserRowSkeleton() {
         imageUrl={lightboxUrl}
         caption={selected?.user?.full_name || null}
       />
+            {toast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[30000] px-4 py-2 rounded-xl glass-float text-dark-100">
+          {toast}
+        </div>
+      )}
+            {/* Revoke Guardian Confirm Modal */}
+      <Modal
+        isOpen={revokeModalOpen}
+        onClose={() => {
+          setRevokeModalOpen(false);
+          setRevokeTarget(null);
+        }}
+        title="Remove Guardian Access"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-dark-300">
+            Remove Guardian access for{" "}
+            <span className="text-dark-100 font-semibold">
+              {revokeTarget?.full_name || "this user"}
+            </span>
+            ?
+          </p>
+
+          <p className="text-xs text-dark-500">
+            They will immediately lose access to the Guardian Hub. A notification will be sent to them.
+          </p>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => {
+                setRevokeModalOpen(false);
+                setRevokeTarget(null);
+              }}
+              disabled={actionLoading}
+            >
+              Cancel
+            </Button>
+
+            <Button
+              variant="danger"
+              className="flex-1"
+              onClick={confirmRevokeGuardian}
+              isLoading={actionLoading}
+            >
+              Remove
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

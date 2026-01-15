@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { createNotification } from "@/lib/notifications";
 import { Portal } from "@/components/ui/Portal";
+import { useToast } from "@/context/ToastContext";
 import { 
   AlertTriangle, X, Phone, Loader2, CheckCircle, Users, 
   Mic, Square, ChevronRight, ArrowLeft
@@ -79,6 +80,7 @@ const supportsMediaRecorder =
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const recordingInterval = useRef<NodeJS.Timeout | null>(null);
   const audioChunks = useRef<Blob[]>([]);
+  const toast = useToast();
   
   const HOLD_DURATION = 3000;
   const MAX_RECORDING_TIME = 30;
@@ -280,7 +282,7 @@ const tagInfo = tagId ? SOS_TAGS.find(t => t.id === tagId) : null;
   const handleButtonTap = () => {
 
     if (user?.status === "suspended") {
-  alert("Your account is suspended. SOS is disabled.");
+  toast.warning("Your account is suspended. SOS is disabled.");
   return;
 }
 
@@ -374,6 +376,21 @@ const voiceNoteUrl = null;
       setSosActive(true);
       setSosId(sosData.id);
 
+            // Fire-and-forget: send SOS emails (contacts + nearby), capped server-side
+      supabase.auth.getSession().then(({ data: auth }) => {
+        const token = auth.session?.access_token;
+        if (!token) return;
+
+        fetch("/api/sos/send-emails", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ sosId: sosData.id }),
+        }).catch(() => {});
+      });
+
 const contactsNotified = await notifyContacts(userName, address, sosData.id, {
   tag: selectedTag,
   message: textMessage || null,
@@ -423,7 +440,7 @@ for (const uid of nearbyIds) {
 
     } catch (err) {
       console.error("SOS error:", err);
-      alert("SOS failed. Please call 112 or 767 directly.");
+      toast.danger("SOS failed. Please call 112 or 767 directly.");
     } finally {
       setLoading(false);
     }
@@ -463,7 +480,7 @@ for (const uid of nearbyIds) {
   if (showOptions) {
     return (
         <Portal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 z-[25000] flex items-center justify-center">
         <div className="absolute inset-0 bg-black/70" onClick={closeOptions} />
         <div className="relative glass-card w-full max-w-lg rounded-t-3xl rounded-b-none max-h-[85vh] overflow-y-auto pb-8">
           {/* Header */}
@@ -559,7 +576,7 @@ for (const uid of nearbyIds) {
     return (
   <Portal>
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center px-4"
+      className="fixed inset-0 z-[25000] flex items-center justify-center px-4"
       style={{
         paddingTop: "calc(16px + env(safe-area-inset-top, 0px))",
         paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
@@ -644,7 +661,7 @@ if (showConfirmation) {
   return (
     <Portal>
       <div
-        className="fixed inset-0 z-[9999] flex items-center justify-center px-4"
+        className="fixed inset-0 z-[25000] flex items-center justify-center px-4"
         style={{
           paddingTop: "calc(16px + env(safe-area-inset-top, 0px))",
           paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",

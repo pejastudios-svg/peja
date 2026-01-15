@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {  Bell } from "lucide-react";
+import GuardianInAppToasts from "@/components/notifications/GuardianInAppToasts";
 import {
   LayoutDashboard,
   Flag,
@@ -35,6 +36,47 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
   const [isGuardian, setIsGuardian] = useState(false);
   const [checking, setChecking] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [guardianUnread, setGuardianUnread] = useState(0);
+
+const fetchGuardianUnread = async () => {
+  const { data: auth } = await supabase.auth.getUser();
+  const uid = auth.user?.id;
+  if (!uid) return;
+
+  const { count } = await supabase
+    .from("guardian_notifications")
+    .select("*", { count: "exact", head: true })
+    .eq("recipient_id", uid)
+    .neq("is_read", true); // ✅ counts false + null
+
+  setGuardianUnread(count || 0);
+};
+
+useEffect(() => {
+  let ch: any;
+
+  (async () => {
+    const { data: auth } = await supabase.auth.getUser();
+    const uid = auth.user?.id;
+    if (!uid) return;
+
+    await fetchGuardianUnread();
+
+    ch = supabase
+      .channel("guardian-unread-badge")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "guardian_notifications", filter: `recipient_id=eq.${uid}` },
+        () => fetchGuardianUnread()
+      )
+      .subscribe();
+  })();
+
+  return () => {
+    if (ch) supabase.removeChannel(ch);
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
   useEffect(() => {
     checkGuardianStatus();
@@ -96,6 +138,7 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
 
   return (
     <div className="min-h-screen bg-dark-950">
+      <GuardianInAppToasts />
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass-header h-14 flex items-center justify-between px-4">
         <button onClick={() => setSidebarOpen(true)} className="p-2">
@@ -120,24 +163,29 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
             </div>
             <nav className="p-4 space-y-1">
               {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                      isActive
-                        ? "bg-primary-600/20 text-primary-400"
-                        : "text-dark-300 hover:bg-white/5"
-                    }`}
-                  >
-                    <Icon className="w-5 h-5" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
+  const Icon = item.icon;
+  const isActive = pathname === item.href;
+
+  return (
+    <Link
+      key={item.href}
+      href={item.href}
+      onClick={() => setSidebarOpen(false)}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+        isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-white/5"
+      }`}
+    >
+      <Icon className="w-5 h-5" />
+      <span>{item.label}</span>
+
+      {item.href === "/guardian/notifications" && guardianUnread > 0 && (
+        <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center shadow-[0_0_14px_rgba(139,92,246,0.85)] ring-1 ring-primary-300/40">
+          {guardianUnread > 99 ? "99+" : guardianUnread}
+        </span>
+      )}
+    </Link>
+  );
+})}
               <hr className="border-white/10 my-4" />
               <Link
                 href="/"
@@ -167,23 +215,28 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
         </div>
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                  isActive
-                    ? "bg-primary-600/20 text-primary-400"
-                    : "text-dark-300 hover:bg-white/5"
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
-              </Link>
-            );
-          })}
+  const Icon = item.icon;
+  const isActive = pathname === item.href;
+
+  return (
+    <Link
+      key={item.href}
+      href={item.href}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+        isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-white/5"
+      }`}
+    >
+      <Icon className="w-5 h-5" />
+      <span>{item.label}</span>
+
+      {item.href === "/guardian/notifications" && guardianUnread > 0 && (
+        <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center shadow-[0_0_14px_rgba(139,92,246,0.85)] ring-1 ring-primary-300/40">
+          {guardianUnread > 99 ? "99+" : guardianUnread}
+        </span>
+      )}
+    </Link>
+  );
+})}
           <hr className="border-white/10 my-4" />
           <Link
             href="/"

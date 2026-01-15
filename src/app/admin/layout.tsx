@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Bell } from "lucide-react";
+import AdminInAppToasts from "@/components/notifications/AdminInAppToasts";
 import {
   LayoutDashboard,
   Users,
@@ -40,6 +41,38 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isAdmin, setIsAdmin] = useState(false);
   const [checking, setChecking] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [adminUnread, setAdminUnread] = useState(0);
+
+  const fetchAdminUnread = async () => {
+  if (!user?.id) return;
+  const { count } = await supabase
+    .from("admin_notifications")
+    .select("*", { count: "exact", head: true })
+    .eq("recipient_id", user.id)
+    .neq("is_read", true)
+
+  setAdminUnread(count || 0);
+};
+
+useEffect(() => {
+  if (!user?.id) return;
+
+  fetchAdminUnread();
+
+  const ch = supabase
+    .channel("admin-unread-badge")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "admin_notifications", filter: `recipient_id=eq.${user.id}` },
+      () => fetchAdminUnread()
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(ch);
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [user?.id]);
 
   useEffect(() => {
     checkAdminStatus();
@@ -101,6 +134,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen bg-dark-950">
+      <AdminInAppToasts />
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass-header h-14 flex items-center justify-between px-4">
         <button onClick={() => setSidebarOpen(true)} className="p-2">
@@ -138,6 +172,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   >
                     <Icon className="w-5 h-5" />
                     <span>{item.label}</span>
+                 {item.href === "/admin/notifications" && adminUnread > 0 && (
+  <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center shadow-[0_0_14px_rgba(139,92,246,0.85)] ring-1 ring-primary-300/40">
+    {adminUnread > 99 ? "99+" : adminUnread}
+  </span>
+)}
                   </Link>
                 );
               })}
@@ -175,6 +214,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               >
                 <Icon className="w-5 h-5" />
                 <span>{item.label}</span>
+                {item.href === "/admin/notifications" && adminUnread > 0 && (
+  <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center shadow-[0_0_14px_rgba(139,92,246,0.85)] ring-1 ring-primary-300/40">
+    {adminUnread > 99 ? "99+" : adminUnread}
+  </span>
+)}
               </Link>
             );
           })}

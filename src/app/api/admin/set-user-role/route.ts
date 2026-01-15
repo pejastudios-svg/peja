@@ -31,6 +31,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+        // If guardian access was revoked, notify the user (normal notifications table)
+    if (role === "guardian" && value === false) {
+      await supabaseAdmin.from("notifications").insert({
+        user_id: userId,
+        type: "system",
+        title: "Guardian access revoked",
+        body: "Your Guardian access has been removed. If you believe this is a mistake, contact support.",
+        data: { reason: "revoked_guardian" },
+        is_read: false,
+      });
+    }
+
     return NextResponse.json({ ok: true, user: data });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });

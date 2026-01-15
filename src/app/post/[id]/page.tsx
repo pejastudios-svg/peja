@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { formatDistanceToNow, differenceInHours } from "date-fns";
 import { useAuth } from "@/context/AuthContext";
-import { notifyPostComment, notifyCommentLiked } from "@/lib/notifications";
+import { notifyPostComment, notifyCommentLiked, notifyCommentReply } from "@/lib/notifications";
 import { notifyPostConfirmed } from "@/lib/notifications";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useLongPress } from "@/components/hooks/useLongPress";
@@ -18,6 +18,7 @@ import { InlineVideo } from "@/components/reels/InlineVideo";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostDetailSkeleton } from "@/components/posts/PostDetailSkeleton";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/context/ToastContext";
 import {
   ArrowLeft,
   MapPin,
@@ -115,6 +116,7 @@ function markSeen(postId: string) {
 }
 
 export default function PostDetailPage() {
+  const toastApi = useToast();
   const confirmCtx = useConfirm();
   const router = useRouter();
   const params = useParams();
@@ -143,7 +145,7 @@ export default function PostDetailPage() {
   const [showSensitive, setShowSensitive] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [videoError, setVideoError] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   // Confirmation
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -399,7 +401,7 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
   // Handle confirm
 const handleConfirm = async () => {
   if (user?.status === "suspended") {
-    alert("Your account is suspended. You cannot perform this action.");
+    toastApi.warning("Your account is suspended. You cannot perform this action.");
     return;
   }
 
@@ -429,7 +431,7 @@ const handleConfirm = async () => {
   const handleLikeComment = async (commentId: string) => {
 
     if (user?.status === "suspended") {
-  alert("Your account is suspended. You cannot perform this action.");
+  toastApi.warning("Your account is suspended. You cannot perform this action.");
   return;
 }
 
@@ -562,7 +564,7 @@ setLikeBusy(prev => {
   const handleSubmitComment = async () => {
 
     if (user?.status === "suspended") {
-  alert("Your account is suspended. You cannot perform this action.");
+ toastApi.warning("Your account is suspended. You cannot perform this action.");
   return;
 }
 
@@ -584,10 +586,12 @@ setLikeBusy(prev => {
     let parentId: string | null = null;
     let replyToId: string | null = null;
     let replyToName: string | null = null;
-    
+    let replyToUserId: string | null = null;
+
     if (replyingTo) {
       const targetComment = allComments.find(c => c.id === replyingTo.id);
       if (targetComment) {
+        replyToUserId = targetComment.user_id;
         parentId = targetComment.parent_id || targetComment.id;
         replyToId = replyingTo.id;
         replyToName = replyingTo.name;
@@ -706,14 +710,25 @@ setLikeBusy(prev => {
         comment_count: (post?.comment_count || 0) + 1 
       }).eq("id", postId);
 
-      // Notify post owner about new comment
-      if (post?.user_id && post.user_id !== user.id && commentContent) {
-        notifyPostComment(
-          postId,
-          post.user_id,
-          user.full_name || "Someone",
-          commentContent
-        );
+            const previewText =
+        commentContent ||
+        (mediaFiles.length > 0 ? "Sent an image" : "");
+
+      const postOwnerId = post?.user_id || null;
+
+      // Notify the post owner (but avoid double-notify if the post owner is the same as reply target)
+      if (
+        postOwnerId &&
+        postOwnerId !== user.id &&
+        postOwnerId !== replyToUserId &&
+        previewText
+      ) {
+        notifyPostComment(postId, postOwnerId, user.full_name || "Someone", previewText);
+      }
+
+      // Notify the comment owner that someone replied to them
+      if (replyToUserId && replyToUserId !== user.id && previewText) {
+        notifyCommentReply(postId, replyToUserId, user.full_name || "Someone", previewText);
       }
 
     } catch (err: any) {
@@ -813,9 +828,20 @@ if (!res.ok || !json.ok) {
 
 if (json.archived) {
   setShowReportModal(false);
-  setToast("Post removed due to reports.");
+  setToastMsg("Post removed due to reports.");
   setTimeout(() => {
-    router.push("/");
+    // ✅ If this post is open in the modal stack, close it cleanly
+    if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
+      window.dispatchEvent(new Event("peja-close-post"));
+      return;
+    }
+
+    // ✅ Otherwise go back; if user landed directly here, fallback home
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
+      router.replace("/");
+    }
   }, 600);
   return;
 }
@@ -823,8 +849,8 @@ if (json.archived) {
 setShowReportModal(false);
 setReportReason("");
 setReportDescription("");
-setToast("Report submitted!");
-setTimeout(() => setToast(null), 2500);
+setToastMsg("Report submitted!");
+setTimeout(() => setToastMsg(null), 2500);
   };
 
   // Delete post
@@ -899,9 +925,7 @@ setTimeout(() => setToast(null), 2500);
   onPointerDown={() => {
     if (!comment.user_avatar) return;
     avatarHoldTimer.current = window.setTimeout(() => {
-      setLightboxUrl(comment.user_avatar!);
-      setLightboxCaption(comment.user_name);
-      setLightboxOpen(true);
+      openSingleLightbox(comment.user_avatar!, comment.user_name);
     }, 350);
   }}
   onPointerUp={() => {
@@ -948,11 +972,7 @@ setTimeout(() => setToast(null), 2500);
                     src={m.url} 
                     alt="" 
                     className="w-full h-full object-cover cursor-pointer" 
-                    onClick={() => {
-                    setLightboxUrl(m.url);
-                    setLightboxCaption(comment.content || null);
-                    setLightboxOpen(true);
-                    }}
+                    onClick={() => openSingleLightbox(m.url, comment.content || null)}
                   />
                 </div>
               ))}
@@ -1045,6 +1065,31 @@ setTimeout(() => setToast(null), 2500);
       </div>
     );
   };
+
+    const openPostLightboxAt = (index: number) => {
+    const items =
+      (post?.media || []).map((m) => ({
+        url: m.url,
+        type: (m.media_type === "video" ? "video" : "image") as "video" | "image",
+      })) || [];
+
+    if (!items.length) return;
+
+    setLightboxItems(items);
+    setLightboxIndex(index);
+    setLightboxUrl(post?.media?.[index]?.url || null);
+    setLightboxCaption(post?.comment || null);
+    setLightboxOpen(true);
+  };
+
+const openSingleLightbox = (url: string, caption?: string | null) => {
+  // IMPORTANT: clear previous post carousel items so it doesn't reopen videos
+  setLightboxItems([]);
+  setLightboxIndex(0);
+  setLightboxUrl(url);
+  setLightboxCaption(caption ?? null);
+  setLightboxOpen(true);
+};
 
   // Loading
  if (loading) {
@@ -1139,19 +1184,10 @@ setTimeout(() => setToast(null), 2500);
                     </div>
                   ) : (
                     <InlineVideo
-                    src={currentMedia.url}
-                    className="w-full h-full object-contain bg-black"
-onExpand={() => {
-  const rt =
-    typeof window !== "undefined"
-      ? window.location.pathname + window.location.search
-      : `/post/${postId}`;
-
-  const sk = sourceKey ? `&sourceKey=${encodeURIComponent(sourceKey)}` : "";
-
-  router.push(`/watch?postId=${postId}${sk}&returnTo=${encodeURIComponent(rt)}`, { scroll: false });
-}}
-                    />
+  src={currentMedia.url}
+  className="w-full h-full object-contain bg-black"
+  showExpand={false}
+/>
                   )
                 ) : (
                   <img
@@ -1172,8 +1208,20 @@ onExpand={() => {
     setLightboxOpen(true);
   }}
 />
-                )}
-                
+    )}
+ {currentMedia?.media_type === "video" && (
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation();
+      openPostLightboxAt(currentMediaIndex);
+    }}
+    className="absolute bottom-2 left-2 z-20 px-3 py-1.5 rounded-xl glass-float text-xs text-dark-100 hover:bg-white/10"
+  >
+    View
+  </button>
+)}
+
                 {post.media.length > 1 && (
                   <>
                     <button 
@@ -1247,8 +1295,12 @@ onExpand={() => {
           </div>
 
           {post.tags && post.tags.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {post.tags.map((t, i) => <span key={i} className="text-primary-400 text-xs">#{t}</span>)}
+            <div className="flex flex-wrap gap-2 min-w-0">
+              {post.tags.map((t, i) => (
+             <span key={i} className="text-primary-400 text-xs max-w-full wrap-anywhere">
+             #{t}
+             </span>
+             ))}
             </div>
           )}
 
@@ -1481,9 +1533,9 @@ onExpand={() => {
   items={lightboxItems}
   initialIndex={lightboxIndex}
 />
-{toast && (
+{toastMsg  && (
   <div className="fixed top-16 left-1/2 -translate-x-1/2 z-9999 px-4 py-2 rounded-xl glass-float text-dark-100">
-    {toast}
+    {toastMsg}
   </div>
 )}
     </div>

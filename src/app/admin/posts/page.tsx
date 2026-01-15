@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { InlineVideo } from "@/components/reels/InlineVideo";
 import {
   Search,
   FileText,
@@ -564,18 +565,19 @@ await supabase.from("posts").update(patch).eq("id", postId);
             {selectedPost.post_media && selectedPost.post_media.length > 0 && (
               <div className="relative aspect-video bg-dark-800 rounded-xl overflow-hidden">
                 {selectedPost.post_media[currentMediaIndex].media_type === "video" ? (
-                  <video
-                    src={selectedPost.post_media[currentMediaIndex].url}
-                    controls
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <img
-                    src={selectedPost.post_media[currentMediaIndex].url}
-                    alt=""
-                    className="w-full h-full object-contain"
-                  />
-                )}
+  <InlineVideo
+    src={selectedPost.post_media[currentMediaIndex].url}
+    className="w-full h-full object-contain"
+    showExpand={false}
+    showMute={true}
+  />
+) : (
+  <img
+    src={selectedPost.post_media[currentMediaIndex].url}
+    alt=""
+    className="w-full h-full object-contain"
+  />
+)}
                 {selectedPost.post_media.length > 1 && (
                   <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
                     {selectedPost.post_media.map((_, i) => (

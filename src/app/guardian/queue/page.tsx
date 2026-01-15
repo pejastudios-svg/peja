@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { useSearchParams } from "next/navigation";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { InlineVideo } from "@/components/reels/InlineVideo";
 import {
   Flag,
   CheckCircle,
@@ -432,18 +433,19 @@ const fetchQueue = async () => {
             {selectedItem.post.post_media && selectedItem.post.post_media.length > 0 && (
               <div className="relative aspect-video bg-dark-800 rounded-xl overflow-hidden">
                 {selectedItem.post.post_media[currentMediaIndex].media_type === "video" ? (
-                  <video
-                    src={selectedItem.post.post_media[currentMediaIndex].url}
-                    controls
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <img
-                    src={selectedItem.post.post_media[currentMediaIndex].url}
-                    alt=""
-                    className="w-full h-full object-contain"
-                  />
-                )}
+  <InlineVideo
+    src={selectedItem.post.post_media[currentMediaIndex].url}
+    className="w-full h-full object-contain"
+    showExpand={false}
+    showMute={true}
+  />
+) : (
+  <img
+    src={selectedItem.post.post_media[currentMediaIndex].url}
+    alt=""
+    className="w-full h-full object-contain"
+  />
+)}
 
                 {selectedItem.post.post_media.length > 1 && (
                   <>

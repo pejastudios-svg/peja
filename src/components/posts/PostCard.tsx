@@ -128,6 +128,18 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
 
   const timeAgo = formatDistanceToNow(new Date(post.created_at), { addSuffix: true });
 
+    const openLightboxAt = (index: number) => {
+    const items: { url: string; type: "image" | "video" }[] = (post.media || []).map((m) => ({
+      url: m.url,
+      type: m.media_type === "video" ? "video" : "image",
+    }));
+
+    setLightboxItems(items);
+    setLightboxIndex(index);
+    setLightboxUrl(post.media?.[index]?.url || null);
+    setLightboxOpen(true);
+  };
+
   return (
     <article
       className="glass-card overflow-hidden cursor-pointer hover:ring-1 hover:ring-white/10 transition-all"
@@ -204,24 +216,36 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
                     </div>
                   ) : (
                     <InlineVideo
-                      src={currentMedia.url}
-                      poster={currentMedia.thumbnail_url}
-                      className="w-full h-full object-cover"
-                      onExpand={() =>
-                        router.push(
-                          `/watch?postId=${post.id}&sourceKey=${encodeURIComponent(
-                            sourceKey || "home:nearby"
-                          )}`,
-                          { scroll: false }
-                        )
-                      }
-                      onError={() => setVideoError(true)}
-                    />
+  src={currentMedia.url}
+  poster={currentMedia.thumbnail_url}
+  className="w-full h-full object-cover"
+  onExpand={() =>
+    router.push(
+      `/watch?postId=${post.id}&sourceKey=${encodeURIComponent(
+        sourceKey || "home:nearby"
+      )}`,
+      { scroll: false }
+    )
+  }
+  onError={() => setVideoError(true)}
+/>
                   )
                 ) : (
                   <img src={currentMedia?.url} alt="" className="w-full h-full object-cover" />
                 )}
               </div>
+             {currentMedia?.media_type === "video" && (
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation();
+      openLightboxAt(currentMediaIndex);
+    }}
+    className="absolute bottom-2 left-2 z-20 px-3 py-1.5 rounded-xl glass-float text-xs text-dark-100 hover:bg-white/10"
+  >
+    View
+  </button>
+)}
 
               {post.media.length > 1 && (
                 <>
@@ -284,10 +308,13 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       {post.tags && post.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3 min-w-0">
           {post.tags.map((tag) => (
-            <span key={tag} className="text-xs text-primary-400 break-all max-w-full">
-              #{tag}
-            </span>
-          ))}
+  <span
+    key={tag}
+    className="text-xs text-primary-400 max-w-full wrap-anywhere"
+  >
+    #{tag}
+  </span>
+))}
         </div>
       )}
 

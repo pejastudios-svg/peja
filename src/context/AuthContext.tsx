@@ -3,6 +3,9 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { User as SupabaseUser, Session } from "@supabase/supabase-js";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+import { setFlashToast } from "@/context/ToastContext";
+
 
 interface User {
   id: string;
@@ -11,10 +14,16 @@ interface User {
   full_name?: string;
   avatar_url?: string;
   occupation?: string;
+
+  is_guardian?: boolean;
+  is_admin?: boolean;
+
   email_verified: boolean;
   phone_verified: boolean;
+
   last_latitude?: number;
   last_longitude?: number;
+
   status?: "active" | "suspended" | "banned";
 }
 
@@ -295,12 +304,15 @@ let userProfileCache: { userId: string; profile: User; timestamp: number } | nul
 const CACHE_DURATION = 5 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [lastStatus, setLastStatus] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const initRef = useRef(false);
   const fetchingRef = useRef(false);
+  const userRowChannelRef = useRef<RealtimeChannel | null>(null);
+  const statusRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (initRef.current) return;
@@ -315,6 +327,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSupabaseUser(currentSession.user);
           await fetchUserProfile(currentSession.user.id);
           checkAndStartLocationTracking(currentSession.user.id);
+          await startUserRowSubscription(currentSession.user.id);
+          subscribeToMyUserRow(currentSession.user.id);
         }
       } catch (error) {
         console.error("Auth init error:", error);
@@ -345,6 +359,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (newSession?.user) {
           setSupabaseUser(newSession.user);
           fetchUserProfile(newSession.user.id).catch(() => {});
+          startUserRowSubscription(newSession.user.id).catch(() => {});
+          subscribeToMyUserRow(newSession.user.id);
           
           if (event === 'SIGNED_IN') {
             checkAndStartLocationTracking(newSession.user.id);
@@ -444,6 +460,8 @@ console.error("Profile fetch error:", {
         phone_verified: data.phone_verified || false,
         last_latitude: data.last_latitude,
         last_longitude: data.last_longitude,
+        is_guardian: data.is_guardian || false,
+        is_admin: data.is_admin || false,
       } : {
         id: userId,
         email: supabaseUser?.email || "",
@@ -490,6 +508,121 @@ console.error("Profile fetch error:", {
       await fetchUserProfile(authUser.id);
     }
   }
+
+    const startUserRowSubscription = async (userId: string) => {
+    // remove previous subscription only (do NOT remove all channels)
+    if (userRowChannelRef.current) {
+  supabase.removeChannel(userRowChannelRef.current);
+  userRowChannelRef.current = null;
+}
+
+    // seed statusRef from current user state (if available)
+    statusRef.current = user?.status || statusRef.current;
+
+    const ch = supabase
+      .channel(`me-users-row-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "users", filter: `id=eq.${userId}` },
+        async (payload) => {
+          const next: any = payload.new;
+          if (!next?.id) return;
+
+          // update local user immediately
+          setUser((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              status: next.status,
+              is_guardian: next.is_guardian ?? prev.is_guardian,
+              is_admin: next.is_admin ?? prev.is_admin,
+            };
+          });
+
+          const newStatus = next.status as string | null;
+          const oldStatus = statusRef.current;
+
+          if (newStatus && newStatus !== oldStatus) {
+            statusRef.current = newStatus;
+
+            if (newStatus === "suspended") {
+              setFlashToast("warning", "Your account has been suspended.");
+            }
+
+            if (newStatus === "banned") {
+              // ✅ immediate kick out + in-app toast on login
+              setFlashToast("danger", "Your account has been banned.");
+
+              // sign out + clear state
+              await supabase.auth.signOut();
+              userProfileCache = null;
+              locationTracker.stop();
+
+              setUser(null);
+              setSupabaseUser(null);
+              setSession(null);
+
+              // hard navigate to ensure stacks close
+              window.location.assign("/login");
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    userRowChannelRef.current = ch;
+  };
+
+  const subscribeToMyUserRow = (userId: string) => {
+    // Remove any previous channel
+    supabase.removeAllChannels?.(); // safe no-op if not available
+
+    const ch = supabase
+      .channel(`user-row-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "users", filter: `id=eq.${userId}` },
+        async (payload) => {
+          const u: any = payload.new;
+          if (!u?.id) return;
+
+          // Update local user state immediately
+          setUser((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              status: u.status,
+              is_guardian: u.is_guardian ?? prev.is_guardian,
+              is_admin: u.is_admin ?? prev.is_admin,
+            };
+          });
+
+          // Toast on status change (in-app, no browser alert)
+          if (u.status && u.status !== lastStatus) {
+            setLastStatus(u.status);
+
+            if (u.status === "suspended") {
+              setFlashToast("warning", "Your account has been suspended.");
+            }
+
+            if (u.status === "banned") {
+              setFlashToast("danger", "Your account has been banned.");
+
+              // Immediately kick out
+              await supabase.auth.signOut();
+              setUser(null);
+              setSupabaseUser(null);
+              setSession(null);
+
+              window.location.assign("/login");
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return ch;
+  };
 
   async function signUp(email: string, password: string, fullName: string, phone: string) {
     try {
@@ -550,21 +683,46 @@ console.error("Profile fetch error:", {
 
   async function signIn(email: string, password: string) {
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+          const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-      if (error) return { error };
+    if (error) return { error };
 
-      if (data.session) {
-        setSession(data.session);
-        setSupabaseUser(data.user);
-        await fetchUserProfile(data.user.id);
-        checkAndStartLocationTracking(data.user.id);
+    // ✅ Check DB status BEFORE allowing app session state to proceed
+    const { data: row, error: stErr } = await supabase
+      .from("users")
+      .select("status")
+      .eq("id", data.user.id)
+      .single();
+
+    // If we can't read status, allow login (but you should have RLS allowing self-read)
+    const status = row?.status as "active" | "suspended" | "banned" | undefined;
+
+    if (status === "banned") {
+      // Immediately sign out and block entry
+      await supabase.auth.signOut();
+
+      // show in-app toast (works even on login screen)
+      setFlashToast("danger", "Your account has been banned.");
+
+      return { error: new Error("Account banned") };
+    }
+
+    // suspended is allowed to login (per your instruction)
+    if (data.session) {
+      setSession(data.session);
+      setSupabaseUser(data.user);
+      await fetchUserProfile(data.user.id);
+      checkAndStartLocationTracking(data.user.id);
+
+      if (status === "suspended") {
+        setFlashToast("warning", "Your account is suspended. Some features are disabled.");
       }
+    }
 
-      return { error: null };
+    return { error: null };
     } catch (error) {
       return { error: error as Error };
     }

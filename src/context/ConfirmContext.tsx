@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/ToastContext";
 
 type ConfirmCtx = {
   confirmed: Set<string>;
@@ -21,6 +22,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, number>>({});
   const inFlight = useRef<Set<string>>(new Set());
+  const toast = useToast();
+  const toastApi = useToast();
 
   const hydrateCounts = (pairs: { postId: string; confirmations: number }[]) => {
     setCounts((prev) => {
@@ -61,6 +64,14 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
   const toggle = async (postId: string, fallbackCount: number) => {
     if (!user?.id) return null;
+        if (user.status !== "active") {
+      toastApi.warning("Your account is suspended. You cannot confirm incidents.");
+      return null;
+    }
+    if (user.status !== "active") {
+  toast.warning("Your account is suspended. You cannot confirm incidents.");
+  return null;
+}
     if (inFlight.current.has(postId)) return null;
     inFlight.current.add(postId);
 

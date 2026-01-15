@@ -214,6 +214,7 @@ const setupRealtime = () => {
       case "post_confirmed":
       case "post_comment":
       case "comment_liked":
+      case "comment_reply":
         if (data.post_id) {
           router.push(`/post/${data.post_id}`);
         }
@@ -247,6 +248,8 @@ const setupRealtime = () => {
         return <Heart className="w-5 h-5 text-red-400" />;
       default:
         return <Bell className="w-5 h-5 text-primary-400" />;
+      case "comment_reply":
+      return <MessageCircle className="w-5 h-5 text-blue-400" />;
     }
   };
 

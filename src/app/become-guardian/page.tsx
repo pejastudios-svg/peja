@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { NIGERIAN_STATES } from "@/lib/types";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/context/ToastContext";
 import {
   ArrowLeft,
   Shield,
@@ -20,8 +21,11 @@ import {
 import { Button } from "@/components/ui/Button";
 
 export default function BecomeGuardianPage() {
+  const toastApi = useToast();
+  const toast = useToast();
   const router = useRouter();
   const { user } = useAuth();
+  const isGuardianNow = !!user?.is_guardian || !!user?.is_admin;
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -64,6 +68,14 @@ export default function BecomeGuardianPage() {
   };
 
   const handleSubmit = async () => {
+       if (user?.status === "suspended") {
+      toastApi.warning("Your account is suspended. You cannot apply right now.");
+      return;
+    }
+    if (user?.status === "banned") {
+      toastApi.danger("Your account has been banned.");
+      return;
+    }
     if (!user) {
       router.push("/login");
       return;
@@ -152,33 +164,54 @@ if (loading) {
         <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
           <div className="glass-card text-center py-12">
             {existingApplication.status === "pending" ? (
-              <>
-                <Clock className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-dark-100 mb-2">Application Pending</h2>
-                <p className="text-dark-400">
-                  Your Guardian application is being reviewed. We'll notify you once a decision is made.
-                </p>
-              </>
-            ) : existingApplication.status === "approved" ? (
-              <>
-                <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-dark-100 mb-2">You're a Guardian! 🎉</h2>
-                <p className="text-dark-400 mb-4">
-                  Thank you for helping keep Peja safe. You can now access the Guardian Dashboard.
-                </p>
-                <Button variant="primary" onClick={() => router.push("/guardian")}>
-                  Open Guardian Dashboard
-                </Button>
-              </>
-            ) : (
-              <>
-                <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-dark-100 mb-2">Application Not Approved</h2>
-                <p className="text-dark-400">
-                  Unfortunately, your application wasn't approved at this time. You can try again in 30 days.
-                </p>
-              </>
-            )}
+  <>
+    <Clock className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
+    <h2 className="text-xl font-bold text-dark-100 mb-2">Application Pending</h2>
+    <p className="text-dark-400">
+      Your Guardian application is being reviewed. We'll notify you once a decision is made.
+    </p>
+  </>
+) : existingApplication.status === "approved" ? (
+  isGuardianNow ? (
+    <>
+      <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
+      <h2 className="text-xl font-bold text-dark-100 mb-2">You're a Guardian! 🎉</h2>
+      <p className="text-dark-400 mb-4">
+        Thank you for helping keep Peja safe. You can now access the Guardian Dashboard.
+      </p>
+
+      <Button
+        variant="primary"
+        onClick={() => {
+          if (typeof window !== "undefined" && (window as any).__pejaOverlayOpen) {
+            window.location.assign("/guardian");
+            return;
+          }
+          router.push("/guardian");
+          router.refresh();
+        }}
+      >
+        Open Guardian Dashboard
+      </Button>
+    </>
+  ) : (
+    <>
+      <AlertTriangle className="w-16 h-16 text-orange-400 mx-auto mb-4" />
+      <h2 className="text-xl font-bold text-dark-100 mb-2">Guardian Access Revoked</h2>
+      <p className="text-dark-400">
+        Your Guardian access has been revoked. If you believe this is a mistake, please contact support.
+      </p>
+    </>
+  )
+) : (
+  <>
+    <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+    <h2 className="text-xl font-bold text-dark-100 mb-2">Application Not Approved</h2>
+    <p className="text-dark-400">
+      Unfortunately, your application wasn't approved at this time. Thank you for your interest!
+    </p>
+  </>
+)}
           </div>
         </main>
       </div>
