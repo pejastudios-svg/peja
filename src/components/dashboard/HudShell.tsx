@@ -14,7 +14,7 @@ export default function HudShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen">
+    <div className="peja-hud min-h-screen">
       <div className="p-6">
         <div className="mb-6 flex items-start justify-between gap-4">
           <div className="min-w-0">

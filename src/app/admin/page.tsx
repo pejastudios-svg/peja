@@ -403,7 +403,7 @@ export default function AdminOverviewPage() {
               {recentPosts.map((p) => (
                 <div
                   key={p.id}
-                  className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/8 transition-colors"
+                  className="flex items-center justify-between gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
                 >
                   <div className="min-w-0">
                     <p className="text-sm text-dark-100 font-medium truncate">
