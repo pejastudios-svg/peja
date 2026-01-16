@@ -137,7 +137,7 @@ useEffect(() => {
   }
 
   return (
-    <div className="min-h-screen bg-dark-950">
+    <div className="min-h-screen peja-hud">
       <GuardianInAppToasts />
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass-header h-14 flex items-center justify-between px-4">

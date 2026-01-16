@@ -6,6 +6,9 @@ import { Loader2, TrendingUp, Users, Clock, MousePointerClick, BarChart3 } from 
 import { subDays } from "date-fns";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
+import PejaChartCard from "@/components/charts/PejaChartCard";
+import PejaMetricTile from "@/components/charts/PejaMetricTile";
+import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
 
 type MetricCard = { label: string; value: string | number; icon: any; hint?: string };
 
@@ -32,6 +35,9 @@ export default function AdminAnalyticsPage() {
 
   const [topScreens, setTopScreens] = useState<{ screen: string; count: number }[]>([]);
   const [topEvents, setTopEvents] = useState<{ event_name: string; count: number }[]>([]);
+  const [hourlyData, setHourlyData] = useState<{ hour: number; count: number }[]>(
+  () => new Array(24).fill(0).map((_, i) => ({ hour: i, count: 0 }))
+);
 
   useEffect(() => {
     const load = async () => {
@@ -106,6 +112,15 @@ export default function AdminAnalyticsPage() {
           .select("event_name,screen")
           .gte("created_at", d1)
           .limit(10000);
+
+          // Build hourly series for chart
+const hourly = new Array(24).fill(0).map((_, i) => ({ hour: i, count: 0 }));
+for (const e of events24h || []) {
+  const t = new Date((e as any).created_at || Date.now());
+  const h = t.getHours();
+  if (hourly[h]) hourly[h].count += 1;
+}
+setHourlyData(hourly);
 
         const pageViews24h = (events24h || []).filter(e => e.event_name === "page_view").length;
         const postOpens24h = (events24h || []).filter(e => e.event_name === "post_open").length;
@@ -270,6 +285,38 @@ export default function AdminAnalyticsPage() {
             </div>
           )}
         </div>
+        <div className="grid lg:grid-cols-2 gap-6 mt-6">
+  <PejaChartCard title="Events (last 24h)" subtitle="All tracked events grouped by hour" height={240}>
+    <LineChart data={hourlyData}>
+      <CartesianGrid stroke="rgba(255,255,255,0.06)" />
+      <XAxis dataKey="hour" stroke="rgba(255,255,255,0.35)" tick={{ fontSize: 12 }} />
+      <YAxis stroke="rgba(255,255,255,0.35)" tick={{ fontSize: 12 }} />
+      <Tooltip
+        contentStyle={{ background: "rgba(30,16,51,0.95)", border: "1px solid rgba(139,92,246,0.25)" }}
+        labelStyle={{ color: "#e2e8f0" }}
+      />
+      <Line type="monotone" dataKey="count" stroke="#a78bfa" strokeWidth={2} dot={false} />
+    </LineChart>
+  </PejaChartCard>
+
+  <PejaChartCard title="Opens (24h)" subtitle="Post + Watch opens" height={240}>
+    <BarChart
+      data={[
+        { name: "Post", value: stats.postOpens24h },
+        { name: "Watch", value: stats.watchOpens24h },
+      ]}
+    >
+      <CartesianGrid stroke="rgba(255,255,255,0.06)" />
+      <XAxis dataKey="name" stroke="rgba(255,255,255,0.35)" tick={{ fontSize: 12 }} />
+      <YAxis stroke="rgba(255,255,255,0.35)" tick={{ fontSize: 12 }} />
+      <Tooltip
+        contentStyle={{ background: "rgba(30,16,51,0.95)", border: "1px solid rgba(139,92,246,0.25)" }}
+        labelStyle={{ color: "#e2e8f0" }}
+      />
+      <Bar dataKey="value" fill="#7c3aed" radius={[8, 8, 0, 0]} />
+    </BarChart>
+  </PejaChartCard>
+</div>
 
         <div className="glass-card">
           <h2 className="text-lg font-semibold text-dark-100 mb-4">Top Events (24h)</h2>
@@ -287,10 +334,6 @@ export default function AdminAnalyticsPage() {
           )}
         </div>
       </div>
-
-      <p className="text-xs text-dark-500 mt-6">
-        Note: deeper retention/click funnels improve as we add more event types (confirm clicks, search submits, share, etc.).
-      </p>
     </div>
   );
 }

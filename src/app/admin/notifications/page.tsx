@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/Button";
 import { useRouter } from "next/navigation";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
+import HudShell from "@/components/dashboard/HudShell";
+import HudPanel from "@/components/dashboard/HudPanel";
+import GlowButton from "@/components/dashboard/GlowButton";
 
 type AdminNotification = {
   id: string;
@@ -21,17 +24,170 @@ type AdminNotification = {
 
 export default function AdminNotificationsPage() {
   function AdminNotifSkeletonRow() {
+    const unread = items.filter((x) => !x.is_read);
+  const read = items.filter((x) => x.is_read);
+
+  const typeTone = (t: string) => {
+    if (t === "flagged_post") return "border-red-500/40 bg-red-500/10";
+    if (t === "guardian_application") return "border-primary-500/40 bg-primary-500/10";
+    return "border-white/10 bg-white/5";
+  };
+
   return (
-    <div className="glass-card p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <Skeleton className="h-4 w-2/3 mb-2" />
-          <Skeleton className="h-3 w-full mb-2" />
-          <Skeleton className="h-3 w-24" />
+    <HudShell
+      title="Admin Notifications"
+      subtitle="Real-time operational alerts for moderation and guardians"
+      right={
+        <div className="flex items-center gap-2">
+          {unreadCount > 0 && <span className="pill pill-purple">{unreadCount} unread</span>}
+          {unreadCount > 0 && (
+            <GlowButton onClick={markAllRead} disabled={loading}>
+              Mark all read
+            </GlowButton>
+          )}
         </div>
-        <Skeleton className="h-8 w-8 rounded-lg" />
+      }
+    >
+      <div className="grid lg:grid-cols-3 gap-4">
+        {/* Left: stream */}
+        <div className="lg:col-span-2">
+          <HudPanel
+            title="Stream"
+            subtitle="Unread first. Tap a row to open the relevant admin screen."
+            right={loading ? <span className="pill pill-purple">Loading</span> : <span className="pill pill-purple">Live</span>}
+          >
+            {loading && items.length === 0 ? (
+              <div className="space-y-2">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <AdminNotifSkeletonRow key={i} />
+                ))}
+              </div>
+            ) : items.length === 0 ? (
+              <div className="text-center py-10">
+                <p className="text-dark-400">No notifications yet</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {unread.map((n) => (
+                  <div
+                    key={n.id}
+                    onClick={() => {
+                      if (!n.is_read) markRead(n.id);
+
+                      if (n.type === "flagged_post") {
+                        router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
+                        return;
+                      }
+                      if (n.type === "guardian_application") {
+                        router.push(`/admin/guardians?app=${encodeURIComponent(n.data?.application_id || "")}`);
+                        return;
+                      }
+                    }}
+                    className={`relative cursor-pointer rounded-2xl border ${typeTone(n.type)} p-4 hover:bg-white/10 transition-colors`}
+                  >
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary-500/70 rounded-l-2xl" />
+
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-dark-100">{n.title}</p>
+                        {n.body && <p className="text-sm text-dark-300 mt-1">{n.body}</p>}
+                        <p className="text-xs text-dark-500 mt-2">
+                          {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          removeOne(n.id);
+                        }}
+                        className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-300"
+                        aria-label="Delete notification"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {read.length > 0 && (
+                  <div className="pt-4 mt-4 border-t border-white/10">
+                    <p className="text-xs text-dark-500 uppercase tracking-wide mb-2">Read</p>
+
+                    <div className="space-y-2">
+                      {read.map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            if (n.type === "flagged_post") {
+                              router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
+                              return;
+                            }
+                            if (n.type === "guardian_application") {
+                              router.push(`/admin/guardians?app=${encodeURIComponent(n.data?.application_id || "")}`);
+                              return;
+                            }
+                          }}
+                          className={`cursor-pointer rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-white/10 transition-colors`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-dark-200">{n.title}</p>
+                              {n.body && <p className="text-sm text-dark-400 mt-1">{n.body}</p>}
+                              <p className="text-xs text-dark-600 mt-2">
+                                {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                              </p>
+                            </div>
+
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                removeOne(n.id);
+                              }}
+                              className="p-2 hover:bg-white/10 rounded-lg text-dark-600 hover:text-red-300"
+                              aria-label="Delete notification"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </HudPanel>
+        </div>
+
+        {/* Right: quick status */}
+        <div className="lg:col-span-1">
+          <HudPanel title="Status" subtitle="Operational summary">
+            <div className="space-y-3">
+              <div className="hud-panel p-4">
+                <p className="text-xs text-dark-500 uppercase tracking-wide">Unread</p>
+                <p className="text-2xl font-bold text-dark-100 mt-1">{unreadCount}</p>
+              </div>
+
+              <div className="hud-panel p-4">
+                <p className="text-xs text-dark-500 uppercase tracking-wide">Last refresh</p>
+                <p className="text-sm text-dark-200 mt-1">
+                  {items[0]?.created_at
+                    ? formatDistanceToNow(new Date(items[0].created_at), { addSuffix: true })
+                    : "No data"}
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl border border-primary-500/20 bg-primary-600/10 text-sm text-dark-300">
+                Tip: respond to flagged posts quickly to keep the feed trustworthy.
+              </div>
+            </div>
+          </HudPanel>
+        </div>
       </div>
-    </div>
+    </HudShell>
   );
 }
     useScrollRestore("admin:notifications");
