@@ -28,6 +28,8 @@ export default function MapClient() {
   const searchParams = useSearchParams();
 
   const sosIdFromUrl = searchParams.get("sos");
+  const latFromUrl = searchParams.get("lat");
+  const lngFromUrl = searchParams.get("lng");
   const handledSosParamRef = useRef(false);
 
   // ✅ IMPORTANT: full_name must be string (not null) to satisfy SOSAlert type
@@ -244,17 +246,29 @@ useEffect(() => {
 
       // open from notification (once)
       if (sosIdFromUrl && !handledSosParamRef.current) {
-        const match = formatted.find((x) => x.id === sosIdFromUrl);
-        if (match) {
-          setCenterOnSOS({ lat: match.latitude, lng: match.longitude });
-          setOpenSOSId(match.id);
-          handledSosParamRef.current = true;
-        }
-      }
+  const match = formatted.find((x) => x.id === sosIdFromUrl);
+
+  // If found in fetched list, use it
+  if (match) {
+    setCenterOnSOS({ lat: match.latitude, lng: match.longitude });
+    setOpenSOSId(match.id);
+    handledSosParamRef.current = true;
+  } else {
+    // Fallback: use lat/lng from query if provided
+    const lat = latFromUrl ? Number(latFromUrl) : NaN;
+    const lng = lngFromUrl ? Number(lngFromUrl) : NaN;
+
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      setCenterOnSOS({ lat, lng });
+      setOpenSOSId(sosIdFromUrl);
+      handledSosParamRef.current = true;
+    }
+  }
+}
     } catch (e) {
       console.error("SOS fetch failed:", e);
     }
-  }, [sosIdFromUrl]);
+  }, [sosIdFromUrl, latFromUrl, lngFromUrl]);
 
   useEffect(() => {
     const timer = setTimeout(() => setMapReady(true), 100);

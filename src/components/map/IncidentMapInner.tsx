@@ -458,7 +458,7 @@ useEffect(() => {
       {selectedSOS && (
         <div className="fixed inset-0 z-2000 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70" onClick={() => setSelectedSOS(null)} />
-          <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[85vh] overflow-y-auto">
+          <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[60vh] overflow-y-auto">
             <div className="sticky top-0 bg-dark-900 border-b border-white/10 p-4 flex items-center justify-between z-10">
               <div>
                 <h3 className="text-xl font-bold text-white">SOS Alert</h3>

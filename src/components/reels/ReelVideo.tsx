@@ -29,6 +29,21 @@ export function ReelVideo({
 
   const [progress, setProgress] = useState(0);
   const [inView, setInView] = useState(false);
+  const [buffering, setBuffering] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ active: boolean; startX: number; startProgress: number }>({
+    active: false,
+    startX: 0,
+    startProgress: 0,
+  });
+
+  const seekToProgress = (p: number) => {
+    const v = videoRef.current;
+    if (!v || !v.duration || Number.isNaN(v.duration)) return;
+    const clamped = Math.min(Math.max(p, 0), 1);
+    v.currentTime = clamped * v.duration;
+    setProgress(clamped);
+  };
 
   // in-view detection (pause when not visible)
   useEffect(() => {
@@ -46,6 +61,28 @@ export function ReelVideo({
 
     obs.observe(el);
     return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+
+    const onWaiting = () => setBuffering(true);
+    const onStalled = () => setBuffering(true);
+    const onPlaying = () => setBuffering(false);
+    const onCanPlay = () => setBuffering(false);
+
+    v.addEventListener("waiting", onWaiting);
+    v.addEventListener("stalled", onStalled);
+    v.addEventListener("playing", onPlaying);
+    v.addEventListener("canplay", onCanPlay);
+
+    return () => {
+      v.removeEventListener("waiting", onWaiting);
+      v.removeEventListener("stalled", onStalled);
+      v.removeEventListener("playing", onPlaying);
+      v.removeEventListener("canplay", onCanPlay);
+    };
   }, []);
 
   const stopTimers = () => {
@@ -169,9 +206,69 @@ export function ReelVideo({
         {soundEnabled ? <Volume2 className="w-5 h-5 text-white" /> : <VolumeX className="w-5 h-5 text-white" />}
       </button>
 
-      <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20">
-        <div className="h-1 bg-white/80" style={{ width: `${Math.round(progress * 100)}%` }} />
-      </div>
+     <div
+  className="absolute bottom-0 left-0 right-0 px-4 pb-4"
+  style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}
+>
+  {/* scrub track */}
+  <div
+    className={`relative h-2 rounded-full bg-white/20 overflow-hidden ${
+      buffering ? "animate-pulse" : ""
+    }`}
+    onPointerDown={(e) => {
+      e.stopPropagation();
+      setIsDragging(true);
+      dragRef.current.active = true;
+      dragRef.current.startX = e.clientX;
+      dragRef.current.startProgress = progress;
+      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    }}
+    onPointerMove={(e) => {
+      if (!dragRef.current.active) return;
+      const track = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - track.left;
+      const p = x / Math.max(track.width, 1);
+      seekToProgress(p);
+    }}
+    onPointerUp={(e) => {
+      dragRef.current.active = false;
+      setIsDragging(false);
+      try {
+        (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+      } catch {}
+    }}
+    onPointerCancel={(e) => {
+      dragRef.current.active = false;
+      setIsDragging(false);
+      try {
+        (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+      } catch {}
+    }}
+  >
+    {/* filled */}
+    <div
+      className={`absolute left-0 top-0 h-full rounded-full ${
+        buffering ? "bg-primary-400/90" : "bg-white/80"
+      }`}
+      style={{ width: `${Math.round(progress * 100)}%` }}
+    />
+
+    {/* knob */}
+    <div
+      className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full ${
+        buffering ? "bg-primary-300" : "bg-white"
+      } shadow-lg`}
+      style={{ left: `calc(${Math.round(progress * 100)}% - 8px)` }}
+    />
+  </div>
+
+  {/* tiny hint */}
+  {isDragging && (
+    <div className="mt-2 text-center text-xs text-white/70">
+      Drag to seek
+    </div>
+  )}
+</div>
     </div>
   );
 }

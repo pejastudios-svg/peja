@@ -75,7 +75,7 @@ export default function GuardianInAppToasts() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed left-0 right-0 z-[20000] flex justify-center px-3" style={{ top: "calc(64px + env(safe-area-inset-top, 0px) + 8px)" }}>
+    <div className="fixed left-0 right-0 z-[35000] flex justify-center px-3" style={{ top: "calc(64px + env(safe-area-inset-top, 0px) + 8px)" }}>
       <div className="w-full max-w-md space-y-2">
         {toasts.map((n) => (
           <div

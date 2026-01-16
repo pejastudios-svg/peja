@@ -202,13 +202,21 @@ const setupRealtime = () => {
 
     // Navigate based on notification type
     switch (notification.type) {
-      case "sos_alert":
-        if (data.sos_id) {
-          router.push(`/map?sos=${data.sos_id}`);
-        } else {
-          router.push("/map");
-        }
-        break;
+      case "sos_alert": {
+  const id = data.sos_id;
+  const lat = data.latitude;
+  const lng = data.longitude;
+
+  // Include coords as fallback so map can center even if SOS list hasn't loaded yet
+  const qs = new URLSearchParams();
+  if (id) qs.set("sos", String(id));
+  if (lat != null) qs.set("lat", String(lat));
+  if (lng != null) qs.set("lng", String(lng));
+
+  router.push(`/map${qs.toString() ? `?${qs.toString()}` : ""}`, { scroll: false });
+  router.refresh();
+  break;
+}
       
       case "nearby_incident":
       case "post_confirmed":
