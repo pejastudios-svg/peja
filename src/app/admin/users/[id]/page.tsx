@@ -411,7 +411,7 @@ export default function AdminUserDetailPage() {
       )}
 
       {/* Posts */}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mt-8 mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
           <FileText className="w-5 h-5 text-primary-400" />
           Posts ({posts.length})

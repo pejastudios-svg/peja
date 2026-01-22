@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX, Play, Pause } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 
 export function ReelVideo({
@@ -15,10 +15,10 @@ export function ReelVideo({
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { soundEnabled, setSoundEnabled } = useAudio();
 
-  // stable callback
   const onWatched2sRef = useRef(onWatched2s);
   useEffect(() => {
     onWatched2sRef.current = onWatched2s;
@@ -29,62 +29,30 @@ export function ReelVideo({
 
   const [progress, setProgress] = useState(0);
   const [inView, setInView] = useState(false);
-  const [buffering, setBuffering] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef<{ active: boolean; startX: number; startProgress: number }>({
-    active: false,
-    startX: 0,
-    startProgress: 0,
-  });
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [showControls, setShowControls] = useState(false); // Default hidden, show on hover/tap
 
-  const seekToProgress = (p: number) => {
-    const v = videoRef.current;
-    if (!v || !v.duration || Number.isNaN(v.duration)) return;
-    const clamped = Math.min(Math.max(p, 0), 1);
-    v.currentTime = clamped * v.duration;
-    setProgress(clamped);
+  // --- Visibility Logic ---
+  const resetControlsTimer = () => {
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    setShowControls(true);
+    if (isPlaying && !isScrubbing) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
   };
 
-  // in-view detection (pause when not visible)
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
+  const handleContainerClick = () => {
+    if (showControls) {
+      setShowControls(false);
+    } else {
+      resetControlsTimer();
+    }
+  };
 
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const e = entries[0];
-        const ratio = e?.intersectionRatio ?? 0;
-        setInView(ratio >= 0.6);
-      },
-      { threshold: [0, 0.2, 0.6, 0.9] }
-    );
-
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-
-    const onWaiting = () => setBuffering(true);
-    const onStalled = () => setBuffering(true);
-    const onPlaying = () => setBuffering(false);
-    const onCanPlay = () => setBuffering(false);
-
-    v.addEventListener("waiting", onWaiting);
-    v.addEventListener("stalled", onStalled);
-    v.addEventListener("playing", onPlaying);
-    v.addEventListener("canplay", onCanPlay);
-
-    return () => {
-      v.removeEventListener("waiting", onWaiting);
-      v.removeEventListener("stalled", onStalled);
-      v.removeEventListener("playing", onPlaying);
-      v.removeEventListener("canplay", onCanPlay);
-    };
-  }, []);
-
+  // --- Playback Logic ---
   const stopTimers = () => {
     if (watchedTimerRef.current) {
       window.clearTimeout(watchedTimerRef.current);
@@ -96,20 +64,23 @@ export function ReelVideo({
     const v = videoRef.current;
     if (!v) return;
     v.pause();
+    setIsPlaying(false);
+    setShowControls(true);
     stopTimers();
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
   };
 
   const ensurePlay = async () => {
     const v = videoRef.current;
     if (!v) return;
 
-    // autoplay-safe: always start muted, then apply global preference
     try {
       v.muted = true;
       if (v.paused) await v.play();
-
-      // after playing, set to global preference (may remain muted if browser blocks)
       v.muted = !soundEnabled;
+      
+      setIsPlaying(true);
+      resetControlsTimer();
 
       if (!firedRef.current && onWatched2sRef.current) {
         watchedTimerRef.current = window.setTimeout(() => {
@@ -118,46 +89,13 @@ export function ReelVideo({
         }, 2000);
       }
     } catch {
-      // user may need to tap
+      setIsPlaying(false);
+      setShowControls(true);
     }
   };
 
-  // main lifecycle: only play if active AND visible
-  useEffect(() => {
-    if (!active || !inView) {
-      pause();
-      return;
-    }
-
-    ensurePlay();
-    return () => stopTimers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, inView, soundEnabled]);
-
-  // pause on background tab
-  useEffect(() => {
-    const onVis = () => {
-      if (document.hidden) pause();
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, []);
-
-  // progress bar
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-
-    const onTime = () => {
-      if (!v.duration || Number.isNaN(v.duration)) return;
-      setProgress(v.currentTime / v.duration);
-    };
-
-    v.addEventListener("timeupdate", onTime);
-    return () => v.removeEventListener("timeupdate", onTime);
-  }, []);
-
-  const togglePlay = async () => {
+  const togglePlay = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
 
@@ -168,8 +106,68 @@ export function ReelVideo({
     }
   };
 
+  // --- Scrubber Logic ---
+  const handleTimeUpdate = () => {
+    const v = videoRef.current;
+    if (!v || isScrubbing) return;
+    if (!v.duration) return;
+    const p = v.currentTime / v.duration;
+    setProgress(p);
+  };
+
+  const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    const val = parseFloat(e.target.value);
+    setProgress(val);
+    if (v.duration) v.currentTime = val * v.duration;
+    resetControlsTimer();
+  };
+
+  // --- Effects ---
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const e = entries[0];
+        setInView(e.isIntersecting && e.intersectionRatio >= 0.6);
+      },
+      { threshold: [0, 0.2, 0.6, 0.9] }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!active || !inView) {
+      pause();
+      return;
+    }
+    ensurePlay();
+    return () => stopTimers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, inView]);
+
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.muted = !soundEnabled;
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    const onVis = () => { if (document.hidden) pause(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
   return (
-    <div ref={wrapRef} className="relative w-full h-full bg-black select-none">
+    <div 
+      ref={wrapRef} 
+      className="relative w-full h-full bg-black select-none group"
+      onClick={handleContainerClick}
+      onPointerDownCapture={() => setSoundEnabled(true)}
+    >
       <video
         ref={videoRef}
         src={src}
@@ -177,98 +175,70 @@ export function ReelVideo({
         playsInline
         preload="metadata"
         muted={!soundEnabled}
-        controls={false}
-        controlsList="nodownload noplaybackrate noremoteplayback"
-        disablePictureInPicture
         loop
+        disablePictureInPicture
+        onTimeUpdate={handleTimeUpdate}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
       />
 
-      <button
-        type="button"
-        onClick={togglePlay}
-        className="absolute inset-0"
-        aria-label="Toggle playback"
-      />
-
-      {/* Global mute/unmute */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setSoundEnabled(!soundEnabled);
-          const v = videoRef.current;
-          if (v) v.muted = soundEnabled;
-        }}
-        className="absolute top-4 left-4 z-10 p-2 rounded-full bg-black/50"
-        style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top, 0px))" }}
-        aria-label={soundEnabled ? "Mute" : "Unmute"}
+      {/* --- Hybrid Controls Overlay --- */}
+      <div 
+        className={`absolute bottom-0 inset-x-0 p-4 bg-linear-to-t from-black/90 via-black/50 to-transparent z-20 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100' : ''}`}
+        onClick={(e) => e.stopPropagation()}
       >
-        {soundEnabled ? <Volume2 className="w-5 h-5 text-white" /> : <VolumeX className="w-5 h-5 text-white" />}
-      </button>
+        <div 
+          className="flex items-center gap-4 w-full"
+          style={{ paddingBottom: "env(safe-area-inset-bottom, 20px)" }}
+        >
+          {/* Play/Pause */}
+          <button 
+            onClick={togglePlay} 
+            className="text-white hover:text-primary-400 transition-colors p-2"
+          >
+            {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
+          </button>
 
-     <div
-  className="absolute bottom-0 left-0 right-0 px-4 pb-4"
-  style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}
->
-  {/* scrub track */}
-  <div
-    className={`relative h-2 rounded-full bg-white/20 overflow-hidden ${
-      buffering ? "animate-pulse" : ""
-    }`}
-    onPointerDown={(e) => {
-      e.stopPropagation();
-      setIsDragging(true);
-      dragRef.current.active = true;
-      dragRef.current.startX = e.clientX;
-      dragRef.current.startProgress = progress;
-      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-    }}
-    onPointerMove={(e) => {
-      if (!dragRef.current.active) return;
-      const track = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - track.left;
-      const p = x / Math.max(track.width, 1);
-      seekToProgress(p);
-    }}
-    onPointerUp={(e) => {
-      dragRef.current.active = false;
-      setIsDragging(false);
-      try {
-        (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
-      } catch {}
-    }}
-    onPointerCancel={(e) => {
-      dragRef.current.active = false;
-      setIsDragging(false);
-      try {
-        (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
-      } catch {}
-    }}
-  >
-    {/* filled */}
-    <div
-      className={`absolute left-0 top-0 h-full rounded-full ${
-        buffering ? "bg-primary-400/90" : "bg-white/80"
-      }`}
-      style={{ width: `${Math.round(progress * 100)}%` }}
-    />
+          {/* Scrubber */}
+          <div className="flex-1 relative h-6 flex items-center group cursor-pointer">
+             <input 
+               type="range" 
+               min="0" 
+               max="1" 
+               step="0.001"
+               value={progress}
+               onChange={handleScrub}
+               onMouseDown={() => setIsScrubbing(true)}
+               onMouseUp={() => setIsScrubbing(false)}
+               onTouchStart={() => setIsScrubbing(true)}
+               onTouchEnd={() => setIsScrubbing(false)}
+               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+             />
+             <div className="w-full h-1.5 bg-white/30 rounded-full relative">
+                <div 
+                  className="absolute left-0 top-0 h-full bg-primary-500 rounded-full pointer-events-none" 
+                  style={{ width: `${progress * 100}%` }} 
+                />
+                <div 
+                  className="absolute top-1/2 -mt-2 h-4 w-4 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover:scale-125"
+                  style={{ left: `calc(${progress * 100}% - 8px)` }}
+                />
+             </div>
+          </div>
 
-    {/* knob */}
-    <div
-      className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full ${
-        buffering ? "bg-primary-300" : "bg-white"
-      } shadow-lg`}
-      style={{ left: `calc(${Math.round(progress * 100)}% - 8px)` }}
-    />
-  </div>
-
-  {/* tiny hint */}
-  {isDragging && (
-    <div className="mt-2 text-center text-xs text-white/70">
-      Drag to seek
-    </div>
-  )}
-</div>
+          {/* Mute */}
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              setSoundEnabled(!soundEnabled);
+            }} 
+            className="text-white hover:text-white/80 p-2"
+          >
+            {soundEnabled ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

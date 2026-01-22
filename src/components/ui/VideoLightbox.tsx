@@ -19,20 +19,15 @@ export function VideoLightbox({
   const [progress, setProgress] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   
-  // Swipe State
   const [touchStart, setTouchStart] = useState<number | null>(null);
-  
   const fadeTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // --- Init & Cleanup ---
   useEffect(() => {
     if (isOpen) {
       setShowControls(true);
       setIsPlaying(true);
       resetFadeTimer();
       document.body.style.overflow = "hidden";
-      
-      // Pause background videos
       window.dispatchEvent(new Event("peja-modal-open"));
     } else {
       document.body.style.overflow = "";
@@ -40,36 +35,28 @@ export function VideoLightbox({
         videoRef.current.pause();
         videoRef.current.currentTime = 0;
       }
-      // Resume background interaction (optional, but good practice)
       window.dispatchEvent(new Event("peja-modal-close"));
     }
     return () => { document.body.style.overflow = ""; };
   }, [isOpen]);
 
-  // --- Fade Logic ---
   const resetFadeTimer = () => {
     if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
     setShowControls(true);
     fadeTimeout.current = setTimeout(() => {
-      // Fade out only if playing
       if (isPlaying) setShowControls(false);
-    }, 7000);
+    }, 4000);
   };
 
   const handleScreenTap = () => {
     if (showControls) {
-      // If controls are visible and video is playing, hide them immediately
-      if (isPlaying) {
-        setShowControls(false);
-        if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
-      }
+      setShowControls(false);
+      if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
     } else {
-      // Show controls and restart timer
       resetFadeTimer();
     }
   };
 
-  // --- Playback Logic ---
   const togglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     const v = videoRef.current;
@@ -82,7 +69,7 @@ export function VideoLightbox({
     } else {
       v.pause();
       setIsPlaying(false);
-      setShowControls(true); // Keep controls visible when paused
+      setShowControls(true);
       if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
     }
   };
@@ -102,17 +89,12 @@ export function VideoLightbox({
     resetFadeTimer();
   };
 
-  // --- Swipe Logic ---
   const onTouchStart = (e: React.TouchEvent) => setTouchStart(e.touches[0].clientX);
   const onTouchEnd = (e: React.TouchEvent) => {
     if (!touchStart) return;
     const touchEnd = e.changedTouches[0].clientX;
     const diff = touchStart - touchEnd;
-
-    // > 75px horizontal swipe triggers close
-    if (Math.abs(diff) > 75) {
-      onClose();
-    }
+    if (Math.abs(diff) > 75) onClose();
     setTouchStart(null);
   };
 
@@ -120,16 +102,14 @@ export function VideoLightbox({
 
   return createPortal(
     <div 
-      className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+      className="fixed inset-0 z-[100] bg-black flex items-center justify-center group"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
-      {/* Back Button (Top Left) */}
-      <div 
-        className={`absolute top-4 left-4 z-50 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-      >
+      {/* Back Button */}
+      <div className={`absolute top-4 left-4 z-[120] transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100' : 'pointer-events-none'}`}>
         <button 
-          onClick={onClose}
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60"
         >
           <ChevronLeft className="w-8 h-8" />
@@ -137,13 +117,12 @@ export function VideoLightbox({
       </div>
 
       {/* Screen Tap Layer */}
-      <div className="absolute inset-0 z-10" onClick={handleScreenTap} />
+      <div className="absolute inset-0 z-[110]" onClick={handleScreenTap} />
 
-      {/* Video */}
       <video
         ref={videoRef}
         src={videoUrl}
-        className="max-w-full max-h-full w-full h-full object-contain"
+        className="max-w-full max-h-full w-full h-full object-contain relative z-[105]"
         playsInline
         autoPlay
         onTimeUpdate={handleTimeUpdate}
@@ -152,15 +131,14 @@ export function VideoLightbox({
 
       {/* Bottom Controls */}
       <div 
-        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-20 transition-opacity duration-500 ${showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-[120] transition-opacity duration-500 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100 pointer-events-auto' : 'pointer-events-none'}`}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-4 max-w-2xl mx-auto w-full">
-          {/* Play/Pause */}
           <button onClick={togglePlay} className="text-white hover:text-primary-400 transition-colors">
             {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current" />}
           </button>
 
-          {/* Scrubber */}
           <div className="flex-1 relative h-6 flex items-center group cursor-pointer">
              <input 
                type="range" 
@@ -177,18 +155,12 @@ export function VideoLightbox({
                   style={{ width: `${progress}%` }} 
                 />
                 <div 
-               className="absolute h-4 w-4 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover:scale-125"
-               style={{ 
-                 left: `${progress}%`, 
-                 top: '50%', 
-                 marginTop: '-8px', 
-                 transform: 'translateX(-50%)' 
-               }}
-             />
+                  className="absolute top-1/2 -mt-2 h-4 w-4 bg-white rounded-full shadow-lg transition-transform group-hover:scale-125"
+                  style={{ left: `calc(${progress}% - 8px)` }}
+                />
              </div>
           </div>
 
-          {/* Mute */}
           <button onClick={() => { 
               if (videoRef.current) {
                 videoRef.current.muted = !isMuted;

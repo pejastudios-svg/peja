@@ -26,7 +26,10 @@ export function InlineVideo({
   const instanceId = useId();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // State
+  const [showControls, setShowControls] = useState(false); // Default false, relying on hover for PC
   const { soundEnabled, setSoundEnabled } = useAudio();
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -34,12 +37,35 @@ export function InlineVideo({
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
 
+  // --- Visibility Logic ---
+  const resetControlsTimer = () => {
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    setShowControls(true);
+    if (isPlaying) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+  };
+
+  const handleContainerClick = () => {
+    // Mobile: Tap to toggle
+    // PC: Click also toggles, but hover keeps it visible anyway
+    if (showControls) {
+      setShowControls(false);
+    } else {
+      resetControlsTimer();
+    }
+  };
+
   // --- Playback Logic ---
   const pause = () => {
     const v = videoRef.current;
     if (!v) return;
     v.pause();
     setIsPlaying(false);
+    setShowControls(true);
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
   };
 
   const play = async () => {
@@ -50,6 +76,7 @@ export function InlineVideo({
       await v.play();
       setIsPlaying(true);
       window.dispatchEvent(new CustomEvent(PLAYING_EVENT, { detail: { id: instanceId } }));
+      resetControlsTimer();
     } catch {
       // autoplay block ignored
     }
@@ -63,11 +90,10 @@ export function InlineVideo({
     else pause();
   };
 
-  // --- Expand Logic ---
   const handleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onExpand) {
-      pause(); // Pause inline before expanding
+      pause(); 
       onExpand();
     }
   };
@@ -87,9 +113,10 @@ export function InlineVideo({
     const val = parseFloat(e.target.value);
     setProgress(val);
     v.currentTime = (val / 100) * v.duration;
+    resetControlsTimer();
   };
 
-  // --- Side Effects ---
+  // --- Effects ---
   useEffect(() => {
     const v = videoRef.current;
     if (v) v.muted = !soundEnabled;
@@ -139,6 +166,7 @@ export function InlineVideo({
       ref={wrapRef}
       className="relative w-full h-full bg-black overflow-hidden group select-none"
       onPointerDownCapture={() => setSoundEnabled(true)}
+      onClick={handleContainerClick}
       onContextMenu={(e) => e.preventDefault()}
     >
       <video
@@ -157,11 +185,14 @@ export function InlineVideo({
         onError={() => onError?.()}
       />
 
-      {/* --- Custom Controls Overlay --- */}
+      {/* HYBRID VISIBILITY LOGIC:
+          1. group-hover:opacity-100 -> Handles PC Hover
+          2. !opacity-100 (if showControls is true) -> Handles Mobile Tap
+          3. Default: opacity-0 (Hidden)
+      */}
       <div 
-        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}
-        onPointerDown={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()}
+        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100' : ''}`}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3">
           {/* Play/Pause */}
@@ -187,13 +218,11 @@ export function InlineVideo({
                onTouchEnd={() => setIsScrubbing(false)}
                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
              />
-             {/* Visual Track */}
-             <div className="w-full h-1 bg-white/30 rounded-full relative">
+             <div className="w-full h-1.5 bg-white/30 rounded-full relative">
                 <div 
                   className="absolute left-0 top-0 h-full bg-primary-500 rounded-full pointer-events-none" 
                   style={{ width: `${progress}%` }} 
                 />
-                {/* Thumb Centered - h-3 is 12px, half is 6px */}
                 <div 
                   className="absolute top-1/2 -mt-1.5 h-3 w-3 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover/slider:scale-125"
                   style={{ left: `calc(${progress}% - 6px)` }}
@@ -214,7 +243,7 @@ export function InlineVideo({
             </button>
           )}
 
-          {/* Expand Button */}
+          {/* Expand */}
           {showExpand && onExpand && (
             <button
               onClick={handleExpand}
