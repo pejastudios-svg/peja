@@ -96,11 +96,11 @@ function GuardianAppRowSkeleton() {
       <div className="flex items-center gap-4">
         <Skeleton className="h-12 w-12 rounded-full shrink-0" />
         <div className="flex-1 min-w-0">
-          <Skeleton className="h-4 w-40 mb-2" />
-          <Skeleton className="h-3 w-56 mb-2" />
-          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-4 w-32 max-w-full mb-2" />
+          <Skeleton className="h-3 w-full max-w-[180px] mb-2" />
+          <Skeleton className="h-3 w-20" />
         </div>
-        <Skeleton className="h-5 w-20 rounded-full" />
+        <Skeleton className="h-5 w-20 rounded-full shrink-0" />
       </div>
     </div>
   );
@@ -429,18 +429,25 @@ function GuardianUserRowSkeleton() {
                          onClick={() => { setSelected(a); setModalOpen(true); }}
                          className="hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-all flex items-center gap-4 group"
                       >
-                         <div className="w-12 h-12 rounded-full bg-dark-800 border border-white/10 overflow-hidden relative">
+                         {/* Avatar: Added shrink-0 to prevent squeezing */}
+                         <div className="w-12 h-12 rounded-full bg-dark-800 border border-white/10 overflow-hidden relative shrink-0">
                             {a.user?.avatar_url && <img src={a.user.avatar_url} className="w-full h-full object-cover" />}
                          </div>
-                         <div className="flex-1">
-                            <p className="text-sm font-bold text-dark-100 group-hover:text-primary-300 transition-colors">{a.user?.full_name}</p>
-                            <div className="flex gap-3 text-xs text-dark-400 mt-1">
-                                <span>{a.hours_per_week} hrs/week</span>
+                         
+                         {/* Content: Added min-w-0 to allow truncation */}
+                         <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-dark-100 group-hover:text-primary-300 transition-colors truncate">
+                               {a.user?.full_name}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-dark-400 mt-1">
+                                <span className="shrink-0">{a.hours_per_week} hrs/week</span>
                                 <span>•</span>
                                 <span className="truncate">{a.user?.email}</span>
                             </div>
                          </div>
-                         <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full border ${statusPill(a.status || 'pending')}`}>
+
+                         {/* Badge: Added shrink-0 to prevent poking out */}
+                         <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full border shrink-0 ${statusPill(a.status || 'pending')}`}>
                             {a.status}
                          </span>
                       </div>
