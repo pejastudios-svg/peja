@@ -493,7 +493,9 @@ export default function GuardianQueuePage() {
                 Category: <span className="text-dark-200 capitalize">{selectedItem.post.category?.replace(/_/g, " ")}</span>
               </p>
               {selectedItem.post.comment && (
-                <p className="text-dark-200">{selectedItem.post.comment}</p>
+                <p className="text-dark-200 whitespace-pre-wrap wrap-break-word">
+                  {selectedItem.post.comment}
+                </p>
               )}
               {selectedItem.post.address && (
                 <p className="text-sm text-dark-400">Location: {selectedItem.post.address}</p>

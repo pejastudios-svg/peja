@@ -13,17 +13,12 @@ export function ImageLightbox({
   imageUrl,
   items,
   initialIndex = 0,
-
-  // keep for backward compatibility (DO NOT render)
-  caption,
 }: {
   isOpen: boolean;
   onClose: () => void;
   imageUrl: string | null;
   items?: MediaItem[];
   initialIndex?: number;
-
-  // deprecated: not rendered anymore
   caption?: string | null;
 }) {
   const mediaItems: MediaItem[] = useMemo(() => {
@@ -35,8 +30,16 @@ export function ImageLightbox({
   const [index, setIndex] = useState(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
+  // Drag State
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartY = useRef<number | null>(null);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setDragOffset(0);
+      return;
+    }
 
     const nextIndex = Math.min(Math.max(initialIndex, 0), Math.max(0, mediaItems.length - 1));
     setIndex(nextIndex);
@@ -65,12 +68,54 @@ export function ImageLightbox({
     setIndex(clamped);
   };
 
+  // --- Vertical Drag Logic ---
+  const onTouchStart = (e: React.TouchEvent) => {
+    // Only track single touch
+    if (e.touches.length === 1) {
+      dragStartY.current = e.touches[0].clientY;
+      setIsDragging(true);
+    }
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (dragStartY.current === null) return;
+    const dy = e.touches[0].clientY - dragStartY.current;
+    
+    // Only start dragging UI if moved noticeably
+    setDragOffset(dy);
+  };
+
+  const onTouchEnd = () => {
+    dragStartY.current = null;
+    setIsDragging(false);
+
+    if (Math.abs(dragOffset) > 100) {
+      onClose(); // Close if dragged far enough vertically
+    } else {
+      setDragOffset(0); // Snap back
+    }
+  };
+
+  const bgOpacity = Math.max(0, 1 - Math.abs(dragOffset) / 400);
+
   return (
     <Portal>
-      <div className="fixed inset-0 z-[99999] bg-black" onClick={close}>
-        {/* Top bar */}
+      <div 
+        className="fixed inset-0 z-99999 flex items-center justify-center touch-none"
+        onClick={close}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        {/* Dynamic Background */}
+        <div 
+          className="absolute inset-0 bg-black transition-opacity duration-100 ease-linear"
+          style={{ opacity: bgOpacity }}
+        />
+
+        {/* Top bar (Fades out on drag) */}
         <div
-          className="absolute top-0 left-0 right-0 z-[100000] flex items-center justify-between px-4"
+          className={`absolute top-0 left-0 right-0 z-100000 flex items-center justify-between px-4 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
           style={{ paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", height: "56px" }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -88,8 +133,15 @@ export function ImageLightbox({
           </button>
         </div>
 
-        {/* Carousel */}
-        <div className="absolute inset-0" onClick={(e) => e.stopPropagation()}>
+        {/* Draggable Carousel Container */}
+        <div 
+          className="absolute inset-0 transition-transform duration-200 ease-out"
+          style={{ 
+            transform: `translateY(${dragOffset}px)`,
+            transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div
             ref={scrollerRef}
             className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scroll-smooth"
@@ -101,38 +153,45 @@ export function ImageLightbox({
               const newIndex = Math.round(el.scrollLeft / w);
               if (newIndex !== index) setIndex(newIndex);
             }}
+            // Prevent horizontal scroll from interfering with vertical drag context if needed
+            // But usually allowing both is fine, user intent is clear by direction
           >
             {mediaItems.map((m, i) => (
-              <div key={i} className="w-full h-full shrink-0 snap-center flex items-center justify-center">
+              <div key={i} className="w-full h-full shrink-0 snap-center flex items-center justify-center p-2">
                 {m.type === "video" ? (
-                  <div className="w-full h-full">
+                  <div className="w-full h-full flex items-center justify-center">
                     <InlineVideo
                       src={m.url}
-                      className="w-full h-full object-contain"
+                      className="w-full h-full object-contain max-h-screen"
                       showExpand={false}
                       showMute={true}
                     />
                   </div>
                 ) : (
-                  <img src={m.url} alt="" className="w-full h-full object-contain" />
+                  <img 
+                    src={m.url} 
+                    alt="" 
+                    className="w-full h-full object-contain max-h-screen pointer-events-none select-none" 
+                  />
                 )}
               </div>
             ))}
           </div>
 
-          {mediaItems.length > 1 && (
+          {/* Navigation Arrows (Hidden during drag) */}
+          {mediaItems.length > 1 && !isDragging && (
             <>
               <button
                 type="button"
                 onClick={() => goTo(index - 1)}
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center"
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center hover:bg-black/70 transition-colors"
               >
                 <ChevronLeft className="w-7 h-7 text-white" />
               </button>
               <button
                 type="button"
                 onClick={() => goTo(index + 1)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center"
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center hover:bg-black/70 transition-colors"
               >
                 <ChevronRight className="w-7 h-7 text-white" />
               </button>

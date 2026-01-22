@@ -19,7 +19,11 @@ export function VideoLightbox({
   const [progress, setProgress] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   
-  const [touchStart, setTouchStart] = useState<number | null>(null);
+  // Drag State
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  
   const fadeTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -31,6 +35,7 @@ export function VideoLightbox({
       window.dispatchEvent(new Event("peja-modal-open"));
     } else {
       document.body.style.overflow = "";
+      setDragOffset({ x: 0, y: 0 }); // Reset position
       if (videoRef.current) {
         videoRef.current.pause();
         videoRef.current.currentTime = 0;
@@ -44,12 +49,12 @@ export function VideoLightbox({
     if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
     setShowControls(true);
     fadeTimeout.current = setTimeout(() => {
-      if (isPlaying) setShowControls(false);
+      if (isPlaying && !isDragging) setShowControls(false);
     }, 4000);
   };
 
   const handleScreenTap = () => {
-    if (showControls) {
+    if (showControls && isPlaying) {
       setShowControls(false);
       if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
     } else {
@@ -57,11 +62,44 @@ export function VideoLightbox({
     }
   };
 
+  // --- Gesture Logic ---
+  const onTouchStart = (e: React.TouchEvent) => {
+    dragStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    setIsDragging(true);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!dragStartRef.current) return;
+    const dx = e.touches[0].clientX - dragStartRef.current.x;
+    const dy = e.touches[0].clientY - dragStartRef.current.y;
+    setDragOffset({ x: dx, y: dy });
+  };
+
+  const onTouchEnd = () => {
+    setIsDragging(false);
+    dragStartRef.current = null;
+
+    // Calculate distance from center
+    const distance = Math.sqrt(dragOffset.x ** 2 + dragOffset.y ** 2);
+    
+    // Threshold to close (100px)
+    if (distance > 100) {
+      onClose();
+    } else {
+      // Snap back
+      setDragOffset({ x: 0, y: 0 });
+    }
+  };
+
+  // Calculate background opacity based on drag distance (0 to 1)
+  const dragDistance = Math.sqrt(dragOffset.x ** 2 + dragOffset.y ** 2);
+  const bgOpacity = Math.max(0, 1 - dragDistance / 400); // Fades out as you drag away
+
+  // --- Playback Logic ---
   const togglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
-    
     if (v.paused) {
       v.play();
       setIsPlaying(true);
@@ -89,25 +127,23 @@ export function VideoLightbox({
     resetFadeTimer();
   };
 
-  const onTouchStart = (e: React.TouchEvent) => setTouchStart(e.touches[0].clientX);
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStart) return;
-    const touchEnd = e.changedTouches[0].clientX;
-    const diff = touchStart - touchEnd;
-    if (Math.abs(diff) > 75) onClose();
-    setTouchStart(null);
-  };
-
   if (!isOpen || !videoUrl) return null;
 
   return createPortal(
     <div 
-      className="fixed inset-0 z-[100] bg-black flex items-center justify-center group"
+      className="fixed inset-0 z-100 flex items-center justify-center group touch-none"
       onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
+      {/* Background with Dynamic Opacity */}
+      <div 
+        className="absolute inset-0 bg-black transition-opacity duration-100 ease-linear"
+        style={{ opacity: bgOpacity }}
+      />
+
       {/* Back Button */}
-      <div className={`absolute top-4 left-4 z-[120] transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100' : 'pointer-events-none'}`}>
+      <div className={`absolute top-4 left-4 z-120 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? 'opacity-100!' : 'pointer-events-none'}`}>
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60"
@@ -117,22 +153,33 @@ export function VideoLightbox({
       </div>
 
       {/* Screen Tap Layer */}
-      <div className="absolute inset-0 z-[110]" onClick={handleScreenTap} />
+      <div className="absolute inset-0 z-110" onClick={handleScreenTap} />
 
-      <video
-        ref={videoRef}
-        src={videoUrl}
-        className="max-w-full max-h-full w-full h-full object-contain relative z-[105]"
-        playsInline
-        autoPlay
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={() => setIsPlaying(false)}
-      />
+      {/* Draggable Video Container */}
+      <div
+        className="relative z-105 w-full h-full flex items-center justify-center transition-transform duration-200 ease-out"
+        style={{ 
+          transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${1 - dragDistance / 1000})`,
+          // Disable transition during drag for instant response
+          transition: isDragging ? 'none' : 'transform 0.3s ease-out' 
+        }}
+      >
+        <video
+          ref={videoRef}
+          src={videoUrl}
+          className="max-w-full max-h-full w-full h-full object-contain pointer-events-none" // prevent video catching touch events
+          playsInline
+          autoPlay
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={() => setIsPlaying(false)}
+        />
+      </div>
 
-      {/* Bottom Controls */}
+      {/* Bottom Controls (Fades out when dragging) */}
       <div 
-        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-[120] transition-opacity duration-500 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100 pointer-events-auto' : 'pointer-events-none'}`}
+        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-120 transition-all duration-300 opacity-0 group-hover:opacity-100 ${showControls && !isDragging ? 'opacity-100! pointer-events-auto' : 'pointer-events-none !opacity-0!'}`}
         onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()} // Allow interacting with scrubber without dragging lightbox
       >
         <div className="flex items-center gap-4 max-w-2xl mx-auto w-full">
           <button onClick={togglePlay} className="text-white hover:text-primary-400 transition-colors">
@@ -155,7 +202,7 @@ export function VideoLightbox({
                   style={{ width: `${progress}%` }} 
                 />
                 <div 
-                  className="absolute top-1/2 -mt-2 h-4 w-4 bg-white rounded-full shadow-lg transition-transform group-hover:scale-125"
+                  className="absolute top-1/2 -mt-2 h-4 w-4 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover:scale-125"
                   style={{ left: `calc(${progress}% - 8px)` }}
                 />
              </div>
