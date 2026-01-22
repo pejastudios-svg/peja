@@ -12,6 +12,7 @@ import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel"; 
 import GlowButton from "@/components/dashboard/GlowButton"; 
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import {
   Flag,
   Loader2,
@@ -65,6 +66,7 @@ export default function AdminFlaggedPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [mediaIndex, setMediaIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
 
@@ -258,7 +260,8 @@ function FlaggedRowSkeleton() {
                >
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${item.priority === 'critical' ? 'bg-red-500' : item.priority === 'high' ? 'bg-orange-500' : 'bg-yellow-500/50'}`} />
 
-                  <div className="w-16 h-16 rounded-xl bg-dark-900 overflow-hidden shrink-0 border border-white/5 relative">
+                  {/* Content Thumbnail (Keep square-ish for content) */}
+                  <div className="w-14 h-14 rounded-lg bg-dark-900 overflow-hidden shrink-0 border border-white/5 relative">
                      {item.media?.[0] ? (
                         <img src={item.media[0].url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                      ) : (
@@ -269,7 +272,7 @@ function FlaggedRowSkeleton() {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                     <div className="flex items-center gap-2 mb-1">
+                     <div className="flex items-center gap-2 mb-1.5">
                         <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded shadow-sm ${priorityColor(item.priority)}`}>
                            {item.priority || "Low"} Priority
                         </span>
@@ -277,12 +280,24 @@ function FlaggedRowSkeleton() {
                            {item.created_at && formatDistanceToNow(new Date(item.created_at))} ago
                         </span>
                      </div>
-                     <p className="text-sm font-bold text-dark-100 mb-1">
+                     
+                     <p className="text-sm font-bold text-dark-100 mb-1.5 line-clamp-1">
                         {item.reason}
                      </p>
-                     <p className="text-xs text-dark-400 mt-0.5 truncate flex items-center gap-1">
-                        <User className="w-3 h-3" /> {item.user?.full_name || "Unknown"}
-                     </p>
+
+                     {/* User Avatar & Name (Circular Profile Pic) */}
+                     <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-full bg-dark-800 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center">
+                           {item.user?.avatar_url ? (
+                              <img src={item.user.avatar_url} className="w-full h-full object-cover" />
+                           ) : (
+                              <User className="w-3 h-3 text-dark-400" />
+                           )}
+                        </div>
+                        <p className="text-xs text-dark-400 truncate">
+                           {item.user?.full_name || "Unknown"}
+                        </p>
+                     </div>
                   </div>
                   
                   <div className="pr-2 self-center">
@@ -299,7 +314,16 @@ function FlaggedRowSkeleton() {
                <div className="relative aspect-video bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
                   {selected.media?.[mediaIndex] && (
                      selected.media[mediaIndex].media_type === 'video' ? (
-                        <InlineVideo src={selected.media[mediaIndex].url} className="w-full h-full object-contain" />
+                        <InlineVideo 
+                          src={selected.media[mediaIndex].url} 
+                          className="w-full h-full object-contain"
+                          showExpand={true}
+                          showMute={true}
+                          onExpand={() => {
+                            setLightboxUrl(selected.media![mediaIndex].url);
+                            setVideoLightboxOpen(true);
+                          }}
+                        />
                      ) : (
                         <img 
                           src={selected.media[mediaIndex].url} 
@@ -348,6 +372,11 @@ function FlaggedRowSkeleton() {
         isOpen={lightboxOpen} 
         onClose={() => setLightboxOpen(false)} 
         imageUrl={lightboxUrl} 
+      />
+      <VideoLightbox 
+        isOpen={videoLightboxOpen} 
+        onClose={() => setVideoLightboxOpen(false)} 
+        videoUrl={lightboxUrl} 
       />
     </HudShell>
   );

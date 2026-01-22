@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Maximize2, Volume2, VolumeX } from "lucide-react";
+import { Volume2, VolumeX, Play, Pause, Maximize2 } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
-import { useLongPress } from "@/components/hooks/useLongPress";
 
 const PLAYING_EVENT = "peja-inline-video-playing";
 
@@ -30,8 +29,12 @@ export function InlineVideo({
 
   const { soundEnabled, setSoundEnabled } = useAudio();
   const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
 
+  // --- Playback Logic ---
   const pause = () => {
     const v = videoRef.current;
     if (!v) return;
@@ -42,31 +45,56 @@ export function InlineVideo({
   const play = async () => {
     const v = videoRef.current;
     if (!v) return;
-
-    // Autoplay-safe: start muted first, then apply global sound
     try {
-      v.muted = true;
+      if (v.muted && soundEnabled) v.muted = false;
       await v.play();
       setIsPlaying(true);
-
-      // after it started, apply global preference
-      v.muted = !soundEnabled;
-
       window.dispatchEvent(new CustomEvent(PLAYING_EVENT, { detail: { id: instanceId } }));
     } catch {
-      // ignore
+      // autoplay block ignored
     }
   };
 
-  const togglePlay = async () => {
+  const togglePlay = async (e?: React.MouseEvent | React.TouchEvent) => {
+    e?.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
-
     if (v.paused) await play();
     else pause();
   };
 
-  // Pause when another inline video starts playing
+  // --- Expand Logic ---
+  const handleExpand = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onExpand) {
+      pause(); // Pause inline before expanding
+      onExpand();
+    }
+  };
+
+  // --- Scrubber Logic ---
+  const handleTimeUpdate = () => {
+    const v = videoRef.current;
+    if (!v || isScrubbing) return;
+    const p = (v.currentTime / v.duration) * 100;
+    setProgress(isNaN(p) ? 0 : p);
+  };
+
+  const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    const val = parseFloat(e.target.value);
+    setProgress(val);
+    v.currentTime = (val / 100) * v.duration;
+  };
+
+  // --- Side Effects ---
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) v.muted = !soundEnabled;
+  }, [soundEnabled]);
+
   useEffect(() => {
     const handler = (e: any) => {
       if (e?.detail?.id === instanceId) return;
@@ -76,102 +104,42 @@ export function InlineVideo({
     return () => window.removeEventListener(PLAYING_EVENT, handler);
   }, [instanceId]);
 
-  // Pause when leaving viewport, autoplay when mostly visible
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-
     const obs = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        const ratio = entry?.intersectionRatio ?? 0;
-
-        if (ratio < 0.25) {
-          pause();
-          return;
+        if (entry.intersectionRatio < 0.25) pause();
+        if (entry.intersectionRatio >= 0.6 && !blocked) {
+           const v = videoRef.current;
+           if (v && v.paused) play();
         }
-
-        if (ratio >= 0.6) {
-  // ✅ don't autoplay under overlays/modals
-  if (blocked) {
-    pause();
-    return;
-  }
-
-  const v = videoRef.current;
-  if (v && v.paused) play();
-}
       },
       { threshold: [0, 0.25, 0.6, 0.85] }
     );
-
     obs.observe(el);
     return () => obs.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [soundEnabled]);
+  }, [blocked]);
 
-  // Pause on tab background
   useEffect(() => {
-    const onVis = () => {
-      if (document.hidden) pause();
+    const onModalOpen = () => { setBlocked(true); pause(); };
+    const onModalClose = () => { setBlocked(false); };
+    window.addEventListener("peja-modal-open", onModalOpen);
+    window.addEventListener("peja-modal-close", onModalClose);
+    return () => {
+        window.removeEventListener("peja-modal-open", onModalOpen);
+        window.removeEventListener("peja-modal-close", onModalClose);
     };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
-
-  // Pause when ANY overlay/modal opens on top
- useEffect(() => {
-  const onOverlayOpen = () => {
-    setBlocked(true);
-    pause();
-  };
-  const onOverlayClose = () => {
-    setBlocked(false);
-    // do not autoplay here — IntersectionObserver will do it if visible
-  };
-
-  const onModalOpen = () => {
-    setBlocked(true);
-    pause();
-  };
-  const onModalClose = () => {
-    setBlocked(false);
-  };
-
-  window.addEventListener("peja-overlay-open", onOverlayOpen as any);
-  window.addEventListener("peja-overlay-close", onOverlayClose as any);
-
-  window.addEventListener("peja-modal-open", onModalOpen as any);
-  window.addEventListener("peja-modal-close", onModalClose as any);
-
-  return () => {
-    window.removeEventListener("peja-overlay-open", onOverlayOpen as any);
-    window.removeEventListener("peja-overlay-close", onOverlayClose as any);
-
-    window.removeEventListener("peja-modal-open", onModalOpen as any);
-    window.removeEventListener("peja-modal-close", onModalClose as any);
-  };
-}, []);
-
-// Setup long press handler
-  const longPressProps = useLongPress(() => {
-    if (onExpand) onExpand();
-  });
 
   return (
     <div
       ref={wrapRef}
-      className="relative w-full h-full bg-black overflow-hidden"
-      {...longPressProps}
-      onPointerDownCapture={(e) => {
-        // ✅ ANY TAP anywhere on inline video enables global sound
-        setSoundEnabled(true);
-        const v = videoRef.current;
-        if (v) v.muted = false;
-        
-        // ensure long press starts
-        if (longPressProps.onPointerDown) longPressProps.onPointerDown();
-      }}
+      className="relative w-full h-full bg-black overflow-hidden group select-none"
+      onPointerDownCapture={() => setSoundEnabled(true)}
+      onContextMenu={(e) => e.preventDefault()}
     >
       <video
         ref={videoRef}
@@ -179,53 +147,84 @@ export function InlineVideo({
         poster={poster}
         className={className}
         playsInline
-        preload="none"
+        preload="metadata"
         muted={!soundEnabled}
-        controls={false}
         loop
-        controlsList="nodownload noplaybackrate noremoteplayback"
-        disablePictureInPicture
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onError={() => onError?.()}
       />
 
-      {/* Tap toggles play/pause */}
-      <button type="button" onClick={togglePlay} className="absolute inset-0" aria-label="Toggle video" />
+      {/* --- Custom Controls Overlay --- */}
+      <div 
+        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 ${isPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}
+        onPointerDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3">
+          {/* Play/Pause */}
+          <button
+            onClick={togglePlay}
+            className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
+          >
+            {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+          </button>
 
-      {/* Expand */}
-      {showExpand && onExpand && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onExpand();
-          }}
-          className="absolute top-2 right-2 z-10 p-2 rounded-full bg-black/45 hover:bg-black/70"
-          style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top, 0px))" }}
-          aria-label="Expand"
-        >
-          <Maximize2 className="w-5 h-5 text-white" />
-        </button>
-      )}
+          {/* Scrubber */}
+          <div className="flex-1 relative h-6 flex items-center group/slider">
+             <input
+               type="range"
+               min={0}
+               max={100}
+               step={0.1}
+               value={progress}
+               onChange={handleScrub}
+               onMouseDown={() => setIsScrubbing(true)}
+               onMouseUp={() => setIsScrubbing(false)}
+               onTouchStart={(e) => { e.stopPropagation(); setIsScrubbing(true); }}
+               onTouchEnd={() => setIsScrubbing(false)}
+               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+             />
+             {/* Visual Track */}
+             <div className="w-full h-1 bg-white/30 rounded-full relative">
+                <div 
+                  className="absolute left-0 top-0 h-full bg-primary-500 rounded-full pointer-events-none" 
+                  style={{ width: `${progress}%` }} 
+                />
+                {/* Thumb Centered - h-3 is 12px, half is 6px */}
+                <div 
+                  className="absolute top-1/2 -mt-1.5 h-3 w-3 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover/slider:scale-125"
+                  style={{ left: `calc(${progress}% - 6px)` }}
+                />
+             </div>
+          </div>
 
-      {/* Global mute/unmute */}
-      {showMute && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setSoundEnabled(!soundEnabled);
-            const v = videoRef.current;
-            if (v) v.muted = soundEnabled;
-          }}
-          className="absolute bottom-2 right-2 z-10 p-2 rounded-full bg-black/45 hover:bg-black/70"
-          style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))" }}
-          aria-label={soundEnabled ? "Mute" : "Unmute"}
-        >
-          {soundEnabled ? <Volume2 className="w-5 h-5 text-white" /> : <VolumeX className="w-5 h-5 text-white" />}
-        </button>
-      )}
+          {/* Mute */}
+          {showMute && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setSoundEnabled(!soundEnabled);
+              }}
+              className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
+            >
+              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </button>
+          )}
+
+          {/* Expand Button */}
+          {showExpand && onExpand && (
+            <button
+              onClick={handleExpand}
+              className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
+            >
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -141,11 +141,11 @@ export default function GuardianGuidelinesPage() {
             Tips for Effective Moderation
           </h2>
           <ul className="space-y-2 text-dark-300">
-            <li>• Review context — check the category and location</li>
-            <li>• Consider intent — was this an honest report or abuse?</li>
-            <li>• Be consistent — apply the same standards to all content</li>
-            <li>• Take breaks — moderation fatigue is real</li>
-            <li>• Ask for help — reach out if you're struggling with decisions</li>
+            <li>• Review context - check the category and location</li>
+            <li>• Consider intent - was this an honest report or abuse?</li>
+            <li>• Be consistent - apply the same standards to all content</li>
+            <li>• Take breaks - moderation fatigue is real</li>
+            <li>• Ask for help - reach out if you're struggling with decisions</li>
           </ul>
         </div>
       </div>

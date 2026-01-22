@@ -286,7 +286,7 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       {/* Comment */}
       {post.comment && (
         <div className="mb-3">
-          <p className="text-dark-200 text-sm break-words whitespace-pre-wrap overflow-hidden">
+          <p className="text-dark-200 text-sm wrap-break-word whitespace-pre-wrap overflow-hidden">
             {displayedComment}
           </p>
           {isLongComment && (
