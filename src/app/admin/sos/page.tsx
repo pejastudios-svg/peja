@@ -6,6 +6,9 @@ import { useAuth } from "@/context/AuthContext";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useRouter } from "next/navigation";
+import HudShell from "@/components/dashboard/HudShell";
+import HudPanel from "@/components/dashboard/HudPanel";
+import GlowButton from "@/components/dashboard/GlowButton";
 import {
   AlertTriangle,
   MapPin,
@@ -17,6 +20,7 @@ import {
   Eye,
   Phone,
   Trash2,
+  MessageCircle, 
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { Modal } from "@/components/ui/Modal";
@@ -266,145 +270,119 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
   const activeCount = sosAlerts.filter(s => s.status === "active").length;
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-dark-100">SOS Alerts</h1>
-        <p className="text-dark-400 mt-1">Monitor and manage emergency alerts</p>
-      </div>
-
+    <HudShell
+      title="SOS Monitor"
+      subtitle="Critical emergency alerts and response coordination"
+      right={
+         <div className="flex gap-1 bg-[#1E1B24] p-1 rounded-xl border border-white/10">
+            {["all", "active", "resolved"].map((status) => (
+               <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase transition-all ${
+                     statusFilter === status 
+                     ? "bg-primary-600 text-white shadow-lg shadow-primary-500/20" 
+                     : "text-dark-400 hover:text-white hover:bg-white/5"
+                  }`}
+               >
+                  {status}
+               </button>
+            ))}
+         </div>
+      }
+    >
       {/* Active Alert Banner */}
       {activeCount > 0 && (
-        <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3">
-          <AlertTriangle className="w-6 h-6 text-red-400 animate-pulse" />
-          <div>
-            <p className="font-semibold text-red-400">{activeCount} Active SOS Alert{activeCount > 1 ? "s" : ""}</p>
-            <p className="text-sm text-dark-400">Requires immediate attention</p>
-          </div>
+        <div className="mb-6 p-1 rounded-2xl bg-linear-to-r from-red-500/40 via-red-500/20 to-transparent">
+            <div className="p-4 rounded-xl bg-[#1a0505] border border-red-500/30 flex items-center gap-4 relative overflow-hidden">
+                <div className="absolute inset-0 bg-red-500/5 animate-pulse" />
+                <div className="relative z-10 p-3 bg-red-500/20 rounded-full border border-red-500/30">
+                    <AlertTriangle className="w-6 h-6 text-red-400 animate-pulse" />
+                </div>
+                <div className="relative z-10">
+                    <p className="text-xl font-bold text-red-100">{activeCount} Active Emergenc{activeCount > 1 ? 'ies' : 'y'}</p>
+                    <p className="text-sm text-red-300/80">Immediate response required. Dispatch protocols active.</p>
+                </div>
+           </div>
         </div>
       )}
-
-      {/* Filter */}
-      <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-        {["all", "active", "resolved", "cancelled", "false_alarm"].map((status) => (
-          <button
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors ${
-              statusFilter === status
-                ? "bg-primary-600 text-white"
-                : "glass-sm text-dark-300 hover:bg-white/10"
-            }`}
-          >
-            {status === "all" ? "All" : status.replace("_", " ").charAt(0).toUpperCase() + status.replace("_", " ").slice(1)}
-          </button>
-        ))}
-      </div>
 
       {/* SOS List */}
-     {loading && sosAlerts.length === 0 ? (
-  <div className="space-y-3">
-    {Array.from({ length: 6 }).map((_, i) => (
-      <AdminSOSRowSkeleton key={i} />
-    ))}
-  </div>
-) : sosAlerts.length === 0 ? (
-  <div className="glass-card text-center py-12">
-    <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
-    <p className="text-dark-400">No SOS alerts found</p>
-  </div>
-) : (
-  <div className="space-y-3">
-    {loading && (
-      <div className="flex justify-center py-2">
-        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+      <div className="grid grid-cols-1 gap-3">
+         {loading && sosAlerts.length === 0 ? (
+            Array.from({ length: 6 }).map((_, i) => <AdminSOSRowSkeleton key={i} />)
+         ) : sosAlerts.length === 0 ? (
+            <HudPanel className="text-center py-20 flex flex-col items-center">
+               <div className="w-20 h-20 rounded-full bg-green-500/5 border border-green-500/10 flex items-center justify-center mb-4">
+                 <CheckCircle className="w-10 h-10 text-green-500/50" />
+               </div>
+               <p className="text-dark-300 font-medium">System Secure</p>
+               <p className="text-dark-500 text-sm mt-1">No SOS alerts matching your criteria.</p>
+            </HudPanel>
+         ) : (
+            sosAlerts.map((sos) => (
+               <div
+                  key={sos.id}
+                  onClick={() => { setSelectedSOS(sos); setShowModal(true); fetchSOSUserContacts(sos.user_id); }}
+                  className={`hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-all group relative overflow-hidden ${
+                     sos.status === "active" ? "border-red-500/40 bg-red-500/5" : ""
+                  }`}
+               >
+                  {sos.status === 'active' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 shadow-[0_0_10px_#ef4444]" />}
+                  
+                  <div className="flex items-start gap-4 pl-2">
+                     <div className={`w-12 h-12 rounded-full border-2 overflow-hidden shrink-0 ${sos.status === 'active' ? 'border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-white/10'}`}>
+                        {sos.users?.avatar_url ? (
+                           <img src={sos.users.avatar_url} className="w-full h-full object-cover" />
+                        ) : (
+                           <div className="w-full h-full bg-dark-800 flex items-center justify-center">
+                               <User className="w-5 h-5 text-dark-500" />
+                           </div>
+                        )}
+                     </div>
+                     
+                     <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                           <p className="text-dark-100 font-bold text-lg">{sos.users?.full_name || "Unknown User"}</p>
+                           <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full border ${getStatusColor(sos.status)}`}>
+                              {sos.status.replace("_", " ")}
+                           </span>
+                        </div>
+                        
+                        <div className="flex items-center gap-2 mb-2 text-dark-300">
+                           <MapPin className="w-4 h-4 text-dark-500 shrink-0" />
+                           <p className="text-sm truncate font-medium">{sos.address || "Location unavailable"}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 text-xs text-dark-500 border-t border-white/5 pt-2 mt-2">
+                           <span className="flex items-center gap-1.5"><Clock className="w-3 h-3"/> {formatDistanceToNow(new Date(sos.created_at), { addSuffix: true })}</span>
+                           {sos.tag && <span className="px-2 py-0.5 bg-white/5 rounded border border-white/10 text-dark-400">{sos.tag}</span>}
+                        </div>
+                     </div>
+
+                     <div className="self-center pl-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-10 h-10 rounded-xl bg-primary-600/20 text-primary-300 flex items-center justify-center border border-primary-500/20">
+                           <Eye className="w-5 h-5" />
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            ))
+         )}
       </div>
-    )}
-    {sosAlerts.map((sos) => (
-            <div
-              key={sos.id}
-              onClick={() => {
-              setSelectedSOS(sos);
-             setShowModal(true);
-             fetchSOSUserContacts(sos.user_id);
-            }}
-              className={`glass-card cursor-pointer hover:bg-white/5 transition-colors ${
-                sos.status === "active" ? "border-red-500/30" : ""
-              }`}
-            >
-              <div className="flex items-center gap-4">
-                {/* Avatar */}
-                <div className={`w-12 h-12 rounded-full overflow-hidden shrink-0 ${
-                  sos.status === "active" ? "border-2 border-red-500" : "border border-dark-600"
-                }`}>
-                  {sos.users?.avatar_url ? (
-                    <img src={sos.users.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full bg-dark-700 flex items-center justify-center">
-                      <User className="w-6 h-6 text-dark-400" />
-                    </div>
-                  )}
-                </div>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="font-medium text-dark-100">{sos.users?.full_name || "Unknown User"}</p>
-                    <span className={`px-2 py-0.5 rounded-full text-xs border ${getStatusColor(sos.status)}`}>
-                      {sos.status === "false_alarm" ? "False Alarm" : sos.status}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-dark-400">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="w-3 h-3" />
-                      <span className="truncate max-w-[200px]">{sos.address || "Unknown location"}</span>
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {formatDistanceToNow(new Date(sos.created_at), { addSuffix: true })}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Action */}
-                <div className="flex items-center gap-1 flex-shrink-0">
-  {/* Show delete only if NOT active */}
-  {sos.status !== "active" && (
-    <button
-      onClick={(e) => handleDeleteSOSRecord(e, sos.id)}
-      className="p-2 hover:bg-white/10 rounded-lg"
-      title="Delete SOS"
-      aria-label="Delete SOS"
-    >
-      <Trash2 className="w-5 h-5 text-red-400" />
-    </button>
-  )}
-
-  <button className="p-2 hover:bg-white/10 rounded-lg">
-    <Eye className="w-5 h-5 text-primary-400" />
-  </button>
-</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* SOS Detail Modal */}
+      {/* Modal - Preserving ALL content functionality */}
       <Modal
         isOpen={showModal}
-        onClose={() => {
-        setShowModal(false);
-        setSelectedSOS(null);
-       setSosContacts([]);
-       }}
-        title="SOS Alert Details"
+        onClose={() => { setShowModal(false); setSelectedSOS(null); setSosContacts([]); }}
+        title="Emergency Detail"
         size="lg"
       >
         {selectedSOS && (
-          <div className="space-y-4">
-            {/* User Info */}
-            <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl">
-              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-red-500 shrink-0">
+          <div className="space-y-6">
+            {/* Header / User */}
+            <div className="flex items-center gap-4 p-5 bg-linear-to-br from-[#2a2735] to-[#1E1B24] rounded-2xl border border-white/10">
+              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-red-500/50 shadow-lg shrink-0">
                 {selectedSOS.users?.avatar_url ? (
                   <img src={selectedSOS.users.avatar_url} alt="" className="w-full h-full object-cover" />
                 ) : (
@@ -413,196 +391,117 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
                   </div>
                 )}
               </div>
-              <div>
-                <p className="font-bold text-dark-100 text-lg">{selectedSOS.users?.full_name || "Unknown"}</p>
-                <p className="text-sm text-dark-400">{selectedSOS.users?.email}</p>
-                {selectedSOS.users?.phone && (
-                  <a href={`tel:${selectedSOS.users.phone}`} className="text-sm text-primary-400 flex items-center gap-1 mt-1">
-                    <Phone className="w-3 h-3" />
-                    {selectedSOS.users.phone}
-                  </a>
-                )}
-              </div>
-            </div>
-
-                        {/* Emergency Contacts (Peja users) */}
-            <div className="glass-sm rounded-xl p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-dark-200 font-medium">Emergency Contacts</p>
-                {selectedSOS && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => fetchSOSUserContacts(selectedSOS.user_id)}
-                    disabled={sosContactsLoading}
-                  >
-                    Refresh
-                  </Button>
-                )}
-              </div>
-
-              {sosContactsLoading ? (
-                <p className="text-sm text-dark-400">Loading contacts…</p>
-              ) : sosContacts.length === 0 ? (
-                <p className="text-sm text-dark-400">No emergency contacts</p>
-              ) : (
-                <div className="space-y-2">
-                  {sosContacts.map((c: any) => (
-                    <div
-                      key={c.id}
-                      className="p-3 rounded-xl bg-white/5 border border-white/10"
-                    >
-                      <p className="text-sm text-dark-100 font-medium">
-                        {c.contact_user?.full_name || "Unknown"}{" "}
-                        <span className="text-xs text-dark-500">
-                          • {c.relationship || "Contact"}
-                        </span>
-                      </p>
-
-                      {c.contact_user?.email && (
-                        <p className="text-xs text-dark-400">{c.contact_user.email}</p>
-                      )}
-                      {c.contact_user?.phone && (
-                        <p className="text-xs text-dark-400">{c.contact_user.phone}</p>
-                      )}
-
-                      <div className="flex gap-2 mt-2">
-                        {c.contact_user?.phone && (
-                          <a
-                            className="text-xs px-3 py-1 rounded-lg bg-green-500/15 text-green-300"
-                            href={`tel:${c.contact_user.phone}`}
-                          >
-                            Call
-                          </a>
-                        )}
-                        {c.contact_user?.email && (
-                          <a
-                            className="text-xs px-3 py-1 rounded-lg bg-primary-500/15 text-primary-300"
-                            href={`mailto:${c.contact_user.email}`}
-                          >
-                            Email
-                          </a>
-                        )}
-                        {c.contact_user?.id && (
-                          <button
-                            className="text-xs px-3 py-1 rounded-lg bg-white/10 text-dark-200"
-                            onClick={() => router.push(`/admin/users/${c.contact_user.id}`)}
-                          >
-                            View User
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+              <div className="flex-1">
+                <p className="font-bold text-dark-100 text-xl">{selectedSOS.users?.full_name || "Unknown"}</p>
+                <div className="flex items-center gap-4 mt-1">
+                    {selectedSOS.users?.phone && (
+                    <a href={`tel:${selectedSOS.users.phone}`} className="px-3 py-1 rounded-lg bg-green-500/10 text-green-400 text-sm font-medium border border-green-500/20 flex items-center gap-2 hover:bg-green-500/20">
+                        <Phone className="w-3.5 h-3.5" /> {selectedSOS.users.phone}
+                    </a>
+                    )}
+                    <span className="text-dark-400 text-sm">{selectedSOS.users?.email}</span>
                 </div>
-              )}
+              </div>
             </div>
 
-            {/* SOS Details */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="text-xs text-dark-500">Status</p>
-                <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-sm border ${getStatusColor(selectedSOS.status)}`}>
-                  {selectedSOS.status}
-                </span>
-              </div>
-              <div>
-                <p className="text-xs text-dark-500">Tag</p>
-                <p className="text-dark-200 capitalize">{selectedSOS.tag || "No tag"}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-xs text-dark-500">Location</p>
-                <p className="text-dark-200">{selectedSOS.address || "Unknown"}</p>
-                <p className="text-xs text-dark-500 mt-1">
-                  {selectedSOS.latitude?.toFixed(6)}, {selectedSOS.longitude?.toFixed(6)}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-dark-500">Created</p>
-                <p className="text-dark-200">{format(new Date(selectedSOS.created_at), "PPpp")}</p>
-              </div>
-              {selectedSOS.resolved_at && (
+            {/* Contacts Section */}
+            <div className="rounded-xl border border-white/10 overflow-hidden">
+                <div className="bg-white/5 px-4 py-2 border-b border-white/10 flex justify-between items-center">
+                    <h3 className="text-xs font-bold text-dark-300 uppercase tracking-wider">Emergency Contacts</h3>
+                    <Button variant="secondary" size="sm" onClick={() => fetchSOSUserContacts(selectedSOS.user_id)} disabled={sosContactsLoading} className="h-7 text-xs">
+                        Refresh
+                    </Button>
+                </div>
+                <div className="p-3 bg-[#131118]">
+                    {sosContactsLoading ? (
+                        <p className="text-sm text-dark-400 p-2">Syncing contacts...</p>
+                    ) : sosContacts.length === 0 ? (
+                        <p className="text-sm text-dark-500 p-2 italic">No emergency contacts listed.</p>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {sosContacts.map((c: any) => (
+                            <div key={c.id} className="p-3 rounded-lg bg-white/5 border border-white/5 flex flex-col gap-2">
+                                <div>
+                                    <p className="text-sm text-dark-100 font-bold">{c.contact_user?.full_name || "Unknown"}</p>
+                                    <p className="text-xs text-dark-400">{c.relationship || "Contact"}</p>
+                                </div>
+                                <div className="flex gap-2 mt-auto">
+                                    {c.contact_user?.phone && (
+                                    <a className="flex-1 text-center text-xs py-1.5 rounded bg-green-900/30 text-green-400 border border-green-500/20 hover:bg-green-900/50 transition-colors" href={`tel:${c.contact_user.phone}`}>Call</a>
+                                    )}
+                                    {c.contact_user?.id && (
+                                    <button className="flex-1 text-center text-xs py-1.5 rounded bg-white/5 text-dark-300 hover:bg-white/10 border border-white/5" onClick={() => router.push(`/admin/users/${c.contact_user.id}`)}>
+                                        Profile
+                                    </button>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Message & Audio */}
+            <div className="grid grid-cols-1 gap-4">
+                {selectedSOS.message && (
+                <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl">
+                    <p className="text-xs text-red-300 uppercase font-bold mb-2 flex items-center gap-2">
+                        <MessageCircle className="w-3 h-3" /> User Message
+                    </p>
+                    <p className="text-dark-100 text-lg leading-relaxed font-medium">"{selectedSOS.message}"</p>
+                </div>
+                )}
+
+                {selectedSOS.voice_note_url && (
+                <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
+                    <p className="text-xs text-dark-400 uppercase font-bold mb-2">Audio Evidence</p>
+                    <audio src={selectedSOS.voice_note_url} controls className="w-full h-8" />
+                </div>
+                )}
+            </div>
+            
+            {/* Meta Data */}
+             <div className="grid grid-cols-2 gap-4 text-sm p-4 rounded-xl bg-black/20 border border-white/5">
                 <div>
-                  <p className="text-xs text-dark-500">Resolved</p>
-                  <p className="text-dark-200">{format(new Date(selectedSOS.resolved_at), "PPpp")}</p>
+                   <p className="text-dark-500 text-xs">Lat/Long</p>
+                   <p className="text-dark-300 font-mono">{selectedSOS.latitude?.toFixed(6)}, {selectedSOS.longitude?.toFixed(6)}</p>
                 </div>
-              )}
+                <div>
+                    <p className="text-dark-500 text-xs">Created At</p>
+                    <p className="text-dark-300">{format(new Date(selectedSOS.created_at), "PPpp")}</p>
+                </div>
+                <div className="col-span-2 pt-2 border-t border-white/5">
+                    <a href={`http://maps.google.com/?q=${selectedSOS.latitude},${selectedSOS.longitude}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-primary-400 hover:text-primary-300 transition-colors">
+                        <MapPin className="w-4 h-4" /> Open precise location in Google Maps
+                    </a>
+                </div>
             </div>
 
-            {selectedSOS.message && (
-              <div>
-                <p className="text-xs text-dark-500 mb-1">Message</p>
-                <p className="text-dark-200 p-3 bg-white/5 rounded-lg">{selectedSOS.message}</p>
-              </div>
-            )}
-
-            {selectedSOS.voice_note_url && (
-              <div>
-                <p className="text-xs text-dark-500 mb-2">Voice Note</p>
-                <audio src={selectedSOS.voice_note_url} controls className="w-full" />
-              </div>
-            )}
-
-            {/* Actions */}
+            {/* Actions Bar */}
             {selectedSOS.status === "active" && (
-              <div className="border-t border-white/10 pt-4">
-                <p className="text-sm text-dark-400 mb-3">Change Status:</p>
+              <div className="p-4 rounded-xl bg-white/5 border border-white/10 flex flex-wrap gap-3 items-center justify-between">
+                <p className="text-sm font-bold text-dark-300">Resolution:</p>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => handleStatusChange(selectedSOS.id, "resolved")}
-                    disabled={actionLoading}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    <CheckCircle className="w-4 h-4 mr-1" />
-                    Mark Resolved
+                  <Button variant="primary" size="sm" onClick={() => handleStatusChange(selectedSOS.id, "resolved")} disabled={actionLoading} className="bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20">
+                    <CheckCircle className="w-4 h-4 mr-2" /> Mark Resolved
                   </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleStatusChange(selectedSOS.id, "cancelled")}
-                    disabled={actionLoading}
-                  >
-                    <XCircle className="w-4 h-4 mr-1" />
+                  <Button variant="secondary" size="sm" onClick={() => handleStatusChange(selectedSOS.id, "false_alarm")} disabled={actionLoading}>
+                    <AlertTriangle className="w-4 h-4 mr-2" /> False Alarm
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => handleStatusChange(selectedSOS.id, "cancelled")} disabled={actionLoading}>
                     Cancel
                   </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleStatusChange(selectedSOS.id, "false_alarm")}
-                    disabled={actionLoading}
-                  >
-                    <AlertTriangle className="w-4 h-4 mr-1" />
-                    False Alarm
-                  </Button>
-                  <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => handleDeleteSOS(selectedSOS.id)}
-                  disabled={actionLoading}
-                    >
-                 Delete SOS
+                  <div className="w-px h-8 bg-white/10 mx-1" />
+                  <Button variant="danger" size="sm" onClick={() => handleDeleteSOS(selectedSOS.id)} disabled={actionLoading}>
+                    <Trash2 className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
             )}
-
-            {/* View on Map */}
-            <div className="pt-2">
-              <a
-                href={`https://www.google.com/maps?q=${selectedSOS.latitude},${selectedSOS.longitude}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary-400 text-sm hover:underline flex items-center gap-1"
-              >
-                <MapPin className="w-4 h-4" />
-                View on Google Maps
-              </a>
-            </div>
           </div>
         )}
       </Modal>
-    </div>
+    </HudShell>
   );
 }

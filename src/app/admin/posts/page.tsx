@@ -6,6 +6,9 @@ import { CATEGORIES } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { InlineVideo } from "@/components/reels/InlineVideo";
+import HudShell from "@/components/dashboard/HudShell";
+import HudPanel from "@/components/dashboard/HudPanel";
+import { ChevronDown } from "lucide-react";
 import {
   Search,
   FileText,
@@ -371,188 +374,197 @@ await supabase.from("posts").update(patch).eq("id", postId);
 
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-dark-100">Post Management</h1>
-        <p className="text-dark-400 mt-1">View and manage all incident reports</p>
-      </div>
-{/* Filters */}
-<div className="flex flex-col lg:flex-row gap-3 mb-6 items-stretch">
-  {/* Search */}
-  <div className="relative flex-1 min-w-[280px]">
-    <button
-      type="button"
-      onClick={() => searchInputRef.current?.focus()}
-      className="absolute left-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 z-10"
-      aria-label="Focus search"
+    <HudShell
+      title="Post Intelligence"
+      subtitle="Live feed of community incident reports"
+      right={
+        <div className="text-xs font-mono text-dark-400 bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg">
+          {totalCount} RECORDS
+        </div>
+      }
     >
-      <Search className="w-5 h-5 text-dark-400" />
-    </button>
+      {/* Filters Bar */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 mb-6">
+        {/* Search */}
+        <div className="lg:col-span-5 relative group">
+          <div className="absolute inset-0 bg-primary-500/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500 z-10" />
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            placeholder="Search content or location..."
+            className="w-full h-11 pl-10 pr-4 bg-[#1E1B24] border border-white/10 rounded-xl text-sm text-white placeholder:text-dark-500 focus:outline-none focus:border-primary-500/50 focus:shadow-[0_0_15px_rgba(124,58,237,0.15)] transition-all relative z-0"
+          />
+        </div>
 
-    <input
-      ref={searchInputRef}
-      type="text"
-      value={searchQuery}
-      onChange={(e) => setSearchQuery(e.target.value)}
-      onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-      placeholder="Search by content or location..."
-      className="glass-input w-full h-11 pl-12 pr-4"
-    />
-  </div>
-
-  {/* Status */}
-  <select
-    value={statusFilter}
-    onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-    className="glass-input w-full lg:w-44 h-11 px-4 py-0"
-  >
-    <option value="all">All Status</option>
-    <option value="live">Live</option>
-    <option value="resolved">Resolved</option>
-    <option value="archived">Archived</option>
-  </select>
-
-  {/* Category */}
-  <select
-    value={categoryFilter}
-    onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-    className="glass-input w-full lg:w-56 h-11 px-4 py-0"
-  >
-    <option value="all">All Categories</option>
-    {CATEGORIES.map(cat => (
-      <option key={cat.id} value={cat.id}>{cat.name}</option>
-    ))}
-  </select>
-
-  {/* Button */}
-  <Button
-    variant="primary"
-    onClick={handleSearch}
-    className="w-full lg:w-28 h-11"
-  >
-    Search
-  </Button>
-</div>
-
-{/* Posts Grid */}
-{loading && posts.length === 0 ? (
-  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-    {Array.from({ length: 9 }).map((_, i) => (
-      <AdminPostCardSkeleton key={i} />
-    ))}
-  </div>
-) : posts.length === 0 ? (
-  <div className="glass-card text-center py-12">
-    <FileText className="w-12 h-12 text-dark-600 mx-auto mb-4" />
-    <p className="text-dark-400">No posts found</p>
-  </div>
-) : (
-  <>
-    {/* small "refreshing" spinner ONLY if we already have posts */}
-    {loading && (
-      <div className="flex justify-center py-2">
-        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
-      </div>
-    )}
-
-    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {posts.map((post) => {
-        const category = getCategoryInfo(post.category);
-
-        const ageMs = Date.now() - new Date(post.created_at).getTime();
-        const expired = ageMs >= 24 * 60 * 60 * 1000;
-
-        const effectiveStatus =
-          post.status === "archived"
-            ? "archived"
-            : post.status === "resolved"
-            ? "resolved"
-            : post.status === "live" && expired
-            ? "resolved"
-            : "live";
-
-        const statusClass =
-          effectiveStatus === "live"
-            ? "bg-green-500/20 text-green-400"
-            : effectiveStatus === "resolved"
-            ? "bg-dark-600 text-dark-300"
-            : "bg-dark-800 text-dark-400";
-            
-            return (
-              <div
-            key={post.id}
-            onClick={() => { setSelectedPost(post); setShowPostModal(true); setCurrentMediaIndex(0); }}
-            className="glass-card cursor-pointer hover:bg-white/5 transition-colors"
+        {/* Status Dropdown - Fixed Visibility */}
+        <div className="lg:col-span-3 relative">
+          <select
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+            className="w-full h-11 pl-4 pr-10 bg-[#1E1B24] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-all hover:bg-white/5"
           >
-                {/* Thumbnail */}
-                <div className="aspect-video rounded-lg bg-dark-800 mb-3 overflow-hidden">
-                  {post.post_media?.[0] ? (
-                    post.post_media[0].media_type === "video" ? (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Play className="w-10 h-10 text-dark-400" />
-                      </div>
+            <option value="all" className="bg-[#1E1B24] text-white">All Status</option>
+            <option value="live" className="bg-[#1E1B24] text-white">Live</option>
+            <option value="resolved" className="bg-[#1E1B24] text-white">Resolved</option>
+            <option value="archived" className="bg-[#1E1B24] text-white">Archived</option>
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500 pointer-events-none" />
+        </div>
+
+        {/* Category Dropdown - Fixed Visibility */}
+        <div className="lg:col-span-3 relative">
+          <select
+            value={categoryFilter}
+            onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+            className="w-full h-11 pl-4 pr-10 bg-[#1E1B24] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-all hover:bg-white/5"
+          >
+            <option value="all" className="bg-[#1E1B24] text-white">All Categories</option>
+            {CATEGORIES.map(cat => (
+              <option key={cat.id} value={cat.id} className="bg-[#1E1B24] text-white">{cat.name}</option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500 pointer-events-none" />
+        </div>
+
+        {/* Search Button */}
+        <div className="lg:col-span-1">
+          <Button 
+            variant="primary" 
+            onClick={handleSearch} 
+            className="w-full h-11 bg-primary-600 hover:bg-primary-500 shadow-lg shadow-primary-900/20 border-none"
+          >
+            Go
+          </Button>
+        </div>
+      </div>
+
+      {/* Posts Grid - Mobile Responsive */}
+      {loading && posts.length === 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => <AdminPostCardSkeleton key={i} />)}
+        </div>
+      ) : posts.length === 0 ? (
+        <HudPanel className="text-center py-20 flex flex-col items-center justify-center min-h-[400px]">
+          <div className="w-16 h-16 rounded-full bg-dark-800 flex items-center justify-center mb-4 border border-white/5">
+             <FileText className="w-8 h-8 text-dark-600" />
+          </div>
+          <p className="text-dark-300 font-medium text-lg">No posts found</p>
+          <p className="text-dark-500 text-sm mt-1">Try adjusting your filters</p>
+        </HudPanel>
+      ) : (
+        <>
+          {loading && (
+            <div className="flex justify-center py-4">
+              <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {posts.map((post) => {
+              const category = getCategoryInfo(post.category);
+              const ageMs = Date.now() - new Date(post.created_at).getTime();
+              const expired = ageMs >= 24 * 60 * 60 * 1000;
+              
+              const effectiveStatus =
+                post.status === "archived" ? "archived" :
+                post.status === "resolved" ? "resolved" :
+                post.status === "live" && expired ? "resolved" :
+                "live";
+
+              const statusColor = effectiveStatus === "live" 
+                ? "bg-green-500/20 text-green-300 border-green-500/30" 
+                : "bg-dark-800 text-dark-400 border-white/10";
+
+              return (
+                <div
+                  key={post.id}
+                  onClick={() => { setSelectedPost(post); setShowPostModal(true); setCurrentMediaIndex(0); }}
+                  className="hud-panel p-0 relative group overflow-hidden cursor-pointer hover:border-primary-500/40 transition-all hover:shadow-[0_0_30px_rgba(0,0,0,0.3)] flex flex-col h-full"
+                >
+                  {/* Image Area */}
+                  <div className="aspect-video bg-dark-900 relative overflow-hidden shrink-0">
+                    {post.post_media?.[0] ? (
+                      post.post_media[0].media_type === "video" ? (
+                        <div className="w-full h-full flex items-center justify-center bg-dark-800 group-hover:scale-105 transition-transform duration-700">
+                          <Play className="w-10 h-10 text-white/80 backdrop-blur-sm p-2.5 bg-black/40 rounded-full" />
+                        </div>
+                      ) : (
+                        <img
+                          src={post.post_media[0].url}
+                          alt=""
+                          className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 ${post.is_sensitive ? "blur-xl scale-110" : ""}`}
+                        />
+                      )
                     ) : (
-                      <img
-                        src={post.post_media[0].url}
-                        alt=""
-                        className={`w-full h-full object-cover ${post.is_sensitive ? "blur-lg" : ""}`}
-                      />
-                    )
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <FileText className="w-10 h-10 text-dark-600" />
+                      <div className="w-full h-full flex items-center justify-center bg-[#18151f]">
+                        <FileText className="w-10 h-10 text-dark-700" />
+                      </div>
+                    )}
+                    
+                    {/* Floating Status */}
+                    <div className="absolute top-3 left-3 flex gap-2 z-10">
+                       <span className={`px-2.5 py-1 rounded-lg text-[10px] uppercase font-bold tracking-wide border backdrop-blur-md shadow-sm ${statusColor}`}>
+                          {effectiveStatus}
+                       </span>
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                {/* Info */}
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`px-2 py-0.5 rounded-full text-xs ${statusClass}`}>
-                  {effectiveStatus}
-                   </span>
-                  <span className="text-xs text-dark-500 capitalize">
-                    {category?.name || post.category}
-                  </span>
-                </div>
+                  {/* Text Content */}
+                  <div className="p-4 flex-1 flex flex-col bg-linear-to-b from-transparent to-black/20">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-primary-300">
+                        {category?.name || post.category}
+                      </span>
+                      <span className="text-[10px] text-dark-500 font-medium">
+                        {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+                      </span>
+                    </div>
 
-                <p className="text-dark-200 text-sm line-clamp-2 mb-2">
-                  {post.comment || "No description"}
-                </p>
+                    <p className="text-sm text-dark-100 line-clamp-2 mb-4 leading-relaxed font-medium flex-1">
+                      {post.comment || "No description provided."}
+                    </p>
 
-                <div className="flex items-center justify-between text-xs text-dark-500">
-                  <span className="flex items-center gap-1">
-                    <MapPin className="w-3 h-3" />
-                    <span className="truncate max-w-[100px]">{post.address || "Unknown"}</span>
-                  </span>
-                  <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
+                    <div className="pt-3 border-t border-white/5 flex items-center justify-between mt-auto">
+                      <div className="flex items-center gap-1.5 text-xs text-dark-400 max-w-[50%]">
+                        <MapPin className="w-3.5 h-3.5 text-dark-500 shrink-0" />
+                        <span className="truncate">{post.address || "Unknown"}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 text-xs text-dark-500 font-medium">
+                        <div className="flex items-center gap-1 hover:text-primary-300 transition-colors" title="Views">
+                           <Eye className="w-3.5 h-3.5" /> {post.views}
+                        </div>
+                        <div className="flex items-center gap-1 hover:text-primary-300 transition-colors" title="Comments">
+                           <MessageCircle className="w-3.5 h-3.5" /> {post.comment_count}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-
-                <div className="flex items-center gap-4 mt-2 pt-2 border-t border-white/5 text-xs text-dark-500">
-                  <span className="flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3" /> {post.confirmations}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <MessageCircle className="w-3 h-3" /> {post.comment_count}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Eye className="w-3 h-3" /> {post.views}
-                  </span>
-                </div>
-              </div>
-        );
-      })}
-    </div>
-  </>
-)}
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {/* Pagination */}
       {!isSearchMode && totalPages > 1 && (
-  <div className="flex items-center justify-between mt-6">
-    ...
-  </div>
-)}
+        <div className="flex items-center justify-between mt-6 px-1">
+           <Button variant="secondary" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+              Previous
+           </Button>
+           <span className="text-sm text-dark-400">Page {page} of {totalPages}</span>
+           <Button variant="secondary" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+              Next
+           </Button>
+        </div>
+      )}
 
-      {/* Post Detail Modal */}
+      {/* Post Modal */}
       <Modal
         isOpen={showPostModal}
         onClose={() => { setShowPostModal(false); setSelectedPost(null); }}
@@ -560,31 +572,32 @@ await supabase.from("posts").update(patch).eq("id", postId);
         size="xl"
       >
         {selectedPost && (
-          <div className="space-y-4">
-            {/* Media */}
+          <div className="space-y-5">
+            {/* Media Viewer */}
             {selectedPost.post_media && selectedPost.post_media.length > 0 && (
-              <div className="relative aspect-video bg-dark-800 rounded-xl overflow-hidden">
+              <div className="relative aspect-video bg-black/50 rounded-xl overflow-hidden border border-white/10 shadow-2xl">
                 {selectedPost.post_media[currentMediaIndex].media_type === "video" ? (
-  <InlineVideo
-    src={selectedPost.post_media[currentMediaIndex].url}
-    className="w-full h-full object-contain"
-    showExpand={false}
-    showMute={true}
-  />
-) : (
-  <img
-    src={selectedPost.post_media[currentMediaIndex].url}
-    alt=""
-    className="w-full h-full object-contain"
-  />
-)}
+                  <InlineVideo
+                    src={selectedPost.post_media[currentMediaIndex].url}
+                    className="w-full h-full object-contain"
+                    showExpand={false}
+                    showMute={true}
+                  />
+                ) : (
+                  <img
+                    src={selectedPost.post_media[currentMediaIndex].url}
+                    alt=""
+                    className="w-full h-full object-contain"
+                  />
+                )}
+                {/* Dots */}
                 {selectedPost.post_media.length > 1 && (
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 p-2 bg-black/40 backdrop-blur-md rounded-full">
                     {selectedPost.post_media.map((_, i) => (
                       <button
                         key={i}
                         onClick={() => setCurrentMediaIndex(i)}
-                        className={`w-2 h-2 rounded-full ${i === currentMediaIndex ? "bg-white" : "bg-white/40"}`}
+                        className={`w-2 h-2 rounded-full transition-all ${i === currentMediaIndex ? "bg-white scale-125" : "bg-white/30 hover:bg-white/60"}`}
                       />
                     ))}
                   </div>
@@ -592,85 +605,75 @@ await supabase.from("posts").update(patch).eq("id", postId);
               </div>
             )}
 
-            {/* Post Info */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Info Panel */}
+            <div className="grid grid-cols-2 gap-4 p-5 bg-[#121016] rounded-xl border border-white/5">
               <div>
-                <p className="text-xs text-dark-500">Category</p>
-                <p className="text-dark-200 capitalize">{getCategoryInfo(selectedPost.category)?.name}</p>
+                <p className="text-[10px] text-dark-500 uppercase tracking-widest font-bold mb-1">Category</p>
+                <p className="text-dark-200 capitalize font-medium">{getCategoryInfo(selectedPost.category)?.name}</p>
               </div>
               <div>
-                <p className="text-xs text-dark-500">Status</p>
-                <p className="text-dark-200 capitalize">{selectedPost.status}</p>
+                <p className="text-[10px] text-dark-500 uppercase tracking-widest font-bold mb-1">Status</p>
+                <p className="text-dark-200 capitalize font-medium">{selectedPost.status}</p>
               </div>
-              <div>
-                <p className="text-xs text-dark-500">Location</p>
-                <p className="text-dark-200">{selectedPost.address || "Unknown"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-dark-500">Posted by</p>
-                <p className="text-dark-200">{selectedPost.users?.full_name || "Anonymous"}</p>
-                {selectedPost.users?.email && (
-                  <p className="text-xs text-dark-500">{selectedPost.users.email}</p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs text-dark-500">Reports</p>
-                <p className={`${selectedPost.report_count > 0 ? "text-red-400" : "text-dark-200"}`}>
-                  {selectedPost.report_count || 0}
+              <div className="col-span-2">
+                <p className="text-[10px] text-dark-500 uppercase tracking-widest font-bold mb-1">Location</p>
+                <p className="text-dark-200 font-medium flex items-center gap-2">
+                   <MapPin className="w-3.5 h-3.5 text-dark-400" />
+                   {selectedPost.address || "Unknown"}
                 </p>
               </div>
-              <div>
-                <p className="text-xs text-dark-500">Posted</p>
-                <p className="text-dark-200">
-                  {formatDistanceToNow(new Date(selectedPost.created_at), { addSuffix: true })}
-                </p>
+              <div className="col-span-2">
+                <p className="text-[10px] text-dark-500 uppercase tracking-widest font-bold mb-1">Posted By</p>
+                <div className="flex items-center gap-2">
+                   <p className="text-dark-200 font-medium">{selectedPost.users?.full_name || "Anonymous"}</p>
+                   {selectedPost.users?.email && <span className="text-xs text-dark-500">({selectedPost.users.email})</span>}
+                </div>
               </div>
             </div>
 
+            {/* Comment Body */}
             {selectedPost.comment && (
-              <div>
-                <p className="text-xs text-dark-500 mb-1">Description</p>
-                <p className="text-dark-200 break-words whitespace-pre-wrap">
-                {selectedPost.comment}
+              <div className="p-5 bg-white/5 rounded-xl border border-white/5">
+                <p className="text-[10px] text-dark-500 uppercase tracking-widest font-bold mb-2">Description</p>
+                <p className="text-dark-200 wrap-break-word whitespace-pre-wrap leading-relaxed text-sm">
+                  {selectedPost.comment}
                 </p>
               </div>
             )}
 
-            {/* Actions */}
-            <div className="border-t border-white/10 pt-4 flex flex-wrap gap-2">
+            {/* Actions Footer */}
+            <div className="border-t border-white/10 pt-5 flex flex-wrap gap-3">
               {selectedPost.status !== "live" && (
                 <Button
                   variant="primary"
-                  size="sm"
+                  className="bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20"
                   onClick={() => handleStatusChange(selectedPost.id, "live")}
                   disabled={actionLoading}
                 >
-                  Set Live
+                  <CheckCircle className="w-4 h-4 mr-2" /> Set Live
                 </Button>
               )}
               {selectedPost.status !== "archived" && (
                 <Button
                   variant="secondary"
-                  size="sm"
                   onClick={() => handleStatusChange(selectedPost.id, "archived")}
                   disabled={actionLoading}
                 >
                   Archive
                 </Button>
               )}
+              <div className="flex-1" />
               <Button
                 variant="danger"
-                size="sm"
                 onClick={() => handleDeletePost(selectedPost.id)}
                 disabled={actionLoading}
               >
-                <Trash2 className="w-4 h-4 mr-1" />
-                Delete
+                <Trash2 className="w-4 h-4 mr-2" /> Delete Post
               </Button>
             </div>
           </div>
         )}
       </Modal>
-    </div>
+    </HudShell>
   );
 }

@@ -8,9 +8,43 @@ import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import PejaChartCard from "@/components/charts/PejaChartCard";
 import PejaMetricTile from "@/components/charts/PejaMetricTile";
-import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar } from "recharts";
+import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, ResponsiveContainer } from "recharts";
+import HudShell from "@/components/dashboard/HudShell";
+import GlowButton from "@/components/dashboard/GlowButton";
 
 type MetricCard = { label: string; value: string | number; icon: any; hint?: string };
+
+function AnalyticsTile({
+  label,
+  value,
+  icon: Icon,
+  hint,
+}: {
+  label: string;
+  value: string | number;
+  icon: any;
+  hint?: string;
+}) {
+  return (
+    <div className="hud-panel p-5 relative overflow-hidden group hover:border-primary-500/30 transition-all">
+      <div className="pointer-events-none absolute inset-0 opacity-20">
+        <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-primary-500/20 blur-3xl group-hover:bg-primary-500/30 transition-colors" />
+      </div>
+
+      <div className="flex items-center gap-4 relative z-10">
+        <div className="p-3.5 rounded-2xl border border-primary-500/20 bg-primary-600/10 shadow-[0_0_15px_rgba(124,58,237,0.1)] text-primary-300 group-hover:scale-110 transition-transform duration-500">
+          <Icon className="w-6 h-6" />
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-3xl font-bold text-white leading-none mb-1 tracking-tight">{value}</p>
+          <p className="text-xs uppercase tracking-wider text-dark-400 font-bold">{label}</p>
+        </div>
+      </div>
+      {hint && <p className="text-[10px] text-dark-500 mt-3 relative z-10 border-t border-white/5 pt-2">{hint}</p>}
+    </div>
+  );
+}
 
 export default function AdminAnalyticsPage() {
     useScrollRestore("admin:analytics");
@@ -243,97 +277,112 @@ setHourlyData(hourly);
 }
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-dark-100">Analytics</h1>
-        <p className="text-dark-400 mt-1">Engagement & retention overview (web)</p>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {cards.map((c) => {
-          const Icon = c.icon;
-          return (
-            <div key={c.label} className="glass-card">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-primary-600/10">
-                  <Icon className="w-5 h-5 text-primary-400" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-2xl font-bold text-dark-100">{c.value}</p>
-                  <p className="text-sm text-dark-400 truncate">{c.label}</p>
-                  {c.hint && <p className="text-xs text-dark-500 mt-1">{c.hint}</p>}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div className="glass-card">
-          <h2 className="text-lg font-semibold text-dark-100 mb-4">Top Screens (24h)</h2>
-          {topScreens.length === 0 ? (
-            <p className="text-dark-400">No data yet</p>
-          ) : (
-            <div className="space-y-2">
-              {topScreens.map((x) => (
-                <div key={x.screen} className="flex items-center justify-between text-sm">
-                  <span className="text-dark-200 truncate">{x.screen}</span>
-                  <span className="text-dark-400">{x.count}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="grid lg:grid-cols-2 gap-6 mt-6">
-  <PejaChartCard title="Events (last 24h)" subtitle="All tracked events grouped by hour" height={240}>
-    <LineChart data={hourlyData}>
-      <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-      <XAxis dataKey="hour" stroke="rgba(255,255,255,0.35)" tick={{ fontSize: 12 }} />
-      <YAxis stroke="rgba(255,255,255,0.35)" tick={{ fontSize: 12 }} />
-      <Tooltip
-        contentStyle={{ background: "rgba(30,16,51,0.95)", border: "1px solid rgba(139,92,246,0.25)" }}
-        labelStyle={{ color: "#e2e8f0" }}
-      />
-      <Line type="monotone" dataKey="count" stroke="#a78bfa" strokeWidth={2} dot={false} />
-    </LineChart>
-  </PejaChartCard>
-
-  <PejaChartCard title="Opens (24h)" subtitle="Post + Watch opens" height={240}>
-    <BarChart
-      data={[
-        { name: "Post", value: stats.postOpens24h },
-        { name: "Watch", value: stats.watchOpens24h },
-      ]}
+    <HudShell
+      title="System Analytics"
+      subtitle="Deep dive metrics and platform engagement"
+      right={
+        <GlowButton onClick={() => window.location.reload()} className="h-9 text-xs">
+          <Loader2 className="w-3 h-3 mr-2 inline" /> Refresh Data
+        </GlowButton>
+      }
     >
-      <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-      <XAxis dataKey="name" stroke="rgba(255,255,255,0.35)" tick={{ fontSize: 12 }} />
-      <YAxis stroke="rgba(255,255,255,0.35)" tick={{ fontSize: 12 }} />
-      <Tooltip
-        contentStyle={{ background: "rgba(30,16,51,0.95)", border: "1px solid rgba(139,92,246,0.25)" }}
-        labelStyle={{ color: "#e2e8f0" }}
-      />
-      <Bar dataKey="value" fill="#7c3aed" radius={[8, 8, 0, 0]} />
-    </BarChart>
-  </PejaChartCard>
-</div>
+      {/* Metric Cards Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        {cards.map((c) => (
+          <AnalyticsTile
+            key={c.label}
+            label={c.label}
+            value={c.value}
+            icon={c.icon}
+            hint={c.hint}
+          />
+        ))}
+      </div>
 
-        <div className="glass-card">
-          <h2 className="text-lg font-semibold text-dark-100 mb-4">Top Events (24h)</h2>
-          {topEvents.length === 0 ? (
-            <p className="text-dark-400">No data yet</p>
-          ) : (
-            <div className="space-y-2">
-              {topEvents.map((x) => (
-                <div key={x.event_name} className="flex items-center justify-between text-sm">
-                  <span className="text-dark-200 truncate">{x.event_name}</span>
-                  <span className="text-dark-400">{x.count}</span>
-                </div>
-              ))}
-            </div>
-          )}
+      {/* Charts Row */}
+      <div className="grid lg:grid-cols-2 gap-6 mb-8">
+        <PejaChartCard title="Events Activity (24h)" subtitle="System-wide interaction volume" height={300}>
+          <div className="w-full h-full relative">
+             <div className="absolute inset-0 bg-linear-to-t from-primary-900/10 to-transparent pointer-events-none" />
+              <div className="w-full h-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={hourlyData}>
+                     <CartesianGrid stroke="rgba(255,255,255,0.03)" vertical={false} />
+                     <XAxis dataKey="hour" stroke="rgba(255,255,255,0.2)" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                     <Tooltip 
+                       contentStyle={{ background: '#13111C', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }} 
+                       itemStyle={{ color: '#fff' }}
+                       cursor={{ stroke: 'rgba(124,58,237,0.5)', strokeWidth: 1, strokeDasharray: '4 4' }}
+                     />
+                     <Line type="monotone" dataKey="count" stroke="#8b5cf6" strokeWidth={3} dot={false} activeDot={{ r: 6, fill: '#fff', stroke: '#8b5cf6', strokeWidth: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+          </div>
+        </PejaChartCard>
+
+        <PejaChartCard title="Content Engagement" subtitle="Posts vs Watch (24h)" height={300}>
+          <div className="w-full h-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={[{ name: "Posts", value: stats.postOpens24h }, { name: "Reels", value: stats.watchOpens24h }]}>
+                 <CartesianGrid stroke="rgba(255,255,255,0.03)" vertical={false} />
+                 <XAxis dataKey="name" stroke="rgba(255,255,255,0.2)" axisLine={false} tickLine={false} />
+                 <Tooltip 
+                    cursor={{fill: 'rgba(255,255,255,0.03)', radius: 8}} 
+                    contentStyle={{ background: '#13111C', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }} 
+                 />
+                 <Bar dataKey="value" fill="url(#colorGradient)" radius={[6, 6, 0, 0]} barSize={60}>
+                    <defs>
+                        <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#8b5cf6" stopOpacity={1}/>
+                            <stop offset="100%" stopColor="#6366f1" stopOpacity={0.8}/>
+                        </linearGradient>
+                    </defs>
+                 </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </PejaChartCard>
+      </div>
+
+      {/* Tables Row */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        <div className="hud-panel p-6">
+          <div className="flex items-center justify-between mb-4">
+             <h3 className="text-sm font-bold text-dark-100 uppercase tracking-widest">Top Screens</h3>
+             <span className="text-[10px] text-dark-500 bg-white/5 px-2 py-1 rounded">24 HOURS</span>
+          </div>
+          <div className="space-y-2">
+            {topScreens.map((s, i) => (
+               <div key={s.screen} className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
+                  <span className="text-sm text-dark-200 font-medium flex items-center gap-3">
+                      <span className={`text-xs font-bold w-6 h-6 rounded flex items-center justify-center ${i < 3 ? 'bg-primary-500/20 text-primary-300' : 'bg-dark-800 text-dark-500'}`}>#{i+1}</span>
+                      {s.screen}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-white">{s.count}</span>
+               </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="hud-panel p-6">
+          <div className="flex items-center justify-between mb-4">
+             <h3 className="text-sm font-bold text-dark-100 uppercase tracking-widest">Top Events</h3>
+             <span className="text-[10px] text-dark-500 bg-white/5 px-2 py-1 rounded">24 HOURS</span>
+          </div>
+          <div className="space-y-2">
+            {topEvents.map((e, i) => (
+               <div key={e.event_name} className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors">
+                  <span className="text-sm text-dark-200 font-medium flex items-center gap-3">
+                      <span className={`text-xs font-bold w-6 h-6 rounded flex items-center justify-center ${i < 3 ? 'bg-blue-500/20 text-blue-300' : 'bg-dark-800 text-dark-500'}`}>#{i+1}</span>
+                      {e.event_name}
+                  </span>
+                  <span className="text-xs font-mono font-bold text-blue-300">{e.count}</span>
+               </div>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+    </HudShell>
   );
 }

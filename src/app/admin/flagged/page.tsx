@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/Button";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { InlineVideo } from "@/components/reels/InlineVideo";
+import HudShell from "@/components/dashboard/HudShell";
+import HudPanel from "@/components/dashboard/HudPanel"; 
+import GlowButton from "@/components/dashboard/GlowButton"; 
 import {
   Flag,
   Loader2,
@@ -17,6 +20,7 @@ import {
   XCircle,
   ChevronLeft,
   ChevronRight,
+  User, // Added this
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -224,168 +228,112 @@ function FlaggedRowSkeleton() {
   };
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-dark-100 flex items-center gap-2">
-            <Flag className="w-6 h-6 text-primary-400" />
-            Flagged Content
-          </h1>
-          <p className="text-dark-400 mt-1">Posts needing review</p>
-        </div>
-        <Button variant="secondary" onClick={fetchFlagged}>
-          Refresh
-        </Button>
-      </div>
+    <HudShell
+      title="Moderation Queue"
+      subtitle="Review flagged content and maintain community safety"
+      right={
+        <GlowButton onClick={fetchFlagged} className="h-9 text-xs">
+           Refresh Queue
+        </GlowButton>
+      }
+    >
+      <div className="space-y-3">
+         {loading && items.length === 0 ? (
+            Array.from({ length: 8 }).map((_, i) => <FlaggedRowSkeleton key={i} />)
+         ) : items.length === 0 ? (
+            <HudPanel className="text-center py-20 flex flex-col items-center justify-center">
+               <CheckCircle className="w-16 h-16 text-green-500/20 mb-4" />
+               <p className="text-dark-300 font-bold text-lg">Queue Clear</p>
+               <p className="text-dark-500">No flagged content pending review.</p>
+            </HudPanel>
+         ) : (
+            items.map((item) => (
+               <div
+                  key={item.id}
+                  onClick={() => { setSelected(item); setMediaIndex(0); setShowModal(true); }}
+                  className="hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-all flex items-start gap-4 group relative overflow-hidden"
+               >
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${item.priority === 'critical' ? 'bg-red-500' : item.priority === 'high' ? 'bg-orange-500' : 'bg-yellow-500/50'}`} />
 
-      {loading && items.length === 0 ? (
-  <div className="space-y-3">
-    {Array.from({ length: 8 }).map((_, i) => (
-      <FlaggedRowSkeleton key={i} />
-    ))}
-  </div>
-) : items.length === 0 ? (
-  <div className="glass-card text-center py-10">
-    <p className="text-dark-400">No flagged items right now</p>
-  </div>
-) : (
-  <div className="space-y-3">
-    {loading && (
-      <div className="flex justify-center py-2">
-        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
-      </div>
-    )}
-    {items.map((item) => (
-            <div
-              key={item.id}
-              onClick={() => {
-                setSelected(item);
-                setMediaIndex(0);
-                setShowModal(true);
-              }}
-              className="glass-card cursor-pointer hover:bg-white/5 transition-colors"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-xl bg-dark-800 overflow-hidden shrink-0 flex items-center justify-center">
-                  {item.media?.[0]?.media_type === "photo" ? (
-                    <img src={item.media[0].url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <Flag className="w-6 h-6 text-dark-500" />
-                  )}
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`px-2 py-0.5 rounded-full text-xs ${priorityColor(item.priority)}`}>
-                      {item.priority || "low"}
-                    </span>
-                    <span className="text-xs text-dark-500">
-                      {item.created_at ? formatDistanceToNow(new Date(item.created_at), { addSuffix: true }) : ""}
-                    </span>
+                  <div className="w-16 h-16 rounded-xl bg-dark-900 overflow-hidden shrink-0 border border-white/5 relative">
+                     {item.media?.[0] ? (
+                        <img src={item.media[0].url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
+                     ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-dark-800">
+                             <Flag className="w-6 h-6 text-dark-500" />
+                        </div>
+                     )}
                   </div>
 
-                  <p className="text-sm text-dark-100 truncate">
-                    {item.user?.full_name || "Unknown"} • {item.post?.category || "Unknown"}
-                  </p>
-                  <p className="text-xs text-dark-400 truncate">{item.reason}</p>
-                </div>
+                  <div className="flex-1 min-w-0">
+                     <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded shadow-sm ${priorityColor(item.priority)}`}>
+                           {item.priority || "Low"} Priority
+                        </span>
+                        <span className="text-xs text-dark-500">
+                           {item.created_at && formatDistanceToNow(new Date(item.created_at))} ago
+                        </span>
+                     </div>
+                     <p className="text-sm font-bold text-dark-100 mb-1">
+                        {item.reason}
+                     </p>
+                     <p className="text-xs text-dark-400 mt-0.5 truncate flex items-center gap-1">
+                        <User className="w-3 h-3" /> {item.user?.full_name || "Unknown"}
+                     </p>
+                  </div>
+                  
+                  <div className="pr-2 self-center">
+                     <span className="pill pill-purple opacity-0 group-hover:opacity-100 transition-opacity shadow-[0_0_15px_rgba(124,58,237,0.4)]">Review</span>
+                  </div>
+               </div>
+            ))
+         )}
+      </div>
 
-                <Eye className="w-5 h-5 text-primary-400 shrink-0" />
-              </div>
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Review Content" size="xl">
+         {selected && (
+            <div className="space-y-6">
+               <div className="relative aspect-video bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
+                  {selected.media?.[mediaIndex] && (
+                     selected.media[mediaIndex].media_type === 'video' ? (
+                        <InlineVideo src={selected.media[mediaIndex].url} className="w-full h-full object-contain" />
+                     ) : (
+                        <img src={selected.media[mediaIndex].url} className="w-full h-full object-contain" />
+                     )
+                  )}
+                  {/* Arrows if multiple media */}
+                  {selected.media && selected.media.length > 1 && (
+                      <>
+                        <button onClick={() => setMediaIndex(i => Math.max(0, i-1))} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/80"><ChevronLeft className="w-6 h-6"/></button>
+                        <button onClick={() => setMediaIndex(i => Math.min(selected.media!.length-1, i+1))} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/80"><ChevronRight className="w-6 h-6"/></button>
+                      </>
+                  )}
+               </div>
+               
+               <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+    <p className="text-sm text-dark-300 wrap-break-word whitespace-pre-wrap overflow-hidden">
+       <span className="text-dark-500 uppercase text-xs font-bold mr-2">Post Content:</span> 
+       {selected.post?.comment || "No text content."}
+    </p>
+</div>
+
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 border-t border-white/10 pt-4">
+                  <Button variant="primary" className="bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20" onClick={() => handleReviewAction("approve")}>
+                      <CheckCircle className="w-4 h-4 mr-2" /> Safe
+                  </Button>
+                  <Button variant="secondary" onClick={() => handleReviewAction("blur")}>
+                      <Eye className="w-4 h-4 mr-2" /> Blur
+                  </Button>
+                  <Button variant="danger" onClick={() => handleReviewAction("remove")}>
+                      <XCircle className="w-4 h-4 mr-2" /> Remove
+                  </Button>
+                  <Button variant="secondary" onClick={() => handleReviewAction("escalate")}>
+                      <AlertTriangle className="w-4 h-4 mr-2" /> Escalate
+                  </Button>
+               </div>
             </div>
-          ))}
-        </div>
-      )}
-
-      <Modal
-        isOpen={showModal}
-        onClose={() => {
-          setShowModal(false);
-          setSelected(null);
-        }}
-        title="Review Flag"
-        size="xl"
-      >
-        {selected && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <span className={`px-3 py-1 rounded-full text-sm ${priorityColor(selected.priority)}`}>
-                {selected.priority || "low"} priority
-              </span>
-              <span className="text-dark-400">•</span>
-              <span className="text-dark-300">{selected.reason}</span>
-            </div>
-
-            {selected.media && selected.media.length > 0 && (
-              <div className="relative aspect-video bg-dark-900 rounded-xl overflow-hidden">
-                {selected.media[mediaIndex].media_type === "video" ? (
-  <InlineVideo
-    src={selected.media[mediaIndex].url}
-    className="w-full h-full object-contain"
-    showExpand={false}
-    showMute={true}
-  />
-) : (
-  <img src={selected.media[mediaIndex].url} alt="" className="w-full h-full object-contain" />
-)}
-
-                {selected.media.length > 1 && (
-                  <>
-                    <button
-                      onClick={() => setMediaIndex((i) => (i === 0 ? selected.media!.length - 1 : i - 1))}
-                      className="absolute left-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full"
-                    >
-                      <ChevronLeft className="w-5 h-5 text-white" />
-                    </button>
-                    <button
-                      onClick={() => setMediaIndex((i) => (i === selected.media!.length - 1 ? 0 : i + 1))}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full"
-                    >
-                      <ChevronRight className="w-5 h-5 text-white" />
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
-            <div className="glass-sm rounded-xl p-4 space-y-2">
-              <p className="text-sm text-dark-200">
-                Posted by: <span className="text-dark-100">{selected.user?.full_name || "Unknown"}</span>
-              </p>
-              {selected.user?.email && <p className="text-xs text-dark-500">{selected.user.email}</p>}
-              {selected.post?.address && <p className="text-sm text-dark-300">Location: {selected.post.address}</p>}
-              {selected.post?.comment && <p className="text-sm text-dark-200 whitespace-pre-wrap">{selected.post.comment}</p>}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/10">
-              <Button
-                variant="primary"
-                className="bg-green-600 hover:bg-green-700"
-                disabled={actionLoading}
-                onClick={() => handleReviewAction("approve")}
-              >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Approve
-              </Button>
-
-              <Button variant="secondary" disabled={actionLoading} onClick={() => handleReviewAction("blur")}>
-                <Eye className="w-4 h-4 mr-2" />
-                Add Blur
-              </Button>
-
-              <Button variant="danger" disabled={actionLoading} onClick={() => handleReviewAction("remove")}>
-                <XCircle className="w-4 h-4 mr-2" />
-                Remove
-              </Button>
-
-              <Button variant="secondary" disabled={actionLoading} onClick={() => handleReviewAction("escalate")}>
-                <AlertTriangle className="w-4 h-4 mr-2" />
-                Escalate
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-    </div>
+         )}
+    </Modal>
+    </HudShell>
   );
 }
