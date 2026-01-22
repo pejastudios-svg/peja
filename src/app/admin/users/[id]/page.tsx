@@ -188,9 +188,12 @@ export default function AdminUserDetailPage() {
     const load = async () => {
       setLoading(true);
       try {
-        await fetchUser();
-        await fetchEmergencyContacts();
-        await fetchUserPosts();
+        // Fetch all data in parallel for speed
+        await Promise.all([
+          fetchUser(),
+          fetchEmergencyContacts(),
+          fetchUserPosts()
+        ]);
       } catch (e) {
         console.error(e);
         setU(null);
@@ -427,9 +430,9 @@ export default function AdminUserDetailPage() {
           <p className="text-dark-400">No posts</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {posts.map((p) => (
-            <div key={p.id} className="glass-card p-4">
+            <div key={p.id} className="glass-card p-4 h-full flex flex-col justify-between">
               {/* Use existing PostCard UI */}
               <PostCard post={p} onConfirm={() => {}} onShare={() => {}} sourceKey={`admin:user:${userId}`} />
 

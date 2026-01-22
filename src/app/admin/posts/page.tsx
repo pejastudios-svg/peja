@@ -9,6 +9,7 @@ import { InlineVideo } from "@/components/reels/InlineVideo";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
 import { ChevronDown } from "lucide-react";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import {
   Search,
   FileText,
@@ -57,6 +58,8 @@ export default function AdminPostsPage() {
   const [showPostModal, setShowPostModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const isSearchMode = searchQuery.trim().length > 0;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pageSize = 20;
@@ -582,12 +585,20 @@ await supabase.from("posts").update(patch).eq("id", postId);
                     className="w-full h-full object-contain"
                     showExpand={false}
                     showMute={true}
+                    onExpand={() => {
+                        setLightboxUrl(selectedPost.post_media![currentMediaIndex].url);
+                        setLightboxOpen(true);
+                    }}
                   />
                 ) : (
                   <img
                     src={selectedPost.post_media[currentMediaIndex].url}
                     alt=""
-                    className="w-full h-full object-contain"
+                    className="w-full h-full object-contain cursor-pointer"
+                    onClick={() => {
+                        setLightboxUrl(selectedPost.post_media![currentMediaIndex].url);
+                        setLightboxOpen(true);
+                    }}
                   />
                 )}
                 {/* Dots */}
@@ -674,6 +685,11 @@ await supabase.from("posts").update(patch).eq("id", postId);
           </div>
         )}
       </Modal>
+      <ImageLightbox 
+        isOpen={lightboxOpen} 
+        onClose={() => setLightboxOpen(false)} 
+        imageUrl={lightboxUrl} 
+      />
     </HudShell>
   );
 }

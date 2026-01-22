@@ -281,7 +281,7 @@ setHourlyData(hourly);
       title="System Analytics"
       subtitle="Deep dive metrics and platform engagement"
       right={
-        <GlowButton onClick={() => window.location.reload()} className="h-9 text-xs">
+        <GlowButton onClick={() => window.location.reload()} className="h-9 text-xs flex items-center justify-center">
           <Loader2 className="w-3 h-3 mr-2 inline" /> Refresh Data
         </GlowButton>
       }

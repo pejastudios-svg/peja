@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Maximize2, Volume2, VolumeX } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
+import { useLongPress } from "@/components/hooks/useLongPress";
 
 const PLAYING_EVENT = "peja-inline-video-playing";
 
@@ -152,17 +153,26 @@ export function InlineVideo({
   };
 }, []);
 
+// Setup long press handler
+  const longPressProps = useLongPress(() => {
+    if (onExpand) onExpand();
+  });
+
   return (
-<div
-  ref={wrapRef}
-  className="relative w-full h-full bg-black overflow-hidden"
-  onPointerDownCapture={() => {
-    // ✅ ANY TAP anywhere on inline video enables global sound
-    setSoundEnabled(true);
-    const v = videoRef.current;
-    if (v) v.muted = false;
-  }}
->
+    <div
+      ref={wrapRef}
+      className="relative w-full h-full bg-black overflow-hidden"
+      {...longPressProps}
+      onPointerDownCapture={(e) => {
+        // ✅ ANY TAP anywhere on inline video enables global sound
+        setSoundEnabled(true);
+        const v = videoRef.current;
+        if (v) v.muted = false;
+        
+        // ensure long press starts
+        if (longPressProps.onPointerDown) longPressProps.onPointerDown();
+      }}
+    >
       <video
         ref={videoRef}
         src={src}

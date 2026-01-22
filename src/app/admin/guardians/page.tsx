@@ -463,21 +463,45 @@ function GuardianUserRowSkeleton() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-               {filteredGuardians.map(g => (
-                  <div key={g.id} className="hud-panel p-4 flex items-center justify-between group hover:border-primary-500/30 transition-all">
-                     <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full border border-primary-500/30 p-0.5 relative group-hover:scale-105 transition-transform">
-                           <div className="absolute inset-0 bg-primary-500/20 rounded-full blur-md" />
-                           <img src={g.avatar_url || ""} className="w-full h-full rounded-full object-cover bg-dark-800 relative z-10" />
+               {filteredGuardians.map((g) => (
+                <div key={g.id} className="glass-card flex items-center justify-between gap-4 group">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!g.avatar_url) return;
+                        setLightboxUrl(g.avatar_url);
+                        setLightboxOpen(true);
+                      }}
+                      className="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0"
+                    >
+                      {g.avatar_url ? (
+                        <img src={g.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <User className="w-6 h-6 text-dark-400" />
                         </div>
-                        <div>
-                           <p className="text-sm font-bold text-dark-100">{g.full_name}</p>
-                           <p className="text-[10px] uppercase font-bold text-primary-400 mt-0.5 tracking-wide">Active Guardian</p>
-                        </div>
-                     </div>
-                     <Button size="sm" variant="danger" onClick={() => openRevokeGuardian(g)} className="opacity-0 group-hover:opacity-100 transition-opacity">Revoke</Button>
+                      )}
+                    </button>
+
+                    <div className="min-w-0">
+                      <p className="text-dark-100 font-medium truncate">{g.full_name || "Unknown"}</p>
+                      <p className="text-xs text-dark-500 truncate">
+                        {g.email || ""} {g.phone ? `• ${g.phone}` : ""}
+                      </p>
+                    </div>
                   </div>
-               ))}
+
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => openRevokeGuardian(g)}
+                    className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity shrink-0"
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
             </div>
          </div>
       )}

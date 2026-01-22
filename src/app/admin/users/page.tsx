@@ -40,15 +40,15 @@ export default function AdminUsersPage() {
     fetchUsers();
   }, [statusFilter]);
 
-  function AdminUserRowSkeleton() {
+ function AdminUserRowSkeleton() {
   return (
-    <div className="glass-card flex items-center justify-between gap-3">
-      <div className="flex-1">
+    <div className="glass-card flex items-center justify-between gap-3 overflow-hidden">
+      <div className="flex-1 min-w-0">
         <Skeleton className="h-4 w-40 mb-2" />
-        <Skeleton className="h-3 w-56 mb-1" />
-        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-3 w-full max-w-[200px] mb-1" />
+        <Skeleton className="h-3 w-32" />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <Skeleton className="h-5 w-16 rounded-full" />
         <Skeleton className="h-7 w-20 rounded-lg" />
       </div>
@@ -249,10 +249,25 @@ try {
                             </span>
                         )}
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-dark-400 mt-0.5">
-                        {user.email && <span className="flex items-center gap-1"><Mail className="w-3 h-3" /> {user.email}</span>}
-                        {user.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" /> {user.phone}</span>}
-                        </div>
+                        <div className="mt-1 space-y-1 text-sm text-dark-400 min-w-0">
+                  {user.email && (
+                    <div className="flex items-center gap-1 min-w-0">
+                      <Mail className="w-3 h-3 shrink-0" /> 
+                      <span className="truncate">{user.email}</span>
+                    </div>
+                  )}
+                  {user.phone && (
+                    <div className="flex items-center gap-1 min-w-0">
+                      <Phone className="w-3 h-3 shrink-0" /> 
+                      <span className="truncate">{user.phone}</span>
+                    </div>
+                  )}
+                  {user.occupation && (
+                    <div className="text-xs text-dark-500 truncate">
+                      {user.occupation}
+                    </div>
+                  )}
+                </div>
                     </div>
                   </div>
 

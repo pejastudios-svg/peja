@@ -11,6 +11,7 @@ import { InlineVideo } from "@/components/reels/InlineVideo";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel"; 
 import GlowButton from "@/components/dashboard/GlowButton"; 
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import {
   Flag,
   Loader2,
@@ -63,6 +64,8 @@ export default function AdminFlaggedPage() {
   const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [mediaIndex, setMediaIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
 
 function FlaggedRowSkeleton() {
@@ -232,7 +235,7 @@ function FlaggedRowSkeleton() {
       title="Moderation Queue"
       subtitle="Review flagged content and maintain community safety"
       right={
-        <GlowButton onClick={fetchFlagged} className="h-9 text-xs">
+        <GlowButton onClick={fetchFlagged} className="h-9 text-xs flex items-center justify-center gap-2">
            Refresh Queue
         </GlowButton>
       }
@@ -298,7 +301,14 @@ function FlaggedRowSkeleton() {
                      selected.media[mediaIndex].media_type === 'video' ? (
                         <InlineVideo src={selected.media[mediaIndex].url} className="w-full h-full object-contain" />
                      ) : (
-                        <img src={selected.media[mediaIndex].url} className="w-full h-full object-contain" />
+                        <img 
+                          src={selected.media[mediaIndex].url} 
+                          className="w-full h-full object-contain cursor-pointer" 
+                          onClick={() => {
+                            setLightboxUrl(selected.media![mediaIndex].url);
+                            setLightboxOpen(true);
+                          }}
+                        />
                      )
                   )}
                   {/* Arrows if multiple media */}
@@ -334,6 +344,11 @@ function FlaggedRowSkeleton() {
             </div>
          )}
     </Modal>
+    <ImageLightbox 
+        isOpen={lightboxOpen} 
+        onClose={() => setLightboxOpen(false)} 
+        imageUrl={lightboxUrl} 
+      />
     </HudShell>
   );
 }
