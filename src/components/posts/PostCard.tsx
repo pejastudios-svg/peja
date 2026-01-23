@@ -3,6 +3,7 @@
 import { useState, useEffect, memo } from "react";
 import { useRouter } from "next/navigation";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 import { useConfirm } from "@/context/ConfirmContext";
 import { useAuth } from "@/context/AuthContext";
@@ -41,7 +42,9 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   const [showFullComment, setShowFullComment] = useState(false);
   const [videoError, setVideoError] = useState(false);
 
+  // Lightbox States
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxItems, setLightboxItems] = useState<{ url: string; type: "image" | "video" }[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -104,13 +107,25 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
     );
   };
 
+  // --- Handlers ---
+
   const handleCardClick = () => {
-    const sk = sourceKey ? `?sourceKey=${encodeURIComponent(sourceKey)}` : "";
-    router.push(`/post/${post.id}${sk}`, { scroll: false });
+    // UPDATED: Navigate to /watch feed instead of post detail
+    router.push(`/watch?postId=${post.id}&sourceKey=${encodeURIComponent(sourceKey || "feed")}`);
+  };
+
+  const handleExpandVideo = () => {
+    // New Handler: Opens the specific VideoLightbox
+    const media = post.media?.[currentMediaIndex];
+    if (media && media.media_type === 'video') {
+        setLightboxUrl(media.url);
+        setVideoLightboxOpen(true);
+    }
   };
 
   const handleAddInfo = (e: React.MouseEvent) => {
     e.stopPropagation();
+    // Keep this opening the Post Detail Modal
     const sk = sourceKey ? `?sourceKey=${encodeURIComponent(sourceKey)}` : "";
     router.push(`/post/${post.id}${sk}`, { scroll: false });
   };
@@ -128,7 +143,7 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
 
   const timeAgo = formatDistanceToNow(new Date(post.created_at), { addSuffix: true });
 
-    const openLightboxAt = (index: number) => {
+  const openLightboxAt = (index: number) => {
     const items: { url: string; type: "image" | "video" }[] = (post.media || []).map((m) => ({
       url: m.url,
       type: m.media_type === "video" ? "video" : "image",
@@ -142,7 +157,7 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
 
   return (
     <article
-      className="glass-card overflow-hidden cursor-pointer hover:ring-1 hover:ring-white/10 transition-all"
+      className="glass-card overflow-hidden cursor-pointer hover:ring-1 hover:ring-white/10 transition-all active:scale-[0.99] duration-200"
       onClick={handleCardClick}
     >
       {/* Header */}
@@ -176,15 +191,12 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
             e.stopPropagation();
             if (!currentMedia) return;
 
+            // If it's an image, open image lightbox. If video, /watch is handled by card click or expand
             if (currentMedia.media_type !== "video") {
-              const items: { url: string; type: "image" | "video" }[] = (post.media || []).map((m) => ({
-                url: m.url,
-                type: m.media_type === "video" ? "video" : "image",
-              }));
-              setLightboxItems(items);
-              setLightboxIndex(currentMediaIndex);
-              setLightboxUrl(currentMedia.url);
-              setLightboxOpen(true);
+              openLightboxAt(currentMediaIndex);
+            } else {
+               // Optional: If you want tapping video specifically to also go to watch, do nothing here and let card click handle it
+               handleCardClick();
             }
           }}
         >
@@ -216,36 +228,21 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
                     </div>
                   ) : (
                     <InlineVideo
-  src={currentMedia.url}
-  poster={currentMedia.thumbnail_url}
-  className="w-full h-full object-cover"
-  onExpand={() =>
-    router.push(
-      `/watch?postId=${post.id}&sourceKey=${encodeURIComponent(
-        sourceKey || "home:nearby"
-      )}`,
-      { scroll: false }
-    )
-  }
-  onError={() => setVideoError(true)}
-/>
+                      src={currentMedia.url}
+                      poster={currentMedia.thumbnail_url}
+                      className="w-full h-full object-cover"
+                      showExpand={true}
+                      showMute={true}
+                      onExpand={handleExpandVideo} // UPDATED: Opens Video Lightbox
+                      onError={() => setVideoError(true)}
+                    />
                   )
                 ) : (
                   <img src={currentMedia?.url} alt="" className="w-full h-full object-cover" />
                 )}
               </div>
-             {currentMedia?.media_type === "video" && (
-  <button
-    type="button"
-    onClick={(e) => {
-      e.stopPropagation();
-      openLightboxAt(currentMediaIndex);
-    }}
-    className="absolute bottom-2 left-2 z-20 px-3 py-1.5 rounded-xl glass-float text-xs text-dark-100 hover:bg-white/10"
-  >
-    View
-  </button>
-)}
+
+              {/* REMOVED: The View button block that was here */}
 
               {post.media.length > 1 && (
                 <>
@@ -308,13 +305,13 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       {post.tags && post.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3 min-w-0">
           {post.tags.map((tag) => (
-  <span
-    key={tag}
-    className="text-xs text-primary-400 max-w-full wrap-anywhere"
-  >
-    #{tag}
-  </span>
-))}
+            <span
+              key={tag}
+              className="text-xs text-primary-400 max-w-full wrap-anywhere"
+            >
+              #{tag}
+            </span>
+          ))}
         </div>
       )}
 
@@ -351,9 +348,10 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
           <span>{isConfirmed ? "Confirmed" : "Confirm"}</span>
         </button>
 
+        {/* UPDATED: Added bounce animation active:scale-90 */}
         <button
           onClick={handleAddInfo}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-white/10"
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-white/10 active:scale-90 transition-transform duration-150"
         >
           <MessageCircle className="w-4 h-4" />
           <span>Comment</span>
@@ -374,6 +372,13 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
         caption={post.comment || null}
         items={lightboxItems}
         initialIndex={lightboxIndex}
+      />
+      
+      {/* UPDATED: Added VideoLightbox */}
+      <VideoLightbox 
+        isOpen={videoLightboxOpen}
+        onClose={() => setVideoLightboxOpen(false)}
+        videoUrl={lightboxUrl}
       />
     </article>
   );

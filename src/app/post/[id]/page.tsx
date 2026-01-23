@@ -19,6 +19,7 @@ import { useConfirm } from "@/context/ConfirmContext";
 import { PostDetailSkeleton } from "@/components/posts/PostDetailSkeleton";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/context/ToastContext";
+import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import {
   ArrowLeft,
   MapPin,
@@ -129,10 +130,24 @@ export default function PostDetailPage() {
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
 
+ // 1. Initial Setup & Event Dispatch (Fixes background audio)
   useEffect(() => {
-  if (!postId) return;
-  markSeen(postId);
-}, [postId]);
+    isMounted.current = true;
+    if (postId) markSeen(postId);
+
+    // FIX: Dispatch event to pause background videos (in Feed)
+    window.dispatchEvent(new Event("peja-modal-open"));
+
+    return () => {
+      isMounted.current = false;
+      if (abortController.current) abortController.current.abort();
+      commentMediaPreviews.forEach(p => URL.revokeObjectURL(p.url));
+      
+      // Resume background videos when leaving
+      window.dispatchEvent(new Event("peja-modal-close"));
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postId]);
   
   // CRITICAL: Track ongoing like operations to prevent double-clicks
   const likingInProgress = useRef<Set<string>>(new Set());
@@ -163,6 +178,7 @@ export default function PostDetailPage() {
   const [visibleReplyCounts, setVisibleReplyCounts] = useState<Record<string, number>>({});
   const [sortBy, setSortBy] = useState<"top" | "recent">("top");
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxCaption, setLightboxCaption] = useState<string | null>(null); 
   const [likeBusy, setLikeBusy] = useState<Set<string>>(new Set());

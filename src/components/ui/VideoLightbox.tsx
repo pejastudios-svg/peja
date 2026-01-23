@@ -53,7 +53,8 @@ export function VideoLightbox({
     }, 4000);
   };
 
-  const handleScreenTap = () => {
+  const handleScreenTap = (e: React.MouseEvent) => {
+    e.stopPropagation(); // <--- STOP BUBBLING
     if (showControls && isPlaying) {
       setShowControls(false);
       if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
@@ -135,6 +136,7 @@ export function VideoLightbox({
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
+      onClick={(e) => e.stopPropagation()} // <--- STOP BUBBLING FROM ROOT
     >
       {/* Background with Dynamic Opacity */}
       <div 
@@ -177,7 +179,7 @@ export function VideoLightbox({
 
       {/* Bottom Controls (Fades out when dragging) */}
       <div 
-        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-120 transition-all duration-300 opacity-0 group-hover:opacity-100 ${showControls && !isDragging ? 'opacity-100! pointer-events-auto' : 'pointer-events-none !opacity-0!'}`}
+        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-120 transition-all duration-300 opacity-0 group-hover:opacity-100 ${showControls && !isDragging ? 'opacity-100! pointer-events-auto' : 'pointer-events-none opacity-0!'}`}
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()} // Allow interacting with scrubber without dragging lightbox
       >

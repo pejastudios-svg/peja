@@ -48,7 +48,9 @@ export function InlineVideo({
     }
   };
 
-  const handleContainerClick = () => {
+  const handleContainerClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // <--- STOP BUBBLING TO POST CARD
+    
     // Mobile: Tap to toggle
     // PC: Click also toggles, but hover keeps it visible anyway
     if (showControls) {
@@ -185,13 +187,8 @@ export function InlineVideo({
         onError={() => onError?.()}
       />
 
-      {/* HYBRID VISIBILITY LOGIC:
-          1. group-hover:opacity-100 -> Handles PC Hover
-          2. !opacity-100 (if showControls is true) -> Handles Mobile Tap
-          3. Default: opacity-0 (Hidden)
-      */}
       <div 
-        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100' : ''}`}
+        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? 'opacity-100!' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3">
