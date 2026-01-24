@@ -207,7 +207,7 @@ export function ReelVideo({
 
       {/* --- Controls Overlay (Raised Higher) --- */}
       <div 
-        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-20 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100!' : ''}`}
+        className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div 

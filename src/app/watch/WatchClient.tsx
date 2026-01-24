@@ -378,10 +378,10 @@ export default function WatchClient({
           const isRevealed = revealedSensitive.has(post.id);
           const isActivePost = activePostId === post.id;
 
-          // SHRINK LOGIC: If comments open, scale down and move to top
+          // SHRINK LOGIC: Move up and scale down when sheet is open
           const containerStyle = isActivePost && showComments ? {
-             transform: "scale(0.85) translateY(-10%)",
-             borderRadius: "20px",
+             transform: "scale(0.85) translateY(-15%)", // Move up to clear the sheet
+             borderRadius: "24px",
              transition: "all 0.4s cubic-bezier(0.32, 0.72, 0, 1)"
           } : {
              transform: "scale(1) translateY(0)",
@@ -396,8 +396,16 @@ export default function WatchClient({
               className="h-screen w-full relative overflow-hidden bg-black"
               style={{ scrollSnapAlign: "start" }}
             >
+              {/* Tap-to-Close Layer (Only visible when sheet is open) */}
+              {isActivePost && showComments && (
+                <div 
+                  className="absolute inset-0 z-40 cursor-pointer"
+                  onClick={() => setShowComments(false)}
+                />
+              )}
+
               {/* Media Container with Shrink Effect */}
-              <div className="w-full h-full" style={containerStyle}>
+              <div className="w-full h-full origin-top" style={containerStyle}>
                 <div
                   className="w-full h-full overflow-x-auto flex snap-x snap-mandatory"
                   style={{ WebkitOverflowScrolling: "touch" }}
@@ -489,7 +497,7 @@ export default function WatchClient({
 
                   {/* Description */}
                   <div className="absolute bottom-28 left-0 right-20 p-4 z-20 pointer-events-auto pb-safe">
-                     <p className="text-white text-sm break-words whitespace-pre-wrap line-clamp-3 shadow-black drop-shadow-md">
+                     <p className="text-white text-sm wrap-break-word whitespace-pre-wrap line-clamp-3 shadow-black drop-shadow-md">
                        {post.comment || ""}
                      </p>
                   </div>
