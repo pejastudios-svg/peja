@@ -1087,8 +1087,6 @@ setTimeout(() => setToastMsg(null), 2500);
     setShowCommentOptions(false);
   };
 
-
-
  // Render a thread (parent + replies)
   const renderThread = (parent: Comment) => {
     const replies = getRepliesForParent(parent.id);

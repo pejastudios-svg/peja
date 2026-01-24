@@ -36,20 +36,26 @@ export function ImageLightbox({
   const dragStartY = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      document.body.style.overflow = "hidden"; // Disable scroll
+    } else {
       setDragOffset(0);
-      return;
+      document.body.style.overflow = ""; // Re-enable scroll
     }
 
-    const nextIndex = Math.min(Math.max(initialIndex, 0), Math.max(0, mediaItems.length - 1));
-    setIndex(nextIndex);
+    if (isOpen) {
+      const nextIndex = Math.min(Math.max(initialIndex, 0), Math.max(0, mediaItems.length - 1));
+      setIndex(nextIndex);
 
-    requestAnimationFrame(() => {
-      const el = scrollerRef.current;
-      if (!el) return;
-      const w = el.clientWidth || 1;
-      el.scrollLeft = w * nextIndex;
-    });
+      requestAnimationFrame(() => {
+        const el = scrollerRef.current;
+        if (!el) return;
+        const w = el.clientWidth || 1;
+        el.scrollLeft = w * nextIndex;
+      });
+    }
+    
+    return () => { document.body.style.overflow = ""; };
   }, [isOpen, initialIndex, mediaItems.length]);
 
   if (!isOpen || mediaItems.length === 0) return null;
@@ -98,12 +104,13 @@ export function ImageLightbox({
   return (
     <Portal>
       <div 
-        className="fixed inset-0 z-[99999] flex items-center justify-center touch-none"
-        onClick={close}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
+    className="fixed inset-0 z-[99999] flex items-center justify-center touch-none"
+    onClick={close}
+    onTouchStart={onTouchStart}
+    onTouchMove={onTouchMove}
+    onTouchEnd={onTouchEnd}
+    onContextMenu={(e) => e.preventDefault()} // Disable right-click/hold
+  >
         {/* Dynamic Background */}
         <div 
           className="absolute inset-0 bg-black transition-opacity duration-100 ease-linear"
@@ -112,7 +119,7 @@ export function ImageLightbox({
 
         {/* Top bar (Fades out on drag) */}
         <div
-          className={`absolute top-0 left-0 right-0 z-[100000] flex items-center justify-between px-4 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute top-0 left-0 right-0 z-100000 flex items-center justify-between px-4 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
           style={{ paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", height: "56px" }}
           onClick={(e) => e.stopPropagation()}
         >

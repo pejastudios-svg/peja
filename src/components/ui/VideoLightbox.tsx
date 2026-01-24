@@ -137,6 +137,7 @@ if (!isOpen || !videoUrl) return null;
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       onClick={(e) => e.stopPropagation()} 
+      onContextMenu={(e) => e.preventDefault()} // Disable right-click/hold
     >
       {/* Background with Dynamic Opacity */}
       <div 

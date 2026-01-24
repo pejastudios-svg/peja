@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Volume2, VolumeX, Play, Pause } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { useLongPress } from "@/components/hooks/useLongPress";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export function ReelVideo({
   src,
@@ -37,6 +38,7 @@ export function ReelVideo({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(true);
 
   // --- Long Press Logic ---
   const longPressGestures = useLongPress(() => {
@@ -182,10 +184,8 @@ export function ReelVideo({
       ref={wrapRef} 
       className="relative w-full h-full bg-black select-none group"
       onClick={handleContainerClick}
-      onPointerDownCapture={(e) => {
-        setSoundEnabled(true);
-        longPressGestures.onPointerDown();
-      }}
+      onPointerDownCapture={() => setSoundEnabled(true)}
+      onPointerDown={() => longPressGestures.onPointerDown()}
       onPointerUp={longPressGestures.onPointerUp}
       onPointerLeave={longPressGestures.onPointerLeave}
       onPointerCancel={longPressGestures.onPointerCancel}
@@ -203,13 +203,23 @@ export function ReelVideo({
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
         onEnded={() => setIsPlaying(false)}
+        onWaiting={() => setIsBuffering(true)}
+        onPlaying={() => setIsBuffering(false)}
+        onCanPlay={() => setIsBuffering(false)}
       />
+
+{isBuffering && (
+  <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+    <PejaSpinner className="w-16 h-16 drop-shadow-2xl" />
+  </div>
+)}
 
       {/* --- Controls Overlay (Raised Higher) --- */}
       <div 
-        className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={(e) => e.stopPropagation()}
-      >
+        onPointerDown={(e) => e.stopPropagation()} // This prevents Long Press when using controls
+        >
         <div 
           className="flex items-center gap-4 w-full mb-12" 
           style={{ paddingBottom: "env(safe-area-inset-bottom, 20px)" }}

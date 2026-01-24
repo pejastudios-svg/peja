@@ -10,6 +10,7 @@ import { notifyPostComment, notifyCommentLiked, notifyCommentReply } from "@/lib
 import { useLongPress } from "@/components/hooks/useLongPress";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import { useToast } from "@/context/ToastContext";
 
 interface Comment {
   id: string;
@@ -32,18 +33,22 @@ export function WatchCommentSheet({
   isOpen,
   onClose,
   onCommentSuccess,
+  onViewAvatar,
 }: {
   post: Post;
   isOpen: boolean;
   onClose: () => void;
   onCommentSuccess?: () => void;
+  onViewAvatar?: (url: string) => void;
 }) {
   const { user } = useAuth();
+  const toast = useToast();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sortBy, setSortBy] = useState<"top" | "recent">("top");
+  const [postAuthor, setPostAuthor] = useState<{ name: string; avatar: string | null } | null>(null);
 
   // --- Options Modal State ---
   const [showOptions, setShowOptions] = useState(false);
@@ -79,12 +84,32 @@ export function WatchCommentSheet({
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string; parentId: string | null; userId: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // --- Fetch Comments ---
+  const fetchedRef = useRef<string | null>(null); // Track loaded ID
+  const [descExpanded, setDescExpanded] = useState(false);
+
+// --- Fetch Comments (Correctly Optimized) ---
   useEffect(() => {
     if (!isOpen) return;
-    
+    if (fetchedRef.current === post.id && comments.length > 0) return;
+
     const fetchComments = async () => {
+      // Keep existing setLoading(true)
       setLoading(true);
+
+      // --- NEW: Fetch Post Author Details ---
+      if (!post.is_anonymous && post.user_id) {
+        const { data: authorData } = await supabase
+          .from("users")
+          .select("full_name, avatar_url")
+          .eq("id", post.user_id)
+          .single();
+        
+        if (authorData) {
+          setPostAuthor({ name: authorData.full_name, avatar: authorData.avatar_url });
+        }
+      } else {
+        setPostAuthor(null); // Reset if anonymous
+      }
       
       const { data: rawComments, error } = await supabase
         .from("post_comments")
@@ -137,10 +162,13 @@ export function WatchCommentSheet({
 
       setComments(formatted);
       setLoading(false);
+      
+// Mark this post as fetched so we don't refetch on toggle
+      fetchedRef.current = post.id;
     };
 
     fetchComments();
-  }, [isOpen, post.id, user]);
+  }, [isOpen, post.id, user, post.is_anonymous, post.user_id]);
 
   // --- Actions ---
 
@@ -283,7 +311,9 @@ export function WatchCommentSheet({
     if (!selectedComment) return;
     navigator.clipboard.writeText(selectedComment.content);
     setShowOptions(false);
-    // Optional: Add a small toast here if you have a toast context available
+    
+    // Call the toast
+    toast.success("Comment copied");
   };
 
   const handleReportAction = async () => {
@@ -325,13 +355,30 @@ export function WatchCommentSheet({
         {...longPressProps}
         onClick={() => handleReply(comment)} // Tap to reply
       >
-        <div className="w-8 h-8 rounded-full bg-white/10 shrink-0 overflow-hidden">
+        <div 
+           className="w-8 h-8 rounded-full bg-white/10 shrink-0 overflow-hidden"
+           onPointerDown={(e) => {
+              e.stopPropagation();
+              if (comment.user_avatar && onViewAvatar) {
+                 const t = setTimeout(() => onViewAvatar(comment.user_avatar), 400);
+                 (e.target as any)._longPressTimer = t;
+              }
+           }}
+           onPointerUp={(e) => {
+              const t = (e.target as any)._longPressTimer;
+              if (t) clearTimeout(t);
+           }}
+           onPointerLeave={(e) => {
+              const t = (e.target as any)._longPressTimer;
+              if (t) clearTimeout(t);
+           }}
+        >
            {comment.user_avatar ? <img src={comment.user_avatar} className="w-full h-full object-cover" /> : <User className="w-full h-full p-1.5 text-white/50" />}
         </div>
         <div className="flex-1">
            <div className="flex items-baseline gap-2">
               <span className="text-xs font-bold text-white/90">{comment.user_name}</span>
-              <span className="text-[10px] text-white/40">{formatDistanceToNow(new Date(comment.created_at))}</span>
+              <span className="text-[10px] text-white/40">{formatDistanceToNow(new Date(comment.created_at))} ago</span>
            </div>
            <p className="text-sm text-white/90 mt-0.5 leading-snug">
               {isReply && comment.reply_to_name && (
@@ -354,10 +401,30 @@ export function WatchCommentSheet({
     );
   };
 
+  function CommentSkeleton() {
+  return (
+    <div className="space-y-6 px-2 mt-4">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <div key={i} className="flex gap-3 animate-pulse">
+          <div className="w-8 h-8 rounded-full bg-white/5 shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-24 bg-white/10 rounded-full" />
+              <div className="h-2 w-12 bg-white/5 rounded-full" />
+            </div>
+            <div className="h-3 w-3/4 bg-white/10 rounded-full" />
+            <div className="h-3 w-1/2 bg-white/10 rounded-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
   return (
     <>
       <div 
-        className={`fixed inset-x-0 bottom-0 z-[50000] bg-dark-950 rounded-t-3xl transition-transform duration-300 ease-out flex flex-col border-t border-white/10 ${
+        className={`fixed inset-x-0 bottom-0 z-50000 bg-dark-950 rounded-t-3xl transition-transform duration-300 ease-out flex flex-col border-t border-white/10 ${
           isOpen ? "translate-y-0" : "translate-y-full"
         }`}
         style={{ height: "70vh" }}
@@ -368,25 +435,37 @@ export function WatchCommentSheet({
         </div>
 
         {/* Info & Sort */}
-        <div className="px-4 py-3 border-b border-white/5 shrink-0 flex items-start gap-3">
-          <div className="flex-1">
-             <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-bold text-white">@{post.is_anonymous ? "Anonymous" : "User"}</span>
-                <span className="text-xs text-white/50">{formatDistanceToNow(new Date(post.created_at))} ago</span>
-             </div>
-             <p className="text-sm text-white/90 line-clamp-2">{post.comment}</p>
-          </div>
-          <div className="flex gap-2">
-             <button onClick={() => setSortBy("top")} className={`text-xs px-2 py-1 rounded-md ${sortBy === "top" ? "bg-white/20 text-white" : "text-white/50"}`}>Top</button>
-             <button onClick={() => setSortBy("recent")} className={`text-xs px-2 py-1 rounded-md ${sortBy === "recent" ? "bg-white/20 text-white" : "text-white/50"}`}>New</button>
-          </div>
+      <div className="px-4 py-3 border-b border-white/5 shrink-0 flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+           <div className="flex items-center gap-2 mb-1">
+              <span className="text-sm font-bold text-white">
+             @{post.is_anonymous ? "Anonymous" : (postAuthor?.name || "User")}
+            </span>
+              <span className="text-xs text-white/50">{formatDistanceToNow(new Date(post.created_at))} ago</span>
+           </div>
+           
+           <div onClick={() => setDescExpanded(!descExpanded)}>
+             <p className={`text-sm text-white/90 wrap-break-word whitespace-pre-wrap ${descExpanded ? '' : 'line-clamp-2'}`}>
+                {post.comment}
+             </p>
+             {post.comment && post.comment.length > 100 && (
+                <button className="text-xs text-white/50 mt-0.5">
+                   {descExpanded ? "Hide" : "View more"}
+                </button>
+             )}
+           </div>
         </div>
+        <div className="flex gap-2 shrink-0">
+           <button onClick={() => setSortBy("top")} className={`text-xs px-2 py-1 rounded-md ${sortBy === "top" ? "bg-white/20 text-white" : "text-white/50"}`}>Top</button>
+           <button onClick={() => setSortBy("recent")} className={`text-xs px-2 py-1 rounded-md ${sortBy === "recent" ? "bg-white/20 text-white" : "text-white/50"}`}>New</button>
+        </div>
+      </div>
 
         {/* Comments List (Threaded) */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {loading ? (
-          <div className="flex justify-center p-4"><Loader2 className="w-6 h-6 animate-spin text-white/50" /></div>
-        ) : parentComments.length === 0 ? (
+         <CommentSkeleton />
+         ) : parentComments.length === 0 ? (
           <div className="text-center text-white/40 py-10 text-sm">No comments yet.</div>
         ) : (
           parentComments.map(parent => {
