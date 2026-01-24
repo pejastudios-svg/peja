@@ -18,7 +18,7 @@ export default function PostModalRoute() {
     <FullScreenModalShell
       closeOnBackdrop={true}
       zIndex={9999}
-      scrollable={true}
+      scrollable={false} // <--- CHANGED TO FALSE
       closeEventName="peja-close-post"
       emitOverlayEvents={false}
       emitModalEvents={true}

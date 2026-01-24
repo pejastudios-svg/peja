@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { usePathname } from "next/navigation"; // <--- ADDED
 import { Volume2, VolumeX, Play, Pause, Maximize2 } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 
@@ -24,18 +25,34 @@ export function InlineVideo({
   onError?: () => void;
 }) {
   const instanceId = useId();
+  const pathname = usePathname(); // <--- ADDED
+  const mountingPath = useRef(pathname); // <--- TRACK ORIGINAL PAGE
+
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // State
-  const [showControls, setShowControls] = useState(false); // Default false, relying on hover for PC
+  const [showControls, setShowControls] = useState(false);
   const { soundEnabled, setSoundEnabled } = useAudio();
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
+
+  // --- ROUTE CHANGE LOGIC (FIX FOR BACKGROUND AUDIO) ---
+  useEffect(() => {
+    // If the current URL is different from where this video was mounted,
+    // it means we are on a different "page" (overlay/modal), so BLOCK playback.
+    if (pathname !== mountingPath.current) {
+      setBlocked(true);
+      pause();
+    } else {
+      // If we returned to the original page, unblock (IntersectionObserver will resume if visible)
+      setBlocked(false);
+    }
+  }, [pathname]);
 
   // --- Visibility Logic ---
   const resetControlsTimer = () => {
@@ -49,10 +66,7 @@ export function InlineVideo({
   };
 
   const handleContainerClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // <--- STOP BUBBLING TO POST CARD
-    
-    // Mobile: Tap to toggle
-    // PC: Click also toggles, but hover keeps it visible anyway
+    e.stopPropagation();
     if (showControls) {
       setShowControls(false);
     } else {
@@ -150,7 +164,7 @@ export function InlineVideo({
     obs.observe(el);
     return () => obs.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blocked]);
+  }, [blocked]); // Depend on blocked so observer updates when route changes
 
   useEffect(() => {
     const onModalOpen = () => { setBlocked(true); pause(); };

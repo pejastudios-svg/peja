@@ -128,15 +128,15 @@ export function VideoLightbox({
     resetFadeTimer();
   };
 
-  if (!isOpen || !videoUrl) return null;
+if (!isOpen || !videoUrl) return null;
 
   return createPortal(
     <div 
-      className="fixed inset-0 z-100 flex items-center justify-center group touch-none"
+      className="fixed inset-0 z-[10000] flex items-center justify-center group touch-none"
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
-      onClick={(e) => e.stopPropagation()} // <--- STOP BUBBLING FROM ROOT
+      onClick={(e) => e.stopPropagation()} 
     >
       {/* Background with Dynamic Opacity */}
       <div 
@@ -162,14 +162,13 @@ export function VideoLightbox({
         className="relative z-105 w-full h-full flex items-center justify-center transition-transform duration-200 ease-out"
         style={{ 
           transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${1 - dragDistance / 1000})`,
-          // Disable transition during drag for instant response
           transition: isDragging ? 'none' : 'transform 0.3s ease-out' 
         }}
       >
         <video
           ref={videoRef}
           src={videoUrl}
-          className="max-w-full max-h-full w-full h-full object-contain pointer-events-none" // prevent video catching touch events
+          className="max-w-full max-h-full w-full h-full object-contain pointer-events-none"
           playsInline
           autoPlay
           onTimeUpdate={handleTimeUpdate}
@@ -177,11 +176,11 @@ export function VideoLightbox({
         />
       </div>
 
-      {/* Bottom Controls (Fades out when dragging) */}
+      {/* Bottom Controls */}
       <div 
         className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-120 transition-all duration-300 opacity-0 group-hover:opacity-100 ${showControls && !isDragging ? 'opacity-100! pointer-events-auto' : 'pointer-events-none opacity-0!'}`}
         onClick={(e) => e.stopPropagation()}
-        onTouchStart={(e) => e.stopPropagation()} // Allow interacting with scrubber without dragging lightbox
+        onTouchStart={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-4 max-w-2xl mx-auto w-full">
           <button onClick={togglePlay} className="text-white hover:text-primary-400 transition-colors">

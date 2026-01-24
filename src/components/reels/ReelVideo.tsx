@@ -3,15 +3,20 @@
 import { useEffect, useRef, useState } from "react";
 import { Volume2, VolumeX, Play, Pause } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
+import { useLongPress } from "@/components/hooks/useLongPress";
 
 export function ReelVideo({
   src,
   active,
   onWatched2s,
+  onLongPress,
+  onControlsChange,
 }: {
   src: string;
   active: boolean;
   onWatched2s?: () => void;
+  onLongPress?: () => void;
+  onControlsChange?: (visible: boolean) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -31,20 +36,32 @@ export function ReelVideo({
   const [inView, setInView] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
-  const [showControls, setShowControls] = useState(false); // Default hidden, show on hover/tap
+  const [showControls, setShowControls] = useState(false);
+
+  // --- Long Press Logic ---
+  const longPressGestures = useLongPress(() => {
+    onLongPress?.();
+  }, 500);
+
+  // --- Sync Controls Visibility with Parent (for Back Button) ---
+  useEffect(() => {
+    onControlsChange?.(showControls);
+  }, [showControls, onControlsChange]);
 
   // --- Visibility Logic ---
   const resetControlsTimer = () => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     setShowControls(true);
     if (isPlaying && !isScrubbing) {
+      // 7 Seconds Fade Out
       controlsTimeoutRef.current = setTimeout(() => {
         setShowControls(false);
-      }, 3000);
+      }, 7000);
     }
   };
 
   const handleContainerClick = () => {
+    // Tap toggles visibility, DOES NOT PAUSE
     if (showControls) {
       setShowControls(false);
     } else {
@@ -147,7 +164,6 @@ export function ReelVideo({
     }
     ensurePlay();
     return () => stopTimers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, inView]);
 
   useEffect(() => {
@@ -166,7 +182,13 @@ export function ReelVideo({
       ref={wrapRef} 
       className="relative w-full h-full bg-black select-none group"
       onClick={handleContainerClick}
-      onPointerDownCapture={() => setSoundEnabled(true)}
+      onPointerDownCapture={(e) => {
+        setSoundEnabled(true);
+        longPressGestures.onPointerDown();
+      }}
+      onPointerUp={longPressGestures.onPointerUp}
+      onPointerLeave={longPressGestures.onPointerLeave}
+      onPointerCancel={longPressGestures.onPointerCancel}
     >
       <video
         ref={videoRef}
@@ -183,13 +205,13 @@ export function ReelVideo({
         onEnded={() => setIsPlaying(false)}
       />
 
-      {/* --- Hybrid Controls Overlay --- */}
+      {/* --- Controls Overlay (Raised Higher) --- */}
       <div 
-        className={`absolute bottom-0 inset-x-0 p-4 bg-linear-to-t from-black/90 via-black/50 to-transparent z-20 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100!' : ''}`}
+        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-20 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? '!opacity-100!' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div 
-          className="flex items-center gap-4 w-full"
+          className="flex items-center gap-4 w-full mb-12" 
           style={{ paddingBottom: "env(safe-area-inset-bottom, 20px)" }}
         >
           {/* Play/Pause */}
@@ -197,7 +219,7 @@ export function ReelVideo({
             onClick={togglePlay} 
             className="text-white hover:text-primary-400 transition-colors p-2"
           >
-            {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
+            {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current" />}
           </button>
 
           {/* Scrubber */}

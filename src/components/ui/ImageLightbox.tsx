@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react"; // <--- REMOVED X
 import { Portal } from "@/components/ui/Portal";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 
@@ -70,7 +70,6 @@ export function ImageLightbox({
 
   // --- Vertical Drag Logic ---
   const onTouchStart = (e: React.TouchEvent) => {
-    // Only track single touch
     if (e.touches.length === 1) {
       dragStartY.current = e.touches[0].clientY;
       setIsDragging(true);
@@ -80,8 +79,6 @@ export function ImageLightbox({
   const onTouchMove = (e: React.TouchEvent) => {
     if (dragStartY.current === null) return;
     const dy = e.touches[0].clientY - dragStartY.current;
-    
-    // Only start dragging UI if moved noticeably
     setDragOffset(dy);
   };
 
@@ -90,9 +87,9 @@ export function ImageLightbox({
     setIsDragging(false);
 
     if (Math.abs(dragOffset) > 100) {
-      onClose(); // Close if dragged far enough vertically
+      onClose(); 
     } else {
-      setDragOffset(0); // Snap back
+      setDragOffset(0); 
     }
   };
 
@@ -101,7 +98,7 @@ export function ImageLightbox({
   return (
     <Portal>
       <div 
-        className="fixed inset-0 z-99999 flex items-center justify-center touch-none"
+        className="fixed inset-0 z-[99999] flex items-center justify-center touch-none"
         onClick={close}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
@@ -115,22 +112,24 @@ export function ImageLightbox({
 
         {/* Top bar (Fades out on drag) */}
         <div
-          className={`absolute top-0 left-0 right-0 z-100000 flex items-center justify-between px-4 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
+          className={`absolute top-0 left-0 right-0 z-[100000] flex items-center justify-between px-4 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
           style={{ paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", height: "56px" }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="text-white/80 text-sm">
-            {mediaItems.length > 1 ? `${index + 1} / ${mediaItems.length}` : ""}
-          </div>
-
+          {/* Back Button (Left) */}
           <button
             type="button"
             onClick={close}
-            className="p-2 rounded-full bg-black/60 hover:bg-black/80"
+            className="p-2 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md"
             aria-label="Close"
           >
-            <X className="w-6 h-6 text-white" />
+            <ChevronLeft className="w-6 h-6 text-white" />
           </button>
+
+          {/* Counter (Right) */}
+          <div className="text-white/80 text-sm font-medium px-3 py-1 bg-black/40 rounded-full backdrop-blur-md">
+            {mediaItems.length > 1 ? `${index + 1} / ${mediaItems.length}` : ""}
+          </div>
         </div>
 
         {/* Draggable Carousel Container */}
@@ -153,8 +152,6 @@ export function ImageLightbox({
               const newIndex = Math.round(el.scrollLeft / w);
               if (newIndex !== index) setIndex(newIndex);
             }}
-            // Prevent horizontal scroll from interfering with vertical drag context if needed
-            // But usually allowing both is fine, user intent is clear by direction
           >
             {mediaItems.map((m, i) => (
               <div key={i} className="w-full h-full shrink-0 snap-center flex items-center justify-center p-2">
@@ -178,7 +175,7 @@ export function ImageLightbox({
             ))}
           </div>
 
-          {/* Navigation Arrows (Hidden during drag) */}
+          {/* Navigation Arrows */}
           {mediaItems.length > 1 && !isDragging && (
             <>
               <button
