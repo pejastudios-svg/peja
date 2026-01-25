@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Loader2, Navigation, List, Map as MapIcon, AlertTriangle } from "lucide-react";
 import { subHours } from "date-fns";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useFeedCache } from "@/context/FeedContext";
 
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
@@ -35,9 +36,19 @@ export default function MapClient() {
   // ✅ IMPORTANT: full_name must be string (not null) to satisfy SOSAlert type
   const sosUserCacheRef = useRef<Record<string, SOSUserPublic>>({});
 
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [sosAlerts, setSOSAlerts] = useState<SOSAlert[]>([]);
-  const [loading, setLoading] = useState(true);
+  const feedCache = useFeedCache();
+
+  const [posts, setPosts] = useState<Post[]>(() => {
+     if(typeof window !== 'undefined') return feedCache.get("map:posts")?.posts || [];
+     return [];
+  });
+  
+  const [sosAlerts, setSOSAlerts] = useState<SOSAlert[]>(() => {
+     if(typeof window !== 'undefined') return feedCache.get("map:sos")?.posts as unknown as SOSAlert[] || [];
+     return [];
+  });
+
+  const [loading, setLoading] = useState(() => posts.length === 0);
 
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [showList, setShowList] = useState(false);
@@ -175,7 +186,8 @@ useEffect(() => {
         }));
 
       setPosts(formatted);
-    } catch (e) {
+  feedCache.setPosts("map:posts", formatted);
+  } catch (e) {
       console.error("Error fetching posts:", e);
     } finally {
       setLoading(false);
@@ -243,6 +255,7 @@ useEffect(() => {
 
       const filtered = myUserId ? formatted.filter(s => s.user_id !== myUserId) : formatted;
       setSOSAlerts(filtered);
+      feedCache.setPosts("map:sos", filtered as any[]);
 
       // open from notification (once)
       if (sosIdFromUrl && !handledSosParamRef.current) {

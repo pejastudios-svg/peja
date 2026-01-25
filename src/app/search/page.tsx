@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense, useLayoutEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES } from "@/lib/types";
@@ -25,16 +25,41 @@ function SearchContent() {
   const searchParams = useSearchParams();
 
   const [query, setQuery] = useState(searchParams.get("q") || "");
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-    useScrollRestore("search", posts.length > 0);
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all">("all");
   const feedCache = useFeedCache();
   const feedKey = `search:q=${query}|cat=${selectedCategory ?? "all"}|range=${dateRange}`;
+
+  // 1. INSTANT MEMORY INIT
+  const [posts, setPosts] = useState<Post[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get(feedKey);
+      if (cached?.posts?.length) return cached.posts;
+    }
+    return [];
+  });
+
+  const [loading, setLoading] = useState(() => posts.length === 0 && !!query);
+
+  // 2. INSTANT SCROLL RESTORE
+  useLayoutEffect(() => {
+    const cached = feedCache.get(feedKey);
+    if (cached && cached.scrollY > 0 && posts.length > 0) {
+      window.scrollTo(0, cached.scrollY);
+    }
+  }, [feedKey, posts.length]);
+
+  // 3. SAVE SCROLL MANUALLY
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollY > 0) feedCache.setScroll(feedKey, window.scrollY);
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [feedKey, feedCache]);
 
   const performSearch = useCallback(async () => {
   setLoading(true);
@@ -182,7 +207,8 @@ function SearchContent() {
    confirm.hydrateCounts(top.map(p => ({ postId: p.id, confirmations: p.confirmations || 0 })));
     confirm.loadConfirmedFor(top.map(p => p.id));
 setPosts(top);
-  } catch (error) {
+    feedCache.setPosts(feedKey, top); 
+    } catch (error) {
     console.error("Search error:", error);
     setPosts([]);
   } finally {

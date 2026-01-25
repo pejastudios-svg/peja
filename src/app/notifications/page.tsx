@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
+import { useFeedCache } from "@/context/FeedContext";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -37,9 +38,34 @@ interface Notification {
 export default function NotificationsPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
-  useScrollRestore("notifications");
+  const feedCache = useFeedCache();
+  
+  const [notifications, setNotifications] = useState<Notification[]>(() => {
+     if (typeof window !== "undefined") {
+        const cached = feedCache.get("notifications:list");
+        // Reuse 'posts' field for notifications data
+        if (cached?.posts) return cached.posts as unknown as Notification[]; 
+     }
+     return [];
+  });
+
+  const [loading, setLoading] = useState(() => notifications.length === 0);
+
+  // INSTANT SCROLL RESTORE
+  useLayoutEffect(() => {
+    const cached = feedCache.get("notifications:list");
+    if (cached && cached.scrollY > 0 && notifications.length > 0) {
+       window.scrollTo(0, cached.scrollY);
+    }
+  }, [notifications.length]);
+
+  useEffect(() => {
+    const save = () => {
+       if (window.scrollY > 0) feedCache.setScroll("notifications:list", window.scrollY);
+    };
+    window.addEventListener("scroll", save, { passive: true });
+    return () => window.removeEventListener("scroll", save);
+  }, [feedCache]);
 
   useEffect(() => {
   router.prefetch("/map");
@@ -80,8 +106,10 @@ export default function NotificationsPage() {
       .limit(50);
 
     if (error) throw error;
-    setNotifications(data || []);
-  } catch (error) {
+    const list = data || [];
+    setNotifications(list);
+    feedCache.setPosts("notifications:list", list as unknown as any[]); 
+    } catch (error) {
     console.error("Error:", error);
   } finally {
     setLoading(false);
@@ -262,14 +290,6 @@ const setupRealtime = () => {
   };
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">

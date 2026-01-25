@@ -27,27 +27,25 @@ export function BottomNav() {
   const Icon = item.icon;
 
   if (item.href === "/") {
-    return (
-      <button
-        key={item.href}
-        onClick={() => {
-  // Close the top-most layer first (modal/watch/overlay) using history
-  if (typeof window !== "undefined" && window.history.length > 1 && pathname !== "/") {
-    router.back();
-    return;
-  }
-
-  router.push("/", { scroll: false });
-}}
-        className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
-          isActive ? "text-primary-400" : "text-dark-400 hover:text-dark-200"
-        }`}
-      >
-        <Icon className="w-5 h-5" />
-        <span className="text-xs mt-1">{item.label}</span>
-      </button>
-    );
-  }
+                return (
+                  <button
+                    key={item.href}
+                    onClick={() => {
+                      if (pathname === "/") {
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                      } else {
+                        router.push("/");
+                      }
+                    }}
+                    className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
+                      isActive ? "text-primary-400" : "text-dark-400 hover:text-dark-200"
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span className="text-xs mt-1">{item.label}</span>
+                  </button>
+                );
+              }
 
   return (
     <Link

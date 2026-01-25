@@ -13,6 +13,8 @@ import InAppNotificationToasts from "@/components/notifications/InAppNotificatio
 import UserGestureAudioUnlocker from "@/components/notifications/UserGestureAudioUnlocker";
 import AccountStatusBanner from "@/components/system/AccountStatusBanner";
 import { ToastProvider } from "@/context/ToastContext";
+// ADD THIS IMPORT:
+import GlobalScrollManager from "@/components/navigation/GlobalScrollManager";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -39,7 +41,6 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <head>
-        {/* Leaflet CSS */}
         <link
           rel="stylesheet"
           href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -48,28 +49,31 @@ export default function RootLayout({
         />
       </head>
       <body className={`${poppins.variable} font-sans antialiased`}>
-<ToastProvider>
-<AuthProvider>
-  <ConfirmProvider>
-    <AudioProvider>
-        <FeedProvider>
-        <AnalyticsTracker />
-        <RoutePrefetcher />
-        <Suspense fallback={null}>
-        <HistorySyncGuard />
-        </Suspense>
-        <UserGestureAudioUnlocker />
-        <InAppNotificationToasts />
-        <AccountStatusBanner />
-        {children}
-        {overlay}
-        {watch}
-        {modal}
-      </FeedProvider>
-    </AudioProvider>
-  </ConfirmProvider>
-</AuthProvider>
-</ToastProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <ConfirmProvider>
+              <AudioProvider>
+                <FeedProvider>
+                  <AnalyticsTracker />
+                  <RoutePrefetcher />
+                  <GlobalScrollManager /> {/* <--- ADD THIS HERE */}
+                  
+                  <Suspense fallback={null}>
+                    <HistorySyncGuard />
+                  </Suspense>
+                  
+                  <UserGestureAudioUnlocker />
+                  <InAppNotificationToasts />
+                  <AccountStatusBanner />
+                  {children}
+                  {overlay}
+                  {watch}
+                  {modal}
+                </FeedProvider>
+              </AudioProvider>
+            </ConfirmProvider>
+          </AuthProvider>
+        </ToastProvider>
       </body>
     </html>
   );

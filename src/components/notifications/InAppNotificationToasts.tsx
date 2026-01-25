@@ -67,11 +67,7 @@ export default function InAppNotificationToasts() {
   const [toasts, setToasts] = useState<NotificationRow[]>([]);
   const seenIdsRef = useRef<Set<string>>(new Set());
 
-  const shouldHide = useMemo(() => {
-    // Don’t show on full-screen watch
-    if (pathname === "/watch") return true;
-    return false;
-  }, [pathname]);
+  const shouldHide = false;
 
   useEffect(() => {
     if (!user?.id) return;

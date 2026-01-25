@@ -160,12 +160,23 @@ export function ReelVideo({
   }, []);
 
   useEffect(() => {
+    // Logic to play/pause based on props
     if (!active || !inView) {
       pause();
       return;
     }
     ensurePlay();
-    return () => stopTimers();
+
+    // --- CLEANUP (Runs when active changes OR component unmounts) ---
+    return () => {
+      stopTimers();
+      const v = videoRef.current;
+      if (v) {
+        v.pause();
+        v.removeAttribute("src"); // Force stop downloading
+        v.load(); 
+      }
+    };
   }, [active, inView]);
 
   useEffect(() => {
@@ -184,6 +195,7 @@ export function ReelVideo({
       ref={wrapRef} 
       className="relative w-full h-full bg-black select-none group"
       onClick={handleContainerClick}
+      onContextMenu={(e) => e.preventDefault()} // <--- DISABLES BROWSER MENU
       onPointerDownCapture={() => setSoundEnabled(true)}
       onPointerDown={() => longPressGestures.onPointerDown()}
       onPointerUp={longPressGestures.onPointerUp}

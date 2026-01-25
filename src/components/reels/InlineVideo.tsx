@@ -177,6 +177,19 @@ export function InlineVideo({
     };
   }, []);
 
+// --- Strict Unmount Cleanup ---
+  useEffect(() => {
+    return () => {
+      // Force pause when component unmounts
+      const v = videoRef.current;
+      if (v) {
+        v.pause();
+        v.removeAttribute("src"); // Optional: Release memory
+        v.load();
+      }
+    };
+  }, []);
+
   return (
     <div
       ref={wrapRef}

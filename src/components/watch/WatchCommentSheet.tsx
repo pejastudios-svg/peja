@@ -429,117 +429,114 @@ export function WatchCommentSheet({
         }`}
         style={{ height: "70vh" }}
       >
-        {/* Header */}
-        <div onClick={onClose} className="w-full h-12 flex items-center justify-center shrink-0 cursor-pointer border-b border-white/5 active:bg-white/5">
+        {/* Fixed Header (Just the drag handle + Close) */}
+        <div 
+          onClick={onClose} 
+          className="w-full h-10 flex items-center justify-center shrink-0 cursor-pointer border-b border-white/5 active:bg-white/5"
+        >
           <div className="w-12 h-1.5 bg-white/20 rounded-full" />
         </div>
 
-        {/* Info & Sort */}
-      <div className="px-4 py-3 border-b border-white/5 shrink-0 flex items-start gap-3">
-        <div className="flex-1 min-w-0">
-           <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm font-bold text-white">
-             @{post.is_anonymous ? "Anonymous" : (postAuthor?.name || "User")}
-            </span>
-              <span className="text-xs text-white/50">{formatDistanceToNow(new Date(post.created_at))} ago</span>
-           </div>
-           
-           <div onClick={() => setDescExpanded(!descExpanded)}>
-             <p className={`text-sm text-white/90 wrap-break-word whitespace-pre-wrap ${descExpanded ? '' : 'line-clamp-2'}`}>
-                {post.comment}
-             </p>
-             {post.comment && post.comment.length > 100 && (
-                <button className="text-xs text-white/50 mt-0.5">
-                   {descExpanded ? "Hide" : "View more"}
-                </button>
-             )}
-           </div>
-        </div>
-        <div className="flex gap-2 shrink-0">
-           <button onClick={() => setSortBy("top")} className={`text-xs px-2 py-1 rounded-md ${sortBy === "top" ? "bg-white/20 text-white" : "text-white/50"}`}>Top</button>
-           <button onClick={() => setSortBy("recent")} className={`text-xs px-2 py-1 rounded-md ${sortBy === "recent" ? "bg-white/20 text-white" : "text-white/50"}`}>New</button>
-        </div>
-      </div>
-
-        {/* Comments List (Threaded) */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {loading ? (
-         <CommentSkeleton />
-         ) : parentComments.length === 0 ? (
-          <div className="text-center text-white/40 py-10 text-sm">No comments yet.</div>
-        ) : (
-          parentComments.map(parent => {
-            const replies = getReplies(parent.id);
-            const isExpanded = expandedThreads.has(parent.id);
-
-            return (
-              <div key={parent.id} className="group">
-                {/* Parent Comment */}
-                <RenderCommentRow comment={parent} />
-
-                {/* Reply Actions */}
-                {replies.length > 0 && (
-                  <div className="">
-                    {!isExpanded ? (
-                      <button
-                        onClick={() => toggleThread(parent.id)}
-                        className="ml-11 mb-3 flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300"
-                      >
-                        <ChevronDown className="w-3.5 h-3.5" />
-                        View {replies.length} {replies.length === 1 ? "reply" : "replies"}
-                      </button>
-                    ) : (
-                      <div className="border-l-2 border-white/10 ml-2 pl-4 pb-2">
-                        {/* Render Replies */}
-                        {replies.map(reply => (
-                          <RenderCommentRow key={reply.id} comment={reply} isReply={true} />
-                        ))}
-                        
-                        {/* Hide Button */}
-                        <button
-                          onClick={() => toggleThread(parent.id)}
-                          className="ml-7 mt-2 flex items-center gap-1 text-xs text-white/40 hover:text-white transition-colors"
-                        >
-                          <ChevronUp className="w-3.5 h-3.5" />
-                          Hide replies
+        {/* SINGLE SCROLLABLE CONTAINER */}
+        <div className="flex-1 overflow-y-auto scrollbar-hide">
+            
+            {/* 1. Description Section (Now scrolls with content) */}
+            <div className="px-4 py-3 border-b border-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-bold text-white">
+                        @{post.is_anonymous ? "Anonymous" : (postAuthor?.name || "User")}
+                    </span>
+                    <span className="text-xs text-white/50">{formatDistanceToNow(new Date(post.created_at))} ago</span>
+                </div>
+                
+                <div onClick={() => setDescExpanded(!descExpanded)}>
+                    <p className={`text-sm text-white/90 wrap-break-word whitespace-pre-wrap ${descExpanded ? '' : 'line-clamp-2'}`}>
+                        {post.comment}
+                    </p>
+                    {post.comment && post.comment.length > 100 && (
+                        <button className="text-xs text-white/50 mt-0.5 font-medium">
+                            {descExpanded ? "Hide" : "View more"}
                         </button>
-                      </div>
                     )}
-                  </div>
+                </div>
+            </div>
+
+            {/* 2. Sort Controls (Sticky Header inside scroll) */}
+            <div className="sticky top-0 bg-dark-950/95 backdrop-blur-sm z-10 px-4 py-2 border-b border-white/5 flex justify-end gap-2">
+                <button onClick={() => setSortBy("top")} className={`text-xs px-3 py-1.5 rounded-full transition-colors ${sortBy === "top" ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10"}`}>Top</button>
+                <button onClick={() => setSortBy("recent")} className={`text-xs px-3 py-1.5 rounded-full transition-colors ${sortBy === "recent" ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10"}`}>New</button>
+            </div>
+
+            {/* 3. Comments List */}
+            <div className="p-4 space-y-4 pb-20"> {/* pb-20 adds space at bottom for input */}
+                {loading ? (
+                    <CommentSkeleton />
+                ) : parentComments.length === 0 ? (
+                    <div className="text-center text-white/40 py-10 text-sm">No comments yet.</div>
+                ) : (
+                    parentComments.map(parent => {
+                        // ... (Existing comment mapping logic)
+                        const replies = getReplies(parent.id);
+                        const isExpanded = expandedThreads.has(parent.id);
+                        return (
+                            <div key={parent.id} className="group">
+                                <RenderCommentRow comment={parent} />
+                                {replies.length > 0 && (
+                                    <div className="">
+                                        {!isExpanded ? (
+                                            <button onClick={() => toggleThread(parent.id)} className="ml-11 mb-3 flex items-center gap-1 text-xs text-primary-400 hover:text-primary-300">
+                                                <ChevronDown className="w-3.5 h-3.5" />
+                                                View {replies.length} {replies.length === 1 ? "reply" : "replies"}
+                                            </button>
+                                        ) : (
+                                            <div className="border-l-2 border-white/10 ml-2 pl-4 pb-2">
+                                                {replies.map(reply => (
+                                                    <RenderCommentRow key={reply.id} comment={reply} isReply={true} />
+                                                ))}
+                                                <button onClick={() => toggleThread(parent.id)} className="ml-7 mt-2 flex items-center gap-1 text-xs text-white/40 hover:text-white transition-colors">
+                                                    <ChevronUp className="w-3.5 h-3.5" />
+                                                    Hide replies
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })
                 )}
-              </div>
-            );
-          })
-        )}
+            </div>
         </div>
 
-        {/* Input Area */}
-        <div className="p-3 border-t border-white/10 bg-dark-1000 pb-8">
-          {replyingTo && (
-            <div className="flex items-center justify-between px-2 mb-2 text-xs text-primary-400">
-               <span>Replying to @{replyingTo.name}</span>
-               <button onClick={() => setReplyingTo(null)} className="text-white/50 hover:text-white"><X className="w-3 h-3" /></button>
-            </div>
-          )}
-          <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 border border-white/5">
-             <input 
-               ref={inputRef}
-               value={newComment}
-               onChange={(e) => setNewComment(e.target.value)}
-               placeholder={replyingTo ? `Reply to @${replyingTo.name}...` : "Add a comment..."}
-               className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-white/40"
-               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-             />
-             <button onClick={handleSubmit} disabled={submitting || !newComment.trim()} className="text-primary-500 disabled:opacity-50 font-medium text-sm">
-               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-             </button>
-          </div>
+        {/* Fixed Input Area */}
+        <div className="p-3 border-t border-white/10 bg-dark-1000 pb-safe">
+             {/* ... (Existing Input Logic) ... */}
+             {replyingTo && (
+                <div className="flex items-center justify-between px-2 mb-2 text-xs text-primary-400">
+                   <span>Replying to @{replyingTo.name}</span>
+                   <button onClick={() => setReplyingTo(null)} className="text-white/50 hover:text-white"><X className="w-3 h-3" /></button>
+                </div>
+             )}
+             <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 border border-white/5">
+                 <input 
+                   ref={inputRef}
+                   value={newComment}
+                   onChange={(e) => setNewComment(e.target.value)}
+                   placeholder={replyingTo ? `Reply to @${replyingTo.name}...` : "Add a comment..."}
+                   className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-white/40"
+                   onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                 />
+                 <button onClick={handleSubmit} disabled={submitting || !newComment.trim()} className="text-primary-500 disabled:opacity-50 font-medium text-sm">
+                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                 </button>
+             </div>
         </div>
       </div>
 
       {/* --- Options Modal (Long Press) --- */}
       <Modal isOpen={showOptions} onClose={() => setShowOptions(false)} title="Options" animation="slide-up">
-         <div className="space-y-2">
+         <div 
+         className="space-y-2">
             <Button variant="secondary" onClick={handleCopy} className="w-full justify-start gap-3 h-12 text-base">
                <Copy className="w-5 h-5" /> Copy Text
             </Button>

@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation"; // Removed unused useSearchParams
 import { supabase } from "@/lib/supabase";
 import { Post, REPORT_REASONS } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
 import { notifyPostConfirmed } from "@/lib/notifications";
 import { ReelVideo } from "@/components/reels/ReelVideo";
-import { WatchCommentSheet } from "@/components/watch/WatchCommentSheet"; // Import the new sheet
-import { CheckCircle, MessageCircle, Share2, Eye, ChevronLeft, Flag, Trash2, MoreVertical } from "lucide-react";
+import { WatchCommentSheet } from "@/components/watch/WatchCommentSheet";
+import { CheckCircle, MessageCircle, Share2, Eye, ChevronLeft, ChevronRight, Flag, Trash2, MoreVertical } from "lucide-react"; // Added ChevronRight
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { useAudio } from "@/context/AudioContext";
@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { formatDistanceToNow } from "date-fns"; // Ensure this is installed/imported if used in sub-components, though mainly used in Sheet
 
 const SEEN_KEY = "peja-seen-posts-v1";
 type SeenStore = Record<string, number>;
@@ -56,6 +57,119 @@ function markSeen(postId: string) {
   } catch {}
 }
 
+// --- Helper Component for Carousel ---
+function WatchMediaCarousel({ 
+  media, 
+  isActivePost, 
+  activeMediaIndex,
+  onIndexChange,
+  isSensitive,
+  isRevealed,
+  onReveal,
+  onMarkViewed,
+  onOpenOptions,
+  onControlsChange
+}: any) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scroll = (direction: 'left' | 'right') => {
+    if (!scrollRef.current) return;
+    const w = scrollRef.current.clientWidth;
+    scrollRef.current.scrollBy({ left: direction === 'left' ? -w : w, behavior: 'smooth' });
+  };
+
+  return (
+    <div className="relative w-full h-full">
+      {/* Carousel Container */}
+      <div
+        ref={scrollRef}
+        className="w-full h-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide"
+        style={{ WebkitOverflowScrolling: "touch" }}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          const w = el.clientWidth || 1;
+          const idx = Math.round(el.scrollLeft / w);
+          if (idx !== activeMediaIndex) onIndexChange(idx);
+        }}
+      >
+        {media.map((m: any, idx: number) => {
+          const blocked = isSensitive && !isRevealed;
+          return (
+            <div key={m.id} className="w-full h-full shrink-0 snap-center flex items-center justify-center relative">
+               {/* Context Menu Prevention Layer */}
+               <div className="absolute inset-0 z-0" onContextMenu={(e) => e.preventDefault()} />
+               
+               {blocked ? (
+                  <div className="relative w-full h-full flex items-center justify-center bg-black z-10">
+                     <div className="glass-float rounded-2xl px-5 py-4 max-w-sm text-center">
+                        <p className="text-white font-semibold mb-1">Sensitive content</p>
+                        <button onClick={(e) => { e.stopPropagation(); onReveal(); }} className="mt-2 px-5 py-2 rounded-xl bg-primary-600 text-white">View</button>
+                     </div>
+                  </div>
+               ) : m.media_type === "video" ? (
+                  <ReelVideo
+                    src={m.url}
+                    active={isActivePost && activeMediaIndex === idx}
+                    onWatched2s={onMarkViewed}
+                    onLongPress={onOpenOptions}
+                    onControlsChange={onControlsChange}
+                  />
+               ) : (
+                  <div 
+                    className="w-full h-full flex items-center justify-center"
+                    onContextMenu={(e) => e.preventDefault()}
+                    // Long press for image logic
+                    onPointerDown={(e) => {
+                       const t = setTimeout(onOpenOptions, 500);
+                       (e.target as any)._lp = t;
+                    }}
+                    onPointerUp={(e) => clearTimeout((e.target as any)._lp)}
+                    onPointerLeave={(e) => clearTimeout((e.target as any)._lp)}
+                  >
+                    <img src={m.url} alt="" className="max-h-full max-w-full object-contain pointer-events-none" />
+                  </div>
+               )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Navigation Arrows (Only if multiple items) */}
+      {media.length > 1 && (
+        <>
+          {activeMediaIndex > 0 && (
+            <button 
+              onClick={(e) => { e.stopPropagation(); scroll('left'); }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 backdrop-blur-md text-white/80 hover:bg-black/50 z-20"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+          {activeMediaIndex < media.length - 1 && (
+            <button 
+              onClick={(e) => { e.stopPropagation(); scroll('right'); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 backdrop-blur-md text-white/80 hover:bg-black/50 z-20"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          )}
+          
+          {/* Dots Indicator */}
+          <div className="absolute top-4 left-0 right-0 flex justify-center gap-1.5 z-20 pointer-events-none">
+             {media.map((_: any, i: number) => (
+               <div 
+                 key={i} 
+                 className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === activeMediaIndex ? "bg-white w-3" : "bg-white/30"}`} 
+               />
+             ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// --- Main Component ---
 export default function WatchClient({
   startId,
   source,
@@ -128,21 +242,6 @@ export default function WatchClient({
   // --- Description State ---
   const [descExpanded, setDescExpanded] = useState(false);
 
-  // --- Back Button Logic (Close Sheet on Back) ---
-  useEffect(() => {
-    if (showComments) {
-      // Push dummy state so 'Back' closes sheet instead of page
-      window.history.pushState({ sheetOpen: true }, "");
-      
-      const handlePop = () => {
-        setShowComments(false);
-      };
-      
-      window.addEventListener("popstate", handlePop);
-      return () => window.removeEventListener("popstate", handlePop);
-    }
-  }, [showComments]);
-
   // --- Options Modal State ---
   const [showOptions, setShowOptions] = useState(false);
   const [activePostForOptions, setActivePostForOptions] = useState<Post | null>(null);
@@ -170,7 +269,7 @@ export default function WatchClient({
     window.dispatchEvent(new Event("peja-close-watch"));
   };
 
-// --- Lightbox State ---
+  // --- Lightbox State ---
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxCaption, setLightboxCaption] = useState<string | null>(null);
@@ -258,6 +357,7 @@ export default function WatchClient({
     return [posts[idx], ...posts.slice(0, idx), ...posts.slice(idx + 1)];
   }, [posts, startId]);
 
+  // Observer to track active post
   useEffect(() => {
     if (typeof window === "undefined") return;
     const els = Array.from(document.querySelectorAll<HTMLElement>("[data-postid]"));
@@ -346,7 +446,7 @@ export default function WatchClient({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black z-9999">
+      <div className="fixed inset-0 bg-black z-[9999]">
         <div className="absolute top-4 right-4 z-50">
           <Skeleton className="h-10 w-10 rounded-full" />
         </div>
@@ -359,7 +459,7 @@ export default function WatchClient({
 
   return (
     <div
-      className="fixed inset-0 bg-black z-9999 overflow-hidden"
+      className="fixed inset-0 bg-black z-[9999] overflow-hidden"
       onPointerDown={(e) => {
         setSoundEnabled(true);
         swipeStartRef.current = { x: e.clientX, y: e.clientY };
@@ -435,105 +535,78 @@ export default function WatchClient({
                 />
               )}
 
-              {/* Media Container */}
+              {/* Media Container with Shrink Effect */}
               <div className="w-full h-full origin-top" style={containerStyle}>
-                <div
-                  className="w-full h-full overflow-x-auto flex snap-x snap-mandatory"
-                  style={{ WebkitOverflowScrolling: "touch" }}
-                  onScroll={(e) => {
-                    const el = e.currentTarget;
-                    const w = el.clientWidth || 1;
-                    const idx = Math.round(el.scrollLeft / w);
-                    if (idx !== activeMediaIndex) {
-                      setMediaIndexByPost((prev) => ({ ...prev, [post.id]: idx }));
-                    }
-                  }}
-                >
-                  {(post.media || []).map((m, idx) => {
-                    // ... (Media rendering logic stays same) ...
-                    const blocked = isSensitive && !isRevealed;
-                    return (
-                        <div key={m.id} className="w-full h-full shrink-0 snap-center flex items-center justify-center">
-                            {blocked ? (
-                                <div className="relative w-full h-full flex items-center justify-center bg-black">
-                                    <div className="glass-float rounded-2xl px-5 py-4 max-w-sm text-center">
-                                        <p className="text-white font-semibold mb-1">Sensitive content</p>
-                                        <button onClick={(e) => { e.stopPropagation(); revealPost(post.id); }} className="mt-2 px-5 py-2 rounded-xl bg-primary-600 text-white">View</button>
-                                    </div>
-                                </div>
-                            ) : m.media_type === "video" ? (
-                                <ReelVideo
-                                    src={m.url}
-                                    active={!modalOpen && isActivePost && activeMediaIndex === idx}
-                                    onWatched2s={() => markViewed(post.id)}
-                                    onLongPress={() => { setActivePostForOptions(post); setShowOptions(true); }}
-                                    onControlsChange={isActivePost ? setControlsVisible : undefined}
-                                />
-                            ) : (
-                                <img src={m.url} alt="" className="h-full w-full object-contain" />
-                            )}
-                        </div>
-                    );
-                  })}
-                </div>
+                 <WatchMediaCarousel 
+                    media={post.media}
+                    isActivePost={isActivePost}
+                    activeMediaIndex={activeMediaIndex}
+                    onIndexChange={(idx: number) => setMediaIndexByPost(prev => ({ ...prev, [post.id]: idx }))}
+                    isSensitive={isSensitive}
+                    isRevealed={isRevealed}
+                    onReveal={() => revealPost(post.id)}
+                    onMarkViewed={() => markViewed(post.id)}
+                    onOpenOptions={() => { setActivePostForOptions(post); setShowOptions(true); }}
+                    onControlsChange={isActivePost ? setControlsVisible : undefined}
+                 />
+                 
+                 {/* --- Interaction Layer (Fades out when comments open) --- */}
+                 <div 
+                   className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${showComments ? 'opacity-0' : 'opacity-100'}`}
+                 >
+                   {/* Controls / Buttons Stack */}
+                   <div className="absolute right-2 bottom-48 flex flex-col items-center gap-6 z-30 pointer-events-auto pb-safe">
+                      {/* ... Buttons (Confirm, Comment, Share) same as before ... */}
+                      <div className="flex flex-col items-center gap-1">
+                         <button onClick={() => toggleConfirm(post)} className={`p-3 rounded-full backdrop-blur-md transition-colors ${isConfirmed ? "bg-primary-600/90 text-white" : "bg-black/40 text-white hover:bg-black/60"}`}>
+                            <CheckCircle className={`w-8 h-8 ${isConfirmed ? "fill-current" : ""}`} />
+                         </button>
+                         <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{confirmCount}</span>
+                      </div>
+                      <div className="flex flex-col items-center gap-1">
+                         <button onClick={() => { if (isActivePost) setShowComments(true); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
+                            <MessageCircle className="w-8 h-8" />
+                         </button>
+                         <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.comment_count || 0}</span>
+                      </div>
+                      <div className="flex flex-col items-center gap-1">
+                         <div className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white"><Eye className="w-8 h-8" /></div>
+                         <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.views || 0}</span>
+                      </div>
+                      <button onClick={() => { setActivePostForOptions(post); setShowOptions(true); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
+                        <MoreVertical className="w-8 h-8" />
+                      </button>
+                   </div>
 
-                {/* --- Interaction Layer --- */}
-                <div 
-                  className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${showComments ? 'opacity-0' : 'opacity-100'}`}
-                >
-                  {/* Controls / Buttons Stack */}
-                  <div className="absolute right-2 bottom-48 flex flex-col items-center gap-6 z-30 pointer-events-auto pb-safe">
-                     {/* ... Buttons (Confirm, Comment, Share) same as before ... */}
-                     <div className="flex flex-col items-center gap-1">
-                        <button onClick={() => toggleConfirm(post)} className={`p-3 rounded-full backdrop-blur-md transition-colors ${isConfirmed ? "bg-primary-600/90 text-white" : "bg-black/40 text-white hover:bg-black/60"}`}>
-                           <CheckCircle className={`w-8 h-8 ${isConfirmed ? "fill-current" : ""}`} />
-                        </button>
-                        <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{confirmCount}</span>
-                     </div>
-                     <div className="flex flex-col items-center gap-1">
-                        <button onClick={() => { if (isActivePost) setShowComments(true); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
-                           <MessageCircle className="w-8 h-8" />
-                        </button>
-                        <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.comment_count || 0}</span>
-                     </div>
-                     <div className="flex flex-col items-center gap-1">
-                        <div className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white"><Eye className="w-8 h-8" /></div>
-                        <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.views || 0}</span>
-                     </div>
-                     <button onClick={() => { setActivePostForOptions(post); setShowOptions(true); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
-                       <MoreVertical className="w-8 h-8" />
-                     </button>
-                  </div>
-
-                  {/* Description Area (New Layout) */}
-                  <div 
-                    className={`absolute bottom-0 left-0 right-0 pt-24 pb-28 px-4 z-20 pointer-events-none bg-linear-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
-                  >
-                     <div className="w-[80%] pointer-events-auto">
-                        <p 
-                          className={`text-white text-sm wrap-break-word whitespace-pre-wrap shadow-black drop-shadow-md transition-all duration-300 ${descExpanded ? '' : 'line-clamp-2'}`}
-                          onClick={() => setDescExpanded(!descExpanded)}
-                        >
-                          {post.comment || ""}
-                        </p>
-                        {post.comment && post.comment.length > 80 && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setDescExpanded(!descExpanded); }}
-                            className="text-white/70 text-xs mt-1 font-medium hover:text-white"
-                          >
-                            {descExpanded ? "View less" : "View more"}
-                          </button>
-                        )}
-                     </div>
-                  </div>
-                </div>
+                   {/* Description Area (New Layout) */}
+                   <div 
+                     className={`absolute bottom-0 left-0 right-0 pt-24 pb-28 px-4 z-20 pointer-events-none bg-linear-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
+                   >
+                      <div className="w-[80%] pointer-events-auto">
+                         <p 
+                           className={`text-white text-sm wrap-break-word whitespace-pre-wrap shadow-black drop-shadow-md transition-all duration-300 ${descExpanded ? '' : 'line-clamp-2'}`}
+                           onClick={() => setDescExpanded(!descExpanded)}
+                         >
+                           {post.comment || ""}
+                         </p>
+                         {post.comment && post.comment.length > 80 && (
+                           <button 
+                             onClick={(e) => { e.stopPropagation(); setDescExpanded(!descExpanded); }}
+                             className="text-white/70 text-xs mt-1 font-medium hover:text-white"
+                           >
+                             {descExpanded ? "View less" : "View more"}
+                           </button>
+                         )}
+                      </div>
+                   </div>
+                 </div>
               </div>
             </div>
           );
         })}
       </div>
 
-     {/* --- Comments Sheet --- */}
+      {/* --- Comments Sheet --- */}
       {activePost && (
         <WatchCommentSheet 
           post={activePost}
@@ -541,13 +614,13 @@ export default function WatchClient({
           onClose={() => setShowComments(false)}
           onCommentSuccess={() => {
             setPosts(prev => prev.map(p => 
-              p.id === activePost.id 
+              p.id === activePost!.id 
                 ? { ...p, comment_count: (p.comment_count || 0) + 1 } 
                 : p
             ));
           }}
           // CONNECT LIGHTBOX HERE:
-          onViewAvatar={(url) => openLightbox(url, activePost.is_anonymous ? "Anonymous" : "User Profile")}
+          onViewAvatar={(url) => openLightbox(url, activePost!.is_anonymous ? "Anonymous" : "User Profile")}
         />
       )}
 
@@ -600,13 +673,14 @@ export default function WatchClient({
           <Button variant="danger" className="flex-1" onClick={handleDeletePost} isLoading={deleting}>Delete</Button>
         </div>
       </Modal>
-{/* --- Image Lightbox --- */}
+
+      {/* --- Image Lightbox --- */}
       <ImageLightbox
         isOpen={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
         imageUrl={lightboxUrl}
         caption={lightboxCaption}
       />
-    </div> 
+    </div>
   );
 }
