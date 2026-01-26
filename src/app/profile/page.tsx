@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
@@ -28,12 +28,17 @@ export default function ProfilePage() {
   const confirm = useConfirm();
   const feedCache = useFeedCache();
   const router = useRouter();
-  
-  // We do NOT destructure 'loading' here to avoid blocking the render
   const { user, signOut } = useAuth();
 
-  // --- 1. INSTANT MEMORY INITIALIZATION ---
-  // Check cache immediately. If found, render data on Frame 1.
+  // --- SCROLL RESTORATION REFS ---
+  const scrollYRef = useRef(0);
+  const lastStableScrollRef = useRef(0);
+  const hasRestoredScroll = useRef(false);
+  const isTrackingScroll = useRef(false);
+  const stabilityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const feedCacheRef = useRef(feedCache);
+  feedCacheRef.current = feedCache;
+
   const [userPosts, setUserPosts] = useState<Post[]>(() => {
     if (typeof window !== "undefined") {
       const cached = feedCache.get("profile:posts");
@@ -50,78 +55,86 @@ export default function ProfilePage() {
     return [];
   });
 
-  // Only show loading state if we truly have NO data in memory
   const [postsLoading, setPostsLoading] = useState(() => userPosts.length === 0);
-  const [confirmedLoading, setConfirmedLoading] = useState(false); // Default false until tab clicked
-  
+  const [confirmedLoading, setConfirmedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"posts" | "confirmed">("posts");
 
-  // --- 2. INSTANT SCROLL RESTORE ---
   useLayoutEffect(() => {
-    const savedY = feedCache.get("profile")?.scrollY ?? 0;
-    if (savedY > 0) {
-      window.scrollTo(0, savedY);
+    if (typeof window !== "undefined") {
+      history.scrollRestoration = "manual";
     }
-  }, []); 
+  }, []);
 
-  // --- 3. SAVE SCROLL (SAFER VERSION) ---
+  useLayoutEffect(() => {
+    if (hasRestoredScroll.current) return;
+    if (userPosts.length === 0 && postsLoading) return;
+
+    const savedY = feedCacheRef.current.get("profile")?.scrollY ?? 0;
+    
+    if (savedY === 0) {
+      hasRestoredScroll.current = true;
+      isTrackingScroll.current = true;
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo(0, savedY);
+        scrollYRef.current = savedY;
+        lastStableScrollRef.current = savedY;
+        hasRestoredScroll.current = true;
+        
+        setTimeout(() => {
+          isTrackingScroll.current = true;
+        }, 100);
+      });
+    });
+  }, [userPosts.length, postsLoading]);
+
   useEffect(() => {
-    // We use a debounce to avoid saving during rapid layout shifts/navigation
-    let timeout: NodeJS.Timeout;
-
-    const save = () => {
-      // Only save if we have a meaningful position
-      if (window.scrollY > 0) {
-        feedCache.setScroll("profile", window.scrollY);
-      }
-    };
-
     const onScroll = () => {
-      clearTimeout(timeout);
-      // Save 100ms after the user STOPS scrolling. 
-      // This ensures we capture stable positions, not transition jumps.
-      timeout = setTimeout(save, 100); 
+      if (!isTrackingScroll.current) return;
+      
+      const currentY = window.scrollY;
+      scrollYRef.current = currentY;
+      
+      if (stabilityTimeoutRef.current) {
+        clearTimeout(stabilityTimeoutRef.current);
+      }
+      stabilityTimeoutRef.current = setTimeout(() => {
+        lastStableScrollRef.current = currentY;
+        feedCacheRef.current.setScroll("profile", currentY);
+      }, 100);
     };
 
     window.addEventListener("scroll", onScroll, { passive: true });
     
     return () => {
       window.removeEventListener("scroll", onScroll);
-      clearTimeout(timeout);
-      // CRITICAL FIX: We do NOT call save() here. 
-      // If we save on exit, we risk capturing the browser's navigation jump.
+      if (stabilityTimeoutRef.current) {
+        clearTimeout(stabilityTimeoutRef.current);
+      }
+      if (isTrackingScroll.current && lastStableScrollRef.current >= 0) {
+        feedCacheRef.current.setScroll("profile", lastStableScrollRef.current);
+      }
     };
-  }, [feedCache]);
+  }, []);
 
-  // Prefetch critical routes
   useEffect(() => {
     router.prefetch("/map");
     router.prefetch("/notifications");
     router.prefetch("/settings");
+    router.prefetch("/watch");
   }, [router]);
 
-  // Handle Auth Redirects (Non-blocking)
-  useEffect(() => {
-    // Only redirect if we know for sure user is missing (e.g. after initial load check)
-    // We add a small delay check or rely on the auth context's settled state if available
-    if (user === null) {
-       // Optional: Add a check here if auth is definitely done loading
-       // For now, we allow the Skeleton state below to handle the "loading" visual
-    }
-  }, [user, router]);
-
-  // --- 4. BACKGROUND REFRESH (Stale-While-Revalidate) ---
   useEffect(() => {
     if (user) {
-      // We fetch new data in the background to update the UI if needed
       fetchUserPosts();
     }
   }, [user]);
 
   const fetchUserPosts = async () => {
     if (!user) return;
-    
-    // Only show spinner if we have absolutely nothing
     if (userPosts.length === 0) setPostsLoading(true);
 
     try {
@@ -134,7 +147,7 @@ export default function ProfilePage() {
 
       if (error) {
         console.error("Error fetching user posts:", error);
-        if (userPosts.length === 0) setUserPosts([]); // Clear only if empty
+        if (userPosts.length === 0) setUserPosts([]);
         return;
       }
 
@@ -164,16 +177,10 @@ export default function ProfilePage() {
         tags: post.post_tags?.map((t: any) => t.tag) || [],
       }));
 
-      // Update State
       setUserPosts(formattedPosts);
-      
-      // Update Cache immediately
       feedCache.setPosts("profile:posts", formattedPosts);
-      
-      // Hydrate confirmation status
       confirm.hydrateCounts(formattedPosts.map(p => ({ postId: p.id, confirmations: p.confirmations || 0 })));
       confirm.loadConfirmedFor(formattedPosts.map(p => p.id));
-
     } catch (e) {
       console.error("Error:", e);
     } finally {
@@ -200,36 +207,34 @@ export default function ProfilePage() {
       const formatted: Post[] = Array.from(unique.values())
         .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .map((post: any) => ({
-            id: post.id,
-            user_id: post.user_id,
-            category: post.category,
-            comment: post.comment,
-            location: { latitude: post.latitude ?? 0, longitude: post.longitude ?? 0 },
-            address: post.address,
-            is_anonymous: post.is_anonymous,
-            status: post.status,
-            is_sensitive: post.is_sensitive,
-            confirmations: post.confirmations || 0,
-            views: post.views || 0,
-            comment_count: post.comment_count || 0,
-            report_count: post.report_count || 0,
-            created_at: post.created_at,
-            media: post.post_media?.map((m: any) => ({
-                id: m.id,
-                post_id: m.post_id,
-                url: m.url,
-                media_type: m.media_type,
-                is_sensitive: m.is_sensitive,
-                thumbnail_url: m.thumbnail_url,
-            })) || [],
-            tags: post.post_tags?.map((t: any) => t.tag) || [],
+          id: post.id,
+          user_id: post.user_id,
+          category: post.category,
+          comment: post.comment,
+          location: { latitude: post.latitude ?? 0, longitude: post.longitude ?? 0 },
+          address: post.address,
+          is_anonymous: post.is_anonymous,
+          status: post.status,
+          is_sensitive: post.is_sensitive,
+          confirmations: post.confirmations || 0,
+          views: post.views || 0,
+          comment_count: post.comment_count || 0,
+          report_count: post.report_count || 0,
+          created_at: post.created_at,
+          media: post.post_media?.map((m: any) => ({
+            id: m.id,
+            post_id: m.post_id,
+            url: m.url,
+            media_type: m.media_type,
+            is_sensitive: m.is_sensitive,
+            thumbnail_url: m.thumbnail_url,
+          })) || [],
+          tags: post.post_tags?.map((t: any) => t.tag) || [],
         }));
 
       const filtered = formatted.filter(p => p.status !== "archived");
-      
       setConfirmedPosts(filtered);
       feedCache.setPosts("profile:confirmed", filtered);
-      
       confirm.hydrateCounts(filtered.map(p => ({ postId: p.id, confirmations: p.confirmations || 0 })));
       confirm.loadConfirmedFor(filtered.map(p => p.id));
     } catch (e) {
@@ -244,31 +249,24 @@ export default function ProfilePage() {
     router.push("/login");
   };
 
-  // --- SKELETON SHELL (Avoids white screen) ---
-  // Only show this if we are loading auth AND have no cached user info
   if (!user) {
-     return (
-        <div className="min-h-screen pb-20 pt-14">
-           {/* Fake Header for Stability */}
-           <div className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5 h-14" />
-           
-           {/* Profile Header Skeleton */}
-           <div className="glass border-b border-white/5 px-4 py-6">
-              <div className="max-w-2xl mx-auto flex items-center gap-4">
-                 <div className="w-20 h-20 rounded-full bg-white/5 animate-pulse" />
-                 <div className="flex-1 space-y-2">
-                    <div className="h-5 w-32 bg-white/5 rounded animate-pulse" />
-                    <div className="h-4 w-24 bg-white/5 rounded animate-pulse" />
-                 </div>
-              </div>
-           </div>
-           
-           {/* Content Skeleton */}
-           <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
-              {Array.from({ length: 3 }).map((_, i) => <PostCardSkeleton key={i} />)}
-           </div>
+    return (
+      <div className="min-h-screen pb-20 pt-14">
+        <div className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5 h-14" />
+        <div className="glass border-b border-white/5 px-4 py-6">
+          <div className="max-w-2xl mx-auto flex items-center gap-4">
+            <div className="w-20 h-20 rounded-full bg-white/5 animate-pulse" />
+            <div className="flex-1 space-y-2">
+              <div className="h-5 w-32 bg-white/5 rounded animate-pulse" />
+              <div className="h-4 w-24 bg-white/5 rounded animate-pulse" />
+            </div>
+          </div>
         </div>
-     );
+        <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
+          {Array.from({ length: 3 }).map((_, i) => <PostCardSkeleton key={i} />)}
+        </div>
+      </div>
+    );
   }
 
   const showingConfirmed = activeTab === "confirmed";
@@ -277,7 +275,6 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen pb-20">
-      {/* Header with Back Button */}
       <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors">
@@ -291,7 +288,6 @@ export default function ProfilePage() {
       </header>
 
       <main className="pt-14">
-        {/* Profile Header */}
         <div className="glass border-b border-white/5 px-4 py-6">
           <div className="max-w-2xl mx-auto">
             <div className="flex items-center gap-4">
@@ -328,7 +324,6 @@ export default function ProfilePage() {
         </div>
 
         <div className="max-w-2xl mx-auto px-4 py-4">
-          {/* Profile Info */}
           <div className="glass-card mb-4">
             <h3 className="text-sm font-medium text-dark-300 mb-3">Information</h3>
             <div className="space-y-3">
@@ -338,7 +333,6 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* Quick Actions */}
           <div className="glass-card mb-4">
             <h3 className="text-sm font-medium text-dark-300 mb-3">Quick Actions</h3>
             <div className="space-y-1">
@@ -356,7 +350,6 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* User Posts */}
           <div className="mb-4">
             <div className="flex gap-2 mb-4">
               <Button variant={activeTab === "posts" ? "primary" : "secondary"} size="sm" onClick={() => setActiveTab("posts")}>My Posts</Button>

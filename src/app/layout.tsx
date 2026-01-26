@@ -13,6 +13,7 @@ import InAppNotificationToasts from "@/components/notifications/InAppNotificatio
 import UserGestureAudioUnlocker from "@/components/notifications/UserGestureAudioUnlocker";
 import AccountStatusBanner from "@/components/system/AccountStatusBanner";
 import { ToastProvider } from "@/context/ToastContext";
+
 // ADD THIS IMPORT:
 import GlobalScrollManager from "@/components/navigation/GlobalScrollManager";
 
@@ -56,7 +57,7 @@ export default function RootLayout({
                 <FeedProvider>
                   <AnalyticsTracker />
                   <RoutePrefetcher />
-                  <GlobalScrollManager /> {/* <--- ADD THIS HERE */}
+                  <GlobalScrollManager /> 
                   
                   <Suspense fallback={null}>
                     <HistorySyncGuard />

@@ -13,6 +13,36 @@ export default function EditProfilePage() {
   const router = useRouter();
   const { user, loading: authLoading, refreshUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Prevent scroll on underlying page
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const preventScroll = (e: TouchEvent) => {
+      // Allow scrolling within the container
+      const target = e.target as HTMLElement;
+      const isScrollable = container.scrollHeight > container.clientHeight;
+      
+      if (!isScrollable) {
+        e.preventDefault();
+      }
+    };
+
+    // Prevent touchmove on document body when overlay is open
+    const preventBodyScroll = (e: TouchEvent) => {
+      if (!container.contains(e.target as Node)) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('touchmove', preventBodyScroll, { passive: false });
+    
+    return () => {
+      document.removeEventListener('touchmove', preventBodyScroll);
+    };
+  }, []);
 
   const [formData, setFormData] = useState({
     full_name: "",
@@ -95,13 +125,13 @@ export default function EditProfilePage() {
         ...formData,
         avatar_url: publicUrl.publicUrl,
       });
-      // Save immediately so Profile updates without refresh
-await supabase
-  .from("users")
-  .update({ avatar_url: publicUrl.publicUrl })
-  .eq("id", user.id);
+      
+      await supabase
+        .from("users")
+        .update({ avatar_url: publicUrl.publicUrl })
+        .eq("id", user.id);
 
-await refreshUser();
+      await refreshUser();
     } catch (err) {
       setError("Failed to upload image");
     } finally {
@@ -138,7 +168,8 @@ await refreshUser();
         setLoading(false);
         return;
       }
-await refreshUser();
+      
+      await refreshUser();
       setSuccess(true);
       setTimeout(() => {
         router.push("/profile");
@@ -149,39 +180,46 @@ await refreshUser();
     }
   };
 
-if (authLoading) {
-  return (
-    <div className="min-h-screen pb-8">
-      <header className="fixed top-0 left-0 right-0 z-40 glass-header">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Skeleton className="h-9 w-9 rounded-lg" />
-          <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-9 w-9 rounded-lg" />
-        </div>
-      </header>
+  if (authLoading) {
+    return (
+      <div 
+        ref={containerRef}
+        className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
+        style={{ touchAction: 'pan-y' }}
+      >
+        <header className="fixed top-0 left-0 right-0 z-40 glass-header">
+          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+            <Skeleton className="h-9 w-9 rounded-lg" />
+            <Skeleton className="h-4 w-28" />
+            <Skeleton className="h-9 w-9 rounded-lg" />
+          </div>
+        </header>
 
-      <main className="pt-20 px-4 max-w-2xl mx-auto space-y-4">
-        <div className="flex justify-center">
-          <Skeleton className="h-24 w-24 rounded-full" />
-        </div>
+        <main className="pt-20 px-4 max-w-2xl mx-auto space-y-4">
+          <div className="flex justify-center">
+            <Skeleton className="h-24 w-24 rounded-full" />
+          </div>
 
-        <Skeleton className="h-16 w-full rounded-2xl" />
-        <Skeleton className="h-16 w-full rounded-2xl" />
-        <Skeleton className="h-16 w-full rounded-2xl" />
-        <Skeleton className="h-16 w-full rounded-2xl" />
-        <Skeleton className="h-12 w-full rounded-2xl" />
-      </main>
-    </div>
-  );
-}
+          <Skeleton className="h-16 w-full rounded-2xl" />
+          <Skeleton className="h-16 w-full rounded-2xl" />
+          <Skeleton className="h-16 w-full rounded-2xl" />
+          <Skeleton className="h-16 w-full rounded-2xl" />
+          <Skeleton className="h-12 w-full rounded-2xl" />
+        </main>
+      </div>
+    );
+  }
 
   if (!user) {
     return null;
   }
 
   return (
-    <div className="min-h-screen pb-8">
-      {/* Header with Back Button */}
+    <div 
+      ref={containerRef}
+      className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
+      style={{ touchAction: 'pan-y' }}
+    >
       <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button
@@ -195,7 +233,7 @@ if (authLoading) {
         </div>
       </header>
 
-      <main className="pt-20 px-4 max-w-2xl mx-auto">
+      <main className="pt-20 px-4 max-w-2xl mx-auto pb-20">
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-400">{error}</p>
@@ -208,7 +246,6 @@ if (authLoading) {
           </div>
         )}
 
-        {/* Avatar Upload */}
         <div className="flex justify-center mb-6">
           <div className="relative">
             <div className="w-24 h-24 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden">

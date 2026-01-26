@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation"; // Removed unused useSearchParams
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post, REPORT_REASONS } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
 import { notifyPostConfirmed } from "@/lib/notifications";
 import { ReelVideo } from "@/components/reels/ReelVideo";
 import { WatchCommentSheet } from "@/components/watch/WatchCommentSheet";
-import { CheckCircle, MessageCircle, Share2, Eye, ChevronLeft, ChevronRight, Flag, Trash2, MoreVertical } from "lucide-react"; // Added ChevronRight
+import { CheckCircle, MessageCircle, Share2, Eye, ChevronLeft, ChevronRight, Flag, Trash2, MoreVertical } from "lucide-react";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { useAudio } from "@/context/AudioContext";
@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
-import { formatDistanceToNow } from "date-fns"; // Ensure this is installed/imported if used in sub-components, though mainly used in Sheet
+import { formatDistanceToNow } from "date-fns";
 
 const SEEN_KEY = "peja-seen-posts-v1";
 type SeenStore = Record<string, number>;
@@ -118,7 +118,6 @@ function WatchMediaCarousel({
                   <div 
                     className="w-full h-full flex items-center justify-center"
                     onContextMenu={(e) => e.preventDefault()}
-                    // Long press for image logic
                     onPointerDown={(e) => {
                        const t = setTimeout(onOpenOptions, 500);
                        (e.target as any)._lp = t;
@@ -181,28 +180,36 @@ export default function WatchClient({
 }) {
   const router = useRouter();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const WATCH_SCROLL_KEY = "peja-watch-scrollTop-v1";  
-  
-  // --- Scroll Restoration ---
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    if (startId) {
-      requestAnimationFrame(() => {
-        el.scrollTop = 0;
-        sessionStorage.setItem(WATCH_SCROLL_KEY, "0");
-      });
-      return;
+  const WATCH_SCROLL_KEY = "peja-watch-scrollTop-v1";
+
+const containerRef = useRef<HTMLDivElement>(null);
+
+// Prevent scroll on underlying page
+useEffect(() => {
+  const container = containerRef.current;
+  if (!container) return;
+
+  const preventBodyScroll = (e: TouchEvent) => {
+    if (!container.contains(e.target as Node)) {
+      e.preventDefault();
     }
-    const raw = sessionStorage.getItem(WATCH_SCROLL_KEY);
-    const y = raw ? Number(raw) : 0;
-    if (Number.isFinite(y) && y > 0) {
-      requestAnimationFrame(() => {
-        el.scrollTop = y;
-      });
+  };
+
+  document.addEventListener('touchmove', preventBodyScroll, { passive: false });
+  
+  return () => {
+    document.removeEventListener('touchmove', preventBodyScroll);
+  };
+}, []);
+
+  // --- Clear saved scroll position if navigating to specific post ---
+  useEffect(() => {
+    if (startId) {
+      sessionStorage.removeItem(WATCH_SCROLL_KEY);
     }
   }, [startId]);
 
+  // --- Save scroll position on scroll ---
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -380,6 +387,32 @@ export default function WatchClient({
     return () => obs.disconnect();
   }, [ordered.length]);
 
+  // --- Scroll Restoration for internal scroller (wait for content ready) ---
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    if (loading) return;
+    if (ordered.length === 0) return;
+
+    if (startId) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          el.scrollTop = 0;
+        });
+      });
+    } else {
+      const raw = sessionStorage.getItem(WATCH_SCROLL_KEY);
+      const y = raw ? Number(raw) : 0;
+      if (Number.isFinite(y) && y > 0) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            el.scrollTop = y;
+          });
+        });
+      }
+    }
+  }, [startId, loading, ordered.length]);
+
   useEffect(() => {
     if (!activePostId && ordered.length > 0) {
       setActivePostId(ordered[0].id);
@@ -459,7 +492,9 @@ export default function WatchClient({
 
   return (
     <div
-      className="fixed inset-0 bg-black z-[9999] overflow-hidden"
+  ref={containerRef}
+  className="fixed inset-0 bg-black z-[9999] overflow-hidden overscroll-none"
+  style={{ touchAction: 'pan-y' }}
       onPointerDown={(e) => {
         setSoundEnabled(true);
         swipeStartRef.current = { x: e.clientX, y: e.clientY };
@@ -475,7 +510,6 @@ export default function WatchClient({
         const strongHorizontal = Math.abs(dx) > 90 && Math.abs(dx) > Math.abs(dy) * 1.3;
         const strongVertical = dy > 100 && Math.abs(dy) > Math.abs(dx) * 1.3;
 
-        // If dragging down specifically, close the app view OR the comments if open
         if (strongVertical) {
            if (showComments) {
              setShowComments(false);
@@ -508,9 +542,8 @@ export default function WatchClient({
           const isRevealed = revealedSensitive.has(post.id);
           const isActivePost = activePostId === post.id;
 
-          // SHRINK LOGIC: Move up and scale down when sheet is open
           const containerStyle = isActivePost && showComments ? {
-             transform: "scale(0.85) translateY(-15%)", // Move up to clear the sheet
+             transform: "scale(0.85) translateY(-15%)",
              borderRadius: "24px",
              transition: "all 0.4s cubic-bezier(0.32, 0.72, 0, 1)"
           } : {
@@ -524,7 +557,6 @@ export default function WatchClient({
               key={post.id}
               data-postid={post.id}
               className="h-screen w-full relative overflow-hidden bg-black"
-              // ADDED scrollSnapStop to prevent flying through videos
               style={{ scrollSnapAlign: "start", scrollSnapStop: "always" }}
             >
               {/* Tap-to-Close Layer */}
@@ -550,13 +582,12 @@ export default function WatchClient({
                     onControlsChange={isActivePost ? setControlsVisible : undefined}
                  />
                  
-                 {/* --- Interaction Layer (Fades out when comments open) --- */}
+                 {/* --- Interaction Layer --- */}
                  <div 
                    className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${showComments ? 'opacity-0' : 'opacity-100'}`}
                  >
                    {/* Controls / Buttons Stack */}
                    <div className="absolute right-2 bottom-48 flex flex-col items-center gap-6 z-30 pointer-events-auto pb-safe">
-                      {/* ... Buttons (Confirm, Comment, Share) same as before ... */}
                       <div className="flex flex-col items-center gap-1">
                          <button onClick={() => toggleConfirm(post)} className={`p-3 rounded-full backdrop-blur-md transition-colors ${isConfirmed ? "bg-primary-600/90 text-white" : "bg-black/40 text-white hover:bg-black/60"}`}>
                             <CheckCircle className={`w-8 h-8 ${isConfirmed ? "fill-current" : ""}`} />
@@ -578,7 +609,7 @@ export default function WatchClient({
                       </button>
                    </div>
 
-                   {/* Description Area (New Layout) */}
+                   {/* Description Area */}
                    <div 
                      className={`absolute bottom-0 left-0 right-0 pt-24 pb-28 px-4 z-20 pointer-events-none bg-linear-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
                    >
@@ -619,7 +650,6 @@ export default function WatchClient({
                 : p
             ));
           }}
-          // CONNECT LIGHTBOX HERE:
           onViewAvatar={(url) => openLightbox(url, activePost!.is_anonymous ? "Anonymous" : "User Profile")}
         />
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
@@ -26,6 +26,25 @@ export default function BecomeGuardianPage() {
   const router = useRouter();
   const { user } = useAuth();
   const isGuardianNow = !!user?.is_guardian || !!user?.is_admin;
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Prevent scroll on underlying page
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const preventBodyScroll = (e: TouchEvent) => {
+      if (!container.contains(e.target as Node)) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('touchmove', preventBodyScroll, { passive: false });
+    
+    return () => {
+      document.removeEventListener('touchmove', preventBodyScroll);
+    };
+  }, []);
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -33,7 +52,6 @@ export default function BecomeGuardianPage() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  // Form fields
   const [motivation, setMotivation] = useState("");
   const [hoursPerWeek, setHoursPerWeek] = useState("");
   const [selectedAreas, setSelectedAreas] = useState<string[]>([]);
@@ -68,7 +86,7 @@ export default function BecomeGuardianPage() {
   };
 
   const handleSubmit = async () => {
-       if (user?.status === "suspended") {
+    if (user?.status === "suspended") {
       toastApi.warning("Your account is suspended. You cannot apply right now.");
       return;
     }
@@ -125,32 +143,39 @@ export default function BecomeGuardianPage() {
     );
   };
 
-if (loading) {
-  return (
-    <div className="min-h-screen pb-20">
-      <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <Skeleton className="h-9 w-9 rounded-lg" />
-          <Skeleton className="h-4 w-40" />
-          <Skeleton className="h-9 w-9 rounded-lg" />
-        </div>
-      </header>
+  if (loading) {
+    return (
+      <div 
+        ref={containerRef}
+        className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
+        style={{ touchAction: 'pan-y' }}
+      >
+        <header className="fixed top-0 left-0 right-0 z-50 glass-header">
+          <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
+            <Skeleton className="h-9 w-9 rounded-lg" />
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-9 w-9 rounded-lg" />
+          </div>
+        </header>
 
-      <main className="pt-14 max-w-2xl mx-auto px-4 py-6 space-y-4">
-        <Skeleton className="h-40 w-full rounded-2xl" />
-        <Skeleton className="h-32 w-full rounded-2xl" />
-        <Skeleton className="h-32 w-full rounded-2xl" />
-        <Skeleton className="h-28 w-full rounded-2xl" />
-        <Skeleton className="h-12 w-full rounded-2xl" />
-      </main>
-    </div>
-  );
-}
+        <main className="pt-14 max-w-2xl mx-auto px-4 py-6 space-y-4">
+          <Skeleton className="h-40 w-full rounded-2xl" />
+          <Skeleton className="h-32 w-full rounded-2xl" />
+          <Skeleton className="h-32 w-full rounded-2xl" />
+          <Skeleton className="h-28 w-full rounded-2xl" />
+          <Skeleton className="h-12 w-full rounded-2xl" />
+        </main>
+      </div>
+    );
+  }
 
-  // Already applied
   if (existingApplication) {
     return (
-      <div className="min-h-screen pb-20">
+      <div 
+        ref={containerRef}
+        className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
+        style={{ touchAction: 'pan-y' }}
+      >
         <header className="fixed top-0 left-0 right-0 z-50 glass-header">
           <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
             <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg">
@@ -164,64 +189,67 @@ if (loading) {
         <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
           <div className="glass-card text-center py-12">
             {existingApplication.status === "pending" ? (
-  <>
-    <Clock className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
-    <h2 className="text-xl font-bold text-dark-100 mb-2">Application Pending</h2>
-    <p className="text-dark-400">
-      Your Guardian application is being reviewed. We'll notify you once a decision is made.
-    </p>
-  </>
-) : existingApplication.status === "approved" ? (
-  isGuardianNow ? (
-    <>
-      <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
-      <h2 className="text-xl font-bold text-dark-100 mb-2">You're a Guardian! 🎉</h2>
-      <p className="text-dark-400 mb-4">
-        Thank you for helping keep Peja safe. You can now access the Guardian Dashboard.
-      </p>
+              <>
+                <Clock className="w-16 h-16 text-yellow-400 mx-auto mb-4" />
+                <h2 className="text-xl font-bold text-dark-100 mb-2">Application Pending</h2>
+                <p className="text-dark-400">
+                  Your Guardian application is being reviewed. We'll notify you once a decision is made.
+                </p>
+              </>
+            ) : existingApplication.status === "approved" ? (
+              isGuardianNow ? (
+                <>
+                  <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
+                  <h2 className="text-xl font-bold text-dark-100 mb-2">You're a Guardian! 🎉</h2>
+                  <p className="text-dark-400 mb-4">
+                    Thank you for helping keep Peja safe. You can now access the Guardian Dashboard.
+                  </p>
 
-      <Button
-        variant="primary"
-        onClick={() => {
-          if (typeof window !== "undefined" && (window as any).__pejaOverlayOpen) {
-            window.location.assign("/guardian");
-            return;
-          }
-          router.push("/guardian");
-          router.refresh();
-        }}
-      >
-        Open Guardian Dashboard
-      </Button>
-    </>
-  ) : (
-    <>
-      <AlertTriangle className="w-16 h-16 text-orange-400 mx-auto mb-4" />
-      <h2 className="text-xl font-bold text-dark-100 mb-2">Guardian Access Revoked</h2>
-      <p className="text-dark-400">
-        Your Guardian access has been revoked. If you believe this is a mistake, please contact support.
-      </p>
-    </>
-  )
-) : (
-  <>
-    <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-    <h2 className="text-xl font-bold text-dark-100 mb-2">Application Not Approved</h2>
-    <p className="text-dark-400">
-      Unfortunately, your application wasn't approved at this time. Thank you for your interest!
-    </p>
-  </>
-)}
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      if (typeof window !== "undefined" && (window as any).__pejaOverlayOpen) {
+                        window.location.assign("/guardian");
+                        return;
+                      }
+                      router.push("/guardian");
+                      router.refresh();
+                    }}
+                  >
+                    Open Guardian Dashboard
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-16 h-16 text-orange-400 mx-auto mb-4" />
+                  <h2 className="text-xl font-bold text-dark-100 mb-2">Guardian Access Revoked</h2>
+                  <p className="text-dark-400">
+                    Your Guardian access has been revoked. If you believe this is a mistake, please contact support.
+                  </p>
+                </>
+              )
+            ) : (
+              <>
+                <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+                <h2 className="text-xl font-bold text-dark-100 mb-2">Application Not Approved</h2>
+                <p className="text-dark-400">
+                  Unfortunately, your application wasn't approved at this time. Thank you for your interest!
+                </p>
+              </>
+            )}
           </div>
         </main>
       </div>
     );
   }
 
-  // Success state
   if (success) {
     return (
-      <div className="min-h-screen pb-20">
+      <div 
+        ref={containerRef}
+        className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
+        style={{ touchAction: 'pan-y' }}
+      >
         <header className="fixed top-0 left-0 right-0 z-50 glass-header">
           <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
             <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg">
@@ -249,7 +277,11 @@ if (loading) {
   }
 
   return (
-    <div className="min-h-screen pb-20">
+    <div 
+      ref={containerRef}
+      className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
+      style={{ touchAction: 'pan-y' }}
+    >
       <header className="fixed top-0 left-0 right-0 z-50 glass-header">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
           <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg">
@@ -260,8 +292,7 @@ if (loading) {
         </div>
       </header>
 
-      <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
-        {/* Intro */}
+      <main className="pt-14 max-w-2xl mx-auto px-4 py-6 pb-20">
         <div className="glass-card mb-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-3 rounded-xl bg-primary-600/20">
@@ -302,9 +333,7 @@ if (loading) {
           </div>
         )}
 
-        {/* Application Form */}
         <div className="space-y-6">
-          {/* Motivation */}
           <div className="glass-card">
             <label className="block text-sm font-medium text-dark-200 mb-2">
               Why do you want to be a Guardian? *
@@ -318,7 +347,6 @@ if (loading) {
             />
           </div>
 
-          {/* Hours per week */}
           <div className="glass-card">
             <label className="block text-sm font-medium text-dark-200 mb-3">
               How much time can you dedicate weekly? *
@@ -341,7 +369,6 @@ if (loading) {
             </div>
           </div>
 
-          {/* Areas of expertise */}
           <div className="glass-card">
             <label className="block text-sm font-medium text-dark-200 mb-3">
               Which areas/states do you know well? *
@@ -367,7 +394,6 @@ if (loading) {
             </p>
           </div>
 
-          {/* Experience */}
           <div className="glass-card">
             <label className="block text-sm font-medium text-dark-200 mb-2">
               Any relevant experience? (Optional)
