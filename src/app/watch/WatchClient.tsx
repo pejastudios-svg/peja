@@ -80,7 +80,6 @@ function WatchMediaCarousel({
 
   return (
     <div className="relative w-full h-full">
-      {/* Carousel Container */}
       <div
         ref={scrollRef}
         className="w-full h-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide"
@@ -96,7 +95,6 @@ function WatchMediaCarousel({
           const blocked = isSensitive && !isRevealed;
           return (
             <div key={m.id} className="w-full h-full shrink-0 snap-center flex items-center justify-center relative">
-               {/* Context Menu Prevention Layer */}
                <div className="absolute inset-0 z-0" onContextMenu={(e) => e.preventDefault()} />
                
                {blocked ? (
@@ -133,7 +131,6 @@ function WatchMediaCarousel({
         })}
       </div>
 
-      {/* Navigation Arrows (Only if multiple items) */}
       {media.length > 1 && (
         <>
           {activeMediaIndex > 0 && (
@@ -153,7 +150,6 @@ function WatchMediaCarousel({
             </button>
           )}
           
-          {/* Dots Indicator */}
           <div className="absolute top-4 left-0 right-0 flex justify-center gap-1.5 z-20 pointer-events-none">
              {media.map((_: any, i: number) => (
                <div 
@@ -178,11 +174,24 @@ export default function WatchClient({
   source: string | null;
   sourceKey: string | null;
 }) {
+
+   // ✅ DEBUG: Add this to see what values are being received
+  useEffect(() => {
+    console.log("[WatchClient] Received props:", { startId, source, sourceKey });
+    
+    if (sourceKey) {
+      const cached = feedCache.get(sourceKey);
+      console.log("[WatchClient] Cache for sourceKey:", sourceKey, "has", cached?.posts?.length || 0, "posts");
+    }
+  }, [startId, source, sourceKey]);
+
+
   const router = useRouter();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const WATCH_SCROLL_KEY = "peja-watch-scrollTop-v1";
-
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // ✅ FIX: Track if we've initialized to prevent re-fetching
+  const initializedRef = useRef(false);
 
   // Prevent scroll on underlying page
   useEffect(() => {
@@ -202,30 +211,17 @@ export default function WatchClient({
     };
   }, []);
 
-  // --- Clear saved scroll position if navigating to specific post ---
-  useEffect(() => {
-    if (startId) {
-      sessionStorage.removeItem(WATCH_SCROLL_KEY);
-    }
-  }, [startId]);
-
-  // --- Save scroll position on scroll ---
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      sessionStorage.setItem(WATCH_SCROLL_KEY, String(el.scrollTop));
-    };
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
-  }, []);
-
-  // --- CRITICAL FIX 1: Disable browser restoration BUT DO NOT SCROLL TO 0 ---
+  // ✅ FIX: Save and restore scrollRestoration properly
   useLayoutEffect(() => {
-    if (typeof window !== "undefined") {
-      history.scrollRestoration = "manual";
-      // REMOVED: window.scrollTo(0, 0); <--- This was causing the profile page reset
-    }
+    if (typeof window === "undefined") return;
+    
+    const prev = history.scrollRestoration;
+    history.scrollRestoration = "manual";
+    
+    // ✅ CRITICAL: Restore on unmount so back navigation works
+    return () => {
+      history.scrollRestoration = prev;
+    };
   }, []);
 
   useEffect(() => {
@@ -237,47 +233,31 @@ export default function WatchClient({
   const { setSoundEnabled } = useAudio();
   const confirm = useConfirm();
   const confirmRef = useRef(confirm);
-  const feedCache = useFeedCache(); // Ensure this is hooked up
+  const feedCache = useFeedCache();
 
   useEffect(() => { confirmRef.current = confirm; }, [confirm]);
 
-  // FIX: Use cache key or default to general
-  const activeKey = sourceKey || "watch:general";
+  // ✅ FIX: Use sourceKey to get the SAME posts from the page that launched watch
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
   
-  // FIX: Initialize immediately from cache so there is no loading flash
-  const [posts, setPosts] = useState<Post[]>(() => {
-    if (typeof window !== "undefined") {
-      const cached = feedCache.get(activeKey);
-      if (cached?.posts?.length) return cached.posts;
-    }
-    return [];
-  });
-
-  // FIX: Only show loading if we have NO data
-  const [loading, setLoading] = useState(() => posts.length === 0);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   
   const [activePostId, setActivePostId] = useState<string | null>(null);
   const [mediaIndexByPost, setMediaIndexByPost] = useState<Record<string, number>>({});
   const [modalOpen, setModalOpen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-
-  // --- Comments Sheet State ---
   const [showComments, setShowComments] = useState(false);
 
-  // --- BACK BUTTON LOGIC ---
   const openComments = () => {
-    // Push state so Hardware Back Button closes comments instead of app
     window.history.pushState({ commentsOpen: true }, "", window.location.href);
     setShowComments(true);
   };
 
   const closeComments = () => {
-    // Manually going back pops the state we pushed
     router.back(); 
   };
 
-  // Listen for the back button
   useEffect(() => {
     const handlePopState = () => {
       if (showComments) setShowComments(false);
@@ -288,10 +268,7 @@ export default function WatchClient({
 
   const activePost = posts.find(p => p.id === activePostId);
 
-  // --- Description State ---
   const [descExpanded, setDescExpanded] = useState(false);
-
-  // --- Options Modal State ---
   const [showOptions, setShowOptions] = useState(false);
   const [activePostForOptions, setActivePostForOptions] = useState<Post | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -314,15 +291,14 @@ export default function WatchClient({
   const postsRef = useRef<Post[]>([]);
   useEffect(() => { postsRef.current = posts; }, [posts]);
 
-  // --- CRITICAL FIX 3: Close Watch Logic ---
   const closeWatch = () => {
-    window.dispatchEvent(new Event("peja-close-watch"));
-    // Since we are now a standalone page, standard router.back() is correct
-    // to return to Profile and restore its scroll position
-    router.back();
-  };
+  console.log("[Watch] closeWatch called");
+  sessionStorage.setItem("peja-returning-from-watch", Date.now().toString());
+  console.log("[Watch] Flag set in sessionStorage");
+  window.dispatchEvent(new Event("peja-close-watch"));
+  router.back();
+};
 
-  // --- Lightbox State ---
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxCaption, setLightboxCaption] = useState<string | null>(null);
@@ -333,13 +309,73 @@ export default function WatchClient({
     setLightboxOpen(true);
   };
 
- // --- LOAD DATA (Background Refresh) ---
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      // If we initialized from cache (posts > 0), don't show spinner
-      if (posts.length === 0) setLoading(true);
+  // Replace the init useEffect in WatchClient with this improved version:
 
+useEffect(() => {
+  if (initializedRef.current) return;
+  initializedRef.current = true;
+
+  let cancelled = false;
+
+  const init = async () => {
+    console.log("[Watch] Initializing with:", { startId, sourceKey });
+    
+    // ✅ STEP 1: Try to get posts from the SOURCE page's cache
+    if (sourceKey) {
+      const cached = feedCache.get(sourceKey);
+      console.log("[Watch] Cache lookup for", sourceKey, "->", cached?.posts?.length || 0, "posts");
+      
+      if (cached?.posts?.length) {
+        // Check if startId exists in cached posts
+        const hasStartPost = cached.posts.some(p => p.id === startId);
+        console.log("[Watch] startId", startId, "found in cache:", hasStartPost);
+        
+        if (hasStartPost || !startId) {
+          setPosts(cached.posts);
+          confirmRef.current.hydrateCounts(cached.posts.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+          confirmRef.current.loadConfirmedFor(cached.posts.map((p) => p.id));
+          setLoading(false);
+          return;
+        }
+        // startId not in cache, fall through to fetch
+        console.log("[Watch] startId not in cache, will fetch");
+      }
+    }
+
+    // ✅ STEP 2: Fetch from database
+    console.log("[Watch] Fetching from DB, startId:", startId);
+    setLoading(true);
+
+    try {
+      // First, fetch the specific post if we have a startId
+      let startPost: any = null;
+      if (startId) {
+        const { data, error } = await supabase
+          .from("posts")
+          .select(`
+            id, user_id, category, comment, address, latitude, longitude,
+            is_anonymous, status, is_sensitive,
+            confirmations, views, comment_count, report_count, created_at,
+            post_media (id, post_id, url, media_type, is_sensitive, thumbnail_url)
+          `)
+          .eq("id", startId)
+          .single();
+        
+        if (error) {
+          console.error("[Watch] Error fetching startId post:", error);
+        } else {
+          startPost = data;
+          console.log("[Watch] Fetched startPost:", startPost?.id);
+        }
+      }
+
+      // If we couldn't find the specific post, show error
+      if (startId && !startPost) {
+        console.error("[Watch] Could not find post with id:", startId);
+        // Still continue to show other posts
+      }
+
+      // Fetch general posts
       const { data, error } = await supabase
         .from("posts")
         .select(`
@@ -353,12 +389,15 @@ export default function WatchClient({
         .limit(80);
 
       if (cancelled) return;
+      
       if (error) {
+        console.error("[Watch] Error fetching posts:", error);
         setPosts([]);
         setLoading(false);
         return;
       }
-      const formatted: Post[] = (data || []).map((p: any) => ({
+
+      let formatted: Post[] = (data || []).map((p: any) => ({
         id: p.id,
         user_id: p.user_id,
         category: p.category,
@@ -383,25 +422,75 @@ export default function WatchClient({
         })),
         tags: [],
       }));
-      confirmRef.current.hydrateCounts(formatted.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
-      confirmRef.current.loadConfirmedFor(formatted.map((p) => p.id));
-   setPosts(formatted);
-      feedCache.setPosts(activeKey, formatted);
-      
-      // Hydrate Confirm Context
-      confirmRef.current.hydrateCounts(formatted.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
-      confirmRef.current.loadConfirmedFor(formatted.map((p) => p.id));
-      
-      setLoading(false);
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [activeKey, startId]); // Updated dependencies
 
+      // If we fetched the startPost but it's not in the list, prepend it
+      if (startPost && !formatted.some(p => p.id === startPost.id)) {
+        const startFormatted: Post = {
+          id: startPost.id,
+          user_id: startPost.user_id,
+          category: startPost.category,
+          comment: startPost.comment,
+          location: { latitude: startPost.latitude ?? 0, longitude: startPost.longitude ?? 0 },
+          address: startPost.address,
+          is_anonymous: startPost.is_anonymous,
+          status: startPost.status,
+          is_sensitive: startPost.is_sensitive,
+          confirmations: startPost.confirmations || 0,
+          views: startPost.views || 0,
+          comment_count: startPost.comment_count || 0,
+          report_count: startPost.report_count || 0,
+          created_at: startPost.created_at,
+          media: (startPost.post_media || []).map((m: any) => ({
+            id: m.id,
+            post_id: m.post_id,
+            url: m.url,
+            media_type: m.media_type,
+            is_sensitive: m.is_sensitive,
+            thumbnail_url: m.thumbnail_url,
+          })),
+          tags: [],
+        };
+        formatted = [startFormatted, ...formatted];
+      }
+
+      console.log("[Watch] Final posts count:", formatted.length);
+      
+      if (formatted.length === 0) {
+        console.error("[Watch] No posts found!");
+      }
+
+      confirmRef.current.hydrateCounts(formatted.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+      confirmRef.current.loadConfirmedFor(formatted.map((p) => p.id));
+      setPosts(formatted);
+      setLoading(false);
+    } catch (err) {
+      console.error("[Watch] Fetch error:", err);
+      setPosts([]);
+      setLoading(false);
+    }
+  };
+
+  init();
+
+  return () => { cancelled = true; };
+}, [sourceKey, startId, feedCache]);
+
+  // ✅ FIX: Reorder posts so startId is first
   const ordered = useMemo(() => {
-    if (!startId) return posts;
+    if (!startId || posts.length === 0) return posts;
+    
     const idx = posts.findIndex((p) => p.id === startId);
-    if (idx <= 0) return posts;
+    
+    // Not found - keep as-is (shouldn't happen with our fetch fix above)
+    if (idx === -1) {
+      console.warn("[Watch] startId not found in posts:", startId);
+      return posts;
+    }
+    
+    // Already first
+    if (idx === 0) return posts;
+    
+    // Move clicked post to front
     return [posts[idx], ...posts.slice(0, idx), ...posts.slice(idx + 1)];
   }, [posts, startId]);
 
@@ -428,48 +517,16 @@ export default function WatchClient({
     return () => obs.disconnect();
   }, [ordered.length]);
 
-  // --- 1. INSTANT SCROLL RESTORE ---
+  // ✅ FIX: Scroll to top (which shows startId post since it's first in ordered)
   useLayoutEffect(() => {
     const el = scrollerRef.current;
-    if (!el) return;
-
-    if (startId) {
-      // If navigating to specific video, force top
-      el.scrollTop = 0;
-    } else {
-      // Otherwise restore from FeedCache
-      const savedY = feedCache.get(activeKey)?.scrollY ?? 0;
-      el.scrollTop = savedY;
-    }
+    if (!el || ordered.length === 0) return;
     
-    // Disable browser manual restoration for this page
-    if (typeof window !== "undefined") {
-      history.scrollRestoration = "manual";
-    }
-  }, [startId, activeKey]); // Dependencies ensure this runs correctly on mount
+    // Always scroll to top - the first post IS the startId post
+    el.scrollTop = 0;
+  }, [ordered.length, startId]);
 
-  // --- 2. SAVE SCROLL TO CACHE ---
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-
-    let timeout: NodeJS.Timeout;
-    const save = () => {
-       feedCache.setScroll(activeKey, el.scrollTop);
-    };
-
-    const onScroll = () => {
-      clearTimeout(timeout);
-      timeout = setTimeout(save, 100); 
-    };
-
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      clearTimeout(timeout);
-    };
-  }, [activeKey, feedCache]);
-
+  // Set initial active post
   useEffect(() => {
     if (!activePostId && ordered.length > 0) {
       setActivePostId(ordered[0].id);
@@ -569,7 +626,7 @@ export default function WatchClient({
 
         if (strongVertical) {
            if (showComments) {
-             closeComments(); // Changed to use new function
+             closeComments();
            } else {
              closeWatch();
            }
@@ -616,7 +673,6 @@ export default function WatchClient({
               className="h-screen w-full relative overflow-hidden bg-black"
               style={{ scrollSnapAlign: "start", scrollSnapStop: "always" }}
             >
-              {/* Tap-to-Close Layer */}
               {isActivePost && showComments && (
                 <div 
                   className="absolute inset-0 z-40 cursor-pointer"
@@ -624,7 +680,6 @@ export default function WatchClient({
                 />
               )}
 
-              {/* Media Container with Shrink Effect */}
               <div className="w-full h-full origin-top" style={containerStyle}>
                   <WatchMediaCarousel 
                     media={post.media} 
@@ -639,11 +694,9 @@ export default function WatchClient({
                     onControlsChange={isActivePost ? setControlsVisible : undefined}
                   />
                   
-                  {/* --- Interaction Layer --- */}
                   <div 
                     className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${showComments ? 'opacity-0' : 'opacity-100'}`}
                   >
-                    {/* Controls / Buttons Stack */}
                     <div className="absolute right-2 bottom-48 flex flex-col items-center gap-6 z-30 pointer-events-auto pb-safe">
                        <div className="flex flex-col items-center gap-1">
                           <button onClick={() => toggleConfirm(post)} className={`p-3 rounded-full backdrop-blur-md transition-colors ${isConfirmed ? "bg-primary-600/90 text-white" : "bg-black/40 text-white hover:bg-black/60"}`}>
@@ -666,7 +719,6 @@ export default function WatchClient({
                        </button>
                     </div>
 
-                    {/* Description Area */}
                     <div 
                       className={`absolute bottom-0 left-0 right-0 pt-24 pb-28 px-4 z-20 pointer-events-none bg-linear-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
                     >
@@ -694,7 +746,6 @@ export default function WatchClient({
         })}
       </div>
 
-      {/* --- Comments Sheet --- */}
       {activePost && (
         <WatchCommentSheet 
           post={activePost}
@@ -711,7 +762,6 @@ export default function WatchClient({
         />
       )}
 
-      {/* --- Options Modal --- */}
       <Modal isOpen={showOptions} onClose={() => setShowOptions(false)} title="Options" animation="slide-up">
          <div className="space-y-2">
             <Button variant="secondary" onClick={() => { handleShare(activePostForOptions?.id || ""); setShowOptions(false); }} className="w-full justify-start gap-3 h-12 text-base">
@@ -730,7 +780,6 @@ export default function WatchClient({
          </div>
       </Modal>
 
-      {/* --- Report Modal --- */}
       <Modal isOpen={showReportModal} onClose={() => setShowReportModal(false)} title="Report Post">
         <div className="space-y-3">
           {REPORT_REASONS.map(r => (
@@ -752,7 +801,6 @@ export default function WatchClient({
         </div>
       </Modal>
 
-      {/* --- Delete Modal --- */}
       <Modal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} title="Delete Post">
         <p className="text-dark-300 text-sm mb-4">Delete this post permanently? This cannot be undone.</p>
         <div className="flex gap-2">
@@ -761,7 +809,6 @@ export default function WatchClient({
         </div>
       </Modal>
 
-      {/* --- Image Lightbox --- */}
       <ImageLightbox
         isOpen={lightboxOpen}
         onClose={() => setLightboxOpen(false)}

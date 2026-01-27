@@ -7,6 +7,7 @@ import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 import { useConfirm } from "@/context/ConfirmContext";
 import { useAuth } from "@/context/AuthContext";
+import { useFeedCache } from "@/context/FeedContext"; // ✅ ADD THIS IMPORT
 import {
   MapPin,
   Clock,
@@ -36,6 +37,7 @@ interface PostCardProps {
 
 function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProps) {
   const router = useRouter();
+  const feedCache = useFeedCache(); // ✅ ADD THIS
 
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [showSensitive, setShowSensitive] = useState(false);
@@ -57,10 +59,8 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   const isConfirmed = confirm.isConfirmed(post.id);
   const confirmations = confirm.getCount(post.id, post.confirmations || 0);
 
-  // Seed confirmation count once so it doesn't flicker
   useEffect(() => {
     confirm.hydrateCounts([{ postId: post.id, confirmations: post.confirmations || 0 }]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [post.id]);
 
   const isExpired = differenceInHours(new Date(), new Date(post.created_at)) >= 24;
@@ -107,15 +107,28 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
     );
   };
 
-  // --- Handlers ---
-
+  // ✅ FIXED: Save scroll position before navigating to watch
   const handleCardClick = () => {
-    // UPDATED: Navigate to /watch feed instead of post detail
-    router.push(`/watch?postId=${post.id}&sourceKey=${encodeURIComponent(sourceKey || "feed")}`);
-  };
+  const currentScroll = window.scrollY;
+  
+  // Save to FeedContext
+  if (sourceKey) {
+    feedCache.setScroll(sourceKey, currentScroll);
+  }
+  
+  // ✅ ALSO save to sessionStorage as backup (survives navigation)
+  sessionStorage.setItem("peja-scroll-restore", JSON.stringify({
+    key: sourceKey,
+    scrollY: currentScroll,
+    timestamp: Date.now()
+  }));
+  
+  console.log("[PostCard] Saved scroll:", currentScroll, "for", sourceKey);
+  
+  router.push(`/watch?postId=${post.id}&sourceKey=${encodeURIComponent(sourceKey || "feed")}`);
+};
 
   const handleExpandVideo = () => {
-    // New Handler: Opens the specific VideoLightbox
     const media = post.media?.[currentMediaIndex];
     if (media && media.media_type === 'video') {
         setLightboxUrl(media.url);
@@ -125,7 +138,10 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
 
   const handleAddInfo = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Keep this opening the Post Detail Modal
+    // ✅ Also save scroll when opening post detail
+    if (sourceKey) {
+      feedCache.setScroll(sourceKey, window.scrollY);
+    }
     const sk = sourceKey ? `?sourceKey=${encodeURIComponent(sourceKey)}` : "";
     router.push(`/post/${post.id}${sk}`, { scroll: false });
   };
@@ -191,11 +207,9 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
             e.stopPropagation();
             if (!currentMedia) return;
 
-            // If it's an image, open image lightbox. If video, /watch is handled by card click or expand
             if (currentMedia.media_type !== "video") {
               openLightboxAt(currentMediaIndex);
             } else {
-               // Optional: If you want tapping video specifically to also go to watch, do nothing here and let card click handle it
                handleCardClick();
             }
           }}
@@ -233,7 +247,7 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
                       className="w-full h-full object-cover"
                       showExpand={true}
                       showMute={true}
-                      onExpand={handleExpandVideo} // UPDATED: Opens Video Lightbox
+                      onExpand={handleExpandVideo}
                       onError={() => setVideoError(true)}
                     />
                   )
@@ -241,8 +255,6 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
                   <img src={currentMedia?.url} alt="" className="w-full h-full object-cover" />
                 )}
               </div>
-
-              {/* REMOVED: The View button block that was here */}
 
               {post.media.length > 1 && (
                 <>
@@ -348,7 +360,6 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
           <span>{isConfirmed ? "Confirmed" : "Confirm"}</span>
         </button>
 
-        {/* UPDATED: Added bounce animation active:scale-90 */}
         <button
           onClick={handleAddInfo}
           className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-white/10 active:scale-90 transition-transform duration-150"
@@ -374,7 +385,6 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
         initialIndex={lightboxIndex}
       />
       
-      {/* UPDATED: Added VideoLightbox */}
       <VideoLightbox 
         isOpen={videoLightboxOpen}
         onClose={() => setVideoLightboxOpen(false)}

@@ -33,33 +33,58 @@ function SearchContent() {
   const feedCache = useFeedCache();
   const feedKey = `search:q=${query}|cat=${selectedCategory ?? "all"}|range=${dateRange}`;
 
-  // 1. INSTANT MEMORY INIT
-  const [posts, setPosts] = useState<Post[]>(() => {
-    if (typeof window !== "undefined") {
-      const cached = feedCache.get(feedKey);
-      if (cached?.posts?.length) return cached.posts;
-    }
-    return [];
-  });
-
-  const [loading, setLoading] = useState(() => posts.length === 0 && !!query);
-
-  // 2. INSTANT SCROLL RESTORE
-  useLayoutEffect(() => {
+// 1. INSTANT MEMORY INIT
+const [posts, setPosts] = useState<Post[]>(() => {
+  if (typeof window !== "undefined") {
     const cached = feedCache.get(feedKey);
-    if (cached && cached.scrollY > 0 && posts.length > 0) {
-      window.scrollTo(0, cached.scrollY);
-    }
-  }, [feedKey, posts.length]);
+    if (cached?.posts?.length) return cached.posts;
+  }
+  return [];
+});
 
-  // 3. SAVE SCROLL MANUALLY
-  useEffect(() => {
-    const handleScroll = () => {
-      if (window.scrollY > 0) feedCache.setScroll(feedKey, window.scrollY);
-    };
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [feedKey, feedCache]);
+const [loading, setLoading] = useState(() => posts.length === 0 && !!query);
+
+// ✅ 2. RESTORE SCROLL FROM SESSION STORAGE
+useLayoutEffect(() => {
+  try {
+    const saved = sessionStorage.getItem("peja-scroll-restore");
+    if (!saved) return;
+    
+    const { key, scrollY, timestamp } = JSON.parse(saved);
+    
+    // Only restore if recent (within 30 seconds) and matches our feedKey
+    const isRecent = Date.now() - timestamp < 30000;
+    const matchesKey = key === feedKey;
+    
+    console.log("[Search] Checking scroll restore:", { key, scrollY, isRecent, matchesKey, feedKey });
+    
+    if (isRecent && matchesKey && scrollY > 0) {
+      console.log("[Search] Restoring scroll to:", scrollY);
+      
+      // Clear immediately so we don't restore twice
+      sessionStorage.removeItem("peja-scroll-restore");
+      
+      // Restore scroll
+      window.scrollTo(0, scrollY);
+      
+      // Also try after paint in case content isn't ready
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
+    }
+  } catch (e) {
+    console.error("[Search] Scroll restore error:", e);
+  }
+}, [feedKey]);
+
+// 3. SAVE SCROLL CONTINUOUSLY
+useEffect(() => {
+  const handleScroll = () => {
+    if (window.scrollY > 0) feedCache.setScroll(feedKey, window.scrollY);
+  };
+  window.addEventListener("scroll", handleScroll, { passive: true });
+  return () => window.removeEventListener("scroll", handleScroll);
+}, [feedKey, feedCache]);
 
   const performSearch = useCallback(async () => {
   setLoading(true);

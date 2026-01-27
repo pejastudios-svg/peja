@@ -6,9 +6,12 @@ import WatchClient from "./WatchClient";
 
 function WatchPageContent() {
   const searchParams = useSearchParams();
-  const startId = searchParams?.get("v") ?? null;
+  
+  // ✅ FIX: Read the EXACT param names that PostCard sends
+  // PostCard sends: /watch?postId=${post.id}&sourceKey=${sourceKey}
+  const startId = searchParams?.get("postId") ?? searchParams?.get("v") ?? null;
   const source = searchParams?.get("source") ?? null;
-  const sourceKey = searchParams?.get("key") ?? null;
+  const sourceKey = searchParams?.get("sourceKey") ?? searchParams?.get("key") ?? null;
 
   return <WatchClient startId={startId} source={source} sourceKey={sourceKey} />;
 }

@@ -54,13 +54,40 @@ export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState<"posts" | "confirmed">("posts");
 
   // --- 2. INSTANT SCROLL RESTORE ---
-  useLayoutEffect(() => {
-    // Only restore if we are actually ON the profile page, not a sub-page/modal
-    if (pathname === "/profile") {
-      const savedY = feedCache.get("profile")?.scrollY ?? 0;
-      window.scrollTo(0, savedY);
+useLayoutEffect(() => {
+  if (pathname === "/profile") {
+    const savedY = feedCache.get("profile")?.scrollY ?? 0;
+    window.scrollTo(0, savedY);
+  }
+}, [pathname]);
+
+// ✅ ADD THIS - Restore scroll when returning from watch
+useEffect(() => {
+  const checkAndRestore = () => {
+    const flag = sessionStorage.getItem("peja-returning-from-watch");
+    if (!flag) return;
+    
+    sessionStorage.removeItem("peja-returning-from-watch");
+    
+    const cached = feedCache.get("profile");
+    if (cached && cached.scrollY > 0) {
+      console.log("[Profile] Restoring scroll after watch:", cached.scrollY);
+      
+      const restore = () => window.scrollTo(0, cached.scrollY);
+      restore();
+      requestAnimationFrame(restore);
+      setTimeout(restore, 50);
+      setTimeout(restore, 150);
     }
-  }, [pathname]); // Re-run if we return to profile from a modal
+  };
+
+  checkAndRestore();
+
+  const handlePopState = () => setTimeout(checkAndRestore, 10);
+  window.addEventListener("popstate", handlePopState);
+  
+  return () => window.removeEventListener("popstate", handlePopState);
+}, [feedCache, pathname]);
 
   // --- 3. SAVE SCROLL (WITH MODAL GUARD) ---
   useEffect(() => {
