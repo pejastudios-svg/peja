@@ -71,12 +71,22 @@ function WatchMediaCarousel({
   onControlsChange
 }: any) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null); // ✅ ADD THIS
 
   const scroll = (direction: 'left' | 'right') => {
     if (!scrollRef.current) return;
     const w = scrollRef.current.clientWidth;
     scrollRef.current.scrollBy({ left: direction === 'left' ? -w : w, behavior: 'smooth' });
   };
+
+  // ✅ ADD: Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="relative w-full h-full">
@@ -113,17 +123,36 @@ function WatchMediaCarousel({
                     onControlsChange={onControlsChange}
                   />
                ) : (
+                  // ✅ FIX: Image with working long press
                   <div 
                     className="w-full h-full flex items-center justify-center"
                     onContextMenu={(e) => e.preventDefault()}
-                    onPointerDown={(e) => {
-                        const t = setTimeout(onOpenOptions, 500);
-                        (e.target as any)._lp = t;
+                    onPointerDown={() => {
+                      longPressTimerRef.current = setTimeout(() => {
+                        onOpenOptions();
+                        longPressTimerRef.current = null;
+                      }, 500);
                     }}
-                    onPointerUp={(e) => clearTimeout((e.target as any)._lp)}
-                    onPointerLeave={(e) => clearTimeout((e.target as any)._lp)}
+                    onPointerUp={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                      }
+                    }}
+                    onPointerLeave={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                      }
+                    }}
+                    onPointerCancel={() => {
+                      if (longPressTimerRef.current) {
+                        clearTimeout(longPressTimerRef.current);
+                        longPressTimerRef.current = null;
+                      }
+                    }}
                   >
-                    <img src={m.url} alt="" className="max-h-full max-w-full object-contain pointer-events-none" />
+                    <img src={m.url} alt="" className="max-h-full max-w-full object-contain pointer-events-none select-none" draggable={false} />
                   </div>
                )}
             </div>
@@ -131,6 +160,7 @@ function WatchMediaCarousel({
         })}
       </div>
 
+      {/* Navigation Arrows */}
       {media.length > 1 && (
         <>
           {activeMediaIndex > 0 && (

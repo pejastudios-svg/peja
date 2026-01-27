@@ -43,6 +43,8 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   const [showSensitive, setShowSensitive] = useState(false);
   const [showFullComment, setShowFullComment] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [videoStartTime, setVideoStartTime] = useState(0);
+
 
   // Lightbox States
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -128,13 +130,14 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   router.push(`/watch?postId=${post.id}&sourceKey=${encodeURIComponent(sourceKey || "feed")}`);
 };
 
-  const handleExpandVideo = () => {
-    const media = post.media?.[currentMediaIndex];
-    if (media && media.media_type === 'video') {
-        setLightboxUrl(media.url);
-        setVideoLightboxOpen(true);
-    }
-  };
+  const handleExpandVideo = (currentTime?: number) => {
+  const media = post.media?.[currentMediaIndex];
+  if (media && media.media_type === 'video') {
+    setLightboxUrl(media.url);
+    setVideoStartTime(currentTime || 0); // ✅ Save the current time
+    setVideoLightboxOpen(true);
+  }
+};
 
   const handleAddInfo = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -386,10 +389,11 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       />
       
       <VideoLightbox 
-        isOpen={videoLightboxOpen}
-        onClose={() => setVideoLightboxOpen(false)}
-        videoUrl={lightboxUrl}
-      />
+  isOpen={videoLightboxOpen}
+  onClose={() => setVideoLightboxOpen(false)}
+  videoUrl={lightboxUrl}
+  startTime={videoStartTime} // ✅ Pass start time
+/>
     </article>
   );
 }

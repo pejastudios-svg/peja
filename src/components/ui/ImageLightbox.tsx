@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react"; // <--- REMOVED X
+import { ChevronLeft } from "lucide-react";
 import { Portal } from "@/components/ui/Portal";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 
@@ -29,18 +29,19 @@ export function ImageLightbox({
 
   const [index, setIndex] = useState(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const isScrollingRef = useRef(false);
 
-  // Drag State
+  // Drag State for vertical dismiss
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const dragStartY = useRef<number | null>(null);
 
   useEffect(() => {
     if (isOpen) {
-      document.body.style.overflow = "hidden"; // Disable scroll
+      document.body.style.overflow = "hidden";
     } else {
       setDragOffset(0);
-      document.body.style.overflow = ""; // Re-enable scroll
+      document.body.style.overflow = "";
     }
 
     if (isOpen) {
@@ -65,16 +66,16 @@ export function ImageLightbox({
     onClose();
   };
 
-  const goTo = (next: number) => {
+  // --- Horizontal scroll handler ---
+  const handleScroll = () => {
     const el = scrollerRef.current;
     if (!el) return;
-    const clamped = Math.min(Math.max(next, 0), mediaItems.length - 1);
     const w = el.clientWidth || 1;
-    el.scrollTo({ left: w * clamped, behavior: "smooth" });
-    setIndex(clamped);
+    const newIndex = Math.round(el.scrollLeft / w);
+    if (newIndex !== index) setIndex(newIndex);
   };
 
-  // --- Vertical Drag Logic ---
+  // --- Vertical Drag Logic (only when not horizontally scrolling) ---
   const onTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
       dragStartY.current = e.touches[0].clientY;
@@ -84,6 +85,10 @@ export function ImageLightbox({
 
   const onTouchMove = (e: React.TouchEvent) => {
     if (dragStartY.current === null) return;
+    
+    // Only allow vertical drag if we're not in the middle of horizontal scroll
+    if (isScrollingRef.current) return;
+    
     const dy = e.touches[0].clientY - dragStartY.current;
     setDragOffset(dy);
   };
@@ -104,26 +109,22 @@ export function ImageLightbox({
   return (
     <Portal>
       <div 
-    className="fixed inset-0 z-[99999] flex items-center justify-center touch-none"
-    onClick={close}
-    onTouchStart={onTouchStart}
-    onTouchMove={onTouchMove}
-    onTouchEnd={onTouchEnd}
-    onContextMenu={(e) => e.preventDefault()} // Disable right-click/hold
-  >
+        className="fixed inset-0 z-[99999] flex flex-col"
+        onClick={close}
+        onContextMenu={(e) => e.preventDefault()}
+      >
         {/* Dynamic Background */}
         <div 
           className="absolute inset-0 bg-black transition-opacity duration-100 ease-linear"
           style={{ opacity: bgOpacity }}
         />
 
-        {/* Top bar (Fades out on drag) */}
+        {/* Top bar */}
         <div
-          className={`absolute top-0 left-0 right-0 z-100000 flex items-center justify-between px-4 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
+          className={`relative z-10 flex items-center justify-between px-4 shrink-0 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
           style={{ paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", height: "56px" }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Back Button (Left) */}
           <button
             type="button"
             onClick={close}
@@ -133,35 +134,41 @@ export function ImageLightbox({
             <ChevronLeft className="w-6 h-6 text-white" />
           </button>
 
-          {/* Counter (Right) */}
-          <div className="text-white/80 text-sm font-medium px-3 py-1 bg-black/40 rounded-full backdrop-blur-md">
-            {mediaItems.length > 1 ? `${index + 1} / ${mediaItems.length}` : ""}
-          </div>
+          {/* Empty spacer for centering */}
+          <div className="w-10" />
         </div>
 
-        {/* Draggable Carousel Container */}
+        {/* Main Content Area - Draggable */}
         <div 
-          className="absolute inset-0 transition-transform duration-200 ease-out"
+          className="flex-1 relative transition-transform duration-200 ease-out"
           style={{ 
             transform: `translateY(${dragOffset}px)`,
             transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
           }}
           onClick={(e) => e.stopPropagation()}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
         >
+          {/* Horizontal Carousel */}
           <div
             ref={scrollerRef}
-            className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scroll-smooth"
-            style={{ WebkitOverflowScrolling: "touch" }}
-            onScroll={() => {
-              const el = scrollerRef.current;
-              if (!el) return;
-              const w = el.clientWidth || 1;
-              const newIndex = Math.round(el.scrollLeft / w);
-              if (newIndex !== index) setIndex(newIndex);
+            className="flex w-full h-full overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+            style={{ 
+              WebkitOverflowScrolling: "touch",
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
             }}
+            onScroll={handleScroll}
+            onTouchStart={() => { isScrollingRef.current = true; }}
+            onTouchEnd={() => { setTimeout(() => { isScrollingRef.current = false; }, 100); }}
           >
             {mediaItems.map((m, i) => (
-              <div key={i} className="w-full h-full shrink-0 snap-center flex items-center justify-center p-2">
+              <div 
+                key={i} 
+                className="w-full h-full shrink-0 snap-center snap-always flex items-center justify-center p-2"
+                style={{ scrollSnapStop: "always" }}
+              >
                 {m.type === "video" ? (
                   <div className="w-full h-full flex items-center justify-center">
                     <InlineVideo
@@ -176,32 +183,33 @@ export function ImageLightbox({
                     src={m.url} 
                     alt="" 
                     className="w-full h-full object-contain max-h-screen pointer-events-none select-none" 
+                    draggable={false}
                   />
                 )}
               </div>
             ))}
           </div>
-
-          {/* Navigation Arrows */}
-          {mediaItems.length > 1 && !isDragging && (
-            <>
-              <button
-                type="button"
-                onClick={() => goTo(index - 1)}
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center hover:bg-black/70 transition-colors"
-              >
-                <ChevronLeft className="w-7 h-7 text-white" />
-              </button>
-              <button
-                type="button"
-                onClick={() => goTo(index + 1)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center hover:bg-black/70 transition-colors"
-              >
-                <ChevronRight className="w-7 h-7 text-white" />
-              </button>
-            </>
-          )}
         </div>
+
+        {/* Bottom Dots Indicator */}
+        {mediaItems.length > 1 && (
+          <div 
+            className={`relative z-10 flex justify-center gap-2 py-4 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
+            style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {mediaItems.map((_, i) => (
+              <div 
+                key={i} 
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  i === index 
+                    ? "bg-white w-6" 
+                    : "bg-white/40 w-2"
+                }`} 
+              />
+            ))}
+          </div>
+        )}
       </div>
     </Portal>
   );

@@ -55,7 +55,6 @@ export function ReelVideo({
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     setShowControls(true);
     if (isPlaying && !isScrubbing) {
-      // 7 Seconds Fade Out
       controlsTimeoutRef.current = setTimeout(() => {
         setShowControls(false);
       }, 7000);
@@ -63,7 +62,6 @@ export function ReelVideo({
   };
 
   const handleContainerClick = () => {
-    // Tap toggles visibility, DOES NOT PAUSE
     if (showControls) {
       setShowControls(false);
     } else {
@@ -94,6 +92,11 @@ export function ReelVideo({
     if (!v) return;
 
     try {
+      // ✅ FIX: Ensure src is set before playing
+      if (!v.src || v.src !== src) {
+        v.src = src;
+      }
+      
       v.muted = true;
       if (v.paused) await v.play();
       v.muted = !soundEnabled;
@@ -159,22 +162,22 @@ export function ReelVideo({
     return () => obs.disconnect();
   }, []);
 
+  // ✅ FIX: Separate effect for play/pause - NO destructive cleanup
   useEffect(() => {
-    // Logic to play/pause based on props
     if (!active || !inView) {
       pause();
       return;
     }
     ensurePlay();
 
-    // --- CLEANUP (Runs when active changes OR component unmounts) ---
+    // ✅ FIX: Only pause on cleanup, DON'T remove src or call load()
     return () => {
       stopTimers();
       const v = videoRef.current;
       if (v) {
         v.pause();
-        v.removeAttribute("src"); // Force stop downloading
-        v.load(); 
+        // Removed: v.removeAttribute("src") and v.load()
+        // This was causing the black screen when scrolling back
       }
     };
   }, [active, inView]);
@@ -195,7 +198,7 @@ export function ReelVideo({
       ref={wrapRef} 
       className="relative w-full h-full bg-black select-none group"
       onClick={handleContainerClick}
-      onContextMenu={(e) => e.preventDefault()} // <--- DISABLES BROWSER MENU
+      onContextMenu={(e) => e.preventDefault()}
       onPointerDownCapture={() => setSoundEnabled(true)}
       onPointerDown={() => longPressGestures.onPointerDown()}
       onPointerUp={longPressGestures.onPointerUp}
@@ -220,23 +223,22 @@ export function ReelVideo({
         onCanPlay={() => setIsBuffering(false)}
       />
 
-{isBuffering && (
-  <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-    <PejaSpinner className="w-16 h-16 drop-shadow-2xl" />
-  </div>
-)}
+      {isBuffering && (
+        <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+          <PejaSpinner className="w-16 h-16 drop-shadow-2xl" />
+        </div>
+      )}
 
-      {/* --- Controls Overlay (Raised Higher) --- */}
+      {/* Controls Overlay */}
       <div 
         className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-20 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={(e) => e.stopPropagation()}
-        onPointerDown={(e) => e.stopPropagation()} // This prevents Long Press when using controls
-        >
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <div 
           className="flex items-center gap-4 w-full mb-12" 
           style={{ paddingBottom: "env(safe-area-inset-bottom, 20px)" }}
         >
-          {/* Play/Pause */}
           <button 
             onClick={togglePlay} 
             className="text-white hover:text-primary-400 transition-colors p-2"
@@ -244,7 +246,6 @@ export function ReelVideo({
             {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current" />}
           </button>
 
-          {/* Scrubber */}
           <div className="flex-1 relative h-6 flex items-center group cursor-pointer">
              <input 
                type="range" 
@@ -271,7 +272,6 @@ export function ReelVideo({
              </div>
           </div>
 
-          {/* Mute */}
           <button 
             onClick={(e) => {
               e.stopPropagation();
