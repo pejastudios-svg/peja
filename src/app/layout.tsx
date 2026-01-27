@@ -32,12 +32,10 @@ export default function RootLayout({
   children,
   modal,
   overlay,
-  watch,
 }: {
   children: React.ReactNode;
   modal: React.ReactNode;
   overlay: React.ReactNode;
-  watch: React.ReactNode;
 }) {
   return (
     <html lang="en" className="dark">
@@ -68,7 +66,6 @@ export default function RootLayout({
                   <AccountStatusBanner />
                   {children}
                   {overlay}
-                  {watch}
                   {modal}
                 </FeedProvider>
               </AudioProvider>

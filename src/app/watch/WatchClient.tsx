@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post, REPORT_REASONS } from "@/lib/types";
@@ -61,13 +61,13 @@ function markSeen(postId: string) {
 function WatchMediaCarousel({ 
   media, 
   isActivePost, 
-  activeMediaIndex,
-  onIndexChange,
-  isSensitive,
-  isRevealed,
-  onReveal,
-  onMarkViewed,
-  onOpenOptions,
+  activeMediaIndex, 
+  onIndexChange, 
+  isSensitive, 
+  isRevealed, 
+  onReveal, 
+  onMarkViewed, 
+  onOpenOptions, 
   onControlsChange
 }: any) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -119,8 +119,8 @@ function WatchMediaCarousel({
                     className="w-full h-full flex items-center justify-center"
                     onContextMenu={(e) => e.preventDefault()}
                     onPointerDown={(e) => {
-                       const t = setTimeout(onOpenOptions, 500);
-                       (e.target as any)._lp = t;
+                        const t = setTimeout(onOpenOptions, 500);
+                        (e.target as any)._lp = t;
                     }}
                     onPointerUp={(e) => clearTimeout((e.target as any)._lp)}
                     onPointerLeave={(e) => clearTimeout((e.target as any)._lp)}
@@ -182,25 +182,25 @@ export default function WatchClient({
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const WATCH_SCROLL_KEY = "peja-watch-scrollTop-v1";
 
-const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-// Prevent scroll on underlying page
-useEffect(() => {
-  const container = containerRef.current;
-  if (!container) return;
+  // Prevent scroll on underlying page
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-  const preventBodyScroll = (e: TouchEvent) => {
-    if (!container.contains(e.target as Node)) {
-      e.preventDefault();
-    }
-  };
+    const preventBodyScroll = (e: TouchEvent) => {
+      if (!container.contains(e.target as Node)) {
+        e.preventDefault();
+      }
+    };
 
-  document.addEventListener('touchmove', preventBodyScroll, { passive: false });
-  
-  return () => {
-    document.removeEventListener('touchmove', preventBodyScroll);
-  };
-}, []);
+    document.addEventListener('touchmove', preventBodyScroll, { passive: false });
+    
+    return () => {
+      document.removeEventListener('touchmove', preventBodyScroll);
+    };
+  }, []);
 
   // --- Clear saved scroll position if navigating to specific post ---
   useEffect(() => {
@@ -220,6 +220,14 @@ useEffect(() => {
     return () => el.removeEventListener("scroll", onScroll);
   }, []);
 
+  // --- CRITICAL FIX 1: Disable browser restoration BUT DO NOT SCROLL TO 0 ---
+  useLayoutEffect(() => {
+    if (typeof window !== "undefined") {
+      history.scrollRestoration = "manual";
+      // REMOVED: window.scrollTo(0, 0); <--- This was causing the profile page reset
+    }
+  }, []);
+
   useEffect(() => {
     (window as any).__pejaWatchOpen = true;
     return () => { (window as any).__pejaWatchOpen = false; };
@@ -229,12 +237,24 @@ useEffect(() => {
   const { setSoundEnabled } = useAudio();
   const confirm = useConfirm();
   const confirmRef = useRef(confirm);
+  const feedCache = useFeedCache(); // Ensure this is hooked up
 
   useEffect(() => { confirmRef.current = confirm; }, [confirm]);
 
-  const feedCache = useFeedCache();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  // FIX: Use cache key or default to general
+  const activeKey = sourceKey || "watch:general";
+  
+  // FIX: Initialize immediately from cache so there is no loading flash
+  const [posts, setPosts] = useState<Post[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get(activeKey);
+      if (cached?.posts?.length) return cached.posts;
+    }
+    return [];
+  });
+
+  // FIX: Only show loading if we have NO data
+  const [loading, setLoading] = useState(() => posts.length === 0);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   
   const [activePostId, setActivePostId] = useState<string | null>(null);
@@ -244,6 +264,28 @@ useEffect(() => {
 
   // --- Comments Sheet State ---
   const [showComments, setShowComments] = useState(false);
+
+  // --- BACK BUTTON LOGIC ---
+  const openComments = () => {
+    // Push state so Hardware Back Button closes comments instead of app
+    window.history.pushState({ commentsOpen: true }, "", window.location.href);
+    setShowComments(true);
+  };
+
+  const closeComments = () => {
+    // Manually going back pops the state we pushed
+    router.back(); 
+  };
+
+  // Listen for the back button
+  useEffect(() => {
+    const handlePopState = () => {
+      if (showComments) setShowComments(false);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [showComments]);
+
   const activePost = posts.find(p => p.id === activePostId);
 
   // --- Description State ---
@@ -272,8 +314,12 @@ useEffect(() => {
   const postsRef = useRef<Post[]>([]);
   useEffect(() => { postsRef.current = posts; }, [posts]);
 
+  // --- CRITICAL FIX 3: Close Watch Logic ---
   const closeWatch = () => {
     window.dispatchEvent(new Event("peja-close-watch"));
+    // Since we are now a standalone page, standard router.back() is correct
+    // to return to Profile and restore its scroll position
+    router.back();
   };
 
   // --- Lightbox State ---
@@ -287,24 +333,13 @@ useEffect(() => {
     setLightboxOpen(true);
   };
 
-  // --- Load Posts ---
+ // --- LOAD DATA (Background Refresh) ---
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (sourceKey) {
-        const cached = feedCache.get(sourceKey);
-        if (cached && cached.posts.length > 0) {
-          const list = cached.posts;
-          confirmRef.current.hydrateCounts(list.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
-          confirmRef.current.loadConfirmedFor(list.map((p) => p.id));
-          if (!cancelled) {
-            setPosts(list);
-            setLoading(false);
-          }
-          return;
-        }
-      }
-      setLoading(true);
+      // If we initialized from cache (posts > 0), don't show spinner
+      if (posts.length === 0) setLoading(true);
+
       const { data, error } = await supabase
         .from("posts")
         .select(`
@@ -350,12 +385,18 @@ useEffect(() => {
       }));
       confirmRef.current.hydrateCounts(formatted.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
       confirmRef.current.loadConfirmedFor(formatted.map((p) => p.id));
-      setPosts(formatted);
+   setPosts(formatted);
+      feedCache.setPosts(activeKey, formatted);
+      
+      // Hydrate Confirm Context
+      confirmRef.current.hydrateCounts(formatted.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+      confirmRef.current.loadConfirmedFor(formatted.map((p) => p.id));
+      
       setLoading(false);
     };
     load();
     return () => { cancelled = true; };
-  }, [sourceKey, feedCache, startId]);
+  }, [activeKey, startId]); // Updated dependencies
 
   const ordered = useMemo(() => {
     if (!startId) return posts;
@@ -387,31 +428,47 @@ useEffect(() => {
     return () => obs.disconnect();
   }, [ordered.length]);
 
-  // --- Scroll Restoration for internal scroller (wait for content ready) ---
+  // --- 1. INSTANT SCROLL RESTORE ---
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+
+    if (startId) {
+      // If navigating to specific video, force top
+      el.scrollTop = 0;
+    } else {
+      // Otherwise restore from FeedCache
+      const savedY = feedCache.get(activeKey)?.scrollY ?? 0;
+      el.scrollTop = savedY;
+    }
+    
+    // Disable browser manual restoration for this page
+    if (typeof window !== "undefined") {
+      history.scrollRestoration = "manual";
+    }
+  }, [startId, activeKey]); // Dependencies ensure this runs correctly on mount
+
+  // --- 2. SAVE SCROLL TO CACHE ---
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    if (loading) return;
-    if (ordered.length === 0) return;
 
-    if (startId) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          el.scrollTop = 0;
-        });
-      });
-    } else {
-      const raw = sessionStorage.getItem(WATCH_SCROLL_KEY);
-      const y = raw ? Number(raw) : 0;
-      if (Number.isFinite(y) && y > 0) {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            el.scrollTop = y;
-          });
-        });
-      }
-    }
-  }, [startId, loading, ordered.length]);
+    let timeout: NodeJS.Timeout;
+    const save = () => {
+       feedCache.setScroll(activeKey, el.scrollTop);
+    };
+
+    const onScroll = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(save, 100); 
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      clearTimeout(timeout);
+    };
+  }, [activeKey, feedCache]);
 
   useEffect(() => {
     if (!activePostId && ordered.length > 0) {
@@ -492,9 +549,9 @@ useEffect(() => {
 
   return (
     <div
-  ref={containerRef}
-  className="fixed inset-0 bg-black z-[9999] overflow-hidden overscroll-none"
-  style={{ touchAction: 'pan-y' }}
+      ref={containerRef}
+      className="fixed inset-0 bg-black z-[9999] overflow-hidden overscroll-none"
+      style={{ touchAction: 'pan-y' }}
       onPointerDown={(e) => {
         setSoundEnabled(true);
         swipeStartRef.current = { x: e.clientX, y: e.clientY };
@@ -512,7 +569,7 @@ useEffect(() => {
 
         if (strongVertical) {
            if (showComments) {
-             setShowComments(false);
+             closeComments(); // Changed to use new function
            } else {
              closeWatch();
            }
@@ -563,16 +620,16 @@ useEffect(() => {
               {isActivePost && showComments && (
                 <div 
                   className="absolute inset-0 z-40 cursor-pointer"
-                  onClick={() => setShowComments(false)}
+                  onClick={closeComments}
                 />
               )}
 
               {/* Media Container with Shrink Effect */}
               <div className="w-full h-full origin-top" style={containerStyle}>
-                 <WatchMediaCarousel 
-                    media={post.media}
-                    isActivePost={isActivePost}
-                    activeMediaIndex={activeMediaIndex}
+                  <WatchMediaCarousel 
+                    media={post.media} 
+                    isActivePost={isActivePost} 
+                    activeMediaIndex={activeMediaIndex} 
                     onIndexChange={(idx: number) => setMediaIndexByPost(prev => ({ ...prev, [post.id]: idx }))}
                     isSensitive={isSensitive}
                     isRevealed={isRevealed}
@@ -580,57 +637,57 @@ useEffect(() => {
                     onMarkViewed={() => markViewed(post.id)}
                     onOpenOptions={() => { setActivePostForOptions(post); setShowOptions(true); }}
                     onControlsChange={isActivePost ? setControlsVisible : undefined}
-                 />
-                 
-                 {/* --- Interaction Layer --- */}
-                 <div 
-                   className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${showComments ? 'opacity-0' : 'opacity-100'}`}
-                 >
-                   {/* Controls / Buttons Stack */}
-                   <div className="absolute right-2 bottom-48 flex flex-col items-center gap-6 z-30 pointer-events-auto pb-safe">
-                      <div className="flex flex-col items-center gap-1">
-                         <button onClick={() => toggleConfirm(post)} className={`p-3 rounded-full backdrop-blur-md transition-colors ${isConfirmed ? "bg-primary-600/90 text-white" : "bg-black/40 text-white hover:bg-black/60"}`}>
-                            <CheckCircle className={`w-8 h-8 ${isConfirmed ? "fill-current" : ""}`} />
-                         </button>
-                         <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{confirmCount}</span>
-                      </div>
-                      <div className="flex flex-col items-center gap-1">
-                         <button onClick={() => { if (isActivePost) setShowComments(true); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
-                            <MessageCircle className="w-8 h-8" />
-                         </button>
-                         <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.comment_count || 0}</span>
-                      </div>
-                      <div className="flex flex-col items-center gap-1">
-                         <div className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white"><Eye className="w-8 h-8" /></div>
-                         <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.views || 0}</span>
-                      </div>
-                      <button onClick={() => { setActivePostForOptions(post); setShowOptions(true); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
-                        <MoreVertical className="w-8 h-8" />
-                      </button>
-                   </div>
+                  />
+                  
+                  {/* --- Interaction Layer --- */}
+                  <div 
+                    className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${showComments ? 'opacity-0' : 'opacity-100'}`}
+                  >
+                    {/* Controls / Buttons Stack */}
+                    <div className="absolute right-2 bottom-48 flex flex-col items-center gap-6 z-30 pointer-events-auto pb-safe">
+                       <div className="flex flex-col items-center gap-1">
+                          <button onClick={() => toggleConfirm(post)} className={`p-3 rounded-full backdrop-blur-md transition-colors ${isConfirmed ? "bg-primary-600/90 text-white" : "bg-black/40 text-white hover:bg-black/60"}`}>
+                             <CheckCircle className={`w-8 h-8 ${isConfirmed ? "fill-current" : ""}`} />
+                          </button>
+                          <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{confirmCount}</span>
+                       </div>
+                       <div className="flex flex-col items-center gap-1">
+                          <button onClick={() => { if (isActivePost) openComments(); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
+                             <MessageCircle className="w-8 h-8" />
+                          </button>
+                          <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.comment_count || 0}</span>
+                       </div>
+                       <div className="flex flex-col items-center gap-1">
+                          <div className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white"><Eye className="w-8 h-8" /></div>
+                          <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.views || 0}</span>
+                       </div>
+                       <button onClick={() => { setActivePostForOptions(post); setShowOptions(true); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
+                         <MoreVertical className="w-8 h-8" />
+                       </button>
+                    </div>
 
-                   {/* Description Area */}
-                   <div 
-                     className={`absolute bottom-0 left-0 right-0 pt-24 pb-28 px-4 z-20 pointer-events-none bg-linear-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
-                   >
-                      <div className="w-[80%] pointer-events-auto">
-                         <p 
-                           className={`text-white text-sm wrap-break-word whitespace-pre-wrap shadow-black drop-shadow-md transition-all duration-300 ${descExpanded ? '' : 'line-clamp-2'}`}
-                           onClick={() => setDescExpanded(!descExpanded)}
-                         >
-                           {post.comment || ""}
-                         </p>
-                         {post.comment && post.comment.length > 80 && (
-                           <button 
-                             onClick={(e) => { e.stopPropagation(); setDescExpanded(!descExpanded); }}
-                             className="text-white/70 text-xs mt-1 font-medium hover:text-white"
-                           >
-                             {descExpanded ? "View less" : "View more"}
-                           </button>
-                         )}
-                      </div>
-                   </div>
-                 </div>
+                    {/* Description Area */}
+                    <div 
+                      className={`absolute bottom-0 left-0 right-0 pt-24 pb-28 px-4 z-20 pointer-events-none bg-linear-to-t from-black/90 via-black/40 to-transparent transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
+                    >
+                       <div className="w-[80%] pointer-events-auto">
+                          <p 
+                            className={`text-white text-sm wrap-break-word whitespace-pre-wrap shadow-black drop-shadow-md transition-all duration-300 ${descExpanded ? '' : 'line-clamp-2'}`}
+                            onClick={() => setDescExpanded(!descExpanded)}
+                          >
+                            {post.comment || ""}
+                          </p>
+                          {post.comment && post.comment.length > 80 && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setDescExpanded(!descExpanded); }}
+                              className="text-white/70 text-xs mt-1 font-medium hover:text-white"
+                            >
+                              {descExpanded ? "View less" : "View more"}
+                            </button>
+                          )}
+                       </div>
+                    </div>
+                  </div>
               </div>
             </div>
           );
@@ -642,7 +699,7 @@ useEffect(() => {
         <WatchCommentSheet 
           post={activePost}
           isOpen={showComments}
-          onClose={() => setShowComments(false)}
+          onClose={closeComments}
           onCommentSuccess={() => {
             setPosts(prev => prev.map(p => 
               p.id === activePost!.id 
