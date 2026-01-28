@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
-import { Loader2, Heart, User, Send, X, Trash2, Copy, Flag, MoreVertical, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Heart, User, Send, X, Trash2, Copy, Flag, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { Post, REPORT_REASONS } from "@/lib/types";
@@ -50,6 +50,13 @@ export function WatchCommentSheet({
   const [sortBy, setSortBy] = useState<"top" | "recent">("top");
   const [postAuthor, setPostAuthor] = useState<{ name: string; avatar: string | null } | null>(null);
 
+  // --- Drag to Close State ---
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartY = useRef<number | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isAtTopRef = useRef(true);
+
   // --- Options Modal State ---
   const [showOptions, setShowOptions] = useState(false);
   const [selectedComment, setSelectedComment] = useState<any | null>(null);
@@ -84,19 +91,71 @@ export function WatchCommentSheet({
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string; parentId: string | null; userId: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const fetchedRef = useRef<string | null>(null); // Track loaded ID
+  const fetchedRef = useRef<string | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
 
-// --- Fetch Comments (Correctly Optimized) ---
+  // Reset drag offset when sheet closes
+  useEffect(() => {
+    if (!isOpen) {
+      setDragOffset(0);
+      setIsDragging(false);
+    }
+  }, [isOpen]);
+
+  // Track if scroll container is at top
+  const handleScroll = () => {
+    if (scrollContainerRef.current) {
+      isAtTopRef.current = scrollContainerRef.current.scrollTop <= 0;
+    }
+  };
+
+  // --- Drag Handlers ---
+  const handleTouchStart = (e: React.TouchEvent) => {
+    // Only allow drag if at top of scroll
+    if (!isAtTopRef.current) return;
+    
+    dragStartY.current = e.touches[0].clientY;
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (dragStartY.current === null) return;
+    
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - dragStartY.current;
+    
+    // Only allow dragging down (positive diff) and only if at top
+    if (diff > 0 && isAtTopRef.current) {
+      setDragOffset(diff);
+      // Prevent scroll while dragging
+      e.preventDefault();
+    } else if (diff <= 0) {
+      // Reset if trying to drag up
+      setDragOffset(0);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+    dragStartY.current = null;
+
+    // If dragged more than 100px, close the sheet
+    if (dragOffset > 100) {
+      onClose();
+    }
+    
+    // Reset offset (with animation)
+    setDragOffset(0);
+  };
+
+  // --- Fetch Comments ---
   useEffect(() => {
     if (!isOpen) return;
     if (fetchedRef.current === post.id && comments.length > 0) return;
 
     const fetchComments = async () => {
-      // Keep existing setLoading(true)
       setLoading(true);
 
-      // --- NEW: Fetch Post Author Details ---
       if (!post.is_anonymous && post.user_id) {
         const { data: authorData } = await supabase
           .from("users")
@@ -108,7 +167,7 @@ export function WatchCommentSheet({
           setPostAuthor({ name: authorData.full_name, avatar: authorData.avatar_url });
         }
       } else {
-        setPostAuthor(null); // Reset if anonymous
+        setPostAuthor(null);
       }
       
       const { data: rawComments, error } = await supabase
@@ -139,7 +198,6 @@ export function WatchCommentSheet({
         }
       }
 
-      // Check current user likes
       let userLikes = new Set<string>();
       if (user) {
         const { data: likes } = await supabase
@@ -162,8 +220,6 @@ export function WatchCommentSheet({
 
       setComments(formatted);
       setLoading(false);
-      
-// Mark this post as fetched so we don't refetch on toggle
       fetchedRef.current = post.id;
     };
 
@@ -171,7 +227,6 @@ export function WatchCommentSheet({
   }, [isOpen, post.id, user, post.is_anonymous, post.user_id]);
 
   // --- Actions ---
-
   const handleLike = async (commentId: string) => {
     if (!user) return;
 
@@ -180,7 +235,6 @@ export function WatchCommentSheet({
 
     const isLiked = targetComment.isLiked;
     
-    // Optimistic Update
     setComments(prev => prev.map(c => 
       c.id === commentId 
         ? { ...c, isLiked: !isLiked, likes_count: isLiked ? Math.max(0, c.likes_count - 1) : c.likes_count + 1 } 
@@ -193,12 +247,10 @@ export function WatchCommentSheet({
         p_user_id: user.id
       });
 
-      // Notify if liked (and not self)
       if (!isLiked && data && data[0]?.liked && targetComment.user_id !== user.id) {
         notifyCommentLiked(post.id, targetComment.user_id, user.full_name || "Someone");
       }
     } catch (err) {
-      // Revert on error
       setComments(prev => prev.map(c => 
         c.id === commentId 
           ? { ...c, isLiked: isLiked, likes_count: targetComment.likes_count } 
@@ -215,25 +267,6 @@ export function WatchCommentSheet({
       userId: comment.user_id
     });
     inputRef.current?.focus();
-  };
-
-  const handleDelete = async (commentId: string) => {
-    if (!confirm("Delete this comment?")) return;
-
-    // Optimistic remove
-    setComments(prev => prev.filter(c => c.id !== commentId && c.parent_id !== commentId));
-
-    try {
-      // Delete replies first (cascade usually handles this but safe to be explicit if needed, 
-      // but standard cascade delete on parent_id usually works). 
-      // We'll just delete the specific ID and let DB handle cascade.
-      await supabase.from("post_comments").delete().eq("id", commentId);
-      
-      // Update global count
-      await supabase.rpc('decrement_comment_count', { post_id: post.id }); 
-    } catch (err) {
-      console.error("Delete failed", err);
-    }
   };
 
   const handleSubmit = async () => {
@@ -269,7 +302,6 @@ export function WatchCommentSheet({
         setComments([added, ...comments]);
         setNewComment("");
         
-        // Notifications
         if (replyingTo && replyingTo.userId !== user.id) {
            notifyCommentReply(post.id, replyingTo.userId, user.full_name || "Someone", content);
         } else if (post.user_id !== user.id) {
@@ -285,11 +317,6 @@ export function WatchCommentSheet({
       setReplyingTo(null);
     }
   };
-
-  const sortedComments = [...comments].sort((a, b) => {
-    if (sortBy === "top") return (b.likes_count || 0) - (a.likes_count || 0);
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
 
   // --- Threading Logic ---
   const parentComments = useMemo(() => {
@@ -311,8 +338,6 @@ export function WatchCommentSheet({
     if (!selectedComment) return;
     navigator.clipboard.writeText(selectedComment.content);
     setShowOptions(false);
-    
-    // Call the toast
     toast.success("Comment copied");
   };
 
@@ -320,19 +345,16 @@ export function WatchCommentSheet({
     if (!reportReason || !user || !selectedComment) return;
     setSubmittingReport(true);
     
-    // Call backend API (Phase 2 implementation will go here)
-    // For now, simulate success
     setTimeout(() => {
        setSubmittingReport(false);
        setShowReportModal(false);
        setShowOptions(false);
-       alert("Report submitted."); // Replace with Toast later
+       toast.success("Report submitted");
     }, 1000);
   };
 
   const handleDeleteAction = async () => {
     if (!selectedComment) return;
-    // Direct delete (Optimistic)
     setComments(prev => prev.filter(c => c.id !== selectedComment.id && c.parent_id !== selectedComment.id));
     setShowOptions(false);
 
@@ -353,7 +375,7 @@ export function WatchCommentSheet({
         key={comment.id} 
         className={`flex gap-3 py-2`}
         {...longPressProps}
-        onClick={() => handleReply(comment)} // Tap to reply
+        onClick={() => handleReply(comment)}
       >
         <div 
            className="w-8 h-8 rounded-full bg-white/10 shrink-0 overflow-hidden"
@@ -402,45 +424,77 @@ export function WatchCommentSheet({
   };
 
   function CommentSkeleton() {
-  return (
-    <div className="space-y-6 px-2 mt-4">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <div key={i} className="flex gap-3 animate-pulse">
-          <div className="w-8 h-8 rounded-full bg-white/5 shrink-0" />
-          <div className="flex-1 space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="h-3 w-24 bg-white/10 rounded-full" />
-              <div className="h-2 w-12 bg-white/5 rounded-full" />
+    return (
+      <div className="space-y-6 px-2 mt-4">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="flex gap-3 animate-pulse">
+            <div className="w-8 h-8 rounded-full bg-white/5 shrink-0" />
+            <div className="flex-1 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="h-3 w-24 bg-white/10 rounded-full" />
+                <div className="h-2 w-12 bg-white/5 rounded-full" />
+              </div>
+              <div className="h-3 w-3/4 bg-white/10 rounded-full" />
+              <div className="h-3 w-1/2 bg-white/10 rounded-full" />
             </div>
-            <div className="h-3 w-3/4 bg-white/10 rounded-full" />
-            <div className="h-3 w-1/2 bg-white/10 rounded-full" />
           </div>
-        </div>
-      ))}
-    </div>
-  );
-}
+        ))}
+      </div>
+    );
+  }
+
+  // Calculate visual opacity based on drag
+  const dragOpacity = Math.max(0.5, 1 - dragOffset / 300);
 
   return (
     <>
       <div 
-        className={`fixed inset-x-0 bottom-0 z-50000 bg-dark-950 rounded-t-3xl transition-transform duration-300 ease-out flex flex-col border-t border-white/10 ${
+        className={`fixed inset-x-0 bottom-0 z-50000 bg-dark-950 rounded-t-3xl flex flex-col border-t border-white/10 ${
           isOpen ? "translate-y-0" : "translate-y-full"
         }`}
-        style={{ height: "70vh" }}
+        style={{ 
+          height: "70vh",
+          transform: isOpen ? `translateY(${dragOffset}px)` : "translateY(100%)",
+          transition: isDragging ? "none" : "transform 0.3s ease-out",
+          opacity: isDragging ? dragOpacity : 1,
+        }}
       >
-        {/* Fixed Header (Just the drag handle + Close) */}
+        {/* Drag Handle Area */}
         <div 
-          onClick={onClose} 
-          className="w-full h-10 flex items-center justify-center shrink-0 cursor-pointer border-b border-white/5 active:bg-white/5"
+          className="w-full h-10 flex items-center justify-center shrink-0 cursor-pointer border-b border-white/5 active:bg-white/5 touch-none"
+          onClick={onClose}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           <div className="w-12 h-1.5 bg-white/20 rounded-full" />
         </div>
 
         {/* SINGLE SCROLLABLE CONTAINER */}
-        <div className="flex-1 overflow-y-auto scrollbar-hide">
+        <div 
+          ref={scrollContainerRef}
+          className="flex-1 overflow-y-auto scrollbar-hide overscroll-contain"
+          onScroll={handleScroll}
+          onTouchStart={(e) => {
+            // Update isAtTop when touch starts on the scroll container
+            if (scrollContainerRef.current) {
+              isAtTopRef.current = scrollContainerRef.current.scrollTop <= 0;
+            }
+            // Only initiate drag if at top
+            if (isAtTopRef.current) {
+              handleTouchStart(e);
+            }
+          }}
+          onTouchMove={(e) => {
+            // Only drag if we started at top and are dragging down
+            if (isDragging && isAtTopRef.current) {
+              handleTouchMove(e);
+            }
+          }}
+          onTouchEnd={handleTouchEnd}
+        >
             
-            {/* 1. Description Section (Now scrolls with content) */}
+            {/* 1. Description Section */}
             <div className="px-4 py-3 border-b border-white/5">
                 <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-bold text-white">
@@ -461,21 +515,20 @@ export function WatchCommentSheet({
                 </div>
             </div>
 
-            {/* 2. Sort Controls (Sticky Header inside scroll) */}
+            {/* 2. Sort Controls */}
             <div className="sticky top-0 bg-dark-950/95 backdrop-blur-sm z-10 px-4 py-2 border-b border-white/5 flex justify-end gap-2">
                 <button onClick={() => setSortBy("top")} className={`text-xs px-3 py-1.5 rounded-full transition-colors ${sortBy === "top" ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10"}`}>Top</button>
                 <button onClick={() => setSortBy("recent")} className={`text-xs px-3 py-1.5 rounded-full transition-colors ${sortBy === "recent" ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10"}`}>New</button>
             </div>
 
             {/* 3. Comments List */}
-            <div className="p-4 space-y-4 pb-20"> {/* pb-20 adds space at bottom for input */}
+            <div className="p-4 space-y-4 pb-20">
                 {loading ? (
                     <CommentSkeleton />
                 ) : parentComments.length === 0 ? (
                     <div className="text-center text-white/40 py-10 text-sm">No comments yet.</div>
                 ) : (
                     parentComments.map(parent => {
-                        // ... (Existing comment mapping logic)
                         const replies = getReplies(parent.id);
                         const isExpanded = expandedThreads.has(parent.id);
                         return (
@@ -510,7 +563,6 @@ export function WatchCommentSheet({
 
         {/* Fixed Input Area */}
         <div className="p-3 border-t border-white/10 bg-dark-1000 pb-safe">
-             {/* ... (Existing Input Logic) ... */}
              {replyingTo && (
                 <div className="flex items-center justify-between px-2 mb-2 text-xs text-primary-400">
                    <span>Replying to @{replyingTo.name}</span>
@@ -533,22 +585,19 @@ export function WatchCommentSheet({
         </div>
       </div>
 
-      {/* --- Options Modal (Long Press) --- */}
+      {/* --- Options Modal --- */}
       <Modal isOpen={showOptions} onClose={() => setShowOptions(false)} title="Options" animation="slide-up">
-         <div 
-         className="space-y-2">
+         <div className="space-y-2">
             <Button variant="secondary" onClick={handleCopy} className="w-full justify-start gap-3 h-12 text-base">
                <Copy className="w-5 h-5" /> Copy Text
             </Button>
             
-            {/* Delete only if user owns the comment */}
             {selectedComment?.user_id === user?.id && (
                <Button variant="secondary" onClick={handleDeleteAction} className="w-full justify-start gap-3 text-red-400 h-12 text-base">
                   <Trash2 className="w-5 h-5" /> Delete
                </Button>
             )}
 
-            {/* Report only if user does NOT own comment */}
             {selectedComment?.user_id !== user?.id && (
                <Button variant="secondary" onClick={() => { setShowReportModal(true); setShowOptions(false); }} className="w-full justify-start gap-3 text-orange-400 h-12 text-base">
                   <Flag className="w-5 h-5" /> Report

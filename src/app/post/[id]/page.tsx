@@ -246,6 +246,7 @@ export default function PostDetailPage() {
   const commentInputRef = useRef<HTMLInputElement>(null);
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
+  const mediaScrollerRef = useRef<HTMLDivElement>(null);
 
  // 1. Initial Setup & Event Dispatch (Fixes background audio)
   useEffect(() => {
@@ -1257,77 +1258,93 @@ const openSingleLightbox = (url: string, caption?: string | null) => {
       {/* Main Content - Scrollable Area */}
       <main className="flex-1 overflow-y-auto w-full pt-14 pb-24 overscroll-contain">
         <div className="max-w-2xl mx-auto">
-          {/* Media */}
-          {post.media && post.media.length > 0 && (
-            <div className="relative bg-black">
-              {post.is_sensitive && !showSensitive ? (
-                <div className="aspect-video flex flex-col items-center justify-center bg-dark-800">
-                  <AlertTriangle className="w-10 h-10 text-orange-400 mb-2" />
-                  <p className="text-dark-200 text-sm mb-3">Sensitive Content</p>
-                  <Button variant="secondary" size="sm" onClick={() => setShowSensitive(true)}>View</Button>
-                </div>
+         {/* Media Carousel */}
+{post.media && post.media.length > 0 && (
+  <div className="relative bg-black">
+    {post.is_sensitive && !showSensitive ? (
+      <div className="aspect-video flex flex-col items-center justify-center bg-dark-800">
+        <AlertTriangle className="w-10 h-10 text-orange-400 mb-2" />
+        <p className="text-dark-200 text-sm mb-3">Sensitive Content</p>
+        <Button variant="secondary" size="sm" onClick={() => setShowSensitive(true)}>View</Button>
+      </div>
+    ) : (
+      <div className="relative">
+        {/* Scrollable Carousel */}
+        <div
+          ref={mediaScrollerRef}
+          className="flex overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+          style={{ 
+            WebkitOverflowScrolling: "touch",
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+          }}
+          onScroll={() => {
+            const el = mediaScrollerRef.current;
+            if (!el) return;
+            const w = el.clientWidth || 1;
+            const newIndex = Math.round(el.scrollLeft / w);
+            if (newIndex !== currentMediaIndex) {
+              setVideoError(false);
+              setCurrentMediaIndex(newIndex);
+            }
+          }}
+        >
+          {post.media.map((mediaItem, idx) => (
+            <div 
+              key={mediaItem.id || idx}
+              className="w-full shrink-0 snap-center snap-always aspect-video flex items-center justify-center bg-black"
+              style={{ scrollSnapStop: "always" }}
+            >
+              {mediaItem.media_type === "video" ? (
+                videoError && idx === currentMediaIndex ? (
+                  <div className="w-full h-full flex items-center justify-center bg-dark-800">
+                    <div className="text-center">
+                      <Play className="w-12 h-12 text-dark-500 mx-auto mb-2" />
+                      <p className="text-dark-400">Video unavailable</p>
+                    </div>
+                  </div>
+                ) : (
+                  <InlineVideo
+                    src={mediaItem.url}
+                    className="w-full h-full object-contain bg-black"
+                    showExpand={true}
+                    onExpand={() => openPostLightboxAt(idx)}
+                    onError={() => {
+                      if (idx === currentMediaIndex) setVideoError(true);
+                    }}
+                  />
+                )
               ) : (
-                <div className="aspect-video relative">
-                  {currentMedia?.media_type === "video" ? (
-                    videoError ? (
-                      <div className="w-full h-full flex items-center justify-center bg-dark-800">
-                        <div className="text-center">
-                          <Play className="w-12 h-12 text-dark-500 mx-auto mb-2" />
-                          <p className="text-dark-400">Video unavailable</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <InlineVideo
-                        src={currentMedia.url}
-                        className="w-full h-full object-contain bg-black"
-                        showExpand={true} // <--- ENABLED EXPAND BUTTON
-                        onExpand={() => openPostLightboxAt(currentMediaIndex)} // <--- LINK TO LIGHTBOX
-                      />
-                    )
-                  ) : (
-                    <img
-                      src={currentMedia?.url}
-                      alt=""
-                      className="w-full h-full object-contain cursor-pointer"
-                      onClick={() => {
-                        const items = (post.media || []).map((m) => ({
-                          url: m.url,
-                          type: (m.media_type === "video" ? "video" : "image") as "video" | "image",
-                        })) || [];
-
-                        setLightboxItems(items);
-                        setLightboxIndex(currentMediaIndex);
-                        setLightboxUrl(currentMedia?.url || null);
-                        setLightboxCaption(post.comment || null);
-                        setLightboxOpen(true);
-                      }}
-                    />
-                  )}
-                  {post.media.length > 1 && (
-                    <>
-                      <button 
-                        onClick={() => { setVideoError(false); setCurrentMediaIndex(i => i === 0 ? post.media!.length - 1 : i - 1); }} 
-                        className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 bg-black/60 rounded-full z-10"
-                      >
-                        <ChevronLeft className="w-5 h-5 text-white" />
-                      </button>
-                      <button 
-                        onClick={() => { setVideoError(false); setCurrentMediaIndex(i => i === post.media!.length - 1 ? 0 : i + 1); }} 
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-black/60 rounded-full z-10"
-                      >
-                        <ChevronRight className="w-5 h-5 text-white" />
-                      </button>
-                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-                        {post.media.map((_, i) => (
-                          <div key={i} className={`w-1.5 h-1.5 rounded-full ${i === currentMediaIndex ? "bg-white" : "bg-white/40"}`} />
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
+                <img
+                  src={mediaItem.url}
+                  alt=""
+                  className="w-full h-full object-contain cursor-pointer"
+                  onClick={() => openPostLightboxAt(idx)}
+                />
               )}
             </div>
-          )}
+          ))}
+        </div>
+
+        {/* Bottom Dots Indicator */}
+        {post.media.length > 1 && (
+          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2 z-10 pointer-events-none">
+            {post.media.map((_, i) => (
+              <div 
+                key={i} 
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  i === currentMediaIndex 
+                    ? "bg-white w-6" 
+                    : "bg-white/40 w-2"
+                }`} 
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+)}
 
           {/* Content Info */}
           <div className="p-4 space-y-3">

@@ -71,15 +71,10 @@ function WatchMediaCarousel({
   onControlsChange
 }: any) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null); // ✅ ADD THIS
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (!scrollRef.current) return;
-    const w = scrollRef.current.clientWidth;
-    scrollRef.current.scrollBy({ left: direction === 'left' ? -w : w, behavior: 'smooth' });
-  };
-
-  // ✅ ADD: Cleanup on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (longPressTimerRef.current) {
@@ -88,12 +83,61 @@ function WatchMediaCarousel({
     };
   }, []);
 
+  const scroll = (direction: 'left' | 'right') => {
+    if (!scrollRef.current) return;
+    const w = scrollRef.current.clientWidth;
+    scrollRef.current.scrollBy({ left: direction === 'left' ? -w : w, behavior: 'smooth' });
+  };
+
+  // Long press handlers for images
+  const handleImagePointerDown = (e: React.PointerEvent) => {
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+    
+    longPressTimerRef.current = setTimeout(() => {
+      onOpenOptions();
+      longPressTimerRef.current = null;
+    }, 500);
+  };
+
+  const handleImagePointerMove = (e: React.PointerEvent) => {
+    // Cancel long press if finger moved too much
+    if (pointerStartRef.current && longPressTimerRef.current) {
+      const dx = Math.abs(e.clientX - pointerStartRef.current.x);
+      const dy = Math.abs(e.clientY - pointerStartRef.current.y);
+      if (dx > 10 || dy > 10) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    }
+  };
+
+  const handleImagePointerUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    pointerStartRef.current = null;
+  };
+
+  const handleImagePointerCancel = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    pointerStartRef.current = null;
+  };
+
   return (
     <div className="relative w-full h-full">
+      {/* Scrollable Carousel Container */}
       <div
         ref={scrollRef}
         className="w-full h-full overflow-x-auto flex snap-x snap-mandatory scrollbar-hide"
-        style={{ WebkitOverflowScrolling: "touch" }}
+        style={{ 
+          WebkitOverflowScrolling: "touch",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
+        }}
         onScroll={(e) => {
           const el = e.currentTarget;
           const w = el.clientWidth || 1;
@@ -104,63 +148,64 @@ function WatchMediaCarousel({
         {media.map((m: any, idx: number) => {
           const blocked = isSensitive && !isRevealed;
           return (
-            <div key={m.id} className="w-full h-full shrink-0 snap-center flex items-center justify-center relative">
-               <div className="absolute inset-0 z-0" onContextMenu={(e) => e.preventDefault()} />
+            <div 
+              key={m.id} 
+              className="w-full h-full shrink-0 snap-center snap-always flex items-center justify-center relative"
+              style={{ scrollSnapStop: "always" }}
+            >
+              {/* Context Menu Prevention Layer */}
+              <div 
+                className="absolute inset-0 z-0" 
+                onContextMenu={(e) => e.preventDefault()} 
+              />
                
-               {blocked ? (
-                  <div className="relative w-full h-full flex items-center justify-center bg-black z-10">
-                     <div className="glass-float rounded-2xl px-5 py-4 max-w-sm text-center">
-                        <p className="text-white font-semibold mb-1">Sensitive content</p>
-                        <button onClick={(e) => { e.stopPropagation(); onReveal(); }} className="mt-2 px-5 py-2 rounded-xl bg-primary-600 text-white">View</button>
-                     </div>
+              {blocked ? (
+                <div className="relative w-full h-full flex items-center justify-center bg-black z-10">
+                  <div className="glass-float rounded-2xl px-5 py-4 max-w-sm text-center">
+                    <p className="text-white font-semibold mb-1">Sensitive content</p>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onReveal(); }} 
+                      className="mt-2 px-5 py-2 rounded-xl bg-primary-600 text-white"
+                    >
+                      View
+                    </button>
                   </div>
-               ) : m.media_type === "video" ? (
-                  <ReelVideo
-                    src={m.url}
-                    active={isActivePost && activeMediaIndex === idx}
-                    onWatched2s={onMarkViewed}
-                    onLongPress={onOpenOptions}
-                    onControlsChange={onControlsChange}
+                </div>
+              ) : m.media_type === "video" ? (
+                <ReelVideo
+                  src={m.url}
+                  active={isActivePost && activeMediaIndex === idx}
+                  onWatched2s={onMarkViewed}
+                  onLongPress={onOpenOptions}
+                  onControlsChange={onControlsChange}
+                />
+              ) : (
+                // ✅ Image with working long press
+                <div 
+                  className="w-full h-full flex items-center justify-center"
+                  style={{ touchAction: "pan-x pan-y" }}
+                  onContextMenu={(e) => e.preventDefault()}
+                  onPointerDown={handleImagePointerDown}
+                  onPointerMove={handleImagePointerMove}
+                  onPointerUp={handleImagePointerUp}
+                  onPointerLeave={handleImagePointerCancel}
+                  onPointerCancel={handleImagePointerCancel}
+                >
+                  <img 
+                    src={m.url} 
+                    alt="" 
+                    className="max-h-full max-w-full object-contain select-none" 
+                    draggable={false}
+                    style={{ pointerEvents: "none" }}
                   />
-               ) : (
-                  // ✅ FIX: Image with working long press
-                  <div 
-                    className="w-full h-full flex items-center justify-center"
-                    onContextMenu={(e) => e.preventDefault()}
-                    onPointerDown={() => {
-                      longPressTimerRef.current = setTimeout(() => {
-                        onOpenOptions();
-                        longPressTimerRef.current = null;
-                      }, 500);
-                    }}
-                    onPointerUp={() => {
-                      if (longPressTimerRef.current) {
-                        clearTimeout(longPressTimerRef.current);
-                        longPressTimerRef.current = null;
-                      }
-                    }}
-                    onPointerLeave={() => {
-                      if (longPressTimerRef.current) {
-                        clearTimeout(longPressTimerRef.current);
-                        longPressTimerRef.current = null;
-                      }
-                    }}
-                    onPointerCancel={() => {
-                      if (longPressTimerRef.current) {
-                        clearTimeout(longPressTimerRef.current);
-                        longPressTimerRef.current = null;
-                      }
-                    }}
-                  >
-                    <img src={m.url} alt="" className="max-h-full max-w-full object-contain pointer-events-none select-none" draggable={false} />
-                  </div>
-               )}
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Navigation Arrows */}
+      {/* Navigation Arrows - Only show if multiple items */}
       {media.length > 1 && (
         <>
           {activeMediaIndex > 0 && (
@@ -180,13 +225,18 @@ function WatchMediaCarousel({
             </button>
           )}
           
-          <div className="absolute top-4 left-0 right-0 flex justify-center gap-1.5 z-20 pointer-events-none">
-             {media.map((_: any, i: number) => (
-               <div 
-                 key={i} 
-                 className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${i === activeMediaIndex ? "bg-white w-3" : "bg-white/30"}`} 
-               />
-             ))}
+          {/* Bottom Dots Indicator */}
+          <div className="absolute bottom-24 left-0 right-0 flex justify-center gap-2 z-20 pointer-events-none">
+            {media.map((_: any, i: number) => (
+              <div 
+                key={i} 
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  i === activeMediaIndex 
+                    ? "bg-white w-6" 
+                    : "bg-white/40 w-2"
+                }`} 
+              />
+            ))}
           </div>
         </>
       )}

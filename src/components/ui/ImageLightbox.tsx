@@ -13,6 +13,7 @@ export function ImageLightbox({
   imageUrl,
   items,
   initialIndex = 0,
+  onLongPress, // ✅ NEW: Callback for long press on images
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -20,6 +21,7 @@ export function ImageLightbox({
   items?: MediaItem[];
   initialIndex?: number;
   caption?: string | null;
+  onLongPress?: () => void; // ✅ NEW
 }) {
   const mediaItems: MediaItem[] = useMemo(() => {
     if (items && items.length > 0) return items;
@@ -29,12 +31,15 @@ export function ImageLightbox({
 
   const [index, setIndex] = useState(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const isScrollingRef = useRef(false);
 
   // Drag State for vertical dismiss
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartY = useRef<number | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const isHorizontalScrollRef = useRef(false);
+
+  // Long press state
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -56,7 +61,12 @@ export function ImageLightbox({
       });
     }
     
-    return () => { document.body.style.overflow = ""; };
+    return () => { 
+      document.body.style.overflow = ""; 
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+      }
+    };
   }, [isOpen, initialIndex, mediaItems.length]);
 
   if (!isOpen || mediaItems.length === 0) return null;
@@ -75,41 +85,83 @@ export function ImageLightbox({
     if (newIndex !== index) setIndex(newIndex);
   };
 
-  // --- Vertical Drag Logic (only when not horizontally scrolling) ---
+  // --- Combined Touch Logic (vertical drag + horizontal scroll detection) ---
   const onTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 1) {
-      dragStartY.current = e.touches[0].clientY;
+      dragStartRef.current = { 
+        x: e.touches[0].clientX, 
+        y: e.touches[0].clientY 
+      };
       setIsDragging(true);
+      isHorizontalScrollRef.current = false;
     }
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
-    if (dragStartY.current === null) return;
+    if (!dragStartRef.current) return;
     
-    // Only allow vertical drag if we're not in the middle of horizontal scroll
-    if (isScrollingRef.current) return;
+    const dx = e.touches[0].clientX - dragStartRef.current.x;
+    const dy = e.touches[0].clientY - dragStartRef.current.y;
     
-    const dy = e.touches[0].clientY - dragStartY.current;
-    setDragOffset(dy);
+    // Determine if this is a horizontal scroll (for carousel) or vertical drag (for dismiss)
+    if (!isHorizontalScrollRef.current && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+      // Horizontal movement - let the carousel handle it
+      isHorizontalScrollRef.current = true;
+      setDragOffset(0);
+      return;
+    }
+    
+    // Vertical movement - handle dismiss gesture
+    if (!isHorizontalScrollRef.current && Math.abs(dy) > 10) {
+      setDragOffset(dy);
+    }
   };
 
   const onTouchEnd = () => {
-    dragStartY.current = null;
+    dragStartRef.current = null;
     setIsDragging(false);
 
-    if (Math.abs(dragOffset) > 100) {
+    // Only close if it was a vertical drag, not horizontal scroll
+    if (!isHorizontalScrollRef.current && Math.abs(dragOffset) > 100) {
       onClose(); 
     } else {
       setDragOffset(0); 
     }
+    
+    isHorizontalScrollRef.current = false;
+  };
+
+  // --- Long Press Handlers ---
+  const handlePointerDown = () => {
+    if (!onLongPress) return;
+    
+    longPressTimerRef.current = setTimeout(() => {
+      onLongPress();
+      longPressTimerRef.current = null;
+    }, 500);
+  };
+
+  const handlePointerUp = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handlePointerLeave = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
   };
 
   const bgOpacity = Math.max(0, 1 - Math.abs(dragOffset) / 400);
+  const scale = Math.max(0.9, 1 - Math.abs(dragOffset) / 1000);
 
   return (
     <Portal>
       <div 
-        className="fixed inset-0 z-[99999] flex flex-col"
+        className="fixed inset-0 z-[99999] flex flex-col touch-none"
         onClick={close}
         onContextMenu={(e) => e.preventDefault()}
       >
@@ -121,7 +173,7 @@ export function ImageLightbox({
 
         {/* Top bar */}
         <div
-          className={`relative z-10 flex items-center justify-between px-4 shrink-0 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
+          className={`relative z-10 flex items-center justify-between px-4 shrink-0 transition-opacity duration-200 ${isDragging && Math.abs(dragOffset) > 20 ? 'opacity-0' : 'opacity-100'}`}
           style={{ paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", height: "56px" }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -140,9 +192,9 @@ export function ImageLightbox({
 
         {/* Main Content Area - Draggable */}
         <div 
-          className="flex-1 relative transition-transform duration-200 ease-out"
+          className="flex-1 relative"
           style={{ 
-            transform: `translateY(${dragOffset}px)`,
+            transform: `translateY(${dragOffset}px) scale(${scale})`,
             transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
           }}
           onClick={(e) => e.stopPropagation()}
@@ -158,10 +210,9 @@ export function ImageLightbox({
               WebkitOverflowScrolling: "touch",
               scrollbarWidth: "none",
               msOverflowStyle: "none",
+              touchAction: "pan-x", // ✅ Allow horizontal panning
             }}
             onScroll={handleScroll}
-            onTouchStart={() => { isScrollingRef.current = true; }}
-            onTouchEnd={() => { setTimeout(() => { isScrollingRef.current = false; }, 100); }}
           >
             {mediaItems.map((m, i) => (
               <div 
@@ -179,12 +230,21 @@ export function ImageLightbox({
                     />
                   </div>
                 ) : (
-                  <img 
-                    src={m.url} 
-                    alt="" 
-                    className="w-full h-full object-contain max-h-screen pointer-events-none select-none" 
-                    draggable={false}
-                  />
+                  // ✅ Image with long press support
+                  <div
+                    className="w-full h-full flex items-center justify-center"
+                    onPointerDown={handlePointerDown}
+                    onPointerUp={handlePointerUp}
+                    onPointerLeave={handlePointerLeave}
+                    onPointerCancel={handlePointerUp}
+                  >
+                    <img 
+                      src={m.url} 
+                      alt="" 
+                      className="w-full h-full object-contain max-h-screen pointer-events-none select-none" 
+                      draggable={false}
+                    />
+                  </div>
                 )}
               </div>
             ))}
@@ -194,7 +254,7 @@ export function ImageLightbox({
         {/* Bottom Dots Indicator */}
         {mediaItems.length > 1 && (
           <div 
-            className={`relative z-10 flex justify-center gap-2 py-4 transition-opacity duration-200 ${isDragging ? 'opacity-0' : 'opacity-100'}`}
+            className={`relative z-10 flex justify-center gap-2 py-4 transition-opacity duration-200 ${isDragging && Math.abs(dragOffset) > 20 ? 'opacity-0' : 'opacity-100'}`}
             style={{ paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}
             onClick={(e) => e.stopPropagation()}
           >

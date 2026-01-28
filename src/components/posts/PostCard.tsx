@@ -44,6 +44,8 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   const [showFullComment, setShowFullComment] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [videoStartTime, setVideoStartTime] = useState(0);
+  const [showLightboxOptions, setShowLightboxOptions] = useState(false);
+
 
 
   // Lightbox States
@@ -380,13 +382,16 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       </div>
 
       <ImageLightbox
-        isOpen={lightboxOpen}
-        onClose={() => setLightboxOpen(false)}
-        imageUrl={lightboxUrl}
-        caption={post.comment || null}
-        items={lightboxItems}
-        initialIndex={lightboxIndex}
-      />
+  isOpen={lightboxOpen}
+  onClose={() => setLightboxOpen(false)}
+  imageUrl={lightboxUrl}
+  caption={post.comment || null}
+  items={lightboxItems}
+  initialIndex={lightboxIndex}
+  onLongPress={() => {
+    setLightboxOpen(false);
+  }}
+/>
       
       <VideoLightbox 
   isOpen={videoLightboxOpen}
