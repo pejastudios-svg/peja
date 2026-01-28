@@ -76,6 +76,7 @@ export default function Home() {
      return true;
   });
   const [refreshing, setRefreshing] = useState(false);
+  
     useEffect(() => {
   try {
     sessionStorage.setItem(
@@ -384,12 +385,20 @@ feedCache.setPosts(feedKey, finalPosts);
     }
   }, [activeTab, feedKey, feedCache, trendingMode, showSeenTop, user]);
 
-  // Initial fetch
+  // Initial fetch + check for refresh flag
   useEffect(() => {
     if (!authLoading) {
-      fetchPosts();
+      // Check if we need to force refresh (after create/delete)
+      const needsRefresh = sessionStorage.getItem("peja-feed-refresh");
+      if (needsRefresh) {
+        sessionStorage.removeItem("peja-feed-refresh");
+        feedCache.invalidateAll();
+        fetchPosts(true); // Force refresh
+      } else {
+        fetchPosts();
+      }
     }
-  }, [activeTab, authLoading, fetchPosts]);
+  }, [activeTab, authLoading, fetchPosts, feedCache]);
 
   useEffect(() => {
   if (!session?.access_token) return;

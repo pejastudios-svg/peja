@@ -95,22 +95,22 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               key={t.id}
               className="glass-float rounded-2xl border border-white/10 shadow-xl overflow-hidden animate-[toastIn_180ms_ease-out]"
             >
-              <div className="p-3 flex items-start gap-3">
-                <div className="p-2 rounded-xl bg-dark-800/60 shrink-0">{iconFor(t.type)}</div>
+              <div className="p-3 flex items-center gap-3">
+  <div className="p-2 rounded-xl bg-dark-800/60 shrink-0">{iconFor(t.type)}</div>
 
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-dark-100">{t.message}</p>
-                </div>
+  <div className="min-w-0 flex-1">
+    <p className="text-sm font-semibold text-dark-100">{t.message}</p>
+  </div>
 
-                <button
-                  type="button"
-                  onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
-                  className="p-2 rounded-lg hover:bg-white/10 text-dark-400"
-                  aria-label="Dismiss"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
+  <button
+    type="button"
+    onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+    className="p-2 rounded-lg hover:bg-white/10 text-dark-400"
+    aria-label="Dismiss"
+  >
+    <X className="w-4 h-4" />
+  </button>
+</div>
             </div>
           ))}
         </div>

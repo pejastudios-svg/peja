@@ -387,6 +387,9 @@ const { data: post, error: postError } = await supabase
 setUploadProgress(100);
 setToast("Post uploaded ✓");
 
+// Set flag to trigger refresh on home page
+sessionStorage.setItem("peja-feed-refresh", "true");
+
 setTimeout(() => {
   const inOverlay = typeof window !== "undefined" && (window as any).__pejaOverlayOpen;
   if (inOverlay) router.back();

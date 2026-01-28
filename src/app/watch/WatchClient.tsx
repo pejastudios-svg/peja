@@ -17,6 +17,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { formatDistanceToNow } from "date-fns";
+import { useLongPress } from "@/components/hooks/useLongPress";
 
 const SEEN_KEY = "peja-seen-posts-v1";
 type SeenStore = Record<string, number>;
@@ -55,6 +56,26 @@ function markSeen(postId: string) {
     ) as SeenStore;
     writeSeenStore(trimmed);
   } catch {}
+}
+
+// Simple image component with long press
+function ImageWithLongPress({ url, onLongPress }: { url: string; onLongPress: () => void }) {
+  const longPressProps = useLongPress(onLongPress, 500);
+  
+  return (
+    <div 
+      className="w-full h-full flex items-center justify-center"
+      {...longPressProps}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <img 
+        src={url} 
+        alt="" 
+        className="max-h-full max-w-full object-contain select-none pointer-events-none" 
+        draggable={false}
+      />
+    </div>
+  );
 }
 
 // --- Helper Component for Carousel ---
@@ -180,26 +201,12 @@ function WatchMediaCarousel({
                   onControlsChange={onControlsChange}
                 />
               ) : (
-                // ✅ Image with working long press
-                <div 
-                  className="w-full h-full flex items-center justify-center"
-                  style={{ touchAction: "pan-x pan-y" }}
-                  onContextMenu={(e) => e.preventDefault()}
-                  onPointerDown={handleImagePointerDown}
-                  onPointerMove={handleImagePointerMove}
-                  onPointerUp={handleImagePointerUp}
-                  onPointerLeave={handleImagePointerCancel}
-                  onPointerCancel={handleImagePointerCancel}
-                >
-                  <img 
-                    src={m.url} 
-                    alt="" 
-                    className="max-h-full max-w-full object-contain select-none" 
-                    draggable={false}
-                    style={{ pointerEvents: "none" }}
-                  />
-                </div>
-              )}
+  // ✅ Image with useLongPress hook (same as videos use)
+  <ImageWithLongPress 
+    url={m.url} 
+    onLongPress={onOpenOptions} 
+  />
+)}
             </div>
           );
         })}

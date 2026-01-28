@@ -345,12 +345,54 @@ export function WatchCommentSheet({
     if (!reportReason || !user || !selectedComment) return;
     setSubmittingReport(true);
     
-    setTimeout(() => {
-       setSubmittingReport(false);
-       setShowReportModal(false);
-       setShowOptions(false);
-       toast.success("Report submitted");
-    }, 1000);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth.session?.access_token;
+
+      if (!token) {
+        toast.danger("Session expired. Please sign in again.");
+        return;
+      }
+
+      const res = await fetch("/api/report-comment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          commentId: selectedComment.id,
+          reason: reportReason,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to report");
+      }
+
+      // Close modals
+      setShowReportModal(false);
+      setShowOptions(false);
+      setReportReason("");
+
+      // If comment was auto-deleted due to 3+ reports
+      if (json.deleted) {
+        // Remove from local state
+        setComments((prev) => prev.filter((c) => c.id !== selectedComment.id && c.parent_id !== selectedComment.id));
+        toast.success("Comment removed due to reports");
+      } else {
+        toast.success("Report submitted");
+      }
+
+    } catch (err: any) {
+      console.error("Report comment error:", err);
+      toast.danger(err.message || "Failed to report");
+    } finally {
+      setSubmittingReport(false);
+      setSelectedComment(null);
+    }
   };
 
   const handleDeleteAction = async () => {
@@ -369,13 +411,38 @@ export function WatchCommentSheet({
   // Helper to render a single comment row with Long Press support
   const RenderCommentRow = ({ comment, isReply = false }: { comment: any, isReply?: boolean }) => {
     const longPressProps = useLongPress(() => openOptions(comment), 500);
+    const lastTapRef = useRef<number>(0);
+    const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const handleTap = () => {
+      const now = Date.now();
+      const DOUBLE_TAP_DELAY = 300;
+
+      if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+        // Double tap detected - like the comment
+        if (tapTimeoutRef.current) {
+          clearTimeout(tapTimeoutRef.current);
+          tapTimeoutRef.current = null;
+        }
+        handleLike(comment.id);
+        lastTapRef.current = 0;
+      } else {
+        // First tap - wait to see if it's a double tap
+        lastTapRef.current = now;
+        tapTimeoutRef.current = setTimeout(() => {
+          // Single tap confirmed - reply
+          handleReply(comment);
+          tapTimeoutRef.current = null;
+        }, DOUBLE_TAP_DELAY);
+      }
+    };
 
     return (
       <div 
         key={comment.id} 
         className={`flex gap-3 py-2`}
         {...longPressProps}
-        onClick={() => handleReply(comment)}
+        onClick={handleTap}
       >
         <div 
            className="w-8 h-8 rounded-full bg-white/10 shrink-0 overflow-hidden"

@@ -15,6 +15,7 @@ type FeedContextType = {
   get: (key: FeedKey) => FeedCacheValue | null;
   setPosts: (key: FeedKey, posts: Post[]) => void;
   setScroll: (key: FeedKey, y: number) => void;
+  invalidateAll: () => void;
 };
 
 const FeedContext = createContext<FeedContextType | null>(null);
@@ -40,6 +41,9 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
         } else {
           storeRef.current.set(key, { ...prev, scrollY: y });
         }
+      },
+      invalidateAll: () => {
+        storeRef.current.clear();
       },
     };
   }, []);

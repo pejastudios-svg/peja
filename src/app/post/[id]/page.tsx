@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { formatDistanceToNow, differenceInHours } from "date-fns";
+import { useFeedCache } from "@/context/FeedContext";
 import { useAuth } from "@/context/AuthContext";
 import { notifyPostComment, notifyCommentLiked, notifyCommentReply } from "@/lib/notifications";
 import { notifyPostConfirmed } from "@/lib/notifications";
@@ -142,12 +143,37 @@ const CommentRow = ({
   // Hook is now valid here because this is a Component
   const longPressProps = useLongPress(() => onOpenOptions(comment), 500);
   const avatarHoldTimer = useRef<number | null>(null);
+  const lastTapRef = useRef<number>(0);
+  const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTap = () => {
+    const now = Date.now();
+    const DOUBLE_TAP_DELAY = 300;
+
+    if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+      // Double tap detected - like the comment
+      if (tapTimeoutRef.current) {
+        clearTimeout(tapTimeoutRef.current);
+        tapTimeoutRef.current = null;
+      }
+      onLike(comment.id);
+      lastTapRef.current = 0;
+    } else {
+      // First tap - wait to see if it's a double tap
+      lastTapRef.current = now;
+      tapTimeoutRef.current = setTimeout(() => {
+        // Single tap confirmed - reply
+        onReply(comment);
+        tapTimeoutRef.current = null;
+      }, DOUBLE_TAP_DELAY);
+    }
+  };
 
   return (
     <div 
       className={`${isReply ? "ml-10 py-2" : "py-3"} ${comment.isPending ? "opacity-60" : ""}`}
       {...longPressProps}
-      onClick={() => onReply(comment)} // Tap to reply
+      onClick={handleTap}
     >
       <div className="flex gap-3">
         <div
@@ -237,6 +263,7 @@ export default function PostDetailPage() {
   const toastApi = useToast();
   const confirmCtx = useConfirm();
   const router = useRouter();
+  const feedCache = useFeedCache();
   const params = useParams();
   const searchParams = useSearchParams();
   const sourceKey = searchParams.get("sourceKey");
@@ -997,27 +1024,43 @@ setTimeout(() => setToastMsg(null), 2500);
   const handleDeletePost = async () => {
     if (!post) return;
 
-    setDeleting(true);
-    try {
-      const commentIds = allComments.map(c => c.id);
-      if (commentIds.length > 0) {
-        await supabase.from("comment_likes").delete().in("comment_id", commentIds);
-        await supabase.from("comment_media").delete().in("comment_id", commentIds);
-      }
-      await supabase.from("post_comments").delete().eq("post_id", postId);
-      await supabase.from("post_media").delete().eq("post_id", postId);
-      await supabase.from("post_tags").delete().eq("post_id", postId);
-      await supabase.from("post_confirmations").delete().eq("post_id", postId);
-      await supabase.from("post_reports").delete().eq("post_id", postId);
-      await supabase.from("posts").delete().eq("id", postId);
-      
+    // Close modal immediately
+    setShowDeleteModal(false);
+    
+    // Set flag to trigger refresh on home page
+    sessionStorage.setItem("peja-feed-refresh", "true");
+    
+    // Invalidate all feed caches
+    feedCache.invalidateAll();
+    
+    // Navigate away immediately (optimistic)
+    if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
+      window.dispatchEvent(new Event("peja-close-post"));
+    } else if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+    } else {
       router.replace("/");
-    } catch (err) {
-      console.error("Delete error:", err);
-      alert("Failed to delete.");
-    } finally {
-      setDeleting(false);
     }
+
+    // Run deletion in background (fire and forget)
+    const commentIds = allComments.map(c => c.id);
+    
+    (async () => {
+      try {
+        if (commentIds.length > 0) {
+          await supabase.from("comment_likes").delete().in("comment_id", commentIds);
+          await supabase.from("comment_media").delete().in("comment_id", commentIds);
+        }
+        await supabase.from("post_comments").delete().eq("post_id", postId);
+        await supabase.from("post_media").delete().eq("post_id", postId);
+        await supabase.from("post_tags").delete().eq("post_id", postId);
+        await supabase.from("post_confirmations").delete().eq("post_id", postId);
+        await supabase.from("post_reports").delete().eq("post_id", postId);
+        await supabase.from("posts").delete().eq("id", postId);
+      } catch (err) {
+        console.error("Background delete error:", err);
+      }
+    })();
   };
 
   // Reply handler
@@ -1067,17 +1110,61 @@ setTimeout(() => setToastMsg(null), 2500);
     toastApi.success("Comment copied");
   };
 
-  const handleReportCommentAction = async () => {
+    const handleReportCommentAction = async () => {
     if (!reportReason || !user || !selectedComment) return;
     setSubmittingReport(true);
     
-    // API Call will go here in next phase
-    setTimeout(() => {
-       setSubmittingReport(false);
-       setShowCommentReportModal(false);
-       setShowCommentOptions(false);
-       toastApi.success("Report submitted");
-    }, 1000);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth.session?.access_token;
+
+      if (!token) {
+        toastApi.danger("Session expired. Please sign in again.");
+        return;
+      }
+
+      const res = await fetch("/api/report-comment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          commentId: selectedComment.id,
+          reason: reportReason,
+          description: reportDescription,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to report");
+      }
+
+      // Close modals
+      setShowCommentReportModal(false);
+      setShowCommentOptions(false);
+      setReportReason("");
+      setReportDescription("");
+
+      // If comment was auto-deleted due to 3+ reports
+      if (json.deleted) {
+        // Remove from local state
+        setAllComments((prev) => prev.filter((c) => c.id !== selectedComment.id && c.parent_id !== selectedComment.id));
+        setPost((p) => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
+        toastApi.success("Comment removed due to reports");
+      } else {
+        toastApi.success("Report submitted");
+      }
+
+    } catch (err: any) {
+      console.error("Report comment error:", err);
+      toastApi.danger(err.message || "Failed to report");
+    } finally {
+      setSubmittingReport(false);
+      setSelectedComment(null);
+    }
   };
 
   const handleDeleteCommentAction = async () => {
