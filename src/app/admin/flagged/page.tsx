@@ -22,13 +22,15 @@ import {
   XCircle,
   ChevronLeft,
   ChevronRight,
-  User, // Added this
+  User,
+  MessageCircle,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 type FlagRow = {
   id: string;
   post_id: string | null;
+  comment_id: string | null;
   reason: string;
   source: string | null;
   priority: string | null;
@@ -37,6 +39,7 @@ type FlagRow = {
   reviewed_by: string | null;
   reviewed_at: string | null;
 
+  // For flagged posts
   post?: {
     id: string;
     user_id: string;
@@ -48,8 +51,20 @@ type FlagRow = {
     status: string;
   };
 
+  // For flagged comments
+  flaggedComment?: {
+    id: string;
+    user_id: string;
+    content: string;
+    created_at: string;
+    post_id: string;
+  };
+
   media?: { url: string; media_type: string; is_sensitive: boolean }[];
   user?: { full_name: string | null; email: string | null; avatar_url: string | null };
+  
+  // Type indicator
+  contentType: "post" | "comment";
 };
 
 export default function AdminFlaggedPage() {
@@ -94,7 +109,7 @@ function FlaggedRowSkeleton() {
     try {
       const { data: flags, error } = await supabase
         .from("flagged_content")
-        .select("id,post_id,reason,source,priority,status,created_at,reviewed_by,reviewed_at")
+        .select("id,post_id,comment_id,reason,source,priority,status,created_at,reviewed_by,reviewed_at")
         .in("status", ["pending", "escalated"])
         .order("created_at", { ascending: false })
         .limit(100);
@@ -102,9 +117,12 @@ function FlaggedRowSkeleton() {
       if (error) throw error;
 
       const rows = (flags || []) as any[];
+      
+      // Separate post IDs and comment IDs
       const postIds = Array.from(new Set(rows.map((x) => x.post_id).filter(Boolean)));
+      const commentIds = Array.from(new Set(rows.map((x) => x.comment_id).filter(Boolean)));
 
-      // posts
+      // Fetch posts
       const { data: postsData } = postIds.length
         ? await supabase
             .from("posts")
@@ -115,7 +133,32 @@ function FlaggedRowSkeleton() {
       const postsMap: Record<string, any> = {};
       (postsData || []).forEach((p: any) => (postsMap[p.id] = p));
 
-      // media
+      // Fetch comments
+      const { data: commentsData } = commentIds.length
+        ? await supabase
+            .from("post_comments")
+            .select("id,user_id,content,created_at,post_id")
+            .in("id", commentIds)
+        : { data: [] };
+
+      const commentsMap: Record<string, any> = {};
+      (commentsData || []).forEach((c: any) => (commentsMap[c.id] = c));
+
+      // Also fetch posts for comments (to show context)
+      const commentPostIds = Array.from(new Set((commentsData || []).map((c: any) => c.post_id).filter(Boolean)));
+      const allPostIds = Array.from(new Set([...postIds, ...commentPostIds]));
+
+      const { data: allPostsData } = allPostIds.length
+        ? await supabase
+            .from("posts")
+            .select("id,user_id,category,comment,address,is_sensitive,created_at,status")
+            .in("id", allPostIds)
+        : { data: [] };
+
+      const allPostsMap: Record<string, any> = {};
+      (allPostsData || []).forEach((p: any) => (allPostsMap[p.id] = p));
+
+      // Fetch media for posts
       const { data: mediaData } = postIds.length
         ? await supabase
             .from("post_media")
@@ -129,10 +172,10 @@ function FlaggedRowSkeleton() {
         mediaMap[m.post_id].push(m);
       });
 
-      // users (poster)
-      const userIds = Array.from(
-        new Set((postsData || []).map((p: any) => p.user_id).filter(Boolean))
-      );
+      // Fetch users (for both post owners and comment owners)
+      const postUserIds = (allPostsData || []).map((p: any) => p.user_id).filter(Boolean);
+      const commentUserIds = (commentsData || []).map((c: any) => c.user_id).filter(Boolean);
+      const userIds = Array.from(new Set([...postUserIds, ...commentUserIds]));
 
       const { data: usersData } = userIds.length
         ? await supabase.from("users").select("id,full_name,email,avatar_url").in("id", userIds)
@@ -142,12 +185,18 @@ function FlaggedRowSkeleton() {
       (usersData || []).forEach((u: any) => (usersMap[u.id] = u));
 
       const merged: FlagRow[] = rows.map((f: any) => {
-        const p = f.post_id ? postsMap[f.post_id] : null;
+        const isComment = !!f.comment_id;
+        const comment = f.comment_id ? commentsMap[f.comment_id] : null;
+        const post = f.post_id ? allPostsMap[f.post_id] : (comment ? allPostsMap[comment.post_id] : null);
+        const contentOwner = isComment ? (comment ? usersMap[comment.user_id] : null) : (post ? usersMap[post.user_id] : null);
+
         return {
           ...f,
-          post: p || undefined,
-          media: p ? mediaMap[p.id] || [] : [],
-          user: p ? usersMap[p.user_id] || undefined : undefined,
+          contentType: isComment ? "comment" : "post",
+          post: post || undefined,
+          flaggedComment: comment || undefined,
+          media: post ? mediaMap[post.id] || [] : [],
+          user: contentOwner || undefined,
         };
       });
 
@@ -260,21 +309,25 @@ function FlaggedRowSkeleton() {
                >
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${item.priority === 'critical' ? 'bg-red-500' : item.priority === 'high' ? 'bg-orange-500' : 'bg-yellow-500/50'}`} />
 
-                  {/* Content Thumbnail (Keep square-ish for content) */}
+                  {/* Content Thumbnail */}
                   <div className="w-14 h-14 rounded-lg bg-dark-900 overflow-hidden shrink-0 border border-white/5 relative">
-                     {item.media?.[0] ? (
+                     {item.contentType === "comment" ? (
+                        <div className="w-full h-full flex items-center justify-center bg-dark-800">
+                           <MessageCircle className="w-6 h-6 text-orange-400" />
+                        </div>
+                     ) : item.media?.[0] ? (
                         <img src={item.media[0].url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                      ) : (
                         <div className="w-full h-full flex items-center justify-center bg-dark-800">
-                             <Flag className="w-6 h-6 text-dark-500" />
+                           <Flag className="w-6 h-6 text-dark-500" />
                         </div>
                      )}
                   </div>
 
                   <div className="flex-1 min-w-0">
                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded shadow-sm ${priorityColor(item.priority)}`}>
-                           {item.priority || "Low"} Priority
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded shadow-sm ${item.contentType === "comment" ? "bg-orange-500/20 text-orange-400" : priorityColor(item.priority)}`}>
+                           {item.contentType === "comment" ? "Comment" : (item.priority || "Low") + " Priority"}
                         </span>
                         <span className="text-xs text-dark-500">
                            {item.created_at && formatDistanceToNow(new Date(item.created_at))} ago
@@ -282,10 +335,17 @@ function FlaggedRowSkeleton() {
                      </div>
                      
                      <p className="text-sm font-bold text-dark-100 mb-1.5 line-clamp-1">
-                        {item.reason}
+                        {item.contentType === "comment" ? (item.flaggedComment?.content || "Comment") : item.reason}
                      </p>
 
-                     {/* User Avatar & Name (Circular Profile Pic) */}
+                     {/* Reason for comments */}
+                     {item.contentType === "comment" && (
+                        <p className="text-xs text-dark-500 mb-1.5 line-clamp-1">
+                           Reason: {item.reason}
+                        </p>
+                     )}
+
+                     {/* User Avatar & Name */}
                      <div className="flex items-center gap-2">
                         <div className="w-5 h-5 rounded-full bg-dark-800 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center">
                            {item.user?.avatar_url ? (
@@ -308,60 +368,108 @@ function FlaggedRowSkeleton() {
          )}
       </div>
 
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title="Review Content" size="xl">
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={selected?.contentType === "comment" ? "Review Comment" : "Review Content"} size="xl">
          {selected && (
             <div className="space-y-6">
-               <div className="relative aspect-video bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
-                  {selected.media?.[mediaIndex] && (
-                     selected.media[mediaIndex].media_type === 'video' ? (
-                        <InlineVideo 
-                          src={selected.media[mediaIndex].url} 
-                          className="w-full h-full object-contain"
-                          showExpand={true}
-                          showMute={true}
-                          onExpand={() => {
-                            setLightboxUrl(selected.media![mediaIndex].url);
-                            setVideoLightboxOpen(true);
-                          }}
-                        />
-                     ) : (
-                        <img 
-                          src={selected.media[mediaIndex].url} 
-                          className="w-full h-full object-contain cursor-pointer" 
-                          onClick={() => {
-                            setLightboxUrl(selected.media![mediaIndex].url);
-                            setLightboxOpen(true);
-                          }}
-                        />
-                     )
-                  )}
-                  {/* Arrows if multiple media */}
-                  {selected.media && selected.media.length > 1 && (
-                      <>
-                        <button onClick={() => setMediaIndex(i => Math.max(0, i-1))} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/80"><ChevronLeft className="w-6 h-6"/></button>
-                        <button onClick={() => setMediaIndex(i => Math.min(selected.media!.length-1, i+1))} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/80"><ChevronRight className="w-6 h-6"/></button>
-                      </>
-                  )}
+               {/* Show media only for posts */}
+               {selected.contentType === "post" && (
+                 <div className="relative aspect-video bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
+                    {selected.media?.[mediaIndex] && (
+                       selected.media[mediaIndex].media_type === 'video' ? (
+                          <InlineVideo 
+                            src={selected.media[mediaIndex].url} 
+                            className="w-full h-full object-contain"
+                            showExpand={true}
+                            showMute={true}
+                            onExpand={() => {
+                              setLightboxUrl(selected.media![mediaIndex].url);
+                              setVideoLightboxOpen(true);
+                            }}
+                          />
+                       ) : (
+                          <img 
+                            src={selected.media[mediaIndex].url} 
+                            className="w-full h-full object-contain cursor-pointer" 
+                            onClick={() => {
+                              setLightboxUrl(selected.media![mediaIndex].url);
+                              setLightboxOpen(true);
+                            }}
+                          />
+                       )
+                    )}
+                    {selected.media && selected.media.length > 1 && (
+                        <>
+                          <button onClick={() => setMediaIndex(i => Math.max(0, i-1))} className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/80"><ChevronLeft className="w-6 h-6"/></button>
+                          <button onClick={() => setMediaIndex(i => Math.min(selected.media!.length-1, i+1))} className="absolute right-4 top-1/2 -translate-y-1/2 p-2 bg-black/50 rounded-full hover:bg-black/80"><ChevronRight className="w-6 h-6"/></button>
+                        </>
+                    )}
+                 </div>
+               )}
+
+               {/* Flagged Comment Display */}
+               {selected.contentType === "comment" && (
+                 <div className="p-4 bg-red-500/10 rounded-xl border border-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.15)]">
+                    <div className="flex items-center gap-2 mb-2">
+                       <MessageCircle className="w-4 h-4 text-red-400" />
+                       <span className="text-xs font-bold text-red-400 uppercase">Flagged Comment</span>
+                    </div>
+                    <p className="text-sm text-dark-100 wrap-break-word whitespace-pre-wrap">
+                       {selected.flaggedComment?.content || "No content."}
+                    </p>
+                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-red-500/20">
+                       <div className="w-6 h-6 rounded-full bg-dark-800 border border-white/10 overflow-hidden flex items-center justify-center">
+                          {selected.user?.avatar_url ? (
+                             <img src={selected.user.avatar_url} className="w-full h-full object-cover" />
+                          ) : (
+                             <User className="w-3 h-3 text-dark-400" />
+                          )}
+                       </div>
+                       <span className="text-xs text-dark-400">{selected.user?.full_name || "Unknown"}</span>
+                    </div>
+                 </div>
+               )}
+
+               {/* Report Reason */}
+               <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                  <p className="text-sm text-dark-300 wrap-break-word whitespace-pre-wrap overflow-hidden">
+                     <span className="text-dark-500 uppercase text-xs font-bold mr-2">Reason:</span> 
+                     {selected.reason}
+                  </p>
                </div>
                
-               <div className="p-4 bg-white/5 rounded-xl border border-white/5">
-    <p className="text-sm text-dark-300 wrap-break-word whitespace-pre-wrap overflow-hidden">
-       <span className="text-dark-500 uppercase text-xs font-bold mr-2">Post Content:</span> 
-       {selected.post?.comment || "No text content."}
-    </p>
-</div>
+               {/* Post context for comments */}
+               {selected.contentType === "comment" && selected.post && (
+                 <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                    <p className="text-xs text-dark-500 uppercase font-bold mb-2">On Post:</p>
+                    <p className="text-sm text-dark-300 wrap-break-word whitespace-pre-wrap overflow-hidden line-clamp-3">
+                       {selected.post.comment || `[${selected.post.category}]`}
+                    </p>
+                 </div>
+               )}
+
+               {/* Post content for posts */}
+               {selected.contentType === "post" && (
+                 <div className="p-4 bg-white/5 rounded-xl border border-white/5">
+                    <p className="text-sm text-dark-300 wrap-break-word whitespace-pre-wrap overflow-hidden">
+                       <span className="text-dark-500 uppercase text-xs font-bold mr-2">Post Content:</span> 
+                       {selected.post?.comment || "No text content."}
+                    </p>
+                 </div>
+               )}
 
                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 border-t border-white/10 pt-4">
-                  <Button variant="primary" className="bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20" onClick={() => handleReviewAction("approve")}>
+                  <Button variant="primary" className="bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20" onClick={() => handleReviewAction("approve")} disabled={actionLoading}>
                       <CheckCircle className="w-4 h-4 mr-2" /> Safe
                   </Button>
-                  <Button variant="secondary" onClick={() => handleReviewAction("blur")}>
-                      <Eye className="w-4 h-4 mr-2" /> Blur
-                  </Button>
-                  <Button variant="danger" onClick={() => handleReviewAction("remove")}>
+                  {selected.contentType === "post" && (
+                    <Button variant="secondary" onClick={() => handleReviewAction("blur")} disabled={actionLoading}>
+                        <Eye className="w-4 h-4 mr-2" /> Blur
+                    </Button>
+                  )}
+                  <Button variant="danger" onClick={() => handleReviewAction("remove")} disabled={actionLoading}>
                       <XCircle className="w-4 h-4 mr-2" /> Remove
                   </Button>
-                  <Button variant="secondary" onClick={() => handleReviewAction("escalate")}>
+                  <Button variant="secondary" onClick={() => handleReviewAction("escalate")} disabled={actionLoading}>
                       <AlertTriangle className="w-4 h-4 mr-2" /> Escalate
                   </Button>
                </div>

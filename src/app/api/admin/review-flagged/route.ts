@@ -19,16 +19,18 @@ export async function POST(req: NextRequest) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    // fetch flagged row to get post_id
+    // Fetch flagged row to get post_id and comment_id
     const { data: flagged, error: flagErr } = await supabaseAdmin
       .from("flagged_content")
-      .select("id, post_id")
+      .select("id, post_id, comment_id, reason")
       .eq("id", flaggedId)
       .single();
 
     if (flagErr || !flagged) {
       return NextResponse.json({ ok: false, error: "Flag not found" }, { status: 404 });
     }
+
+    const isComment = !!flagged.comment_id;
 
     const newStatus =
       action === "approve" ? "approved" :
@@ -47,10 +49,64 @@ export async function POST(req: NextRequest) {
 
     if (updFlagErr) throw updFlagErr;
 
-    // Apply post changes
-    if (flagged.post_id) {
+    // Handle comment actions
+    if (isComment && flagged.comment_id) {
       if (action === "remove") {
+        // Get comment details for notification
+        const { data: comment } = await supabaseAdmin
+          .from("post_comments")
+          .select("user_id, post_id")
+          .eq("id", flagged.comment_id)
+          .single();
+
+        if (comment) {
+          // Delete related data
+          await supabaseAdmin.from("comment_likes").delete().eq("comment_id", flagged.comment_id);
+          await supabaseAdmin.from("comment_media").delete().eq("comment_id", flagged.comment_id);
+          await supabaseAdmin.from("comment_reports").delete().eq("comment_id", flagged.comment_id);
+          
+          // Delete the comment
+          await supabaseAdmin.from("post_comments").delete().eq("id", flagged.comment_id);
+
+          // Decrement comment count
+          await supabaseAdmin.rpc("decrement_comment_count", { post_id: comment.post_id });
+
+          // Notify the comment owner
+          await supabaseAdmin.from("notifications").insert({
+            user_id: comment.user_id,
+            type: "system",
+            title: "Comment removed",
+            body: `Your comment was removed by a moderator. Reason: ${flagged.reason}`,
+            data: { post_id: comment.post_id, reason: flagged.reason },
+            is_read: false,
+          });
+        }
+      }
+    }
+
+    // Handle post actions
+    if (!isComment && flagged.post_id) {
+      if (action === "remove") {
+        // Get post owner for notification
+        const { data: post } = await supabaseAdmin
+          .from("posts")
+          .select("user_id")
+          .eq("id", flagged.post_id)
+          .single();
+
         await supabaseAdmin.from("posts").update({ status: "archived" }).eq("id", flagged.post_id);
+
+        // Notify the post owner
+        if (post) {
+          await supabaseAdmin.from("notifications").insert({
+            user_id: post.user_id,
+            type: "system",
+            title: "Post removed",
+            body: `Your post was removed by a moderator. Reason: ${flagged.reason}`,
+            data: { post_id: flagged.post_id, reason: flagged.reason },
+            is_read: false,
+          });
+        }
       }
 
       if (action === "blur") {
