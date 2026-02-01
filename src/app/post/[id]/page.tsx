@@ -1111,61 +1111,82 @@ setTimeout(() => setToastMsg(null), 2500);
   };
 
     const handleReportCommentAction = async () => {
-    if (!reportReason || !user || !selectedComment) return;
-    setSubmittingReport(true);
-    
-    try {
-      const { data: auth } = await supabase.auth.getSession();
-      const token = auth.session?.access_token;
+  console.log("=== REPORT COMMENT CLICKED ===");
+  console.log("Selected comment:", selectedComment?.id);
+  console.log("Reason:", reportReason);
+  console.log("User:", user?.id);
+  
+  if (!reportReason || !user || !selectedComment) {
+    console.log("❌ Missing data, returning early");
+    return;
+  }
+  
+  setSubmittingReport(true);
+  
+  try {
+    console.log("1️⃣ Getting auth session...");
+    const { data: auth } = await supabase.auth.getSession();
+    const token = auth.session?.access_token;
+    console.log("2️⃣ Token exists:", !!token);
 
-      if (!token) {
-        toastApi.danger("Session expired. Please sign in again.");
-        return;
-      }
-
-      const res = await fetch("/api/report-comment", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          commentId: selectedComment.id,
-          reason: reportReason,
-          description: reportDescription,
-        }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || "Failed to report");
-      }
-
-      // Close modals
-      setShowCommentReportModal(false);
-      setShowCommentOptions(false);
-      setReportReason("");
-      setReportDescription("");
-
-      // If comment was auto-deleted due to 3+ reports
-      if (json.deleted) {
-        // Remove from local state
-        setAllComments((prev) => prev.filter((c) => c.id !== selectedComment.id && c.parent_id !== selectedComment.id));
-        setPost((p) => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
-        toastApi.success("Comment removed due to reports");
-      } else {
-        toastApi.success("Report submitted");
-      }
-
-    } catch (err: any) {
-      console.error("Report comment error:", err);
-      toastApi.danger(err.message || "Failed to report");
-    } finally {
+    if (!token) {
+      console.log("❌ No token!");
+      toastApi.danger("Session expired. Please sign in again.");
       setSubmittingReport(false);
-      setSelectedComment(null);
+      return;
     }
-  };
+
+    console.log("3️⃣ Calling API with:", {
+      commentId: selectedComment.id,
+      reason: reportReason,
+    });
+    
+    const res = await fetch("/api/report-comment", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        commentId: selectedComment.id,
+        reason: reportReason,
+        description: reportDescription,
+      }),
+    });
+
+    console.log("4️⃣ API Response status:", res.status);
+    const json = await res.json();
+    console.log("5️⃣ API Response body:", json);
+
+    if (!res.ok || !json.ok) {
+      console.log("❌ API returned error:", json.error);
+      throw new Error(json.error || "Failed to report");
+    }
+
+    console.log("✅ Report successful!");
+    
+    // Close modals
+    setShowCommentReportModal(false);
+    setShowCommentOptions(false);
+    setReportReason("");
+    setReportDescription("");
+
+    if (json.deleted) {
+      setAllComments((prev) => prev.filter((c) => c.id !== selectedComment.id && c.parent_id !== selectedComment.id));
+      setPost((p) => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
+      toastApi.success("Comment removed due to reports");
+    } else {
+      toastApi.success("Report submitted");
+    }
+
+  } catch (err: any) {
+    console.error("❌ CATCH ERROR:", err);
+    toastApi.danger(err.message || "Failed to report");
+  } finally {
+    setSubmittingReport(false);
+    setSelectedComment(null);
+  }
+};
 
   const handleDeleteCommentAction = async () => {
     if (!selectedComment) return;

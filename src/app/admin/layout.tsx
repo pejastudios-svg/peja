@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
-import { Bell } from "lucide-react";
-import AdminInAppToasts from "@/components/notifications/AdminInAppToasts";
+import { NotificationPopupListener } from "@/components/notifications/NotificationPopupListener";
 import {
   LayoutDashboard,
   Users,
@@ -15,8 +14,7 @@ import {
   Flag,
   Shield,
   BarChart3,
-  Settings,
-  ScrollText,
+  Bell,
   LogOut,
   Menu,
   X,
@@ -24,86 +22,163 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { href: "/admin", icon: LayoutDashboard, label: "Overview" },
-  { href: "/admin/notifications", icon: Bell, label: "Notifications" },
-  { href: "/admin/users", icon: Users, label: "Users" },
-  { href: "/admin/posts", icon: FileText, label: "Posts" },
-  { href: "/admin/sos", icon: AlertTriangle, label: "SOS Alerts" },
-  { href: "/admin/flagged", icon: Flag, label: "Flagged Content" },
-  { href: "/admin/guardians", icon: Shield, label: "Guardians" },
-  { href: "/admin/analytics", icon: BarChart3, label: "Analytics" },
+  { href: "/admin", icon: LayoutDashboard, label: "Overview", badge: false },
+  { href: "/admin/notifications", icon: Bell, label: "Notifications", badge: true },
+  { href: "/admin/users", icon: Users, label: "Users", badge: false },
+  { href: "/admin/posts", icon: FileText, label: "Posts", badge: false },
+  { href: "/admin/sos", icon: AlertTriangle, label: "SOS Alerts", badge: false },
+  { href: "/admin/flagged", icon: Flag, label: "Flagged Content", badge: false },
+  { href: "/admin/guardians", icon: Shield, label: "Guardians", badge: false },
+  { href: "/admin/analytics", icon: BarChart3, label: "Analytics", badge: false },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, signOut, loading: authLoading } = useAuth();
+
   const [isAdmin, setIsAdmin] = useState(false);
   const [checking, setChecking] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [adminUnread, setAdminUnread] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
+  
+  // Force re-render key
+  const [badgeKey, setBadgeKey] = useState(0);
+  const channelRef = useRef<any>(null);
 
-  const fetchAdminUnread = async () => {
-  if (!user?.id) return;
-  const { count } = await supabase
-    .from("admin_notifications")
-    .select("*", { count: "exact", head: true })
-    .eq("recipient_id", user.id)
-    .neq("is_read", true)
-
-  setAdminUnread(count || 0);
-};
-
-useEffect(() => {
-  if (!user?.id) return;
-
-  fetchAdminUnread();
-
-  const ch = supabase
-    .channel("admin-unread-badge")
-    .on(
-      "postgres_changes",
-      { event: "*", schema: "public", table: "admin_notifications", filter: `recipient_id=eq.${user.id}` },
-      () => fetchAdminUnread()
-    )
-    .subscribe();
-
-  return () => {
-    supabase.removeChannel(ch);
-  };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [user?.id]);
-
-  useEffect(() => {
-    checkAdminStatus();
-  }, [user]);
-
-  const checkAdminStatus = async () => {
-    if (!user) {
-      setChecking(false);
-      return;
-    }
+  // Fetch unread count
+  const fetchUnreadCount = useCallback(async () => {
+    if (!user?.id) return;
 
     try {
-      const { data, error } = await supabase
+      const { count, error } = await supabase
+        .from("admin_notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("recipient_id", user.id)
+        .eq("is_read", false);
+
+      if (!error) {
+        console.log("[Admin Layout] Fetched unread count:", count);
+        setUnreadCount(count || 0);
+        setBadgeKey(prev => prev + 1); // Force re-render
+      }
+    } catch (e) {
+      console.error("[Admin Layout] fetchUnreadCount error:", e);
+    }
+  }, [user?.id]);
+
+  // Initial fetch and realtime setup
+  useEffect(() => {
+    if (!user?.id) return;
+
+    console.log("[Admin Layout] Setting up for user:", user.id);
+    fetchUnreadCount();
+
+    // Cleanup existing channel
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    // Create unique channel
+    const channelName = `admin-layout-badge-${user.id}-${Date.now()}`;
+    console.log("[Admin Layout] Creating channel:", channelName);
+
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "admin_notifications",
+          filter: `recipient_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log("[Admin Layout] INSERT received:", payload.new);
+          fetchUnreadCount();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "admin_notifications",
+          filter: `recipient_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log("[Admin Layout] UPDATE received");
+          fetchUnreadCount();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "admin_notifications",
+          filter: `recipient_id=eq.${user.id}`,
+        },
+        (payload) => {
+          console.log("[Admin Layout] DELETE received");
+          fetchUnreadCount();
+        }
+      )
+      .subscribe((status) => {
+        console.log("[Admin Layout] Subscription status:", status);
+      });
+
+    channelRef.current = channel;
+
+    return () => {
+      if (channelRef.current) {
+        console.log("[Admin Layout] Cleaning up channel");
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [user?.id, fetchUnreadCount]);
+
+  // Listen for manual badge refresh events
+useEffect(() => {
+  const handleBadgeRefresh = () => {
+    console.log("[Admin Layout] Badge refresh event received");
+    fetchUnreadCount();
+  };
+
+  window.addEventListener("admin-badge-refresh", handleBadgeRefresh);
+  
+  return () => {
+    window.removeEventListener("admin-badge-refresh", handleBadgeRefresh);
+  };
+}, [fetchUnreadCount]);
+
+  // Check admin status
+  useEffect(() => {
+    const checkAdmin = async () => {
+      if (!user) {
+        setChecking(false);
+        return;
+      }
+
+      const { data } = await supabase
         .from("users")
         .select("is_admin")
         .eq("id", user.id)
         .single();
 
-      if (error || !data?.is_admin) {
+      if (!data?.is_admin) {
         router.push("/");
         return;
       }
 
       setIsAdmin(true);
-    } catch (error) {
-      console.error("Admin check error:", error);
-      router.push("/");
-    } finally {
       setChecking(false);
-    }
-  };
+    };
+
+    checkAdmin();
+  }, [user, router]);
 
   const handleLogout = async () => {
     await signOut();
@@ -124,24 +199,51 @@ useEffect(() => {
         <div className="text-center">
           <h1 className="text-2xl font-bold text-dark-100 mb-2">Access Denied</h1>
           <p className="text-dark-400 mb-4">You don't have permission to access this area.</p>
-          <Link href="/" className="text-primary-400 hover:underline">
-            Go back home
-          </Link>
+          <Link href="/" className="text-primary-400 hover:underline">Go back home</Link>
         </div>
       </div>
     );
   }
 
+  // Badge component with key for forced re-render
+  const Badge = ({ count }: { count: number }) => {
+    if (count === 0) return null;
+    return (
+      <span 
+        key={`badge-${badgeKey}-${count}`}
+        className="min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center animate-pulse"
+      >
+        {count > 99 ? "99+" : count}
+      </span>
+    );
+  };
+
   return (
     <div className="min-h-screen peja-hud">
-      <AdminInAppToasts />
+      {/* Notification Popup Listener */}
+      <NotificationPopupListener
+        table="admin_notifications"
+        userColumn="recipient_id"
+        onNotification={fetchUnreadCount}
+      />
+
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass-header h-14 flex items-center justify-between px-4">
         <button onClick={() => setSidebarOpen(true)} className="p-2">
           <Menu className="w-5 h-5 text-dark-200" />
         </button>
         <span className="text-lg font-bold text-primary-400">Peja Admin</span>
-        <div className="w-9" />
+        <Link href="/admin/notifications" className="p-2 relative">
+          <Bell className="w-5 h-5 text-dark-200" />
+          {unreadCount > 0 && (
+            <span 
+              key={`mobile-badge-${badgeKey}`}
+              className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full animate-pulse"
+            >
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
+        </Link>
       </header>
 
       {/* Mobile Sidebar Overlay */}
@@ -159,24 +261,19 @@ useEffect(() => {
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname === item.href;
+
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
                     onClick={() => setSidebarOpen(false)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                      isActive
-                        ? "bg-primary-600/20 text-primary-400"
-                        : "text-dark-300 hover:bg-white/5"
+                      isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-white/5"
                     }`}
                   >
                     <Icon className="w-5 h-5" />
-                    <span>{item.label}</span>
-                 {item.href === "/admin/notifications" && adminUnread > 0 && (
-  <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center shadow-[0_0_14px_rgba(139,92,246,0.85)] ring-1 ring-primary-300/40">
-    {adminUnread > 99 ? "99+" : adminUnread}
-  </span>
-)}
+                    <span className="flex-1">{item.label}</span>
+                    {item.badge && <Badge count={unreadCount} />}
                   </Link>
                 );
               })}
@@ -202,23 +299,18 @@ useEffect(() => {
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
+
             return (
               <Link
-                key={item.href}
+                key={`${item.href}-${badgeKey}`}
                 href={item.href}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                  isActive
-                    ? "bg-primary-600/20 text-primary-400"
-                    : "text-dark-300 hover:bg-white/5"
+                  isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-white/5"
                 }`}
               >
                 <Icon className="w-5 h-5" />
-                <span>{item.label}</span>
-                {item.href === "/admin/notifications" && adminUnread > 0 && (
-  <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full bg-primary-500 text-white text-xs font-bold flex items-center justify-center shadow-[0_0_14px_rgba(139,92,246,0.85)] ring-1 ring-primary-300/40">
-    {adminUnread > 99 ? "99+" : adminUnread}
-  </span>
-)}
+                <span className="flex-1">{item.label}</span>
+                {item.badge && <Badge count={unreadCount} />}
               </Link>
             );
           })}
@@ -246,9 +338,7 @@ useEffect(() => {
       </aside>
 
       {/* Main Content */}
-      <main className="lg:ml-64 pt-14 lg:pt-0 min-h-screen">
-        {children}
-      </main>
+      <main className="lg:ml-64 pt-14 lg:pt-0 min-h-screen">{children}</main>
     </div>
   );
 }

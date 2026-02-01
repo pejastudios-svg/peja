@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { formatDistanceToNow } from "date-fns";
 import { useLongPress } from "@/components/hooks/useLongPress";
+import { useToast } from "@/context/ToastContext";
+
 
 const SEEN_KEY = "peja-seen-posts-v1";
 type SeenStore = Record<string, number>;
@@ -321,6 +323,8 @@ export default function WatchClient({
   const confirm = useConfirm();
   const confirmRef = useRef(confirm);
   const feedCache = useFeedCache();
+  const toast = useToast();
+
 
   useEffect(() => { confirmRef.current = confirm; }, [confirm]);
 
@@ -657,15 +661,58 @@ useEffect(() => {
   };
 
   const handleReport = async () => {
-    if (!reportReason || !user || !activePostForOptions) return;
-    setSubmittingReport(true);
-    setTimeout(() => {
-       setSubmittingReport(false);
-       setShowReportModal(false);
-       setShowOptions(false);
-       alert("Report submitted.");
-    }, 1000);
-  };
+  if (!reportReason || !user || !activePostForOptions) return;
+  
+  setSubmittingReport(true);
+  
+  try {
+    const { data: auth } = await supabase.auth.getSession();
+    const token = auth.session?.access_token;
+
+    if (!token) {
+      toast.danger("Session expired. Please sign in again.");
+      setSubmittingReport(false);
+      return;
+    }
+
+    const res = await fetch("/api/report-post", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        postId: activePostForOptions.id,
+        reason: reportReason,
+        description: reportDescription,
+      }),
+    });
+
+    const json = await res.json();
+
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || "Failed to report");
+    }
+
+    setShowReportModal(false);
+    setShowOptions(false);
+    setReportReason("");
+    setReportDescription("");
+
+    if (json.archived) {
+      toast.success("Post removed due to reports");
+      // Remove from local state
+      setPosts(prev => prev.filter(p => p.id !== activePostForOptions.id));
+    } else {
+      toast.success("Report submitted");
+    }
+  } catch (err: any) {
+    console.error("Report error:", err);
+    toast.danger(err.message || "Failed to report");
+  } finally {
+    setSubmittingReport(false);
+  }
+};
 
   const handleDeletePost = async () => {
     if (!activePostForOptions) return;

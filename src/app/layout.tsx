@@ -13,8 +13,6 @@ import InAppNotificationToasts from "@/components/notifications/InAppNotificatio
 import UserGestureAudioUnlocker from "@/components/notifications/UserGestureAudioUnlocker";
 import AccountStatusBanner from "@/components/system/AccountStatusBanner";
 import { ToastProvider } from "@/context/ToastContext";
-
-// ADD THIS IMPORT:
 import GlobalScrollManager from "@/components/navigation/GlobalScrollManager";
 
 const poppins = Poppins({
@@ -55,12 +53,12 @@ export default function RootLayout({
                 <FeedProvider>
                   <AnalyticsTracker />
                   <RoutePrefetcher />
-                  <GlobalScrollManager /> 
-                  
+                  <GlobalScrollManager />
+
                   <Suspense fallback={null}>
                     <HistorySyncGuard />
                   </Suspense>
-                  
+
                   <UserGestureAudioUnlocker />
                   <InAppNotificationToasts />
                   <AccountStatusBanner />

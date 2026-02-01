@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { playNotificationSound } from "@/lib/notificationSound";
 import { useRouter, usePathname } from "next/navigation";
-import { X, Bell } from "lucide-react";
+import { X, Flag, Bell } from "lucide-react";
 
-type Row = {
+type NotifRow = {
   id: string;
   type: string;
   title: string;
@@ -17,94 +17,157 @@ type Row = {
   recipient_id: string;
 };
 
-export default function AdminInAppToasts() {
+interface Props {
+  onNewNotification?: () => void;
+}
+
+export default function AdminInAppToasts({ onNewNotification }: Props) {
   const router = useRouter();
   const pathname = usePathname();
-  const [toasts, setToasts] = useState<Row[]>([]);
-  const seen = useRef(new Set<string>());
+  const [toasts, setToasts] = useState<NotifRow[]>([]);
+  const channelRef = useRef<any>(null);
+  const userIdRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // Only run on admin pages
     if (!pathname.startsWith("/admin")) return;
 
-    let channel: any;
-
-    (async () => {
+    const setupSubscription = async () => {
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
       if (!uid) return;
 
-      channel = supabase
-        .channel("admin-inapp-toasts")
+      userIdRef.current = uid;
+
+      // Cleanup any existing channel
+      if (channelRef.current) {
+        await supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      // Create unique channel name
+      const channelName = `admin-toast-${uid}-${Date.now()}`;
+      console.log("[AdminToast] Setting up channel:", channelName);
+
+      const channel = supabase
+        .channel(channelName)
         .on(
           "postgres_changes",
-          { event: "INSERT", schema: "public", table: "admin_notifications", filter: `recipient_id=eq.${uid}` },
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "admin_notifications",
+            filter: `recipient_id=eq.${uid}`,
+          },
           (payload) => {
-            const n = payload.new as Row;
-            if (seen.current.has(n.id)) return;
-            seen.current.add(n.id);
+            const notification = payload.new as NotifRow;
+            console.log("[AdminToast] Received notification:", notification.title);
 
+            // Play sound
             playNotificationSound();
-            setToasts((prev) => [n, ...prev].slice(0, 3));
 
-            window.setTimeout(() => {
-              setToasts((prev) => prev.filter((x) => x.id !== n.id));
-            }, 6500);
+            // Add to toasts (max 3)
+            setToasts((prev) => {
+              // Prevent duplicates by ID
+              if (prev.some((t) => t.id === notification.id)) return prev;
+              return [notification, ...prev].slice(0, 3);
+            });
+
+            // Notify parent to refresh badge count
+            onNewNotification?.();
+
+            // Auto-dismiss after 6 seconds
+            setTimeout(() => {
+              setToasts((prev) => prev.filter((t) => t.id !== notification.id));
+            }, 6000);
           }
         )
-        .subscribe();
-    })();
+        .subscribe((status) => {
+          console.log("[AdminToast] Subscription status:", status);
+        });
+
+      channelRef.current = channel;
+    };
+
+    setupSubscription();
 
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      if (channelRef.current) {
+        console.log("[AdminToast] Cleaning up channel");
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
-  }, [pathname]);
+  }, [pathname, onNewNotification]);
 
-  const go = async (n: Row) => {
-    try {
-      await supabase.from("admin_notifications").update({ is_read: true }).eq("id", n.id);
-    } catch {}
-
-    if (n.type === "flagged_post") {
-      router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
-      return;
-    }
-    if (n.type === "guardian_application") {
-      router.push(`/admin/guardians?app=${encodeURIComponent(n.data?.application_id || "")}`);
-      return;
-    }
-    router.push("/admin/notifications");
+  const dismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  const handleToastClick = async (notification: NotifRow) => {
+    dismissToast(notification.id);
+
+    // Mark as read
+    try {
+      await supabase
+        .from("admin_notifications")
+        .update({ is_read: true })
+        .eq("id", notification.id);
+      
+      onNewNotification?.();
+    } catch (e) {
+      console.error("[AdminToast] Failed to mark as read:", e);
+    }
+
+    // Navigate based on type
+    const data = notification.data || {};
+    if (notification.type === "flagged_post" || notification.type === "flagged_comment") {
+      router.push(`/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`);
+    } else if (notification.type === "guardian_application") {
+      router.push(`/admin/guardians?app=${encodeURIComponent(data.application_id || "")}`);
+    } else {
+      router.push("/admin/notifications");
+    }
+  };
+
+  // Don't render on non-admin pages
   if (!pathname.startsWith("/admin")) return null;
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed left-0 right-0 z-[35000] flex justify-center px-3" style={{ top: "calc(64px + env(safe-area-inset-top, 0px) + 8px)" }}>
+    <div
+      className="fixed left-0 right-0 z-[100000] flex justify-center px-4"
+      style={{ top: "calc(70px + env(safe-area-inset-top, 0px))" }}
+    >
       <div className="w-full max-w-md space-y-2">
-        {toasts.map((n) => (
+        {toasts.map((toast) => (
           <div
-            key={n.id}
-            className="glass-float rounded-2xl border border-white/10 shadow-xl overflow-hidden animate-[toastIn_180ms_ease-out]"
-            onClick={() => go(n)}
+            key={toast.id}
+            onClick={() => handleToastClick(toast)}
+            className="bg-dark-900/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl p-4 cursor-pointer animate-[slideDown_200ms_ease-out] hover:bg-dark-800/95 transition-colors"
           >
-            <div className="p-3 flex items-start gap-3">
-              <div className="p-2 rounded-xl bg-dark-800/60 shrink-0">
-                <Bell className="w-5 h-5 text-primary-400" />
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-red-500/20 shrink-0">
+                <Flag className="w-5 h-5 text-red-400" />
               </div>
 
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-dark-100 truncate">{n.title}</p>
-                {n.body && <p className="text-xs text-dark-300 mt-0.5 line-clamp-2">{n.body}</p>}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white truncate">
+                  {toast.title}
+                </p>
+                {toast.body && (
+                  <p className="text-xs text-dark-300 mt-1 line-clamp-2">
+                    {toast.body}
+                  </p>
+                )}
               </div>
 
               <button
-                type="button"
                 onClick={(e) => {
-                  e.preventDefault();
                   e.stopPropagation();
-                  setToasts((prev) => prev.filter((x) => x.id !== n.id));
+                  dismissToast(toast.id);
                 }}
-                className="p-2 rounded-lg hover:bg-white/10 text-dark-400"
+                className="p-1.5 rounded-lg hover:bg-white/10 text-dark-400 shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>

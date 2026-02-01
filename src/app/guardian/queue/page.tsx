@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
+import { FlaggedContentListener } from "@/components/notifications/FlaggedContentListener";
 import {
   Flag,
   CheckCircle,
@@ -132,25 +133,6 @@ export default function GuardianQueuePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [priorityFilter]);
 
-  useEffect(() => {
-    let t: any = null;
-    const refresh = () => {
-      if (t) clearTimeout(t);
-      t = setTimeout(() => fetchQueue(), 400);
-    };
-
-    const ch = supabase
-      .channel("guardian-queue-rt")
-      .on("postgres_changes", { event: "*", schema: "public", table: "flagged_content" }, refresh)
-      .subscribe();
-
-    return () => {
-      if (t) clearTimeout(t);
-      supabase.removeChannel(ch);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priorityFilter]);
-
   const fetchQueue = async () => {
     setLoading(true);
     try {
@@ -158,8 +140,8 @@ export default function GuardianQueuePage() {
         .from("flagged_content")
         .select("id,post_id,comment_id,reason,priority,status,created_at")
         .eq("status", "pending")
-        .order("priority", { ascending: false })
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .order("priority", { ascending: false });
 
       if (priorityFilter !== "all") query = query.eq("priority", priorityFilter);
 
@@ -426,6 +408,7 @@ export default function GuardianQueuePage() {
 
   return (
     <div className="p-6">
+      <FlaggedContentListener onNewFlaggedContent={() => fetchQueue()} />
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-dark-100">Review Queue</h1>
         <p className="text-dark-400 mt-1">Flagged content waiting for review</p>
