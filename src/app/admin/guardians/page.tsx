@@ -6,7 +6,10 @@ import { supabase } from "@/lib/supabase";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
-import { Loader2, Shield, CheckCircle, XCircle, User, Search } from "lucide-react";
+import { 
+  Loader2, Shield, CheckCircle, XCircle, User, Search, 
+  Activity, Eye, Trash2, AlertTriangle, ThumbsUp 
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -49,11 +52,59 @@ type GuardianUser = {
   status: string | null;
 };
 
+type GuardianAction = {
+  id: string;
+  guardian_id: string;
+  action: string;
+  post_id: string | null;
+  comment_id: string | null;
+  reason: string | null;
+  created_at: string;
+  guardian?: {
+    full_name: string | null;
+    avatar_url: string | null;
+  };
+  post?: {
+    category: string | null;
+    comment: string | null;
+  };
+};
+
 function statusPill(status: string) {
   const s = status.toLowerCase();
   if (s === "approved") return "bg-green-500/15 text-green-300 border border-green-500/30";
   if (s === "rejected") return "bg-red-500/15 text-red-300 border border-red-500/30";
   return "bg-yellow-500/15 text-yellow-300 border border-yellow-500/30";
+}
+
+function actionIcon(action: string) {
+  switch (action) {
+    case "approve":
+      return <ThumbsUp className="w-4 h-4 text-green-400" />;
+    case "remove":
+      return <Trash2 className="w-4 h-4 text-red-400" />;
+    case "blur":
+      return <Eye className="w-4 h-4 text-yellow-400" />;
+    case "escalate":
+      return <AlertTriangle className="w-4 h-4 text-orange-400" />;
+    default:
+      return <Activity className="w-4 h-4 text-primary-400" />;
+  }
+}
+
+function actionColor(action: string) {
+  switch (action) {
+    case "approve":
+      return "bg-green-500/10 border-green-500/30 text-green-400";
+    case "remove":
+      return "bg-red-500/10 border-red-500/30 text-red-400";
+    case "blur":
+      return "bg-yellow-500/10 border-yellow-500/30 text-yellow-400";
+    case "escalate":
+      return "bg-orange-500/10 border-orange-500/30 text-orange-400";
+    default:
+      return "bg-primary-500/10 border-primary-500/30 text-primary-400";
+  }
 }
 
 export default function AdminGuardiansPage() {
@@ -62,7 +113,7 @@ export default function AdminGuardiansPage() {
   const sp = useSearchParams();
   const openAppId = sp.get("app");
 
-  const [tab, setTab] = useState<"applications" | "guardians">("applications");
+  const [tab, setTab] = useState<"applications" | "guardians" | "activity">("applications");
 
   // Applications
   const [appFilter, setAppFilter] = useState<"pending" | "approved" | "rejected" | "all">("pending");
@@ -82,44 +133,65 @@ export default function AdminGuardiansPage() {
   const [guardiansLoading, setGuardiansLoading] = useState(false);
   const [guardianSearch, setGuardianSearch] = useState("");
 
-    // Revoke guardian confirm modal + toast
+  // Guardian Activity
+  const [actions, setActions] = useState<GuardianAction[]>([]);
+  const [actionsLoading, setActionsLoading] = useState(false);
+  const [actionFilter, setActionFilter] = useState<"all" | "approve" | "remove" | "blur" | "escalate">("all");
+
+  // Revoke guardian confirm modal + toast
   const [revokeModalOpen, setRevokeModalOpen] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<GuardianUser | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Prevent “auto-open on filter click” bug
+  // Prevent "auto-open on filter click" bug
   const handledAppParamRef = useRef(false);
   
-function GuardianAppRowSkeleton() {
-  return (
-    <div className="glass-card">
-      <div className="flex items-center gap-4">
-        <Skeleton className="h-12 w-12 rounded-full shrink-0" />
-        <div className="flex-1 min-w-0">
-          <Skeleton className="h-4 w-32 max-w-full mb-2" />
-          <Skeleton className="h-3 w-full max-w-[180px] mb-2" />
-          <Skeleton className="h-3 w-20" />
+  function GuardianAppRowSkeleton() {
+    return (
+      <div className="glass-card">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-12 w-12 rounded-full shrink-0" />
+          <div className="flex-1 min-w-0">
+            <Skeleton className="h-4 w-32 max-w-full mb-2" />
+            <Skeleton className="h-3 w-full max-w-[180px] mb-2" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+          <Skeleton className="h-5 w-20 rounded-full shrink-0" />
         </div>
-        <Skeleton className="h-5 w-20 rounded-full shrink-0" />
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-function GuardianUserRowSkeleton() {
-  return (
-    <div className="glass-card flex items-center justify-between gap-4">
-      <div className="flex items-center gap-3 min-w-0">
-        <Skeleton className="h-12 w-12 rounded-full shrink-0" />
-        <div className="min-w-0">
-          <Skeleton className="h-4 w-40 mb-2" />
-          <Skeleton className="h-3 w-56" />
+  function GuardianUserRowSkeleton() {
+    return (
+      <div className="glass-card flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <Skeleton className="h-12 w-12 rounded-full shrink-0" />
+          <div className="min-w-0">
+            <Skeleton className="h-4 w-40 mb-2" />
+            <Skeleton className="h-3 w-56" />
+          </div>
+        </div>
+        <Skeleton className="h-8 w-20 rounded-lg" />
+      </div>
+    );
+  }
+
+  function ActivityRowSkeleton() {
+    return (
+      <div className="glass-card p-4">
+        <div className="flex items-start gap-3">
+          <Skeleton className="h-10 w-10 rounded-full shrink-0" />
+          <div className="flex-1 min-w-0">
+            <Skeleton className="h-4 w-48 mb-2" />
+            <Skeleton className="h-3 w-full max-w-[250px] mb-2" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+          <Skeleton className="h-6 w-20 rounded-full shrink-0" />
         </div>
       </div>
-      <Skeleton className="h-8 w-20 rounded-lg" />
-    </div>
-  );
-}
+    );
+  }
 
   const fetchApps = async () => {
     setLoading(true);
@@ -136,7 +208,7 @@ function GuardianUserRowSkeleton() {
         appsQuery = appsQuery.eq("status", "approved");
       } else if (appFilter === "rejected") {
         appsQuery = appsQuery.eq("status", "rejected");
-      } // all -> no filter
+      }
 
       const { data: apps, error } = await appsQuery;
       if (error) throw error;
@@ -191,53 +263,129 @@ function GuardianUserRowSkeleton() {
     }
   };
 
-  // Load both lists initially
+  const fetchActions = async () => {
+    setActionsLoading(true);
+    try {
+      let query = supabase
+        .from("guardian_actions")
+        .select("id,guardian_id,action,post_id,comment_id,reason,created_at")
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (actionFilter !== "all") {
+        query = query.eq("action", actionFilter);
+      }
+
+      const { data: actionsData, error } = await query;
+      if (error) throw error;
+
+      const rows = (actionsData || []) as any[];
+
+      // Get guardian user info
+      const guardianIds = Array.from(new Set(rows.map((a) => a.guardian_id).filter(Boolean)));
+      const postIds = Array.from(new Set(rows.map((a) => a.post_id).filter(Boolean)));
+
+      const { data: guardiansData } = guardianIds.length
+        ? await supabase
+            .from("users")
+            .select("id,full_name,avatar_url")
+            .in("id", guardianIds)
+        : { data: [] };
+
+      const { data: postsData } = postIds.length
+        ? await supabase
+            .from("posts")
+            .select("id,category,comment")
+            .in("id", postIds)
+        : { data: [] };
+
+      const guardiansMap: Record<string, any> = {};
+      (guardiansData || []).forEach((g: any) => (guardiansMap[g.id] = g));
+
+      const postsMap: Record<string, any> = {};
+      (postsData || []).forEach((p: any) => (postsMap[p.id] = p));
+
+      const merged: GuardianAction[] = rows.map((a: any) => ({
+        ...a,
+        guardian: guardiansMap[a.guardian_id] || undefined,
+        post: a.post_id ? postsMap[a.post_id] || undefined : undefined,
+      }));
+
+      setActions(merged);
+    } catch (e) {
+      console.error("fetchActions error:", e);
+      setActions([]);
+    } finally {
+      setActionsLoading(false);
+    }
+  };
+
+  // Load all lists initially
   useEffect(() => {
     fetchApps();
     fetchGuardians();
+    fetchActions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-  let t1: any = null;
-  let t2: any = null;
+    let t1: any = null;
+    let t2: any = null;
+    let t3: any = null;
 
-  const scheduleApps = () => {
-    if (t1) clearTimeout(t1);
-    t1 = setTimeout(() => fetchApps(), 500);
-  };
+    const scheduleApps = () => {
+      if (t1) clearTimeout(t1);
+      t1 = setTimeout(() => fetchApps(), 500);
+    };
 
-  const scheduleGuardians = () => {
-    if (t2) clearTimeout(t2);
-    t2 = setTimeout(() => fetchGuardians(), 500);
-  };
+    const scheduleGuardians = () => {
+      if (t2) clearTimeout(t2);
+      t2 = setTimeout(() => fetchGuardians(), 500);
+    };
 
-  const ch1 = supabase
-    .channel("admin-guardian-apps-rt")
-    .on("postgres_changes", { event: "*", schema: "public", table: "guardian_applications" }, scheduleApps)
-    .subscribe();
+    const scheduleActions = () => {
+      if (t3) clearTimeout(t3);
+      t3 = setTimeout(() => fetchActions(), 500);
+    };
 
-  const ch2 = supabase
-    .channel("admin-guardians-rt")
-    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "users" }, scheduleGuardians)
-    .subscribe();
+    const ch1 = supabase
+      .channel("admin-guardian-apps-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guardian_applications" }, scheduleApps)
+      .subscribe();
 
-  return () => {
-    if (t1) clearTimeout(t1);
-    if (t2) clearTimeout(t2);
-    supabase.removeChannel(ch1);
-    supabase.removeChannel(ch2);
-  };
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+    const ch2 = supabase
+      .channel("admin-guardians-rt")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "users" }, scheduleGuardians)
+      .subscribe();
 
-  // Refetch apps when filter changes
+    const ch3 = supabase
+      .channel("admin-guardian-actions-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "guardian_actions" }, scheduleActions)
+      .subscribe();
+
+    return () => {
+      if (t1) clearTimeout(t1);
+      if (t2) clearTimeout(t2);
+      if (t3) clearTimeout(t3);
+      supabase.removeChannel(ch1);
+      supabase.removeChannel(ch2);
+      supabase.removeChannel(ch3);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Refetch based on tab/filter changes
   useEffect(() => {
     if (tab === "applications") fetchApps();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appFilter, tab]);
 
-  // Auto-open application from notification ONLY ONCE, then clear URL param
+  useEffect(() => {
+    if (tab === "activity") fetchActions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionFilter, tab]);
+
+  // Auto-open application from notification ONLY ONCE
   useEffect(() => {
     if (!openAppId) return;
     if (handledAppParamRef.current) return;
@@ -248,8 +396,6 @@ function GuardianUserRowSkeleton() {
       handledAppParamRef.current = true;
       setSelected(match);
       setModalOpen(true);
-
-      // remove query param so clicking filters doesn’t reopen it
       router.replace("/admin/guardians");
     }
   }, [openAppId, items, router]);
@@ -315,7 +461,7 @@ function GuardianUserRowSkeleton() {
     }
   };
 
-   const openRevokeGuardian = (g: GuardianUser) => {
+  const openRevokeGuardian = (g: GuardianUser) => {
     setRevokeTarget(g);
     setRevokeModalOpen(true);
   };
@@ -341,14 +487,11 @@ function GuardianUserRowSkeleton() {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
 
-      // Close modal
       setRevokeModalOpen(false);
       setRevokeTarget(null);
 
-      // Refresh guardians list
       await fetchGuardians();
 
-      // ✅ in-app toast
       setToast(`Guardian access removed: ${json.user?.full_name || "User"} ✓`);
       setTimeout(() => setToast(null), 2500);
     } catch (e: any) {
@@ -370,202 +513,367 @@ function GuardianUserRowSkeleton() {
     });
   }, [guardians, guardianSearch]);
 
+  // Stats for activity
+  const activityStats = useMemo(() => {
+    const stats = { approve: 0, remove: 0, blur: 0, escalate: 0, total: 0 };
+    actions.forEach((a) => {
+      stats.total++;
+      if (a.action === "approve") stats.approve++;
+      else if (a.action === "remove") stats.remove++;
+      else if (a.action === "blur") stats.blur++;
+      else if (a.action === "escalate") stats.escalate++;
+    });
+    return stats;
+  }, [actions]);
+
   return (
     <HudShell
       title="Guardian Network"
       subtitle="Moderation force and application management"
       right={
-         <div className="flex bg-[#121016] p-1.5 rounded-xl border border-white/10 gap-1">
-            <button
-               onClick={() => setTab("applications")}
-               className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  tab === "applications" 
-                  ? "bg-primary-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.3)]" 
-                  : "text-dark-400 hover:text-white hover:bg-white/5"
-               }`}
-            >
-               Applications
-            </button>
-            <button
-               onClick={() => setTab("guardians")}
-               className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  tab === "guardians" 
-                  ? "bg-primary-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.3)]" 
-                  : "text-dark-400 hover:text-white hover:bg-white/5"
-               }`}
-            >
-               Active Force
-            </button>
-         </div>
+        <div className="flex bg-[#121016] p-1.5 rounded-xl border border-white/10 gap-1">
+          <button
+            onClick={() => setTab("applications")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              tab === "applications"
+                ? "bg-primary-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.3)]"
+                : "text-dark-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            Applications
+          </button>
+          <button
+            onClick={() => setTab("guardians")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              tab === "guardians"
+                ? "bg-primary-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.3)]"
+                : "text-dark-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            Active Force
+          </button>
+          <button
+            onClick={() => setTab("activity")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              tab === "activity"
+                ? "bg-primary-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.3)]"
+                : "text-dark-400 hover:text-white hover:bg-white/5"
+            }`}
+          >
+            Activity
+          </button>
+        </div>
       }
     >
+      {/* Applications Tab */}
       {tab === "applications" && (
-         <div className="space-y-4">
-            <div className="flex gap-2 overflow-x-auto pb-2">
-               {["pending", "approved", "rejected"].map((k) => (
-                  <button
-                     key={k}
-                     onClick={() => setAppFilter(k as any)}
-                     className={`px-4 py-1.5 rounded-lg text-xs font-bold border uppercase tracking-wider transition-all ${
-                        appFilter === k 
-                        ? "bg-white/10 border-white/20 text-white shadow-sm" 
-                        : "border-transparent text-dark-500 hover:bg-white/5"
-                     }`}
-                  >
-                     {k}
-                  </button>
-               ))}
-            </div>
-            
-            <div className="space-y-2">
-               {loading && items.length === 0 ? (
-                  Array.from({length:5}).map((_,i) => <GuardianAppRowSkeleton key={i}/>)
-               ) : items.length === 0 ? (
-                   <div className="text-center py-12 text-dark-500">No applications found.</div>
-               ) : (
-                   items.map(a => (
-                      <div 
-                         key={a.id} 
-                         onClick={() => { setSelected(a); setModalOpen(true); }}
-                         className="hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-all flex items-center gap-4 group"
-                      >
-                         {/* Avatar: Added shrink-0 to prevent squeezing */}
-                         <div className="w-12 h-12 rounded-full bg-dark-800 border border-white/10 overflow-hidden relative shrink-0">
-                            {a.user?.avatar_url && <img src={a.user.avatar_url} className="w-full h-full object-cover" />}
-                         </div>
-                         
-                         {/* Content: Added min-w-0 to allow truncation */}
-                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-bold text-dark-100 group-hover:text-primary-300 transition-colors truncate">
-                               {a.user?.full_name}
-                            </p>
-                            <div className="flex items-center gap-2 text-xs text-dark-400 mt-1">
-                                <span className="shrink-0">{a.hours_per_week} hrs/week</span>
-                                <span>•</span>
-                                <span className="truncate">{a.user?.email}</span>
-                            </div>
-                         </div>
+        <div className="space-y-4">
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {["pending", "approved", "rejected"].map((k) => (
+              <button
+                key={k}
+                onClick={() => setAppFilter(k as any)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold border uppercase tracking-wider transition-all ${
+                  appFilter === k
+                    ? "bg-white/10 border-white/20 text-white shadow-sm"
+                    : "border-transparent text-dark-500 hover:bg-white/5"
+                }`}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
 
-                         {/* Badge: Added shrink-0 to prevent poking out */}
-                         <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full border shrink-0 ${statusPill(a.status || 'pending')}`}>
-                            {a.status}
-                         </span>
-                      </div>
-                   ))
-               )}
-            </div>
-         </div>
-      )}
+          <div className="space-y-2">
+            {loading && items.length === 0 ? (
+              Array.from({ length: 5 }).map((_, i) => <GuardianAppRowSkeleton key={i} />)
+            ) : items.length === 0 ? (
+              <div className="text-center py-12 text-dark-500">No applications found.</div>
+            ) : (
+              items.map((a) => (
+                <div
+                  key={a.id}
+                  onClick={() => {
+                    setSelected(a);
+                    setModalOpen(true);
+                  }}
+                  className="hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-all flex items-center gap-4 group"
+                >
+                  <div className="w-12 h-12 rounded-full bg-dark-800 border border-white/10 overflow-hidden relative shrink-0">
+                    {a.user?.avatar_url && (
+                      <img src={a.user.avatar_url} className="w-full h-full object-cover" />
+                    )}
+                  </div>
 
-      {tab === "guardians" && (
-         <div className="space-y-4">
-            <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
-                <input
-                   value={guardianSearch}
-                   onChange={(e) => setGuardianSearch(e.target.value)}
-                   placeholder="Search active guardians..."
-                   className="w-full h-11 pl-10 pr-4 bg-[#1E1B24] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 focus:shadow-[0_0_15px_rgba(124,58,237,0.15)] transition-all"
-                />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-               {filteredGuardians.map((g) => (
-                <div key={g.id} className="glass-card flex items-center justify-between gap-4 group">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!g.avatar_url) return;
-                        setLightboxUrl(g.avatar_url);
-                        setLightboxOpen(true);
-                      }}
-                      className="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0"
-                    >
-                      {g.avatar_url ? (
-                        <img src={g.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <User className="w-6 h-6 text-dark-400" />
-                        </div>
-                      )}
-                    </button>
-
-                    <div className="min-w-0">
-                      <p className="text-dark-100 font-medium truncate">{g.full_name || "Unknown"}</p>
-                      <p className="text-xs text-dark-500 truncate">
-                        {g.email || ""} {g.phone ? `• ${g.phone}` : ""}
-                      </p>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-dark-100 group-hover:text-primary-300 transition-colors truncate">
+                      {a.user?.full_name}
+                    </p>
+                    <div className="flex items-center gap-2 text-xs text-dark-400 mt-1">
+                      <span className="shrink-0">{a.hours_per_week} hrs/week</span>
+                      <span>•</span>
+                      <span className="truncate">{a.user?.email}</span>
                     </div>
                   </div>
 
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => openRevokeGuardian(g)}
-                    className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity shrink-0"
+                  <span
+                    className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full border shrink-0 ${statusPill(
+                      a.status || "pending"
+                    )}`}
                   >
-                    Remove
-                  </Button>
+                    {a.status}
+                  </span>
                 </div>
-              ))}
-            </div>
-         </div>
+              ))
+            )}
+          </div>
+        </div>
       )}
 
-      {/* Keep Modals and Lightbox exactly as is */}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Application Details" size="xl">
-          {selected && (
-             <div className="space-y-6">
-                <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/5">
-                   <div className="w-16 h-16 rounded-full overflow-hidden border border-white/10">
-                        {selected.user?.avatar_url && <img src={selected.user.avatar_url} className="w-full h-full object-cover" />}
-                   </div>
-                   <div>
-                       <p className="text-xl font-bold text-dark-100">{selected.user?.full_name}</p>
-                       <p className="text-dark-400 text-sm">{selected.user?.email}</p>
-                   </div>
-                </div>
-                
-                <div className="p-4 bg-[#121016] rounded-xl border border-white/5">
-                   <p className="text-xs text-dark-500 uppercase tracking-widest mb-2 font-bold">Motivation</p>
-                   <p className="text-dark-200 whitespace-pre-wrap leading-relaxed">"{selected.motivation}"</p>
+      {/* Guardians Tab */}
+      {tab === "guardians" && (
+        <div className="space-y-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
+            <input
+              value={guardianSearch}
+              onChange={(e) => setGuardianSearch(e.target.value)}
+              placeholder="Search active guardians..."
+              className="w-full h-11 pl-10 pr-4 bg-[#1E1B24] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 focus:shadow-[0_0_15px_rgba(124,58,237,0.15)] transition-all"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {filteredGuardians.map((g) => (
+              <div key={g.id} className="glass-card flex items-center justify-between gap-4 group">
+                <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!g.avatar_url) return;
+                      setLightboxUrl(g.avatar_url);
+                      setLightboxOpen(true);
+                    }}
+                    className="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0"
+                  >
+                    {g.avatar_url ? (
+                      <img src={g.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <User className="w-6 h-6 text-dark-400" />
+                      </div>
+                    )}
+                  </button>
+
+                  <div className="min-w-0">
+                    <p className="text-dark-100 font-medium truncate">{g.full_name || "Unknown"}</p>
+                    <p className="text-xs text-dark-500 truncate">
+                      {g.email || ""} {g.phone ? `• ${g.phone}` : ""}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="p-4 bg-[#121016] rounded-xl border border-white/5">
-                   <p className="text-xs text-dark-500 uppercase tracking-widest mb-2 font-bold">Experience</p>
-                   <p className="text-dark-200 whitespace-pre-wrap leading-relaxed">{selected.experience || "None provided"}</p>
-                </div>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => openRevokeGuardian(g)}
+                  className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity shrink-0"
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-                {selected.status === 'pending' && (
-                    <div className="flex gap-3 pt-4 border-t border-white/10">
-                    <Button className="flex-1 bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20 py-6" onClick={() => handleDecision("approve")}>
-                        <CheckCircle className="w-5 h-5 mr-2"/> Approve Application
-                    </Button>
-                    <Button className="flex-1 py-6" variant="danger" onClick={() => handleDecision("reject")}>
-                        <XCircle className="w-5 h-5 mr-2"/> Reject
-                    </Button>
+      {/* Activity Tab */}
+      {tab === "activity" && (
+        <div className="space-y-4">
+          {/* Stats Row */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="hud-panel p-3 text-center">
+              <p className="text-2xl font-bold text-dark-100">{activityStats.total}</p>
+              <p className="text-xs text-dark-500 uppercase">Total Actions</p>
+            </div>
+            <div className="hud-panel p-3 text-center">
+              <p className="text-2xl font-bold text-green-400">{activityStats.approve}</p>
+              <p className="text-xs text-dark-500 uppercase">Approved</p>
+            </div>
+            <div className="hud-panel p-3 text-center">
+              <p className="text-2xl font-bold text-red-400">{activityStats.remove}</p>
+              <p className="text-xs text-dark-500 uppercase">Removed</p>
+            </div>
+            <div className="hud-panel p-3 text-center">
+              <p className="text-2xl font-bold text-yellow-400">{activityStats.blur}</p>
+              <p className="text-xs text-dark-500 uppercase">Blurred</p>
+            </div>
+            <div className="hud-panel p-3 text-center">
+              <p className="text-2xl font-bold text-orange-400">{activityStats.escalate}</p>
+              <p className="text-xs text-dark-500 uppercase">Escalated</p>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {["all", "approve", "remove", "blur", "escalate"].map((k) => (
+              <button
+                key={k}
+                onClick={() => setActionFilter(k as any)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold border uppercase tracking-wider transition-all ${
+                  actionFilter === k
+                    ? "bg-white/10 border-white/20 text-white shadow-sm"
+                    : "border-transparent text-dark-500 hover:bg-white/5"
+                }`}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+
+          {/* Activity List */}
+          <div className="space-y-2">
+            {actionsLoading && actions.length === 0 ? (
+              Array.from({ length: 6 }).map((_, i) => <ActivityRowSkeleton key={i} />)
+            ) : actions.length === 0 ? (
+              <div className="text-center py-12 text-dark-500">No guardian actions found.</div>
+            ) : (
+              actions.map((a) => (
+                <div
+                  key={a.id}
+                  className="hud-panel p-4 flex items-start gap-4"
+                >
+                  {/* Guardian Avatar */}
+                  <div className="w-10 h-10 rounded-full bg-dark-800 border border-white/10 overflow-hidden shrink-0">
+                    {a.guardian?.avatar_url ? (
+                      <img src={a.guardian.avatar_url} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <User className="w-5 h-5 text-dark-400" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-dark-100">
+                        {a.guardian?.full_name || "Unknown Guardian"}
+                      </span>
+                      <span className="text-xs text-dark-500">
+                        {formatDistanceToNow(new Date(a.created_at), { addSuffix: true })}
+                      </span>
                     </div>
+
+                    <p className="text-sm text-dark-300 mt-1">
+                      <span className="capitalize">{a.action}d</span>{" "}
+                      {a.comment_id ? "a comment" : "a post"}
+                      {a.reason && (
+                        <span className="text-dark-500"> - Reason: {a.reason}</span>
+                      )}
+                    </p>
+
+                    {a.post && (
+                      <p className="text-xs text-dark-500 mt-1 truncate">
+                        Post: [{a.post.category}] {a.post.comment?.slice(0, 50)}
+                        {(a.post.comment?.length || 0) > 50 ? "..." : ""}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Action Badge */}
+                  <div
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold uppercase shrink-0 ${actionColor(
+                      a.action
+                    )}`}
+                  >
+                    {actionIcon(a.action)}
+                    {a.action}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Application Details" size="xl">
+        {selected && (
+          <div className="space-y-6">
+            <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/5">
+              <div className="w-16 h-16 rounded-full overflow-hidden border border-white/10">
+                {selected.user?.avatar_url && (
+                  <img src={selected.user.avatar_url} className="w-full h-full object-cover" />
                 )}
-             </div>
-          )}
+              </div>
+              <div>
+                <p className="text-xl font-bold text-dark-100">{selected.user?.full_name}</p>
+                <p className="text-dark-400 text-sm">{selected.user?.email}</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-[#121016] rounded-xl border border-white/5">
+              <p className="text-xs text-dark-500 uppercase tracking-widest mb-2 font-bold">Motivation</p>
+              <p className="text-dark-200 whitespace-pre-wrap leading-relaxed">"{selected.motivation}"</p>
+            </div>
+
+            <div className="p-4 bg-[#121016] rounded-xl border border-white/5">
+              <p className="text-xs text-dark-500 uppercase tracking-widest mb-2 font-bold">Experience</p>
+              <p className="text-dark-200 whitespace-pre-wrap leading-relaxed">
+                {selected.experience || "None provided"}
+              </p>
+            </div>
+
+            {selected.status === "pending" && (
+              <div className="flex gap-3 pt-4 border-t border-white/10">
+                <Button
+                  className="flex-1 bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20 py-6"
+                  onClick={() => handleDecision("approve")}
+                >
+                  <CheckCircle className="w-5 h-5 mr-2" /> Approve Application
+                </Button>
+                <Button className="flex-1 py-6" variant="danger" onClick={() => handleDecision("reject")}>
+                  <XCircle className="w-5 h-5 mr-2" /> Reject
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
-      
-      <ImageLightbox isOpen={lightboxOpen} onClose={() => setLightboxOpen(false)} imageUrl={lightboxUrl} caption={selected?.user?.full_name || null} />
-      
+
+      <ImageLightbox
+        isOpen={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+        imageUrl={lightboxUrl}
+        caption={selected?.user?.full_name || null}
+      />
+
       <Modal isOpen={revokeModalOpen} onClose={() => setRevokeModalOpen(false)} title="Revoke Access" size="md">
-         <div className="space-y-4">
-             <p className="text-dark-200">Are you sure you want to remove <strong className="text-white">{revokeTarget?.full_name}</strong> from the Guardian force?</p>
-             <div className="flex gap-3 mt-4">
-                 <Button className="flex-1" variant="secondary" onClick={() => setRevokeModalOpen(false)}>Cancel</Button>
-                 <Button className="flex-1" variant="danger" onClick={confirmRevokeGuardian} isLoading={actionLoading}>Confirm Removal</Button>
-             </div>
-         </div>
+        <div className="space-y-4">
+          <p className="text-dark-200">
+            Are you sure you want to remove{" "}
+            <strong className="text-white">{revokeTarget?.full_name}</strong> from the Guardian force?
+          </p>
+          <div className="flex gap-3 mt-4">
+            <Button className="flex-1" variant="secondary" onClick={() => setRevokeModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              variant="danger"
+              onClick={confirmRevokeGuardian}
+              isLoading={actionLoading}
+            >
+              Confirm Removal
+            </Button>
+          </div>
+        </div>
       </Modal>
-      
+
       {toast && (
         <div className="fixed top-10 left-1/2 -translate-x-1/2 z-50 px-6 py-3 rounded-full bg-dark-900 border border-white/10 shadow-2xl text-white font-medium animate-in fade-in slide-in-from-top-4">
-            {toast}
+          {toast}
         </div>
       )}
     </HudShell>

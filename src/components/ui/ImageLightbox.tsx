@@ -193,7 +193,7 @@ const incrementView = async (id: string) => {
   return (
     <Portal>
       <div 
-        className="fixed inset-0 z-[99999] flex flex-col touch-none"
+      className="fixed inset-0 z-[999999] flex flex-col touch-none"
         onClick={close}
         onContextMenu={(e) => e.preventDefault()}
       >

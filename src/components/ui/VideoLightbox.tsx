@@ -183,7 +183,7 @@ const incrementView = async (id: string) => {
 
   return createPortal(
     <div 
-      className="fixed inset-0 z-[10000] flex items-center justify-center group touch-none"
+    className="fixed inset-0 z-[999999] flex items-center justify-center group touch-none"
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -205,7 +205,7 @@ onTouchStartCapture={(e) => {
         style={{ opacity: bgOpacity }}
       />
 
-      <div className={`absolute top-4 left-4 z-120 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? 'opacity-100!' : 'pointer-events-none'}`}>
+      <div className={`absolute top-4 left-4 z-10 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? 'opacity-100!' : 'pointer-events-none'}`}>
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60"
@@ -214,10 +214,9 @@ onTouchStartCapture={(e) => {
         </button>
       </div>
 
-      <div className="absolute inset-0 z-110" onClick={handleScreenTap} />
+      <div className="absolute inset-0 z-5" onClick={handleScreenTap} />
 
-      <div
-        className="relative z-105 w-full h-full flex items-center justify-center transition-transform duration-200 ease-out"
+      <div className="relative z-1 w-full h-full flex items-center justify-center transition-transform duration-200 ease-out"
         style={{ 
           transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${1 - dragDistance / 1000})`,
           transition: isDragging ? 'none' : 'transform 0.3s ease-out' 
@@ -236,7 +235,7 @@ onTouchStartCapture={(e) => {
       </div>
 
       <div 
-        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-120 transition-all duration-300 opacity-0 group-hover:opacity-100 ${showControls && !isDragging ? 'opacity-100! pointer-events-auto' : 'pointer-events-none opacity-0!'}`}
+        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-10 transition-all duration-300 opacity-0 group-hover:opacity-100 ${showControls && !isDragging ? 'opacity-100! pointer-events-auto' : 'pointer-events-none opacity-0!'}`}
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
