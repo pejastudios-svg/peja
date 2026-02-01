@@ -714,16 +714,64 @@ useEffect(() => {
   }
 };
 
-  const handleDeletePost = async () => {
-    if (!activePostForOptions) return;
-    setDeleting(true);
-    setTimeout(() => {
-        setDeleting(false);
-        setShowDeleteModal(false);
-        setShowOptions(false);
-        setPosts(prev => prev.filter(p => p.id !== activePostForOptions.id));
-    }, 1000);
+ const handleDeletePost = async () => {
+  if (!activePostForOptions || !user) return;
+  
+  setDeleting(true);
+  
+  try {
+    const { data: auth } = await supabase.auth.getSession();
+    const token = auth.session?.access_token;
+    
+    if (!token) {
+      throw new Error("Session expired");
+    }
+
+    // Call user delete API
+    const res = await fetch("/api/delete-my-post", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ postId: activePostForOptions.id }),
+    });
+
+    const json = await res.json();
+    
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || "Failed to delete post");
+    }
+
+    const deletedPostId = activePostForOptions.id;
+
+    // Remove from local state immediately
+    setPosts(prev => prev.filter(p => p.id !== deletedPostId));
+    
+    setShowDeleteModal(false);
+    setShowOptions(false);
+    setActivePostForOptions(null);
+    
+    toast.success("Post deleted");
+    
+    // Dispatch event for other pages to update
+    window.dispatchEvent(new CustomEvent("peja-post-deleted", { 
+      detail: { postId: deletedPostId } 
+    }));
+
+    // If no posts left, close watch
+    const remainingPosts = posts.filter(p => p.id !== deletedPostId);
+    if (remainingPosts.length === 0) {
+      closeWatch();
+    }
+    
+  } catch (error: any) {
+    console.error("Delete error:", error);
+    toast.danger(error.message || "Failed to delete post");
+  } finally {
+    setDeleting(false);
   }
+};
 
   if (loading) {
     return (

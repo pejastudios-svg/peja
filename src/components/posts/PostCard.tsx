@@ -57,13 +57,16 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   const [lightboxItems, setLightboxItems] = useState<{ url: string; type: "image" | "video" }[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  const [confirming, setConfirming] = useState(false);
+  // Optimistic local state for instant UI feedback
+const [optimisticConfirmed, setOptimisticConfirmed] = useState<boolean | null>(null);
+const [optimisticCount, setOptimisticCount] = useState<number | null>(null);
 
   const { user } = useAuth();
   const confirm = useConfirm();
 
-  const isConfirmed = confirm.isConfirmed(post.id);
-  const confirmations = confirm.getCount(post.id, post.confirmations || 0);
+  // Use optimistic state if available, otherwise use context
+const isConfirmed = optimisticConfirmed ?? confirm.isConfirmed(post.id);
+const confirmations = optimisticCount ?? confirm.getCount(post.id, post.confirmations || 0);
 
   useEffect(() => {
     confirm.hydrateCounts([{ postId: post.id, confirmations: post.confirmations || 0 }]);
@@ -71,29 +74,40 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
 
   const isExpired = differenceInHours(new Date(), new Date(post.created_at)) >= 24;
 
-  const handleConfirmClick = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+const handleConfirmClick = async (e: React.MouseEvent) => {
+  e.stopPropagation();
 
-    if (!user) {
-      router.push("/login");
-      return;
+  if (!user) {
+    router.push("/login");
+    return;
+  }
+
+  // Get current state before toggle
+  const wasConfirmed = confirm.isConfirmed(post.id);
+  const currentCount = confirm.getCount(post.id, post.confirmations || 0);
+
+  // Optimistic update - instant UI change
+  setOptimisticConfirmed(!wasConfirmed);
+  setOptimisticCount(wasConfirmed ? Math.max(0, currentCount - 1) : currentCount + 1);
+
+  try {
+    const res = await confirm.toggle(post.id, post.confirmations || 0);
+
+    // Clear optimistic state - context now has the truth
+    setOptimisticConfirmed(null);
+    setOptimisticCount(null);
+
+    if (res?.confirmed && post.user_id && post.user_id !== user.id) {
+      notifyPostConfirmed(post.id, post.user_id, user.full_name || "Someone");
     }
 
-    if (confirming) return;
-    setConfirming(true);
-
-    try {
-      const res = await confirm.toggle(post.id, post.confirmations || 0);
-
-      if (res?.confirmed && post.user_id && post.user_id !== user.id) {
-        notifyPostConfirmed(post.id, post.user_id, user.full_name || "Someone");
-      }
-
-      onConfirm?.(post.id);
-    } finally {
-      setConfirming(false);
-    }
-  };
+    onConfirm?.(post.id);
+  } catch {
+    // Revert on error
+    setOptimisticConfirmed(null);
+    setOptimisticCount(null);
+  }
+};
 
   const category = CATEGORIES.find((c) => c.id === post.category);
   const badgeVariant =
@@ -389,19 +403,14 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       {/* Actions */}
       <div className="flex gap-2 pt-3 border-t border-white/5">
         <button
-          onClick={handleConfirmClick}
-          disabled={confirming}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-            isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"
-          } ${confirming ? "opacity-70" : ""}`}
-        >
-          {confirming ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <CheckCircle className={`w-4 h-4 ${isConfirmed ? "fill-current" : ""}`} />
-          )}
-          <span>{isConfirmed ? "Confirmed" : "Confirm"}</span>
-        </button>
+  onClick={handleConfirmClick}
+  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95 ${
+    isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"
+  }`}
+>
+  <CheckCircle className={`w-4 h-4 ${isConfirmed ? "fill-current" : ""}`} />
+  <span>{isConfirmed ? "Confirmed" : "Confirm"}</span>
+</button>
 
         <button
           onClick={handleAddInfo}

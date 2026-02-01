@@ -387,6 +387,8 @@ const { data: post, error: postError } = await supabase
 setUploadProgress(100);
 setToast("Post uploaded ✓");
 
+window.dispatchEvent(new Event("peja-post-created"));
+
 // Set flag to trigger refresh on home page
 sessionStorage.setItem("peja-feed-refresh", "true");
 

@@ -228,6 +228,12 @@ export default function AdminFlaggedPage() {
 
       // Optimistic update
       setItems((prev) => prev.filter((x) => x.id !== selected.id));
+      // Notify other pages that a post was archived
+if (action === "remove" && selected.post_id) {
+  window.dispatchEvent(new CustomEvent("peja-post-archived", { 
+    detail: { postId: selected.post_id } 
+  }));
+}
       setShowModal(false);
       setSelected(null);
     } catch (e: any) {

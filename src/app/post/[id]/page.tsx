@@ -1022,46 +1022,61 @@ setTimeout(() => setToastMsg(null), 2500);
 
   // Delete post
   const handleDeletePost = async () => {
-    if (!post) return;
+  if (!post) return;
 
-    // Close modal immediately
+  setDeleting(true);
+
+  try {
+    const { data: auth } = await supabase.auth.getSession();
+    const token = auth.session?.access_token;
+
+    if (!token) {
+      throw new Error("Session expired");
+    }
+
+    // Call the delete API
+    const res = await fetch("/api/delete-my-post", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ postId }),
+    });
+
+    const json = await res.json();
+
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || "Failed to delete post");
+    }
+
+    // Success - close modal and dispatch event
     setShowDeleteModal(false);
-    
-    // Set flag to trigger refresh on home page
-    sessionStorage.setItem("peja-feed-refresh", "true");
-    
-    // Invalidate all feed caches
+
+    // Dispatch event for feed to remove post instantly
+    window.dispatchEvent(new CustomEvent("peja-post-deleted", {
+      detail: { postId }
+    }));
+
+    // Invalidate caches
     feedCache.invalidateAll();
-    
-    // Navigate away immediately (optimistic)
+
+    // Navigate away
     if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
       window.dispatchEvent(new Event("peja-close-post"));
     } else if (typeof window !== "undefined" && window.history.length > 1) {
       router.back();
     } else {
-      router.replace("/");
+      window.location.href = "/";
     }
 
-    // Run deletion in background (fire and forget)
-    const commentIds = allComments.map(c => c.id);
-    
-    (async () => {
-      try {
-        if (commentIds.length > 0) {
-          await supabase.from("comment_likes").delete().in("comment_id", commentIds);
-          await supabase.from("comment_media").delete().in("comment_id", commentIds);
-        }
-        await supabase.from("post_comments").delete().eq("post_id", postId);
-        await supabase.from("post_media").delete().eq("post_id", postId);
-        await supabase.from("post_tags").delete().eq("post_id", postId);
-        await supabase.from("post_confirmations").delete().eq("post_id", postId);
-        await supabase.from("post_reports").delete().eq("post_id", postId);
-        await supabase.from("posts").delete().eq("id", postId);
-      } catch (err) {
-        console.error("Background delete error:", err);
-      }
-    })();
-  };
+  } catch (err: any) {
+    console.error("Delete error:", err);
+    toastApi.danger(err.message || "Failed to delete post");
+  } finally {
+    setDeleting(false);
+  }
+};
 
   // Reply handler
   const handleReply = (comment: Comment) => {
@@ -1298,17 +1313,34 @@ const openSingleLightbox = (url: string, caption?: string | null) => {
   return <PostDetailSkeleton />;
 }
 
-  // Error
-  if (error || !post) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-4">
-        <AlertTriangle className="w-16 h-16 text-red-400 mb-4" />
-        <h1 className="text-xl font-bold text-dark-100 mb-2">Post Not Found</h1>
-        <p className="text-dark-400 mb-4">This post may have been removed.</p>
-        <Button variant="primary" onClick={() => router.push("/")}>Go Home</Button>
-      </div>
-    );
-  }
+// Error
+if (error || !post) {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <AlertTriangle className="w-16 h-16 text-red-400 mb-4" />
+      <h1 className="text-xl font-bold text-dark-100 mb-2">Post Not Found</h1>
+      <p className="text-dark-400 mb-4">This post may have been removed.</p>
+      <Button 
+        variant="primary" 
+        onClick={() => {
+          // Close modal if inside one
+          if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
+            window.dispatchEvent(new Event("peja-close-post"));
+            // Give time for modal to close, then navigate
+            setTimeout(() => {
+              window.location.href = "/";
+            }, 100);
+            return;
+          }
+          // Direct navigation
+          window.location.href = "/";
+        }}
+      >
+        Go Home
+      </Button>
+    </div>
+  );
+}
 
   const category = CATEGORIES.find(c => c.id === post.category);
   const badgeVariant = category?.color === "danger" ? "danger" : category?.color === "warning" ? "warning" : "info";

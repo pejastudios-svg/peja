@@ -385,6 +385,59 @@ feedCache.setPosts(feedKey, finalPosts);
     }
   }, [activeTab, feedKey, feedCache, trendingMode, showSeenTop, user]);
 
+  // Listen for new post created event (from create page)
+useEffect(() => {
+  const handleNewPost = () => {
+    console.log("[Home] New post created, refreshing feed...");
+    fetchPosts(true);
+  };
+
+  window.addEventListener("peja-post-created", handleNewPost);
+  
+  return () => {
+    window.removeEventListener("peja-post-created", handleNewPost);
+  };
+}, [fetchPosts]);
+
+// Listen for post deleted/archived events
+useEffect(() => {
+  const handlePostDeleted = (e: Event) => {
+    const customEvent = e as CustomEvent;
+    const { postId } = customEvent.detail || {};
+    console.log("[Home] Post deleted event received:", postId);
+    
+    if (postId) {
+      setPosts(prev => {
+        const next = prev.filter(p => p.id !== postId);
+        feedCache.setPosts(feedKey, next);
+        return next;
+      });
+    }
+  };
+
+  const handlePostArchived = (e: Event) => {
+    const customEvent = e as CustomEvent;
+    const { postId } = customEvent.detail || {};
+    console.log("[Home] Post archived event received:", postId);
+    
+    if (postId) {
+      setPosts(prev => {
+        const next = prev.filter(p => p.id !== postId);
+        feedCache.setPosts(feedKey, next);
+        return next;
+      });
+    }
+  };
+
+  window.addEventListener("peja-post-deleted", handlePostDeleted);
+  window.addEventListener("peja-post-archived", handlePostArchived);
+  
+  return () => {
+    window.removeEventListener("peja-post-deleted", handlePostDeleted);
+    window.removeEventListener("peja-post-archived", handlePostArchived);
+  };
+}, [feedKey, feedCache]);
+
   // Initial fetch + check for refresh flag
   useEffect(() => {
     if (!authLoading) {
@@ -452,28 +505,41 @@ feedCache.setPosts(feedKey, finalPosts);
     }
         }
       },
-      // On post update
-      (updatedPost) => {
-        setPosts((prev) => {
-  const next = prev
-    .map((p) => {
-      if (p.id === updatedPost.id) {
-        return {
-          ...p,
-          confirmations: updatedPost.confirmations || p.confirmations,
-          views: updatedPost.views || p.views,
-          comment_count: updatedPost.comment_count || p.comment_count,
-          report_count: updatedPost.report_count || p.report_count,
-          status: updatedPost.status,
-        };
-      }
-      return p;
-    })
-    .filter((p) => p.status === "live" || p.status === "resolved");
-     feedCache.setPosts(feedKey, next);
-  return next;
-});
-      },
+     // On post update
+(updatedPost) => {
+  console.log("[Realtime] Post updated:", updatedPost.id, "status:", updatedPost.status);
+  
+  setPosts((prev) => {
+    // If post is archived/deleted, remove it
+    if (updatedPost.status === "archived" || updatedPost.status === "deleted") {
+      console.log("[Realtime] Removing archived post:", updatedPost.id);
+      const next = prev.filter((p) => p.id !== updatedPost.id);
+      feedCache.setPosts(feedKey, next);
+      return next;
+    }
+    
+    // Otherwise update the post
+    const next = prev
+      .map((p) => {
+        if (p.id === updatedPost.id) {
+          return {
+            ...p,
+            confirmations: updatedPost.confirmations ?? p.confirmations,
+            views: updatedPost.views ?? p.views,
+            comment_count: updatedPost.comment_count ?? p.comment_count,
+            report_count: updatedPost.report_count ?? p.report_count,
+            status: updatedPost.status ?? p.status,
+            is_sensitive: updatedPost.is_sensitive ?? p.is_sensitive,
+          };
+        }
+        return p;
+      })
+      .filter((p) => p.status === "live" || p.status === "resolved");
+    
+    feedCache.setPosts(feedKey, next);
+    return next;
+  });
+},
       
       // On post delete
       (deletedPost) => {
@@ -584,18 +650,6 @@ useEffect(() => {
     window.removeEventListener("popstate", handlePopState);
   };
 }, [feedKey, feedCache]);
-
-useEffect(() => {
-  const save = () => feedCache.setScroll(feedKey, window.scrollY);
-  window.addEventListener("scroll", save, { passive: true });
-  return () => window.removeEventListener("scroll", save);
-}, [feedKey]);
-
-useEffect(() => {
-  const save = () => feedCache.setScroll(feedKey, window.scrollY);
-  window.addEventListener("scroll", save, { passive: true });
-  return () => window.removeEventListener("scroll", save);
-}, [feedKey]);
 
   const handleSharePost = async (post: Post) => {
     const shareUrl = `${window.location.origin}/post/${post.id}`;
