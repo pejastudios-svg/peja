@@ -287,158 +287,44 @@ export default function GuardianQueuePage() {
     }
   };
 
-    const  handleAction = async (action: "approve" | "remove" | "blur" | "escalate") => {
+ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") => {
   if (!selectedItem || !user) return;
 
   setActionLoading(true);
   try {
-    const isComment = selectedItem.contentType === "comment";
-    const newStatus = action === "escalate" ? "escalated" : action === "approve" ? "approved" : "removed";
+    const { data: auth } = await supabase.auth.getSession();
+    const token = auth.session?.access_token;
     
-    await supabase
-      .from("flagged_content")
-      .update({ 
-        status: newStatus, 
-        reviewed_by: user.id,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq("id", selectedItem.id);
-
-    // Handle comment actions
-    if (isComment && selectedItem.comment_id) {
-      if (action === "remove") {
-        const commentId = selectedItem.comment_id;
-        const postId = selectedItem.flaggedComment?.post_id || selectedItem.post_id;
-
-        // Delete related data
-        await supabase.from("comment_likes").delete().eq("comment_id", commentId);
-        await supabase.from("comment_media").delete().eq("comment_id", commentId);
-        await supabase.from("comment_reports").delete().eq("comment_id", commentId);
-        
-        // Delete the comment
-        await supabase.from("post_comments").delete().eq("id", commentId);
-
-        // Decrement comment count
-        if (postId) {
-          await supabase.rpc("decrement_comment_count", { post_id: postId });
-        }
-
-        // Notify the comment owner
-        if (selectedItem.flaggedComment?.user_id) {
-          await supabase.from("notifications").insert({
-            user_id: selectedItem.flaggedComment.user_id,
-            type: "system",
-            title: "Comment removed",
-            body: `Your comment was removed by a moderator. Reason: ${selectedItem.reason}`,
-            data: { post_id: postId, reason: selectedItem.reason },
-            is_read: false,
-          });
-        }
-      }
+    if (!token) {
+      throw new Error("Session expired");
     }
 
-    // Handle post actions
-    if (!isComment && selectedItem.post_id) {
-      if (action === "remove") {
-        // Get post owner for notification
-        const { data: postData } = await supabase
-          .from("posts")
-          .select("user_id")
-          .eq("id", selectedItem.post_id)
-          .single();
+    const res = await fetch("/api/guardian/review-flagged", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ 
+        flaggedId: selectedItem.id, 
+        action 
+      }),
+    });
 
-        await supabase
-          .from("posts")
-          .update({ status: "archived" })
-          .eq("id", selectedItem.post_id);
-
-        // Notify the post owner
-        if (postData) {
-          await supabase.from("notifications").insert({
-            user_id: postData.user_id,
-            type: "system",
-            title: "Post removed",
-            body: `Your post was removed by a moderator. Reason: ${selectedItem.reason}`,
-            data: { post_id: selectedItem.post_id, reason: selectedItem.reason },
-            is_read: false,
-          });
-        }
-      }
-
-      if (action === "blur") {
-        await supabase.from("posts").update({ is_sensitive: true }).eq("id", selectedItem.post_id);
-        await supabase.from("post_media").update({ is_sensitive: true }).eq("post_id", selectedItem.post_id);
-      }
+    const json = await res.json();
+    
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || "Failed to complete action");
     }
 
-    // ✅ NEW: Notify admins when guardian escalates
-    if (action === "escalate") {
-      // Fetch all admins
-      const { data: admins } = await supabase
-        .from("users")
-        .select("id")
-        .eq("is_admin", true)
-        .eq("status", "active")
-        .neq("id", user.id); // Don't notify self if admin is also guardian
-
-      if (admins && admins.length > 0) {
-        const contentType = isComment ? "comment" : "post";
-        const preview = isComment 
-          ? (selectedItem.flaggedComment?.content || "").slice(0, 60)
-          : (selectedItem.post?.comment || "").slice(0, 60);
-
-        const adminNotifications = admins.map((admin) => ({
-          recipient_id: admin.id,
-          type: `escalated_${contentType}`,
-          title: `🚨 Escalated ${contentType}`,
-          body: preview 
-            ? `"${preview}${preview.length >= 60 ? "..." : ""}" — Reason: ${selectedItem.reason}`
-            : `Reason: ${selectedItem.reason}`,
-          data: {
-            flagged_id: selectedItem.id,
-            post_id: selectedItem.post_id,
-            comment_id: selectedItem.comment_id || null,
-            reason: selectedItem.reason,
-            escalated_by: user.id,
-            escalated_by_name: user.full_name || "Guardian",
-            content_type: contentType,
-          },
-          is_read: false,
-          created_at: new Date().toISOString(),
-        }));
-
-        const { error: notifErr } = await supabase
-          .from("admin_notifications")
-          .insert(adminNotifications);
-
-        if (notifErr) {
-          console.error("Failed to notify admins of escalation:", notifErr);
-        } else {
-          console.log(`Notified ${admins.length} admin(s) of escalation`);
-        }
-      }
-    }
-
-    // Log guardian action
-    try {
-      await supabase.from("guardian_actions").insert({
-        guardian_id: user.id,
-        action,
-        post_id: selectedItem.post_id,
-        comment_id: selectedItem.comment_id || null,
-        reason: selectedItem.reason,
-      });
-    } catch (e) {
-      console.log("Guardian actions table may not exist yet");
-    }
-
+    // Remove from local state
     setItems(items.filter(i => i.id !== selectedItem.id));
     setShowReviewModal(false);
     setSelectedItem(null);
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Action error:", error);
-    alert("Failed to complete action");
+    alert(error.message || "Failed to complete action");
   } finally {
     setActionLoading(false);
   }

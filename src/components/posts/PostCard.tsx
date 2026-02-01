@@ -7,7 +7,8 @@ import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 import { useConfirm } from "@/context/ConfirmContext";
 import { useAuth } from "@/context/AuthContext";
-import { useFeedCache } from "@/context/FeedContext"; // ✅ ADD THIS IMPORT
+import { useFeedCache } from "@/context/FeedContext";
+import { useToast } from "@/context/ToastContext";
 import {
   MapPin,
   Clock,
@@ -37,7 +38,8 @@ interface PostCardProps {
 
 function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProps) {
   const router = useRouter();
-  const feedCache = useFeedCache(); // ✅ ADD THIS
+  const feedCache = useFeedCache(); 
+  const toast = useToast();
 
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [showSensitive, setShowSensitive] = useState(false);
@@ -151,10 +153,46 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
     router.push(`/post/${post.id}${sk}`, { scroll: false });
   };
 
-  const handleShareClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onShare?.(post);
-  };
+ const handleShareClick = async (e: React.MouseEvent) => {
+  e.stopPropagation();
+  
+  const url = `${window.location.origin}/post/${post.id}`;
+  
+  // Try native share first (mobile)
+  if (navigator.share) {
+    try {
+      await navigator.share({ 
+        title: "Peja Alert", 
+        text: post.comment || category?.name || "Check out this incident",
+        url 
+      });
+      return;
+    } catch (err) {
+      // User cancelled or share failed, fall through to clipboard
+      if ((err as Error).name === 'AbortError') return;
+    }
+  }
+  
+  // Fallback: copy to clipboard
+  try {
+    await navigator.clipboard.writeText(url);
+    toast.success("Link copied to clipboard!");
+  } catch {
+    // Final fallback for older browsers
+    const textArea = document.createElement("textarea");
+    textArea.value = url;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-999999px";
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textArea);
+    toast.success("Link copied to clipboard!");
+  }
+  
+  // Still call onShare if provided (for analytics, etc.)
+  onShare?.(post);
+};
 
   const currentMedia = post.media?.[currentMediaIndex];
   const commentText = post.comment || "";

@@ -10,6 +10,7 @@ import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
 import { Trash2, Flag, Bell, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { AlertTriangle } from "lucide-react";
 
 type AdminNotification = {
   id: string;
@@ -54,16 +55,18 @@ export default function AdminNotificationsPage() {
   const unreadCount = unread.length;
 
   const typeTone = (t: string) => {
-    if (t === "flagged_post" || t === "flagged_comment") return "border-red-500/35 bg-red-500/10";
-    if (t === "guardian_application") return "border-primary-500/35 bg-primary-500/10";
-    return "border-white/10 bg-white/5";
-  };
+  if (t === "flagged_post" || t === "flagged_comment") return "border-red-500/35 bg-red-500/10";
+  if (t === "escalated_post" || t === "escalated_comment") return "border-orange-500/35 bg-orange-500/10";
+  if (t === "guardian_application") return "border-primary-500/35 bg-primary-500/10";
+  return "border-white/10 bg-white/5";
+};
 
   const getIcon = (t: string) => {
-    if (t === "flagged_post" || t === "flagged_comment") return <Flag className="w-4 h-4 text-red-400" />;
-    if (t === "guardian_application") return <Users className="w-4 h-4 text-primary-400" />;
-    return <Bell className="w-4 h-4 text-primary-400" />;
-  };
+  if (t === "flagged_post" || t === "flagged_comment") return <Flag className="w-4 h-4 text-red-400" />;
+  if (t === "escalated_post" || t === "escalated_comment") return <AlertTriangle className="w-4 h-4 text-orange-400" />;
+  if (t === "guardian_application") return <Users className="w-4 h-4 text-primary-400" />;
+  return <Bell className="w-4 h-4 text-primary-400" />;
+};
 
   // Dispatch event to refresh sidebar badge
   const refreshBadge = () => {
@@ -162,20 +165,26 @@ export default function AdminNotificationsPage() {
   };
 
   const openNotification = async (n: AdminNotification) => {
-    if (n.is_read !== true) await markRead(n.id);
+  if (n.is_read !== true) await markRead(n.id);
 
-    if (n.type === "flagged_post" || n.type === "flagged_comment") {
-      router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
-      return;
-    }
+  if (n.type === "flagged_post" || n.type === "flagged_comment") {
+    router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
+    return;
+  }
 
-    if (n.type === "guardian_application") {
-      router.push(`/admin/guardians?app=${encodeURIComponent(n.data?.application_id || "")}`);
-      return;
-    }
+  // Add escalated types - route to flagged page
+  if (n.type === "escalated_post" || n.type === "escalated_comment") {
+    router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
+    return;
+  }
 
-    router.push("/admin/notifications");
-  };
+  if (n.type === "guardian_application") {
+    router.push(`/admin/guardians?app=${encodeURIComponent(n.data?.application_id || "")}`);
+    return;
+  }
+
+  router.push("/admin/notifications");
+};
 
   return (
     <HudShell

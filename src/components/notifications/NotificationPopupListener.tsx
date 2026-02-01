@@ -136,33 +136,37 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
   if (!popup) return null;
 
   const getRoute = (): string | null => {
-    const data = popup.data || {};
+  const data = popup.data || {};
 
-    if (table === "admin_notifications") {
-      if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
-        return `/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`;
-      }
-      if (popup.type === "guardian_application") {
-        return `/admin/guardians?app=${encodeURIComponent(data.application_id || "")}`;
-      }
-      return "/admin/notifications";
+  if (table === "admin_notifications") {
+    if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
+      return `/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`;
     }
+    // Add escalated types
+    if (popup.type === "escalated_post" || popup.type === "escalated_comment") {
+      return `/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`;
+    }
+    if (popup.type === "guardian_application") {
+      return `/admin/guardians?app=${encodeURIComponent(data.application_id || "")}`;
+    }
+    return "/admin/notifications";
+  }
 
-    if (table === "guardian_notifications") {
-      if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
-        return `/guardian/queue?review=${encodeURIComponent(data.flagged_id || "")}`;
-      }
-      return "/guardian/notifications";
+  if (table === "guardian_notifications") {
+    if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
+      return `/guardian/queue?review=${encodeURIComponent(data.flagged_id || "")}`;
     }
+    return "/guardian/notifications";
+  }
 
-    if (popup.type === "sos_alert") {
-      return data.sos_id ? `/map?sos=${encodeURIComponent(data.sos_id)}` : "/map";
-    }
-    if (data.post_id) {
-      return `/post/${encodeURIComponent(data.post_id)}`;
-    }
-    return "/notifications";
-  };
+  if (popup.type === "sos_alert") {
+    return data.sos_id ? `/map?sos=${encodeURIComponent(data.sos_id)}` : "/map";
+  }
+  if (data.post_id) {
+    return `/post/${encodeURIComponent(data.post_id)}`;
+  }
+  return "/notifications";
+};
 
   const handleClick = async () => {
     try {
@@ -183,17 +187,21 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
   };
 
   const getIcon = () => {
-    if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
-      return <Flag className="w-5 h-5 text-red-400" />;
-    }
-    if (popup.type === "sos_alert") {
-      return <AlertTriangle className="w-5 h-5 text-red-400" />;
-    }
-    if (popup.type === "post_comment" || popup.type === "comment_reply") {
-      return <MessageCircle className="w-5 h-5 text-blue-400" />;
-    }
-    return <Bell className="w-5 h-5 text-primary-400" />;
-  };
+  if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
+    return <Flag className="w-5 h-5 text-red-400" />;
+  }
+  // Add escalated types with orange color
+  if (popup.type === "escalated_post" || popup.type === "escalated_comment") {
+    return <AlertTriangle className="w-5 h-5 text-orange-400" />;
+  }
+  if (popup.type === "sos_alert") {
+    return <AlertTriangle className="w-5 h-5 text-red-400" />;
+  }
+  if (popup.type === "post_comment" || popup.type === "comment_reply") {
+    return <MessageCircle className="w-5 h-5 text-blue-400" />;
+  }
+  return <Bell className="w-5 h-5 text-primary-400" />;
+};
 
   return (
     <div className="fixed bottom-4 right-4 z-[100000] max-w-sm animate-[slideUp_200ms_ease-out]">
