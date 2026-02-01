@@ -185,7 +185,17 @@ export function InlineVideo({
     <div
       ref={wrapRef}
       className="relative w-full h-full bg-black overflow-hidden group select-none"
-      onPointerDownCapture={() => setSoundEnabled(true)}
+      onPointerDownCapture={(e) => {
+  // Don't auto-enable sound if clicking on controls
+  const target = e.target as HTMLElement;
+  if (target.closest('button')) return;
+  setSoundEnabled(true);
+}}
+onTouchStartCapture={(e) => {
+  const target = e.target as HTMLElement;
+  if (target.closest('button')) return;
+  setSoundEnabled(true);
+}}
       onClick={handleContainerClick}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -246,6 +256,7 @@ export function InlineVideo({
           {showMute && (
             <button
             onPointerDownCapture={(e) => e.stopPropagation()} 
+            onTouchStartCapture={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 setSoundEnabled(!soundEnabled);

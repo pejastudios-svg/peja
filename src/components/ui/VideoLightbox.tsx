@@ -157,7 +157,16 @@ export function VideoLightbox({
       onTouchEnd={onTouchEnd}
       onClick={(e) => e.stopPropagation()} 
       onContextMenu={(e) => e.preventDefault()}
-      onPointerDownCapture={() => setSoundEnabled(true)}
+      onPointerDownCapture={(e) => {
+  const target = e.target as HTMLElement;
+  if (target.closest('button')) return;
+  setSoundEnabled(true);
+}}
+onTouchStartCapture={(e) => {
+  const target = e.target as HTMLElement;
+  if (target.closest('button')) return;
+  setSoundEnabled(true);
+}}
     >
       <div 
         className="absolute inset-0 bg-black transition-opacity duration-100 ease-linear"
@@ -228,6 +237,7 @@ export function VideoLightbox({
 
           <button 
             onPointerDownCapture={(e) => e.stopPropagation()}
+            onTouchStartCapture={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               setSoundEnabled(!soundEnabled);

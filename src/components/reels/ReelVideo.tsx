@@ -199,7 +199,16 @@ export function ReelVideo({
       className="relative w-full h-full bg-black select-none group"
       onClick={handleContainerClick}
       onContextMenu={(e) => e.preventDefault()}
-      onPointerDownCapture={() => setSoundEnabled(true)}
+      onPointerDownCapture={(e) => {
+  const target = e.target as HTMLElement;
+  if (target.closest('button')) return;
+  setSoundEnabled(true);
+}}
+onTouchStartCapture={(e) => {
+  const target = e.target as HTMLElement;
+  if (target.closest('button')) return;
+  setSoundEnabled(true);
+}}
       onPointerDown={() => longPressGestures.onPointerDown()}
       onPointerUp={longPressGestures.onPointerUp}
       onPointerLeave={longPressGestures.onPointerLeave}
@@ -274,6 +283,7 @@ export function ReelVideo({
 
           <button 
           onPointerDownCapture={(e) => e.stopPropagation()}
+          onTouchStartCapture={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               setSoundEnabled(!soundEnabled);
