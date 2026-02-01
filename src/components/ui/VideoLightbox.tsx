@@ -3,23 +3,26 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, Play, Pause, Volume2, VolumeX } from "lucide-react";
+import { useAudio } from "@/context/AudioContext";
 
 export function VideoLightbox({
   isOpen,
   onClose,
   videoUrl,
-  startTime = 0, // ✅ FIX: Accept startTime prop
+  startTime = 0,
 }: {
   isOpen: boolean;
   onClose: () => void;
   videoUrl: string | null;
-  startTime?: number; // ✅ FIX: New prop
+  startTime?: number;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
+  
+  // Use global audio context instead of local state
+  const { soundEnabled, setSoundEnabled } = useAudio();
   
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -35,10 +38,8 @@ export function VideoLightbox({
       document.body.style.overflow = "hidden";
       window.dispatchEvent(new Event("peja-modal-open"));
       
-      // ✅ FIX: Set start time when video is ready
       const v = videoRef.current;
       if (v && startTime > 0) {
-        // Wait for video to be ready before setting time
         const setTime = () => {
           v.currentTime = startTime;
           v.removeEventListener("loadedmetadata", setTime);
@@ -60,6 +61,14 @@ export function VideoLightbox({
     }
     return () => { document.body.style.overflow = ""; };
   }, [isOpen, startTime]);
+
+  // Sync video muted state with global audio context
+  useEffect(() => {
+    const v = videoRef.current;
+    if (v) {
+      v.muted = !soundEnabled;
+    }
+  }, [soundEnabled]);
 
   const resetFadeTimer = () => {
     if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
@@ -148,6 +157,7 @@ export function VideoLightbox({
       onTouchEnd={onTouchEnd}
       onClick={(e) => e.stopPropagation()} 
       onContextMenu={(e) => e.preventDefault()}
+      onPointerDownCapture={() => setSoundEnabled(true)}
     >
       <div 
         className="absolute inset-0 bg-black transition-opacity duration-100 ease-linear"
@@ -178,6 +188,7 @@ export function VideoLightbox({
           className="max-w-full max-h-full w-full h-full object-contain pointer-events-none"
           playsInline
           autoPlay
+          muted={!soundEnabled}
           onTimeUpdate={handleTimeUpdate}
           onEnded={() => setIsPlaying(false)}
         />
@@ -215,15 +226,15 @@ export function VideoLightbox({
              </div>
           </div>
 
-          <button onClick={() => { 
-              if (videoRef.current) {
-                videoRef.current.muted = !isMuted;
-                setIsMuted(!isMuted);
-              }
+          <button 
+            onPointerDownCapture={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              setSoundEnabled(!soundEnabled);
             }} 
             className="text-white hover:text-white/80"
           >
-            {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+            {soundEnabled ? <Volume2 className="w-6 h-6" /> : <VolumeX className="w-6 h-6" />}
           </button>
         </div>
       </div>

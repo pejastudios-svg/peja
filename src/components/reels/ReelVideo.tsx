@@ -273,6 +273,7 @@ export function ReelVideo({
           </div>
 
           <button 
+          onPointerDownCapture={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               setSoundEnabled(!soundEnabled);

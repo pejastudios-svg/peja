@@ -245,6 +245,7 @@ export function InlineVideo({
 
           {showMute && (
             <button
+            onPointerDownCapture={(e) => e.stopPropagation()} 
               onClick={(e) => {
                 e.stopPropagation();
                 setSoundEnabled(!soundEnabled);
