@@ -426,6 +426,7 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   caption={post.comment || null}
   items={lightboxItems}
   initialIndex={lightboxIndex}
+  postId={post.id} 
   onLongPress={() => {
     setLightboxOpen(false);
   }}
@@ -435,7 +436,8 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   isOpen={videoLightboxOpen}
   onClose={() => setVideoLightboxOpen(false)}
   videoUrl={lightboxUrl}
-  startTime={videoStartTime} // ✅ Pass start time
+  startTime={videoStartTime}
+  postId={post.id} 
 />
     </article>
   );

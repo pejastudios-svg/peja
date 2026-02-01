@@ -4,19 +4,47 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
+import { supabase } from "@/lib/supabase";
 
 export function VideoLightbox({
   isOpen,
   onClose,
   videoUrl,
   startTime = 0,
+  postId,
 }: {
   isOpen: boolean;
   onClose: () => void;
   videoUrl: string | null;
   startTime?: number;
+  postId?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const viewedRef = useRef<Set<string>>(new Set());
+
+const incrementView = async (id: string) => {
+  // Prevent duplicate views in this session
+  if (viewedRef.current.has(id)) return;
+  viewedRef.current.add(id);
+  
+  try {
+    // Get current view count
+    const { data: post } = await supabase
+      .from("posts")
+      .select("views")
+      .eq("id", id)
+      .single();
+    
+    if (post) {
+      await supabase
+        .from("posts")
+        .update({ views: (post.views || 0) + 1 })
+        .eq("id", id);
+    }
+  } catch (e) {
+    console.error("Failed to increment view:", e);
+  }
+};
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -37,6 +65,10 @@ export function VideoLightbox({
       resetFadeTimer();
       document.body.style.overflow = "hidden";
       window.dispatchEvent(new Event("peja-modal-open"));
+
+          if (postId) {
+      incrementView(postId);
+    }
       
       const v = videoRef.current;
       if (v && startTime > 0) {
@@ -60,7 +92,7 @@ export function VideoLightbox({
       window.dispatchEvent(new Event("peja-modal-close"));
     }
     return () => { document.body.style.overflow = ""; };
-  }, [isOpen, startTime]);
+  }, [isOpen, startTime, postId]);
 
   // Sync video muted state with global audio context
   useEffect(() => {

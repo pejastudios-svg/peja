@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Portal } from "@/components/ui/Portal";
 import { InlineVideo } from "@/components/reels/InlineVideo";
+import { supabase } from "@/lib/supabase";
 
 export type MediaItem = { url: string; type: "image" | "video" };
 
@@ -13,7 +14,8 @@ export function ImageLightbox({
   imageUrl,
   items,
   initialIndex = 0,
-  onLongPress, // ✅ NEW: Callback for long press on images
+  onLongPress, 
+  postId,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -21,13 +23,40 @@ export function ImageLightbox({
   items?: MediaItem[];
   initialIndex?: number;
   caption?: string | null;
-  onLongPress?: () => void; // ✅ NEW
+  onLongPress?: () => void; 
+   postId?: string;
 }) {
   const mediaItems: MediaItem[] = useMemo(() => {
     if (items && items.length > 0) return items;
     if (imageUrl) return [{ url: imageUrl, type: "image" }];
     return [];
   }, [items, imageUrl]);
+
+  const viewedRef = useRef<Set<string>>(new Set());
+
+const incrementView = async (id: string) => {
+  // Prevent duplicate views in this session
+  if (viewedRef.current.has(id)) return;
+  viewedRef.current.add(id);
+  
+  try {
+    // Get current view count
+    const { data: post } = await supabase
+      .from("posts")
+      .select("views")
+      .eq("id", id)
+      .single();
+    
+    if (post) {
+      await supabase
+        .from("posts")
+        .update({ views: (post.views || 0) + 1 })
+        .eq("id", id);
+    }
+  } catch (e) {
+    console.error("Failed to increment view:", e);
+  }
+};
 
   const [index, setIndex] = useState(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -44,6 +73,9 @@ export function ImageLightbox({
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = "hidden";
+       if (postId) {
+      incrementView(postId);
+    }
     } else {
       setDragOffset(0);
       document.body.style.overflow = "";
@@ -67,7 +99,7 @@ export function ImageLightbox({
         clearTimeout(longPressTimerRef.current);
       }
     };
-  }, [isOpen, initialIndex, mediaItems.length]);
+  }, [isOpen, initialIndex, mediaItems.length, postId]);
 
   if (!isOpen || mediaItems.length === 0) return null;
 
