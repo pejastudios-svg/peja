@@ -2,13 +2,12 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import L from "leaflet";
-import { Post, CATEGORIES, SOSAlert } from "@/lib/types";
+import { Post, CATEGORIES, SOSAlert, SOS_TAGS } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/lib/notifications";
 import { useAuth } from "@/context/AuthContext";
 
-// Fix Leaflet default icon issue
 if (typeof window !== "undefined") {
   delete (L.Icon.Default.prototype as any)._getIconUrl;
   L.Icon.Default.mergeOptions({
@@ -17,20 +16,6 @@ if (typeof window !== "undefined") {
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   });
 }
-
-// SOS Tags
-const SOS_TAGS = [
-  { id: "medical", label: "Medical Emergency", suggestion: "Call an ambulance or get the person to a hospital immediately." },
-  { id: "accident", label: "Car Accident", suggestion: "Check for injuries. Do not move injured unless necessary." },
-  { id: "robbery", label: "Armed Robbery", suggestion: "DANGER: Do NOT approach. Contact police at 112 or 767." },
-  { id: "kidnapping", label: "Kidnapping", suggestion: "EXTREME DANGER: Do NOT approach. Contact police immediately." },
-  { id: "fire", label: "Fire", suggestion: "Call fire service. Evacuate the area. Do not enter burning buildings." },
-  { id: "assault", label: "Physical Assault", suggestion: "Ensure scene is safe. Call police and provide first aid if trained." },
-  { id: "flood", label: "Flooding", suggestion: "Avoid flooded areas. Help evacuate to higher ground if safe." },
-  { id: "stuck", label: "Stuck or Stranded", suggestion: "User may need transport or help. Safe to approach." },
-  { id: "health", label: "Health Crisis", suggestion: "Person may need medication. Ask before administering help." },
-  { id: "other", label: "Other Emergency", suggestion: "Assess carefully. Your safety comes first." },
-];
 
 interface IncidentMapInnerProps {
   posts: Post[];
@@ -42,9 +27,9 @@ interface IncidentMapInnerProps {
   centerOnCoords?: { lat: number; lng: number } | null;
   openSOSId?: string | null;
   compassEnabled?: boolean;
+  myUserId?: string | null;
 }
 
-// Create icons
 const createIncidentIcon = (color: string) => {
   return L.divIcon({
     className: "incident-marker",
@@ -128,7 +113,7 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
   return L.divIcon({
     className: "sos-marker",
     html: `
-      <div style="position: relative; width: 64px; height: 64px;">
+      <div class="sos-marker-container" style="position: relative; width: 64px; height: 64px;">
         <div style="
           position: absolute;
           top: 0;
@@ -162,6 +147,7 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
           box-shadow: 0 0 0 4px rgba(220,38,38,0.25);
           background: white;
           z-index: 2;
+          animation: sos-pulse-ring 2s ease-out infinite;
         ">
           <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff'" />
         </div>
@@ -170,6 +156,35 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
     iconSize: [64, 64],
     iconAnchor: [32, 32],
     popupAnchor: [0, -32],
+  });
+};
+
+const createHelperIcon = (avatarUrl?: string) => {
+  const img = avatarUrl || "https://ui-avatars.com/api/?name=H&background=22c55e&color=fff";
+  return L.divIcon({
+    className: "helper-marker",
+    html: `
+      <div style="position: relative; width: 48px; height: 48px;">
+        <div style="
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 36px;
+          height: 36px;
+          border-radius: 50%;
+          overflow: hidden;
+          border: 3px solid #22c55e;
+          box-shadow: 0 0 0 3px rgba(34,197,94,0.3);
+          background: white;
+        ">
+          <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" />
+        </div>
+      </div>
+    `,
+    iconSize: [48, 48],
+    iconAnchor: [24, 24],
+    popupAnchor: [0, -24],
   });
 };
 
@@ -200,6 +215,7 @@ export default function IncidentMapInner({
   centerOnCoords = null,
   openSOSId = null,
   compassEnabled = false,
+  myUserId = null,
 }: IncidentMapInnerProps) {
   const { user } = useAuth();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -208,12 +224,22 @@ export default function IncidentMapInner({
   const userMarkerRef = useRef<L.Marker | null>(null);
   const autoOpenedRef = useRef(false);
   const sosMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const helperMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const lastUserLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
   const [sendingHelp, setSendingHelp] = useState(false);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [bearing, setBearing] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
+  const [helpers, setHelpers] = useState<Array<{
+    id: string;
+    name: string;
+    avatar_url?: string;
+    lat: number;
+    lng: number;
+    eta: number;
+  }>>([]);
 
   const defaultCenter: [number, number] = [6.5244, 3.3792];
   const center = useMemo(() => 
@@ -225,7 +251,6 @@ export default function IncidentMapInner({
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
-    // Create map instance
     const map = L.map(mapContainerRef.current, {
       center: center,
       zoom: 14,
@@ -238,7 +263,6 @@ export default function IncidentMapInner({
 
     mapInstanceRef.current = map;
 
-    // Cleanup on unmount
     return () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
@@ -247,16 +271,17 @@ export default function IncidentMapInner({
     };
   }, []);
 
-useEffect(() => {
-  if (!openSOSId) return;
-  if (autoOpenedRef.current) return;
+  // Auto-open SOS from URL
+  useEffect(() => {
+    if (!openSOSId) return;
+    if (autoOpenedRef.current) return;
 
-  const match = liveSOSAlerts.find(s => s.id === openSOSId);
-  if (match) {
-    setSelectedSOS(match);
-    autoOpenedRef.current = true;
-  }
-}, [openSOSId, liveSOSAlerts]);
+    const match = liveSOSAlerts.find(s => s.id === openSOSId);
+    if (match) {
+      setSelectedSOS(match);
+      autoOpenedRef.current = true;
+    }
+  }, [openSOSId, liveSOSAlerts]);
 
   // Center on user when requested
   useEffect(() => {
@@ -265,42 +290,80 @@ useEffect(() => {
     }
   }, [centerOnUser, userLocation]);
 
+  // Center on coords when requested
   useEffect(() => {
-  if (!centerOnCoords || !mapInstanceRef.current) return;
-  mapInstanceRef.current.setView([centerOnCoords.lat, centerOnCoords.lng], 16, { animate: true });
-}, [centerOnCoords]);
+    if (!centerOnCoords || !mapInstanceRef.current) return;
+    mapInstanceRef.current.setView([centerOnCoords.lat, centerOnCoords.lng], 16, { animate: true });
+  }, [centerOnCoords]);
 
-useEffect(() => {
-  if (!openSOSId) return;
-  const match = liveSOSAlerts.find(s => s.id === openSOSId);
-  if (match) setSelectedSOS(match);
-}, [openSOSId, liveSOSAlerts]);
+  // Map rotation with compass
+  useEffect(() => {
+    if (!compassEnabled || !mapInstanceRef.current) return;
+    
+    const container = mapInstanceRef.current.getContainer();
+    container.style.transition = "transform 0.3s ease-out";
+    container.style.transform = `rotate(${-bearing}deg)`;
+    
+    return () => {
+      if (container) {
+        container.style.transform = "rotate(0deg)";
+      }
+    };
+  }, [bearing, compassEnabled]);
 
-  // Update user location marker
+  // Real-time smooth user location update
   useEffect(() => {
     if (!mapInstanceRef.current || !userLocation) return;
 
+    const targetLat = userLocation.lat;
+    const targetLng = userLocation.lng;
+
     if (userMarkerRef.current) {
-      userMarkerRef.current.setLatLng([userLocation.lat, userLocation.lng]);
+      const currentLatLng = userMarkerRef.current.getLatLng();
+      const startLat = currentLatLng.lat;
+      const startLng = currentLatLng.lng;
+      
+      // Animate smoothly
+      let startTime: number | null = null;
+      const duration = 500; // 500ms animation
+      
+      const animate = (timestamp: number) => {
+        if (!startTime) startTime = timestamp;
+        const progress = Math.min((timestamp - startTime) / duration, 1);
+        
+        // Ease out cubic
+        const easeOut = 1 - Math.pow(1 - progress, 3);
+        
+        const newLat = startLat + (targetLat - startLat) * easeOut;
+        const newLng = startLng + (targetLng - startLng) * easeOut;
+        
+        userMarkerRef.current?.setLatLng([newLat, newLng]);
+        
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        }
+      };
+      
+      requestAnimationFrame(animate);
       userMarkerRef.current.setIcon(createUserLocationIcon(bearing));
     } else {
-      userMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], {
+      userMarkerRef.current = L.marker([targetLat, targetLng], {
         icon: createUserLocationIcon(bearing),
       }).addTo(mapInstanceRef.current);
       
       userMarkerRef.current.bindPopup("<div class='text-center p-1'><p class='font-medium text-gray-800'>You are here</p></div>");
     }
+    
+    lastUserLocationRef.current = userLocation;
   }, [userLocation, bearing]);
 
   // Update post markers
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
-    // Remove old markers
     markersRef.current.forEach(marker => marker.remove());
     markersRef.current = [];
 
-    // Add new markers
     posts.forEach(post => {
       if (!post.location?.latitude || !post.location?.longitude) return;
 
@@ -320,16 +383,38 @@ useEffect(() => {
     });
   }, [posts, onPostClick]);
 
-  // Update SOS markers
+  // Update SOS markers with smooth animation
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
-    // Update existing markers or add new ones
     liveSOSAlerts.forEach(sos => {
       const existingMarker = sosMarkersRef.current.get(sos.id);
       
       if (existingMarker) {
-        existingMarker.setLatLng([sos.latitude, sos.longitude]);
+        // Smooth update
+        const currentLatLng = existingMarker.getLatLng();
+        const targetLat = sos.latitude;
+        const targetLng = sos.longitude;
+        
+        let startTime: number | null = null;
+        const duration = 500;
+        
+        const animate = (timestamp: number) => {
+          if (!startTime) startTime = timestamp;
+          const progress = Math.min((timestamp - startTime) / duration, 1);
+          const easeOut = 1 - Math.pow(1 - progress, 3);
+          
+          const newLat = currentLatLng.lat + (targetLat - currentLatLng.lat) * easeOut;
+          const newLng = currentLatLng.lng + (targetLng - currentLatLng.lng) * easeOut;
+          
+          existingMarker.setLatLng([newLat, newLng]);
+          
+          if (progress < 1) {
+            requestAnimationFrame(animate);
+          }
+        };
+        
+        requestAnimationFrame(animate);
         existingMarker.setIcon(createSOSIcon(sos.user?.avatar_url, sos.bearing || 0));
       } else {
         const marker = L.marker([sos.latitude, sos.longitude], {
@@ -350,7 +435,6 @@ useEffect(() => {
       }
     });
 
-    // Remove markers for SOS that no longer exist
     sosMarkersRef.current.forEach((marker, id) => {
       if (!liveSOSAlerts.find(s => s.id === id)) {
         marker.remove();
@@ -358,6 +442,39 @@ useEffect(() => {
       }
     });
   }, [liveSOSAlerts]);
+
+  // Update helper markers
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    helpers.forEach(helper => {
+      const existingMarker = helperMarkersRef.current.get(helper.id);
+      
+      if (existingMarker) {
+        existingMarker.setLatLng([helper.lat, helper.lng]);
+      } else {
+        const marker = L.marker([helper.lat, helper.lng], {
+          icon: createHelperIcon(helper.avatar_url),
+        }).addTo(mapInstanceRef.current!);
+        
+        marker.bindPopup(`
+          <div class="text-center p-2">
+            <p class="font-medium text-gray-800">${helper.name}</p>
+            <p class="text-xs text-green-600">Coming to help • ETA: ${helper.eta} min</p>
+          </div>
+        `);
+        
+        helperMarkersRef.current.set(helper.id, marker);
+      }
+    });
+
+    helperMarkersRef.current.forEach((marker, id) => {
+      if (!helpers.find(h => h.id === id)) {
+        marker.remove();
+        helperMarkersRef.current.delete(id);
+      }
+    });
+  }, [helpers]);
 
   // Update SOS alerts from props
   useEffect(() => {
@@ -388,10 +505,10 @@ useEffect(() => {
     };
   }, [selectedSOS?.id]);
 
-  // Compass bearing
+  // Compass bearing listener
   useEffect(() => {
-  if (!compassEnabled) return;
-  if (typeof window === "undefined") return;
+    if (!compassEnabled) return;
+    if (typeof window === "undefined") return;
 
     const handleOrientation = (event: DeviceOrientationEvent) => {
       let newBearing = 0;
@@ -418,7 +535,7 @@ useEffect(() => {
     return () => {
       window.removeEventListener("deviceorientation", handleOrientation, true);
     };
-}, [compassEnabled]);
+  }, [compassEnabled]);
 
   const handleICanHelp = async (sos: SOSAlert) => {
     if (!user || !userLocation) {
@@ -429,39 +546,64 @@ useEffect(() => {
     setSendingHelp(true);
     try {
       const eta = calculateETA(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
+      
+      const { data: userData } = await supabase
+        .from("users")
+        .select("full_name, avatar_url")
+        .eq("id", user.id)
+        .single();
+      
       await createNotification({
         userId: sos.user_id,
         type: "sos_alert",
         title: "Help is on the way!",
-        body: `Someone is coming to help you. ETA: ${eta} minutes`,
-        data: { sos_id: sos.id, helper_id: user.id, eta_minutes: eta },
+        body: `${userData?.full_name || "Someone"} is coming to help you. ETA: ${eta} minutes`,
+        data: { 
+          sos_id: sos.id, 
+          helper_id: user.id, 
+          helper_name: userData?.full_name || "Someone",
+          helper_avatar: userData?.avatar_url,
+          helper_lat: userLocation.lat,
+          helper_lng: userLocation.lng,
+          eta_minutes: eta 
+        },
       });
+      
       setToast(`Thank you! The person has been notified. ETA: ${eta} minutes.`);
-      setTimeout(() => setToast(null), 2500);
+      setTimeout(() => setToast(null), 3000);
       setSelectedSOS(null);
     } catch (err) {
       console.error("Error:", err);
       setToast("Failed to notify. Please try again.");
-      setTimeout(() => setToast(null), 2500);
+      setTimeout(() => setToast(null), 3000);
     } finally {
       setSendingHelp(false);
     }
   };
 
+  const isOwnSOS = selectedSOS && myUserId && selectedSOS.user_id === myUserId;
   const tagInfo = selectedSOS?.tag ? SOS_TAGS.find(t => t.id === selectedSOS.tag) : null;
 
   return (
     <>
       <div ref={mapContainerRef} style={{ height: "100%", width: "100%" }} />
 
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[3000] glass-float px-4 py-2 rounded-xl text-dark-100">
+          {toast}
+        </div>
+      )}
+
       {/* SOS Details Modal */}
       {selectedSOS && (
         <div className="fixed inset-0 z-2000 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/70" onClick={() => setSelectedSOS(null)} />
-          <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[60vh] overflow-y-auto">
+          <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[70vh] overflow-y-auto">
             <div className="sticky top-0 bg-dark-900 border-b border-white/10 p-4 flex items-center justify-between z-10">
               <div>
-                <h3 className="text-xl font-bold text-white">SOS Alert</h3>
+                <h3 className="text-xl font-bold text-white">
+                  {isOwnSOS ? "Your SOS Alert" : "SOS Alert"}
+                </h3>
                 <p className="text-sm text-dark-400">
                   {formatDistanceToNow(new Date(selectedSOS.created_at), { addSuffix: true })}
                 </p>
@@ -485,7 +627,7 @@ useEffect(() => {
                 </div>
                 <div className="min-w-0">
                   <p className="font-semibold text-white truncate">
-                    {selectedSOS.user?.full_name || "Someone"}
+                    {isOwnSOS ? "You" : (selectedSOS.user?.full_name || "Someone")}
                   </p>
                   <p className="text-sm text-dark-400 truncate">
                     {selectedSOS.address || "Location unavailable"}
@@ -512,14 +654,39 @@ useEffect(() => {
                 </div>
               )}
 
-              {tagInfo && (
+              {tagInfo && !isOwnSOS && (
                 <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
                   <p className="text-sm font-medium text-yellow-400 mb-1">How to help:</p>
                   <p className="text-sm text-yellow-200">{tagInfo.suggestion}</p>
                 </div>
               )}
 
-              {userLocation && (
+              {/* Show helpers coming (for own SOS) */}
+              {isOwnSOS && helpers.length > 0 && (
+                <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl">
+                  <p className="text-sm font-medium text-green-400 mb-2">Help is coming:</p>
+                  <div className="space-y-2">
+                    {helpers.map(helper => (
+                      <div key={helper.id} className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-green-500">
+                          <img 
+                            src={helper.avatar_url || "https://ui-avatars.com/api/?name=H"} 
+                            alt="" 
+                            className="w-full h-full object-cover" 
+                          />
+                        </div>
+                        <div>
+                          <p className="text-sm text-white">{helper.name}</p>
+                          <p className="text-xs text-green-400">ETA: {helper.eta} min</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ETA for helpers */}
+              {!isOwnSOS && userLocation && (
                 <div className="text-center py-2">
                   <p className="text-sm text-dark-400">Your estimated arrival time:</p>
                   <p className="text-3xl font-bold text-primary-400">
@@ -528,6 +695,7 @@ useEffect(() => {
                 </div>
               )}
 
+              {/* Emergency Call Buttons - Always show */}
               <div className="flex gap-2">
                 <a href="tel:112" className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium text-center">
                   Call 112
@@ -537,6 +705,7 @@ useEffect(() => {
                 </a>
               </div>
 
+              {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setSelectedSOS(null)}
@@ -544,18 +713,17 @@ useEffect(() => {
                 >
                   Back
                 </button>
-                <button
-                  onClick={() => handleICanHelp(selectedSOS)}
-                  disabled={sendingHelp}
-                  className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
-                >
-                  {sendingHelp ? "Sending..." : "I Can Help"}
-                </button>
-                {toast && (
-  <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[3000] glass-float px-4 py-2 rounded-xl text-dark-100">
-    {toast}
-  </div>
-)}
+                
+                {/* Only show "I Can Help" if NOT own SOS */}
+                {!isOwnSOS && (
+                  <button
+                    onClick={() => handleICanHelp(selectedSOS)}
+                    disabled={sendingHelp}
+                    className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
+                  >
+                    {sendingHelp ? "Sending..." : "I Can Help"}
+                  </button>
+                )}
               </div>
             </div>
           </div>

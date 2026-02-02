@@ -14,6 +14,7 @@ interface MapWrapperProps {
   centerOnCoords?: { lat: number; lng: number } | null;
   openSOSId?: string | null;
   compassEnabled?: boolean;
+  myUserId?: string | null;
 }
 
 export default function MapWrapper(props: MapWrapperProps) {
