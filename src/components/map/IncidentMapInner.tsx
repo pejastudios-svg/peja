@@ -61,32 +61,39 @@ const createIncidentIcon = (color: string) => {
   });
 };
 
-const createUserLocationIcon = (bearing: number) => {
+const createUserLocationIcon = (bearing: number, compassEnabled: boolean) => {
+  // Only show arrow rotation when compass is enabled
+  const arrowRotation = compassEnabled ? bearing : 0;
+  const showArrow = compassEnabled;
+  
   return L.divIcon({
     className: "user-location-marker",
     html: `
       <div style="position: relative; width: 48px; height: 48px;">
+        ${showArrow ? `
         <div style="
           position: absolute;
           top: 0;
           left: 0;
           width: 100%;
           height: 100%;
-          transform: rotate(${bearing}deg);
+          transform: rotate(${arrowRotation}deg);
           transition: transform 0.3s ease-out;
         ">
           <div style="
             position: absolute;
-            top: 0;
+            top: 2px;
             left: 50%;
             transform: translateX(-50%);
             width: 0;
             height: 0;
             border-left: 8px solid transparent;
             border-right: 8px solid transparent;
-            border-bottom: 14px solid #7c3aed;
+            border-bottom: 12px solid #7c3aed;
+            z-index: 3;
           "></div>
         </div>
+        ` : ''}
         <div style="
           position: absolute;
           top: 50%;
@@ -108,12 +115,17 @@ const createUserLocationIcon = (bearing: number) => {
   });
 };
 
+// FIXED: SOS icon with arrow attached and red glow (not fade)
 const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
   const img = avatarUrl || "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff";
   return L.divIcon({
     className: "sos-marker",
     html: `
-      <div class="sos-marker-container" style="position: relative; width: 64px; height: 64px;">
+      <div class="sos-marker-wrapper" style="position: relative; width: 56px; height: 56px;">
+        <!-- Glow ring -->
+        <div class="sos-glow-ring"></div>
+        
+        <!-- Arrow attached to circle -->
         <div style="
           position: absolute;
           top: 0;
@@ -121,19 +133,23 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
           width: 100%;
           height: 100%;
           transform: rotate(${bearing}deg);
+          transition: transform 0.3s ease-out;
         ">
           <div style="
             position: absolute;
-            top: 0;
+            top: 2px;
             left: 50%;
             transform: translateX(-50%);
             width: 0;
             height: 0;
-            border-left: 10px solid transparent;
-            border-right: 10px solid transparent;
-            border-bottom: 16px solid #dc2626;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 12px solid #dc2626;
+            z-index: 3;
           "></div>
         </div>
+        
+        <!-- Profile circle -->
         <div style="
           position: absolute;
           top: 50%;
@@ -143,28 +159,28 @@ const createSOSIcon = (avatarUrl?: string, bearing = 0) => {
           height: 40px;
           border-radius: 50%;
           overflow: hidden;
-          border: 4px solid #dc2626;
-          box-shadow: 0 0 0 4px rgba(220,38,38,0.25);
+          border: 3px solid #dc2626;
           background: white;
           z-index: 2;
-          animation: sos-pulse-ring 2s ease-out infinite;
         ">
           <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff'" />
         </div>
       </div>
     `,
-    iconSize: [64, 64],
-    iconAnchor: [32, 32],
-    popupAnchor: [0, -32],
+    iconSize: [56, 56],
+    iconAnchor: [28, 28],
+    popupAnchor: [0, -28],
   });
 };
 
+// Helper icon (green border)
 const createHelperIcon = (avatarUrl?: string) => {
   const img = avatarUrl || "https://ui-avatars.com/api/?name=H&background=22c55e&color=fff";
   return L.divIcon({
     className: "helper-marker",
     html: `
       <div style="position: relative; width: 48px; height: 48px;">
+        <div class="helper-glow-ring"></div>
         <div style="
           position: absolute;
           top: 50%;
@@ -175,8 +191,8 @@ const createHelperIcon = (avatarUrl?: string) => {
           border-radius: 50%;
           overflow: hidden;
           border: 3px solid #22c55e;
-          box-shadow: 0 0 0 3px rgba(34,197,94,0.3);
           background: white;
+          z-index: 2;
         ">
           <img src="${img}" style="width: 100%; height: 100%; object-fit: cover;" />
         </div>
@@ -205,6 +221,15 @@ function calculateETA(fromLat: number, fromLng: number, toLat: number, toLng: nu
   return Math.max(1, Math.round((distance / 30) * 60));
 }
 
+interface Helper {
+  id: string;
+  name: string;
+  avatar_url?: string;
+  lat: number;
+  lng: number;
+  eta: number;
+}
+
 export default function IncidentMapInner({
   posts,
   userLocation,
@@ -225,27 +250,51 @@ export default function IncidentMapInner({
   const autoOpenedRef = useRef(false);
   const sosMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const helperMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const lastUserLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const modalContentRef = useRef<HTMLDivElement>(null);
   
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
   const [sendingHelp, setSendingHelp] = useState(false);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [bearing, setBearing] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
-  const [helpers, setHelpers] = useState<Array<{
-    id: string;
-    name: string;
-    avatar_url?: string;
-    lat: number;
-    lng: number;
-    eta: number;
-  }>>([]);
+  const [helpers, setHelpers] = useState<Helper[]>([]);
 
   const defaultCenter: [number, number] = [6.5244, 3.3792];
   const center = useMemo(() => 
     userLocation ? [userLocation.lat, userLocation.lng] as [number, number] : defaultCenter,
     [userLocation]
   );
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (selectedSOS) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.body.style.top = `-${window.scrollY}px`;
+      
+      // Scroll modal content to top
+      setTimeout(() => {
+        if (modalContentRef.current) {
+          modalContentRef.current.scrollTop = 0;
+        }
+      }, 50);
+    } else {
+      const scrollY = document.body.style.top;
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.top = '';
+      window.scrollTo(0, parseInt(scrollY || '0') * -1);
+    }
+
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.body.style.top = '';
+    };
+  }, [selectedSOS]);
 
   // Initialize map
   useEffect(() => {
@@ -296,21 +345,6 @@ export default function IncidentMapInner({
     mapInstanceRef.current.setView([centerOnCoords.lat, centerOnCoords.lng], 16, { animate: true });
   }, [centerOnCoords]);
 
-  // Map rotation with compass
-  useEffect(() => {
-    if (!compassEnabled || !mapInstanceRef.current) return;
-    
-    const container = mapInstanceRef.current.getContainer();
-    container.style.transition = "transform 0.3s ease-out";
-    container.style.transform = `rotate(${-bearing}deg)`;
-    
-    return () => {
-      if (container) {
-        container.style.transform = "rotate(0deg)";
-      }
-    };
-  }, [bearing, compassEnabled]);
-
   // Real-time smooth user location update
   useEffect(() => {
     if (!mapInstanceRef.current || !userLocation) return;
@@ -323,15 +357,12 @@ export default function IncidentMapInner({
       const startLat = currentLatLng.lat;
       const startLng = currentLatLng.lng;
       
-      // Animate smoothly
       let startTime: number | null = null;
-      const duration = 500; // 500ms animation
+      const duration = 500;
       
       const animate = (timestamp: number) => {
         if (!startTime) startTime = timestamp;
         const progress = Math.min((timestamp - startTime) / duration, 1);
-        
-        // Ease out cubic
         const easeOut = 1 - Math.pow(1 - progress, 3);
         
         const newLat = startLat + (targetLat - startLat) * easeOut;
@@ -345,16 +376,14 @@ export default function IncidentMapInner({
       };
       
       requestAnimationFrame(animate);
-      userMarkerRef.current.setIcon(createUserLocationIcon(bearing));
+            userMarkerRef.current.setIcon(createUserLocationIcon(bearing, compassEnabled));
     } else {
-      userMarkerRef.current = L.marker([targetLat, targetLng], {
-        icon: createUserLocationIcon(bearing),
+            userMarkerRef.current = L.marker([targetLat, targetLng], {
+        icon: createUserLocationIcon(bearing, compassEnabled),
       }).addTo(mapInstanceRef.current);
       
       userMarkerRef.current.bindPopup("<div class='text-center p-1'><p class='font-medium text-gray-800'>You are here</p></div>");
     }
-    
-    lastUserLocationRef.current = userLocation;
   }, [userLocation, bearing]);
 
   // Update post markers
@@ -391,7 +420,6 @@ export default function IncidentMapInner({
       const existingMarker = sosMarkersRef.current.get(sos.id);
       
       if (existingMarker) {
-        // Smooth update
         const currentLatLng = existingMarker.getLatLng();
         const targetLat = sos.latitude;
         const targetLng = sos.longitude;
@@ -443,7 +471,7 @@ export default function IncidentMapInner({
     });
   }, [liveSOSAlerts]);
 
-  // Update helper markers
+  // Update helper markers on map
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
@@ -451,7 +479,27 @@ export default function IncidentMapInner({
       const existingMarker = helperMarkersRef.current.get(helper.id);
       
       if (existingMarker) {
-        existingMarker.setLatLng([helper.lat, helper.lng]);
+        // Smooth update position
+        const currentLatLng = existingMarker.getLatLng();
+        let startTime: number | null = null;
+        const duration = 500;
+        
+        const animate = (timestamp: number) => {
+          if (!startTime) startTime = timestamp;
+          const progress = Math.min((timestamp - startTime) / duration, 1);
+          const easeOut = 1 - Math.pow(1 - progress, 3);
+          
+          const newLat = currentLatLng.lat + (helper.lat - currentLatLng.lat) * easeOut;
+          const newLng = currentLatLng.lng + (helper.lng - currentLatLng.lng) * easeOut;
+          
+          existingMarker.setLatLng([newLat, newLng]);
+          
+          if (progress < 1) {
+            requestAnimationFrame(animate);
+          }
+        };
+        
+        requestAnimationFrame(animate);
       } else {
         const marker = L.marker([helper.lat, helper.lng], {
           icon: createHelperIcon(helper.avatar_url),
@@ -505,6 +553,52 @@ export default function IncidentMapInner({
     };
   }, [selectedSOS?.id]);
 
+  // Listen for helper notifications (for SOS owner to see incoming helpers)
+  useEffect(() => {
+    if (!myUserId) return;
+
+    const channel = supabase
+      .channel("sos-helpers-realtime")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${myUserId}` },
+        async (payload) => {
+          const notification: any = payload.new;
+          
+          // Check if it's a help notification
+          if (notification?.type === "sos_alert" && notification?.data?.helper_id) {
+            const helperData = notification.data;
+            
+            // Add helper to the list
+            setHelpers(prev => {
+              // Don't add duplicates
+              if (prev.some(h => h.id === helperData.helper_id)) {
+                return prev.map(h => 
+                  h.id === helperData.helper_id 
+                    ? { ...h, lat: helperData.helper_lat, lng: helperData.helper_lng, eta: helperData.eta_minutes }
+                    : h
+                );
+              }
+              
+              return [...prev, {
+                id: helperData.helper_id,
+                name: helperData.helper_name || "Someone",
+                avatar_url: helperData.helper_avatar,
+                lat: helperData.helper_lat,
+                lng: helperData.helper_lng,
+                eta: helperData.eta_minutes,
+              }];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [myUserId]);
+
   // Compass bearing listener
   useEffect(() => {
     if (!compassEnabled) return;
@@ -539,7 +633,8 @@ export default function IncidentMapInner({
 
   const handleICanHelp = async (sos: SOSAlert) => {
     if (!user || !userLocation) {
-      alert("Please enable location to help");
+      setToast("Please enable location to help");
+      setTimeout(() => setToast(null), 3000);
       return;
     }
 
@@ -553,6 +648,7 @@ export default function IncidentMapInner({
         .eq("id", user.id)
         .single();
       
+      // Send notification with helper's location data
       await createNotification({
         userId: sos.user_id,
         type: "sos_alert",
@@ -562,14 +658,17 @@ export default function IncidentMapInner({
           sos_id: sos.id, 
           helper_id: user.id, 
           helper_name: userData?.full_name || "Someone",
-          helper_avatar: userData?.avatar_url,
+          helper_avatar: userData?.avatar_url || null,
           helper_lat: userLocation.lat,
           helper_lng: userLocation.lng,
           eta_minutes: eta 
         },
       });
+
+      // Start tracking helper's location and send updates
+      startHelperLocationTracking(sos.user_id, sos.id, userData?.full_name || "Someone", userData?.avatar_url);
       
-      setToast(`Thank you! The person has been notified. ETA: ${eta} minutes.`);
+      setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ETA: ${eta} minutes.`);
       setTimeout(() => setToast(null), 3000);
       setSelectedSOS(null);
     } catch (err) {
@@ -579,6 +678,66 @@ export default function IncidentMapInner({
     } finally {
       setSendingHelp(false);
     }
+  };
+
+  // Track helper location and send updates to SOS owner
+  const startHelperLocationTracking = (sosOwnerId: string, sosId: string, helperName: string, helperAvatar?: string) => {
+    if (!navigator.geolocation) return;
+
+    let lastUpdateTime = 0;
+    
+    const watchId = navigator.geolocation.watchPosition(
+      async (position) => {
+        const now = Date.now();
+        // Throttle updates to every 10 seconds
+        if (now - lastUpdateTime < 10000) return;
+        lastUpdateTime = now;
+
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        // Calculate new ETA
+        const { data: sosData } = await supabase
+          .from("sos_alerts")
+          .select("latitude, longitude, status")
+          .eq("id", sosId)
+          .single();
+
+        if (!sosData || sosData.status !== "active") {
+          navigator.geolocation.clearWatch(watchId);
+          return;
+        }
+
+        const eta = calculateETA(lat, lng, sosData.latitude, sosData.longitude);
+
+        // Send location update notification
+        await createNotification({
+          userId: sosOwnerId,
+          type: "sos_alert",
+          title: "Helper location update",
+          body: `${helperName} is ${eta} minutes away`,
+          data: {
+            sos_id: sosId,
+            helper_id: user?.id,
+            helper_name: helperName,
+            helper_avatar: helperAvatar || null,
+            helper_lat: lat,
+            helper_lng: lng,
+            eta_minutes: eta,
+            is_location_update: true,
+          },
+        });
+      },
+      (error) => {
+        console.warn("Helper location tracking error:", error);
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+    );
+
+    // Stop tracking after 1 hour
+    setTimeout(() => {
+      navigator.geolocation.clearWatch(watchId);
+    }, 60 * 60 * 1000);
   };
 
   const isOwnSOS = selectedSOS && myUserId && selectedSOS.user_id === myUserId;
@@ -596,45 +755,51 @@ export default function IncidentMapInner({
 
       {/* SOS Details Modal */}
       {selectedSOS && (
-        <div className="fixed inset-0 z-2000 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70" onClick={() => setSelectedSOS(null)} />
-          <div className="relative bg-dark-900 border border-white/10 rounded-2xl max-w-md w-full max-h-[70vh] overflow-y-auto">
-            <div className="sticky top-0 bg-dark-900 border-b border-white/10 p-4 flex items-center justify-between z-10">
-              <div>
+        <div className="fixed inset-0 z-[5000] flex items-start justify-center overflow-hidden">
+          <div className="absolute inset-0 bg-black/80" onClick={() => setSelectedSOS(null)} />
+          <div 
+            ref={modalContentRef}
+            className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col"
+          >
+            {/* User Info Header - Always at top */}
+            <div className="border-b border-white/10 p-4 shrink-0">
+              <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xl font-bold text-white">
                   {isOwnSOS ? "Your SOS Alert" : "SOS Alert"}
                 </h3>
-                <p className="text-sm text-dark-400">
-                  {formatDistanceToNow(new Date(selectedSOS.created_at), { addSuffix: true })}
-                </p>
+                <button
+                  onClick={() => setSelectedSOS(null)}
+                  className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-dark-400 text-xl"
+                >
+                  ×
+                </button>
               </div>
-              <button
-                onClick={() => setSelectedSOS(null)}
-                className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-dark-400 text-xl"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="p-4 space-y-4">
+              
+              {/* User Profile - At top of modal */}
               <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
-                <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-red-500 shrink-0">
+                <div className="w-14 h-14 rounded-full overflow-hidden border-3 border-red-500 shrink-0 sos-avatar-glow">
                   <img
                     src={selectedSOS.user?.avatar_url || "https://ui-avatars.com/api/?name=User"}
                     alt=""
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <div className="min-w-0">
-                  <p className="font-semibold text-white truncate">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-white truncate text-lg">
                     {isOwnSOS ? "You" : (selectedSOS.user?.full_name || "Someone")}
                   </p>
                   <p className="text-sm text-dark-400 truncate">
                     {selectedSOS.address || "Location unavailable"}
                   </p>
+                  <p className="text-xs text-dark-500">
+                    {formatDistanceToNow(new Date(selectedSOS.created_at), { addSuffix: true })}
+                  </p>
                 </div>
               </div>
+            </div>
 
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
               <div className="flex items-center gap-2 text-sm">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                 <span className="text-green-400">Live tracking active</span>
@@ -664,34 +829,47 @@ export default function IncidentMapInner({
               {/* Show helpers coming (for own SOS) */}
               {isOwnSOS && helpers.length > 0 && (
                 <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl">
-                  <p className="text-sm font-medium text-green-400 mb-2">Help is coming:</p>
-                  <div className="space-y-2">
+                  <p className="text-sm font-medium text-green-400 mb-3">
+                    {helpers.length} {helpers.length === 1 ? "person" : "people"} coming to help:
+                  </p>
+                  <div className="space-y-3">
                     {helpers.map(helper => (
-                      <div key={helper.id} className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-green-500">
+                      <div key={helper.id} className="flex items-center gap-3 p-2 bg-green-500/10 rounded-lg">
+                        <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-green-500 shrink-0">
                           <img 
-                            src={helper.avatar_url || "https://ui-avatars.com/api/?name=H"} 
+                            src={helper.avatar_url || "https://ui-avatars.com/api/?name=H&background=22c55e&color=fff"} 
                             alt="" 
                             className="w-full h-full object-cover" 
                           />
                         </div>
-                        <div>
-                          <p className="text-sm text-white">{helper.name}</p>
-                          <p className="text-xs text-green-400">ETA: {helper.eta} min</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">{helper.name}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                            <p className="text-xs text-green-400">ETA: {helper.eta} min</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-bold text-green-400">{helper.eta}</p>
+                          <p className="text-xs text-dark-500">min</p>
                         </div>
                       </div>
                     ))}
                   </div>
+                  <p className="text-xs text-dark-500 mt-2">
+                    Helper locations are shown on the map with green markers
+                  </p>
                 </div>
               )}
 
               {/* ETA for helpers */}
               {!isOwnSOS && userLocation && (
-                <div className="text-center py-2">
+                <div className="text-center py-3 bg-primary-500/10 rounded-xl">
                   <p className="text-sm text-dark-400">Your estimated arrival time:</p>
-                  <p className="text-3xl font-bold text-primary-400">
-                    {calculateETA(userLocation.lat, userLocation.lng, selectedSOS.latitude, selectedSOS.longitude)} min
+                  <p className="text-4xl font-bold text-primary-400">
+                    {calculateETA(userLocation.lat, userLocation.lng, selectedSOS.latitude, selectedSOS.longitude)}
                   </p>
+                  <p className="text-sm text-dark-500">minutes</p>
                 </div>
               )}
 

@@ -605,7 +605,7 @@ export default function MapClient() {
             {compassEnabled && (
               <div className="flex items-center gap-2 pt-1 border-t border-white/10">
                 <Compass className="w-3 h-3 text-primary-400" />
-                <span className="text-primary-400">Compass On</span>
+                <span className="text-primary-400">Direction Active</span>
               </div>
             )}
           </div>
