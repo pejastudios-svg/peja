@@ -92,9 +92,14 @@ export function Header({ onMenuClick, onCreateClick, variant = "default", title,
       <span className="text-lg font-semibold text-dark-100">{title || "Back"}</span>
     </button>
   ) : (
-    <Link href="/" className="flex items-center">
-      <span className="text-2xl font-bold text-gradient">Peja</span>
-    </Link>
+    <a 
+      href="https://www.instagram.com/peja_studios?igsh=MTJrZjN1bGNxcHZueA==" 
+      target="_blank" 
+      rel="noopener noreferrer"
+      className="flex items-center"
+    >
+      <span className="text-2xl font-bold peja-logo-glow">Peja</span>
+    </a>
   )}
 </div>
         <div className="flex items-center gap-2">

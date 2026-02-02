@@ -1340,3 +1340,58 @@ body.modal-open {
     transform: scale(1.1);
   }
 }
+
+/* ============================================
+   PEJA LOGO GLOW ANIMATION
+   ============================================ */
+.peja-logo-glow {
+  position: relative;
+  display: inline-block;
+  color: #a78bfa;
+  font-weight: 700;
+  animation: peja-text-pulse 2s ease-in-out infinite;
+}
+
+.peja-logo-glow::before {
+  content: "Peja";
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: linear-gradient(135deg, #c4b5fd 0%, #8b5cf6 50%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  z-index: 1;
+}
+
+.peja-logo-glow::after {
+  content: "Peja";
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: #8b5cf6;
+  filter: blur(8px);
+  opacity: 0.7;
+  z-index: 0;
+  animation: peja-glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes peja-text-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+@keyframes peja-glow-pulse {
+  0%, 100% {
+    opacity: 0.5;
+    filter: blur(8px);
+  }
+  50% {
+    opacity: 0.9;
+    filter: blur(12px);
+  }
+}

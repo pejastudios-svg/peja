@@ -22,6 +22,72 @@ import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
 import { notifyUsersAboutIncident } from "@/lib/notifications";
 
+// Image compression utility
+async function compressImage(file: File, maxWidth = 1920, quality = 0.8): Promise<File> {
+  return new Promise((resolve) => {
+    // If file is small enough, don't compress
+    if (file.size < 500 * 1024) {
+      resolve(file);
+      return;
+    }
+
+    const img = new Image();
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+
+    img.onload = () => {
+      let { width, height } = img;
+
+      // Scale down if larger than maxWidth
+      if (width > maxWidth) {
+        height = (height * maxWidth) / width;
+        width = maxWidth;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const compressedFile = new File([blob], file.name, {
+                type: "image/jpeg",
+                lastModified: Date.now(),
+              });
+              // Only use compressed if it's actually smaller
+              resolve(compressedFile.size < file.size ? compressedFile : file);
+            } else {
+              resolve(file);
+            }
+          },
+          "image/jpeg",
+          quality
+        );
+      } else {
+        resolve(file);
+      }
+    };
+
+    img.onerror = () => resolve(file);
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// Video compression - we can't truly compress video in browser,
+// but we can validate and warn about large files
+function validateVideoSize(file: File): { valid: boolean; warning?: string } {
+  const maxSize = 50 * 1024 * 1024; // 50MB recommended
+  if (file.size > maxSize) {
+    return {
+      valid: true,
+      warning: `Video is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Consider using a shorter clip for faster upload.`,
+    };
+  }
+  return { valid: true };
+}
+
 export default function CreatePostPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -282,12 +348,25 @@ let cursor = 0;
 const concurrency = 3;
 
 const uploadOne = async (file: File) => {
-  const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+  let fileToUpload = file;
+  
+  // Compress images before upload
+  if (file.type.startsWith("image/")) {
+    try {
+      fileToUpload = await compressImage(file, 1920, 0.85);
+      console.log(`Compressed ${file.name}: ${(file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`);
+    } catch (e) {
+      console.warn("Compression failed, using original:", e);
+    }
+  }
+
+  const isVideo = file.type.startsWith("video/");
+  const fileExt = isVideo ? (file.name.split(".").pop()?.toLowerCase() || "mp4") : "jpg";
   const fileName = `posts/${authUser.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
   const { error: uploadError } = await supabase.storage
     .from("media")
-    .upload(fileName, file, { cacheControl: "3600", upsert: false });
+    .upload(fileName, fileToUpload, { cacheControl: "3600", upsert: false });
 
   if (uploadError) throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
 
@@ -295,7 +374,7 @@ const uploadOne = async (file: File) => {
 
   mediaUrls.push({
     url: publicUrl.publicUrl,
-    type: file.type.startsWith("video/") ? "video" : "photo",
+    type: isVideo ? "video" : "photo",
   });
 
   done++;
@@ -501,7 +580,6 @@ setTimeout(() => {
               </>
             )}
           </div>
-          <p className="text-xs text-dark-500 mt-2">Up to 50 photos, 10 videos (max 100MB each)</p>
         </div>
 
         {/* Location */}

@@ -10,7 +10,7 @@ import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { realtimeManager } from "@/lib/realtime";
-import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
+import { TrendingUp, MapPin, Loader2, Search, RefreshCw, Eye } from "lucide-react";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
@@ -55,7 +55,7 @@ export default function Home() {
 
   // --- COMPUTE KEY EARLY ---
   const feedKey = activeTab === "trending"
-    ? `home:trending:${trendingMode}:${showSeenTop ? "seen" : "unseen"}`
+    ? `home:trending:${showSeenTop ? "seen" : "unseen"}`
     : `home:nearby:${showSeenNearby ? "seen" : "unseen"}`;
 
   // --- INSTANT RESTORE STATE ---
@@ -214,47 +214,16 @@ let data: any[] | null = null;
 let error: any = null;
 
 if (activeTab === "trending") {
-  // We fetch a pool then rank client-side.
-  if (trendingMode === "recommended") {
-    const newestQ = supabase
-      .from("posts")
-      .select(baseSelect)
-      .in("status", ["live", "resolved"])
-      .order("created_at", { ascending: false })
-      .limit(120);
+  // Fetch posts and sort by engagement client-side
+  const res = await supabase
+    .from("posts")
+    .select(baseSelect)
+    .in("status", ["live", "resolved"])
+    .order("created_at", { ascending: false })
+    .limit(200);
 
-    const hotQ = supabase
-      .from("posts")
-      .select(baseSelect)
-      .in("status", ["live", "resolved"])
-      .order("confirmations", { ascending: false })
-      .order("views", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(120);
-
-    const [newestRes, hotRes] = await Promise.all([newestQ, hotQ]);
-
-    error = newestRes.error || hotRes.error;
-
-    // merge unique by id
-    const map = new Map<string, any>();
-    (newestRes.data || []).forEach((p: any) => map.set(p.id, p));
-    (hotRes.data || []).forEach((p: any) => map.set(p.id, p));
-    data = Array.from(map.values());
-  } else {
-    // "top"
-    const res = await supabase
-      .from("posts")
-      .select(baseSelect)
-      .in("status", ["live", "resolved"])
-      .order("confirmations", { ascending: false })
-      .order("views", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(200);
-
-    data = res.data;
-    error = res.error;
-  }
+  data = res.data;
+  error = res.error;
 } else {
   // nearby (we’ll sort by distance)
   const res = await supabase
@@ -352,23 +321,14 @@ if (activeTab === "nearby") {
     .slice(0, 30);
   }
 } else {
-  // Trending tab: recommended vs top
-  if (trendingMode === "recommended") {
-    // hide seen by default
-    const unseen = formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
-    finalPosts = unseen
-      .sort((a, b) => recommendedScore(b) - recommendedScore(a))
-      .slice(0, 30);
-  } else {
-    // top: allow toggle to show seen
-    const base = showSeenTop
-  ? formattedPosts
-  : formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
+  // Trending tab: sort by engagement (confirmations + views + comments)
+  const base = showSeenTop
+    ? formattedPosts
+    : formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
 
-finalPosts = base
-  .sort((a, b) => recommendedScore(b) - recommendedScore(a))
-  .slice(0, 30);
-  }
+  finalPosts = base
+    .sort((a, b) => engagementScore(b) - engagementScore(a))
+    .slice(0, 30);
 }
 
 confirm.hydrateCounts(finalPosts.map(p => ({ postId: p.id, confirmations: p.confirmations || 0 })));
@@ -663,7 +623,14 @@ useEffect(() => {
     }
   };
 
-  if (authLoading) {
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push("/login");
+    }
+  }, [authLoading, user, router]);
+
+  if (authLoading || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
@@ -734,45 +701,15 @@ useEffect(() => {
           </div>
 
           {activeTab === "trending" && (
-  <div className="flex items-center gap-2 mb-4">
-    <div className="flex gap-1 glass-sm rounded-xl p-1">
-      <button
-        type="button"
-        onClick={() => {
-  const nextMode = "recommended";
-  const nextKey = `home:trending:${nextMode}:${showSeenTop ? "seen" : "unseen"}`;
-  setTrendingMode(nextMode);
-  applyCachedFeed(nextKey);
-}}
-        className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${
-          trendingMode === "recommended" ? "bg-primary-600 text-white" : "text-dark-300 hover:bg-white/10"
-        }`}
-      >
-        Recommended
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-  const nextMode = "top";
-  const nextKey = `home:trending:${nextMode}:${showSeenTop ? "seen" : "unseen"}`;
-  setTrendingMode(nextMode);
-  applyCachedFeed(nextKey);
-}}
-        className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${
-          trendingMode === "top" ? "bg-primary-600 text-white" : "text-dark-300 hover:bg-white/10"
-        }`}
-      >
-        Top
-      </button>
-    </div>
-
+  <div className="flex justify-end mb-3">
     <button
-  type="button"
-  onClick={() => setShowSeenTop((v) => !v)}
-  className="px-3 py-1.5 text-xs glass-sm rounded-xl text-dark-300 hover:bg-white/10"
->
-  {showSeenTop ? "Hide seen" : "Show seen"}
-</button>
+      type="button"
+      onClick={() => setShowSeenTop((v) => !v)}
+      className="flex items-center gap-2 px-3 py-1.5 text-xs glass-sm rounded-xl text-dark-300 hover:bg-white/10 transition-colors"
+    >
+      <Eye className={`w-3.5 h-3.5 ${showSeenTop ? "text-primary-400" : "text-dark-400"}`} />
+      {showSeenTop ? "Hide seen" : "Show seen"}
+    </button>
   </div>
 )}
 
@@ -781,8 +718,9 @@ useEffect(() => {
     <button
       type="button"
       onClick={() => setShowSeenNearby(v => !v)}
-      className="px-3 py-1.5 text-xs glass-sm rounded-xl text-dark-300 hover:bg-white/10"
+      className="flex items-center gap-2 px-3 py-1.5 text-xs glass-sm rounded-xl text-dark-300 hover:bg-white/10 transition-colors"
     >
+      <Eye className={`w-3.5 h-3.5 ${showSeenNearby ? "text-primary-400" : "text-dark-400"}`} />
       {showSeenNearby ? "Hide seen" : "Show seen"}
     </button>
   </div>
