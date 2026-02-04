@@ -1342,56 +1342,98 @@ body.modal-open {
 }
 
 /* ============================================
-   PEJA LOGO GLOW ANIMATION
+   PEJA LOGO MORPH ANIMATION (Peja <-> YouTube)
    ============================================ */
-.peja-logo-glow {
+.peja-logo-morph {
   position: relative;
-  display: inline-block;
-  color: #a78bfa;
-  font-weight: 700;
-  animation: peja-text-pulse 2s ease-in-out infinite;
+  width: 70px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
 }
 
-.peja-logo-glow::before {
-  content: "Peja";
+.peja-logo-text {
   position: absolute;
-  top: 0;
   left: 0;
   background: linear-gradient(135deg, #c4b5fd 0%, #8b5cf6 50%, #7c3aed 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  z-index: 1;
+  animation: peja-text-morph 6s ease-in-out infinite;
+  will-change: opacity, transform;
 }
 
-.peja-logo-glow::after {
-  content: "Peja";
+.peja-logo-youtube {
   position: absolute;
-  top: 0;
   left: 0;
-  color: #8b5cf6;
-  filter: blur(8px);
-  opacity: 0.7;
-  z-index: 0;
-  animation: peja-glow-pulse 2s ease-in-out infinite;
+  color: #ff0000;
+  opacity: 0;
+  transform: scale(0.8) rotate(-10deg);
+  animation: peja-youtube-morph 6s ease-in-out infinite;
+  will-change: opacity, transform;
+  filter: drop-shadow(0 0 8px rgba(255, 0, 0, 0.4));
 }
 
-@keyframes peja-text-pulse {
-  0%, 100% {
-    transform: scale(1);
+/* Peja text animation */
+@keyframes peja-text-morph {
+  0%, 40% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
   50% {
-    transform: scale(1.02);
+    opacity: 0;
+    transform: scale(0.8) translateY(-4px);
+  }
+  90%, 100% {
+    opacity: 0;
+    transform: scale(0.8) translateY(-4px);
   }
 }
 
-@keyframes peja-glow-pulse {
+/* YouTube logo animation - appears when Peja fades */
+@keyframes peja-youtube-morph {
+  0%, 40% {
+    opacity: 0;
+    transform: scale(0.8) rotate(-10deg);
+  }
+  50%, 90% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.8) rotate(10deg);
+  }
+}
+
+/* Subtle glow pulse on YouTube icon when visible */
+.peja-logo-youtube {
+  animation: 
+    peja-youtube-morph 6s ease-in-out infinite,
+    peja-youtube-glow 2s ease-in-out infinite;
+}
+
+@keyframes peja-youtube-glow {
   0%, 100% {
-    opacity: 0.5;
-    filter: blur(8px);
+    filter: drop-shadow(0 0 6px rgba(255, 0, 0, 0.3));
   }
   50% {
-    opacity: 0.9;
-    filter: blur(12px);
+    filter: drop-shadow(0 0 12px rgba(255, 0, 0, 0.6));
   }
+}
+
+/* Hover state - pause animation and show Peja */
+.peja-logo-morph:hover .peja-logo-text,
+.peja-logo-morph:hover .peja-logo-youtube {
+  animation-play-state: paused;
+}
+
+.peja-logo-morph:hover .peja-logo-text {
+  opacity: 1;
+  transform: scale(1.05);
+}
+
+.peja-logo-morph:hover .peja-logo-youtube {
+  opacity: 0;
 }

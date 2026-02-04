@@ -400,8 +400,9 @@ useEffect(() => {
                 <div className="flex items-center gap-3"><Shield className="w-5 h-5 text-dark-400" /><span className="text-sm text-dark-200">Become a Guardian</span></div>
                 <ChevronRight className="w-4 h-4 text-dark-500" />
               </button>
-              <button onClick={handleSignOut} className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors">
-                <div className="flex items-center gap-3"><LogOut className="w-5 h-5 text-red-400" /><span className="text-sm text-red-400">Sign Out</span></div>
+              <button onClick={handleSignOut} className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-red-500/10 transition-colors">
+              <div className="flex items-center gap-3"><LogOut className="w-5 h-5 text-red-500" /><span className="text-sm text-red-500">Sign Out</span></div>
+              <ChevronRight className="w-4 h-4 text-red-500" />
               </button>
               <button onClick={() => setShowDeleteModal(true)} className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-red-500/10 transition-colors">
                 <div className="flex items-center gap-3"><Trash2 className="w-5 h-5 text-red-500" /><span className="text-sm text-red-500">Delete Account</span></div>
