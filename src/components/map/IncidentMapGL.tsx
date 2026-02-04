@@ -58,12 +58,9 @@ function getCategoryColor(categoryId: string): string {
 // ============================================
 // SMOOTHING UTILITIES FOR COMPASS STABILIZATION
 // ============================================
-// Low-pass filter coefficient (0.05-0.15 = very smooth, 0.3-0.5 = responsive)
-const SMOOTHING_FACTOR = 0.1;
-// Minimum bearing change to trigger update (degrees)
-const MIN_BEARING_CHANGE = 2;
-// Minimum time between bearing updates (ms)
-const BEARING_UPDATE_INTERVAL = 50;
+const SMOOTHING_FACTOR = 0.4;
+const MIN_BEARING_CHANGE = 1;
+const BEARING_UPDATE_INTERVAL = 16;
 // Normalize angle to 0-360 range
 function normalizeAngle(angle: number): number {
   return ((angle % 360) + 360) % 360;
@@ -103,6 +100,7 @@ export default function IncidentMapGL({
   const lastAppliedBearingRef = useRef<number>(0);
   const lastBearingUpdateTimeRef = useRef<number>(0);
   const isUserInteractingRef = useRef<boolean>(false);
+  const manualRotateTimeout = useRef<NodeJS.Timeout | null>(null);
   const interactionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [viewState, setViewState] = useState<ViewState>({
     longitude: userLocation?.lng || 3.3792,
@@ -187,14 +185,7 @@ export default function IncidentMapGL({
       smoothedBearingRef.current = 0;
       lastAppliedBearingRef.current = 0;
       setBearing(0);
-      
-      if (mapRef.current) {
-        mapRef.current.easeTo({ 
-          bearing: 0, 
-          duration: 500,
-          easing: (t: number) => 1 - Math.pow(1 - t, 3) // Ease out cubic
-        });
-      }
+    
       return;
     }
     const handleOrientation = (event: DeviceOrientationEvent) => {
@@ -234,12 +225,10 @@ export default function IncidentMapGL({
         lastBearingUpdateTimeRef.current = now;
         setBearing(smoothed);
         if (mapRef.current) {
-          mapRef.current.easeTo({
-            bearing: smoothed,
-            duration: 200, // Slightly longer for smoother feel
-            easing: (t: number) => t, // Linear for continuous motion
-          });
-        }
+  mapRef.current.rotateTo(smoothed, {
+    duration: 150,
+  });
+}
       }
     };
     // Request permission for iOS 13+
@@ -412,16 +401,8 @@ export default function IncidentMapGL({
   // IMPROVED MOVE HANDLER - ALLOWS ZOOM/PAN WITH COMPASS
   // ============================================
   const handleMove = useCallback((evt: { viewState: ViewState }) => {
-    if (compassEnabled) {
-      // When compass is enabled, preserve compass bearing but allow pan/zoom
-      setViewState({
-        ...evt.viewState,
-        bearing: smoothedBearingRef.current, // Keep the smoothed compass bearing
-      });
-    } else {
-      setViewState(evt.viewState);
-    }
-  }, [compassEnabled]);
+  setViewState(evt.viewState);
+}, []);
   // ============================================
   // INTERACTION HANDLERS - PAUSE COMPASS DURING USER INTERACTION
   // ============================================
@@ -434,11 +415,11 @@ export default function IncidentMapGL({
     }
   }, []);
   const handleInteractionEnd = useCallback(() => {
-    // Delay before resuming compass to allow gesture to complete
-    interactionTimeoutRef.current = setTimeout(() => {
-      isUserInteractingRef.current = false;
-    }, 300); // 300ms delay after interaction ends
-  }, []);
+  // Longer delay before resuming compass - allows manual rotation to "stick"
+  interactionTimeoutRef.current = setTimeout(() => {
+    isUserInteractingRef.current = false;
+  }, 1500); // 1.5 second delay after interaction ends
+}, []);
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
@@ -488,7 +469,7 @@ export default function IncidentMapGL({
         minZoom={3}
         // Allow all interactions even with compass enabled
         dragPan={true}
-        dragRotate={!compassEnabled} // Disable manual rotation when compass controls it
+        dragRotate={true}
         scrollZoom={true}
         touchZoomRotate={true}
         doubleClickZoom={true}
