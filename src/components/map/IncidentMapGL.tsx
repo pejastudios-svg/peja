@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import Map, { Marker, NavigationControl, useMap } from "react-map-gl/maplibre";
-import maplibregl from "maplibre-gl";
+import Map, { Marker, NavigationControl, MapRef } from "react-map-gl/maplibre";
+import type { MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Post, CATEGORIES, SOSAlert, SOS_TAGS } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
@@ -32,6 +32,14 @@ interface Helper {
   eta: number;
 }
 
+interface ViewState {
+  longitude: number;
+  latitude: number;
+  zoom: number;
+  bearing: number;
+  pitch: number;
+}
+
 function calculateETA(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
   const R = 6371;
   const dLat = (toLat - fromLat) * Math.PI / 180;
@@ -44,7 +52,6 @@ function calculateETA(fromLat: number, fromLng: number, toLat: number, toLng: nu
   return Math.max(1, Math.round((distance / 30) * 60));
 }
 
-// Category color helper
 function getCategoryColor(categoryId: string): string {
   const category = CATEGORIES.find(c => c.id === categoryId);
   switch (category?.color) {
@@ -68,11 +75,11 @@ export default function IncidentMapGL({
   myUserId = null,
 }: IncidentMapGLProps) {
   const { user } = useAuth();
-  const mapRef = useRef<maplibregl.Map | null>(null);
+  const mapRef = useRef<MapRef>(null);
   const modalContentRef = useRef<HTMLDivElement>(null);
   const autoOpenedRef = useRef(false);
 
-  const [viewState, setViewState] = useState({
+  const [viewState, setViewState] = useState<ViewState>({
     longitude: userLocation?.lng || 3.3792,
     latitude: userLocation?.lat || 6.5244,
     zoom: 14,
@@ -158,7 +165,6 @@ export default function IncidentMapGL({
   // Compass bearing listener - THIS IS THE KEY FEATURE
   useEffect(() => {
     if (!compassEnabled) {
-      // Reset bearing when compass is disabled
       setBearing(0);
       if (mapRef.current) {
         mapRef.current.easeTo({ bearing: 0, duration: 500 });
@@ -168,29 +174,28 @@ export default function IncidentMapGL({
 
     const handleOrientation = (event: DeviceOrientationEvent) => {
       let newBearing = 0;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((event as any).webkitCompassHeading !== undefined) {
-        // iOS
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         newBearing = (event as any).webkitCompassHeading;
       } else if (event.alpha !== null) {
-        // Android
         newBearing = 360 - event.alpha;
       }
-      
+
       const normalizedBearing = ((newBearing % 360) + 360) % 360;
       setBearing(normalizedBearing);
 
-      // Rotate the map to match heading
       if (mapRef.current) {
         mapRef.current.easeTo({
           bearing: normalizedBearing,
           duration: 100,
-          easing: (t) => t, // Linear for smooth tracking
         });
       }
     };
 
-    // Request permission on iOS
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (DeviceOrientationEvent as any).requestPermission()
         .then((response: string) => {
           if (response === "granted") {
@@ -239,9 +244,11 @@ export default function IncidentMapGL({
       .channel("sos-helpers-realtime-gl")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${myUserId}` },
-        async (payload) => {
-          const notification: any = payload.new;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${myUserId}` } as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        async (payload: any) => {
+          const notification = payload.new;
 
           if (notification?.type === "sos_alert" && notification?.data?.helper_id) {
             const helperData = notification.data;
@@ -376,42 +383,42 @@ export default function IncidentMapGL({
     }, 60 * 60 * 1000);
   };
 
+  const handleMove = useCallback((evt: { viewState: ViewState }) => {
+    setViewState(evt.viewState);
+  }, []);
+
   const isOwnSOS = selectedSOS && myUserId && selectedSOS.user_id === myUserId;
   const tagInfo = selectedSOS?.tag ? SOS_TAGS.find(t => t.id === selectedSOS.tag) : null;
 
   return (
     <>
       <Map
-        ref={(ref) => {
-          if (ref) {
-            mapRef.current = ref.getMap();
-          }
-        }}
+        ref={mapRef}
         {...viewState}
-        onMove={evt => setViewState(evt.viewState)}
+        onMove={handleMove}
         style={{ width: "100%", height: "100%" }}
         mapStyle={{
-  version: 8,
-  sources: {
-    osm: {
-      type: "raster",
-      tiles: [
-        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    },
-  },
-  layers: [
-    {
-      id: "osm",
-      type: "raster",
-      source: "osm",
-    },
-  ],
-}}
+          version: 8,
+          sources: {
+            osm: {
+              type: "raster",
+              tiles: [
+                "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+              ],
+              tileSize: 256,
+              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+            },
+          },
+          layers: [
+            {
+              id: "osm",
+              type: "raster",
+              source: "osm",
+            },
+          ],
+        }}
         maxZoom={18}
         minZoom={3}
       >
@@ -590,7 +597,6 @@ export default function IncidentMapGL({
                     left: 0,
                     width: "100%",
                     height: "100%",
-                    // Arrow always points "up" (north) relative to screen since map rotates
                     transform: "rotate(0deg)",
                   }}
                 >
@@ -632,14 +638,14 @@ export default function IncidentMapGL({
 
       {/* Toast */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[3000] glass-float px-4 py-2 rounded-xl text-dark-100">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-3000 glass-float px-4 py-2 rounded-xl text-dark-100">
           {toast}
         </div>
       )}
 
       {/* SOS Details Modal */}
       {selectedSOS && (
-        <div className="fixed inset-0 z-[5000] flex items-start justify-center overflow-hidden">
+        <div className="fixed inset-0 z-5000 flex items-start justify-center overflow-hidden">
           <div className="absolute inset-0 bg-black/80" onClick={() => setSelectedSOS(null)} />
           <div
             ref={modalContentRef}
