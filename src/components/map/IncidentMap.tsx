@@ -3,9 +3,9 @@
 import dynamic from "next/dynamic";
 import { Loader2 } from "lucide-react";
 
-// Dynamic import with SSR disabled
-const MapWrapper = dynamic(
-  () => import("./MapWrapper"),
+// Dynamic import with SSR disabled - Now using MapLibre GL
+const IncidentMapGL = dynamic(
+  () => import("./IncidentMapGL"),
   {
     ssr: false,
     loading: () => (
@@ -16,4 +16,4 @@ const MapWrapper = dynamic(
   }
 );
 
-export default MapWrapper;
+export default IncidentMapGL;
