@@ -180,77 +180,64 @@ export default function IncidentMapGL({
   // IMPROVED COMPASS HANDLING WITH SMOOTHING
   // ============================================
   useEffect(() => {
-    if (!compassEnabled) {
-      // Reset bearing when compass is disabled
-      smoothedBearingRef.current = 0;
-      lastAppliedBearingRef.current = 0;
-      setBearing(0);
-    
-      return;
+  if (!compassEnabled) {
+    setBearing(0);
+    if (mapRef.current) {
+      mapRef.current.easeTo({ bearing: 0, duration: 500 });
     }
-    const handleOrientation = (event: DeviceOrientationEvent) => {
-      // Skip if user is currently interacting with the map
-      if (isUserInteractingRef.current) return;
-      // Throttle updates
-      const now = Date.now();
-      if (now - lastBearingUpdateTimeRef.current < BEARING_UPDATE_INTERVAL) return;
-      let rawBearing = 0;
-      
-      // Get raw compass heading
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((event as any).webkitCompassHeading !== undefined) {
-        // iOS Safari
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        rawBearing = (event as any).webkitCompassHeading;
-      } else if (event.alpha !== null) {
-        // Android/other browsers
-        rawBearing = 360 - event.alpha;
-      }
-      const normalizedBearing = normalizeAngle(rawBearing);
-      
-      // Apply smoothing filter
-      const smoothed = smoothAngle(
-        smoothedBearingRef.current,
-        normalizedBearing,
-        SMOOTHING_FACTOR
-      );
-      
-      smoothedBearingRef.current = smoothed;
-      // Only update map if change exceeds threshold
-      const changeFromLastApplied = Math.abs(
-        angleDifference(lastAppliedBearingRef.current, smoothed)
-      );
-      if (changeFromLastApplied >= MIN_BEARING_CHANGE) {
-        lastAppliedBearingRef.current = smoothed;
-        lastBearingUpdateTimeRef.current = now;
-        setBearing(smoothed);
-        if (mapRef.current) {
-  mapRef.current.easeTo({
-    bearing: smoothed,
-    duration: 150,
-    easing: (t: number) => 1 - Math.pow(1 - t, 2),
-  });
-}
-      }
-    };
-    // Request permission for iOS 13+
+    return;
+  }
+
+  let lastBearing = 0;
+
+  const handleOrientation = (event: DeviceOrientationEvent) => {
+    if (isUserInteractingRef.current) return;
+
+    let newBearing = 0;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
+    if ((event as any).webkitCompassHeading !== undefined) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (DeviceOrientationEvent as any).requestPermission()
-        .then((response: string) => {
-          if (response === "granted") {
-            window.addEventListener("deviceorientation", handleOrientation, true);
-          }
-        })
-        .catch(console.error);
-    } else {
-      window.addEventListener("deviceorientation", handleOrientation, true);
+      newBearing = (event as any).webkitCompassHeading;
+    } else if (event.alpha !== null) {
+      newBearing = 360 - event.alpha;
     }
-    return () => {
-      window.removeEventListener("deviceorientation", handleOrientation, true);
-    };
-  }, [compassEnabled]);
+
+    const normalizedBearing = ((newBearing % 360) + 360) % 360;
+
+    // Dead zone - ignore tiny changes to prevent vibration
+    let diff = Math.abs(normalizedBearing - lastBearing);
+    if (diff > 180) diff = 360 - diff;
+    if (diff < 1.5) return;
+
+    lastBearing = normalizedBearing;
+    setBearing(normalizedBearing);
+
+    if (mapRef.current) {
+      mapRef.current.easeTo({
+        bearing: normalizedBearing,
+        duration: 100,
+      });
+    }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (DeviceOrientationEvent as any).requestPermission()
+      .then((response: string) => {
+        if (response === "granted") {
+          window.addEventListener("deviceorientation", handleOrientation, true);
+        }
+      })
+      .catch(console.error);
+  } else {
+    window.addEventListener("deviceorientation", handleOrientation, true);
+  }
+
+  return () => {
+    window.removeEventListener("deviceorientation", handleOrientation, true);
+  };
+}, [compassEnabled]);
   // Real-time SOS updates
   useEffect(() => {
     const channel = supabase
