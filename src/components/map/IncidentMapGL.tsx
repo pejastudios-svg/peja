@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useRef, useState, useCallback } from "react";
 import Map, { Marker, NavigationControl, MapRef } from "react-map-gl/maplibre";
 import type { MapLibreEvent } from "maplibre-gl";
@@ -9,7 +8,6 @@ import { formatDistanceToNow } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/lib/notifications";
 import { useAuth } from "@/context/AuthContext";
-
 interface IncidentMapGLProps {
   posts: Post[];
   userLocation: { lat: number; lng: number } | null;
@@ -22,7 +20,6 @@ interface IncidentMapGLProps {
   compassEnabled?: boolean;
   myUserId?: string | null;
 }
-
 interface Helper {
   id: string;
   name: string;
@@ -31,7 +28,6 @@ interface Helper {
   lng: number;
   eta: number;
 }
-
 interface ViewState {
   longitude: number;
   latitude: number;
@@ -39,7 +35,6 @@ interface ViewState {
   bearing: number;
   pitch: number;
 }
-
 function calculateETA(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
   const R = 6371;
   const dLat = (toLat - fromLat) * Math.PI / 180;
@@ -51,9 +46,8 @@ function calculateETA(fromLat: number, fromLng: number, toLat: number, toLng: nu
   const distance = R * c;
   return Math.max(1, Math.round((distance / 30) * 60));
 }
-
 function getCategoryColor(categoryId: string): string {
-  const category = CATEGORIES.find(c => c.id === categoryId);
+  const category = CATEGORIES.find((c: { id: string; color?: string }) => c.id === categoryId);
   switch (category?.color) {
     case "danger": return "#ef4444";
     case "warning": return "#f97316";
@@ -61,13 +55,37 @@ function getCategoryColor(categoryId: string): string {
     default: return "#3b82f6";
   }
 }
-
+// ============================================
+// SMOOTHING UTILITIES FOR COMPASS STABILIZATION
+// ============================================
+// Low-pass filter coefficient (0.05-0.15 = very smooth, 0.3-0.5 = responsive)
+const SMOOTHING_FACTOR = 0.1;
+// Minimum bearing change to trigger update (degrees)
+const MIN_BEARING_CHANGE = 2;
+// Minimum time between bearing updates (ms)
+const BEARING_UPDATE_INTERVAL = 50;
+// Normalize angle to 0-360 range
+function normalizeAngle(angle: number): number {
+  return ((angle % 360) + 360) % 360;
+}
+// Calculate shortest angular difference (handles wrap-around)
+function angleDifference(from: number, to: number): number {
+  let diff = to - from;
+  if (diff > 180) diff -= 360;
+  if (diff < -180) diff += 360;
+  return diff;
+}
+// Smooth angle transition with wrap-around handling
+function smoothAngle(current: number, target: number, factor: number): number {
+  const diff = angleDifference(current, target);
+  return normalizeAngle(current + diff * factor);
+}
 export default function IncidentMapGL({
   posts,
   userLocation,
   onPostClick,
   sosAlerts = [],
-  onSOSClick,
+  onSOSClick: _onSOSClick,
   centerOnUser = false,
   centerOnCoords = null,
   openSOSId = null,
@@ -78,7 +96,14 @@ export default function IncidentMapGL({
   const mapRef = useRef<MapRef>(null);
   const modalContentRef = useRef<HTMLDivElement>(null);
   const autoOpenedRef = useRef(false);
-
+  // ============================================
+  // COMPASS SMOOTHING REFS
+  // ============================================
+  const smoothedBearingRef = useRef<number>(0);
+  const lastAppliedBearingRef = useRef<number>(0);
+  const lastBearingUpdateTimeRef = useRef<number>(0);
+  const isUserInteractingRef = useRef<boolean>(false);
+  const interactionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [viewState, setViewState] = useState<ViewState>({
     longitude: userLocation?.lng || 3.3792,
     latitude: userLocation?.lat || 6.5244,
@@ -86,19 +111,16 @@ export default function IncidentMapGL({
     bearing: 0,
     pitch: 0,
   });
-
-  const [bearing, setBearing] = useState(0);
+  const [_bearing, setBearing] = useState(0);
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
   const [sendingHelp, setSendingHelp] = useState(false);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [toast, setToast] = useState<string | null>(null);
   const [helpers, setHelpers] = useState<Helper[]>([]);
-
   // Update SOS alerts from props
   useEffect(() => {
     setLiveSOSAlerts(sosAlerts);
   }, [sosAlerts]);
-
   // Auto-open SOS from URL
   useEffect(() => {
     if (!openSOSId || autoOpenedRef.current) return;
@@ -108,7 +130,6 @@ export default function IncidentMapGL({
       autoOpenedRef.current = true;
     }
   }, [openSOSId, liveSOSAlerts]);
-
   // Lock body scroll when modal is open
   useEffect(() => {
     if (selectedSOS) {
@@ -117,7 +138,6 @@ export default function IncidentMapGL({
       document.body.style.position = 'fixed';
       document.body.style.width = '100%';
       document.body.style.top = `-${scrollY}px`;
-
       setTimeout(() => {
         if (modalContentRef.current) {
           modalContentRef.current.scrollTop = 0;
@@ -131,7 +151,6 @@ export default function IncidentMapGL({
       document.body.style.top = '';
       window.scrollTo(0, parseInt(scrollY || '0') * -1);
     }
-
     return () => {
       document.body.style.overflow = '';
       document.body.style.position = '';
@@ -139,7 +158,6 @@ export default function IncidentMapGL({
       document.body.style.top = '';
     };
   }, [selectedSOS]);
-
   // Center on user when requested
   useEffect(() => {
     if (centerOnUser && mapRef.current && userLocation) {
@@ -150,7 +168,6 @@ export default function IncidentMapGL({
       });
     }
   }, [centerOnUser, userLocation]);
-
   // Center on coords when requested
   useEffect(() => {
     if (centerOnCoords && mapRef.current) {
@@ -161,38 +178,71 @@ export default function IncidentMapGL({
       });
     }
   }, [centerOnCoords]);
-
-  // Compass bearing listener - THIS IS THE KEY FEATURE
+  // ============================================
+  // IMPROVED COMPASS HANDLING WITH SMOOTHING
+  // ============================================
   useEffect(() => {
     if (!compassEnabled) {
+      // Reset bearing when compass is disabled
+      smoothedBearingRef.current = 0;
+      lastAppliedBearingRef.current = 0;
       setBearing(0);
+      
       if (mapRef.current) {
-        mapRef.current.easeTo({ bearing: 0, duration: 500 });
+        mapRef.current.easeTo({ 
+          bearing: 0, 
+          duration: 500,
+          easing: (t: number) => 1 - Math.pow(1 - t, 3) // Ease out cubic
+        });
       }
       return;
     }
-
     const handleOrientation = (event: DeviceOrientationEvent) => {
-      let newBearing = 0;
+      // Skip if user is currently interacting with the map
+      if (isUserInteractingRef.current) return;
+      // Throttle updates
+      const now = Date.now();
+      if (now - lastBearingUpdateTimeRef.current < BEARING_UPDATE_INTERVAL) return;
+      let rawBearing = 0;
+      
+      // Get raw compass heading
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((event as any).webkitCompassHeading !== undefined) {
+        // iOS Safari
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        newBearing = (event as any).webkitCompassHeading;
+        rawBearing = (event as any).webkitCompassHeading;
       } else if (event.alpha !== null) {
-        newBearing = 360 - event.alpha;
+        // Android/other browsers
+        rawBearing = 360 - event.alpha;
       }
-
-      const normalizedBearing = ((newBearing % 360) + 360) % 360;
-      setBearing(normalizedBearing);
-
-      if (mapRef.current) {
-        mapRef.current.easeTo({
-          bearing: normalizedBearing,
-          duration: 100,
-        });
+      const normalizedBearing = normalizeAngle(rawBearing);
+      
+      // Apply smoothing filter
+      const smoothed = smoothAngle(
+        smoothedBearingRef.current,
+        normalizedBearing,
+        SMOOTHING_FACTOR
+      );
+      
+      smoothedBearingRef.current = smoothed;
+      // Only update map if change exceeds threshold
+      const changeFromLastApplied = Math.abs(
+        angleDifference(lastAppliedBearingRef.current, smoothed)
+      );
+      if (changeFromLastApplied >= MIN_BEARING_CHANGE) {
+        lastAppliedBearingRef.current = smoothed;
+        lastBearingUpdateTimeRef.current = now;
+        setBearing(smoothed);
+        if (mapRef.current) {
+          mapRef.current.easeTo({
+            bearing: smoothed,
+            duration: 200, // Slightly longer for smoother feel
+            easing: (t: number) => t, // Linear for continuous motion
+          });
+        }
       }
     };
-
+    // Request permission for iOS 13+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -206,12 +256,10 @@ export default function IncidentMapGL({
     } else {
       window.addEventListener("deviceorientation", handleOrientation, true);
     }
-
     return () => {
       window.removeEventListener("deviceorientation", handleOrientation, true);
     };
   }, [compassEnabled]);
-
   // Real-time SOS updates
   useEffect(() => {
     const channel = supabase
@@ -219,7 +267,7 @@ export default function IncidentMapGL({
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "sos_alerts" },
-        (payload) => {
+        (payload: { new: SOSAlert }) => {
           const updatedSOS = payload.new as SOSAlert;
           setLiveSOSAlerts(prev =>
             prev.map(sos => sos.id === updatedSOS.id ? { ...sos, ...updatedSOS } : sos)
@@ -230,16 +278,13 @@ export default function IncidentMapGL({
         }
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, [selectedSOS?.id]);
-
   // Listen for helper notifications
   useEffect(() => {
     if (!myUserId) return;
-
     const channel = supabase
       .channel("sos-helpers-realtime-gl")
       .on(
@@ -249,11 +294,9 @@ export default function IncidentMapGL({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         async (payload: any) => {
           const notification = payload.new;
-
           if (notification?.type === "sos_alert" && notification?.data?.helper_id) {
             const helperData = notification.data;
-
-            setHelpers(prev => {
+            setHelpers((prev: Helper[]) => {
               if (prev.some(h => h.id === helperData.helper_id)) {
                 return prev.map(h =>
                   h.id === helperData.helper_id
@@ -261,7 +304,6 @@ export default function IncidentMapGL({
                     : h
                 );
               }
-
               return [...prev, {
                 id: helperData.helper_id,
                 name: helperData.helper_name || "Someone",
@@ -275,29 +317,24 @@ export default function IncidentMapGL({
         }
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, [myUserId]);
-
   const handleICanHelp = async (sos: SOSAlert) => {
     if (!user || !userLocation) {
       setToast("Please enable location to help");
       setTimeout(() => setToast(null), 3000);
       return;
     }
-
     setSendingHelp(true);
     try {
       const eta = calculateETA(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
-
       const { data: userData } = await supabase
         .from("users")
         .select("full_name, avatar_url")
         .eq("id", user.id)
         .single();
-
       await createNotification({
         userId: sos.user_id,
         type: "sos_alert",
@@ -313,9 +350,7 @@ export default function IncidentMapGL({
           eta_minutes: eta
         },
       });
-
       startHelperLocationTracking(sos.user_id, sos.id, userData?.full_name || "Someone", userData?.avatar_url);
-
       setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ETA: ${eta} minutes.`);
       setTimeout(() => setToast(null), 3000);
       setSelectedSOS(null);
@@ -327,34 +362,26 @@ export default function IncidentMapGL({
       setSendingHelp(false);
     }
   };
-
   const startHelperLocationTracking = (sosOwnerId: string, sosId: string, helperName: string, helperAvatar?: string) => {
     if (!navigator.geolocation) return;
-
     let lastUpdateTime = 0;
-
     const watchId = navigator.geolocation.watchPosition(
       async (position) => {
         const now = Date.now();
         if (now - lastUpdateTime < 10000) return;
         lastUpdateTime = now;
-
         const lat = position.coords.latitude;
         const lng = position.coords.longitude;
-
         const { data: sosData } = await supabase
           .from("sos_alerts")
           .select("latitude, longitude, status")
           .eq("id", sosId)
           .single();
-
         if (!sosData || sosData.status !== "active") {
           navigator.geolocation.clearWatch(watchId);
           return;
         }
-
         const eta = calculateETA(lat, lng, sosData.latitude, sosData.longitude);
-
         await createNotification({
           userId: sosOwnerId,
           type: "sos_alert",
@@ -377,25 +404,63 @@ export default function IncidentMapGL({
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
     );
-
     setTimeout(() => {
       navigator.geolocation.clearWatch(watchId);
     }, 60 * 60 * 1000);
   };
-
+  // ============================================
+  // IMPROVED MOVE HANDLER - ALLOWS ZOOM/PAN WITH COMPASS
+  // ============================================
   const handleMove = useCallback((evt: { viewState: ViewState }) => {
-    setViewState(evt.viewState);
+    if (compassEnabled) {
+      // When compass is enabled, preserve compass bearing but allow pan/zoom
+      setViewState({
+        ...evt.viewState,
+        bearing: smoothedBearingRef.current, // Keep the smoothed compass bearing
+      });
+    } else {
+      setViewState(evt.viewState);
+    }
+  }, [compassEnabled]);
+  // ============================================
+  // INTERACTION HANDLERS - PAUSE COMPASS DURING USER INTERACTION
+  // ============================================
+  const handleInteractionStart = useCallback(() => {
+    isUserInteractingRef.current = true;
+    
+    // Clear any existing timeout
+    if (interactionTimeoutRef.current) {
+      clearTimeout(interactionTimeoutRef.current);
+    }
   }, []);
-
+  const handleInteractionEnd = useCallback(() => {
+    // Delay before resuming compass to allow gesture to complete
+    interactionTimeoutRef.current = setTimeout(() => {
+      isUserInteractingRef.current = false;
+    }, 300); // 300ms delay after interaction ends
+  }, []);
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (interactionTimeoutRef.current) {
+        clearTimeout(interactionTimeoutRef.current);
+      }
+    };
+  }, []);
   const isOwnSOS = selectedSOS && myUserId && selectedSOS.user_id === myUserId;
   const tagInfo = selectedSOS?.tag ? SOS_TAGS.find(t => t.id === selectedSOS.tag) : null;
-
   return (
     <>
       <Map
         ref={mapRef}
         {...viewState}
         onMove={handleMove}
+        onMoveStart={handleInteractionStart}
+        onMoveEnd={handleInteractionEnd}
+        onZoomStart={handleInteractionStart}
+        onZoomEnd={handleInteractionEnd}
+        onDragStart={handleInteractionStart}
+        onDragEnd={handleInteractionEnd}
         style={{ width: "100%", height: "100%" }}
         mapStyle={{
           version: 8,
@@ -421,21 +486,26 @@ export default function IncidentMapGL({
         }}
         maxZoom={18}
         minZoom={3}
+        // Allow all interactions even with compass enabled
+        dragPan={true}
+        dragRotate={!compassEnabled} // Disable manual rotation when compass controls it
+        scrollZoom={true}
+        touchZoomRotate={true}
+        doubleClickZoom={true}
+        keyboard={true}
       >
-        <NavigationControl position="top-right" showCompass={false} />
-
+        <NavigationControl position="top-right" showCompass={!compassEnabled} />
         {/* Post/Incident Markers */}
         {posts.map(post => {
           if (!post.location?.latitude || !post.location?.longitude) return null;
           const color = getCategoryColor(post.category);
-
           return (
             <Marker
               key={post.id}
               longitude={post.location.longitude}
               latitude={post.location.latitude}
               anchor="bottom"
-              onClick={(e) => {
+              onClick={(e: { originalEvent: MouseEvent }) => {
                 e.originalEvent.stopPropagation();
                 onPostClick(post.id);
               }}
@@ -468,19 +538,17 @@ export default function IncidentMapGL({
             </Marker>
           );
         })}
-
         {/* SOS Markers */}
         {liveSOSAlerts.map(sos => {
           const avatarUrl = sos.user?.avatar_url || "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff";
           const sosBearing = sos.bearing || 0;
-
           return (
             <Marker
               key={sos.id}
               longitude={sos.longitude}
               latitude={sos.latitude}
               anchor="center"
-              onClick={(e) => {
+              onClick={(e: { originalEvent: MouseEvent }) => {
                 e.originalEvent.stopPropagation();
                 setSelectedSOS(sos);
               }}
@@ -532,7 +600,7 @@ export default function IncidentMapGL({
                     src={avatarUrl}
                     alt=""
                     style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    onError={(e) => {
+                    onError={(e: React.SyntheticEvent<HTMLImageElement>) => {
                       (e.target as HTMLImageElement).src = "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff";
                     }}
                   />
@@ -541,11 +609,9 @@ export default function IncidentMapGL({
             </Marker>
           );
         })}
-
         {/* Helper Markers */}
         {helpers.map(helper => {
           const avatarUrl = helper.avatar_url || "https://ui-avatars.com/api/?name=H&background=22c55e&color=fff";
-
           return (
             <Marker
               key={helper.id}
@@ -580,7 +646,6 @@ export default function IncidentMapGL({
             </Marker>
           );
         })}
-
         {/* User Location Marker */}
         {userLocation && (
           <Marker
@@ -635,14 +700,12 @@ export default function IncidentMapGL({
           </Marker>
         )}
       </Map>
-
       {/* Toast */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-3000 glass-float px-4 py-2 rounded-xl text-dark-100">
           {toast}
         </div>
       )}
-
       {/* SOS Details Modal */}
       {selectedSOS && (
         <div className="fixed inset-0 z-5000 flex items-start justify-center overflow-hidden">
@@ -664,7 +727,6 @@ export default function IncidentMapGL({
                   ×
                 </button>
               </div>
-
               <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
                 <div className="w-14 h-14 rounded-full overflow-hidden border-3 border-red-500 shrink-0 sos-avatar-glow">
                   <img
@@ -686,35 +748,30 @@ export default function IncidentMapGL({
                 </div>
               </div>
             </div>
-
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               <div className="flex items-center gap-2 text-sm">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                 <span className="text-green-400">Live tracking active</span>
               </div>
-
               {tagInfo && (
                 <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl">
                   <p className="text-sm text-dark-400">Situation:</p>
                   <p className="font-semibold text-white">{tagInfo.label}</p>
                 </div>
               )}
-
               {selectedSOS.message && (
                 <div className="p-3 bg-white/5 rounded-xl">
                   <p className="text-sm text-dark-400 mb-1">Message:</p>
                   <p className="text-white">{selectedSOS.message}</p>
                 </div>
               )}
-
               {tagInfo && !isOwnSOS && (
                 <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
                   <p className="text-sm font-medium text-yellow-400 mb-1">How to help:</p>
                   <p className="text-sm text-yellow-200">{tagInfo.suggestion}</p>
                 </div>
               )}
-
               {/* Show helpers coming (for own SOS) */}
               {isOwnSOS && helpers.length > 0 && (
                 <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-xl">
@@ -750,7 +807,6 @@ export default function IncidentMapGL({
                   </p>
                 </div>
               )}
-
               {/* ETA for helpers */}
               {!isOwnSOS && userLocation && (
                 <div className="text-center py-3 bg-primary-500/10 rounded-xl">
@@ -761,7 +817,6 @@ export default function IncidentMapGL({
                   <p className="text-sm text-dark-500">minutes</p>
                 </div>
               )}
-
               {/* Emergency Call Buttons */}
               <div className="flex gap-2">
                 <a href="tel:112" className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium text-center">
@@ -771,7 +826,6 @@ export default function IncidentMapGL({
                   Call 767
                 </a>
               </div>
-
               {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
                 <button
@@ -780,7 +834,6 @@ export default function IncidentMapGL({
                 >
                   Back
                 </button>
-
                 {!isOwnSOS && (
                   <button
                     onClick={() => handleICanHelp(selectedSOS)}
