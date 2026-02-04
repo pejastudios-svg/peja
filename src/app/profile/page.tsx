@@ -260,86 +260,49 @@ useEffect(() => {
   };
 
     const handleDeleteAccount = async () => {
-    if (!user) return; // Add this line
+  if (!user) return;
+  
+  if (deleteConfirmText !== "DELETE") {
+    setDeleteError("Please type DELETE to confirm");
+    return;
+  }
+
+  setDeleting(true);
+  setDeleteError("");
+
+  try {
+    // Get the current session token
+    const { data: { session } } = await supabase.auth.getSession();
     
-    if (deleteConfirmText !== "DELETE") {
-      setDeleteError("Please type DELETE to confirm");
-      return;
+    if (!session?.access_token) {
+      throw new Error("No active session");
     }
 
-    setDeleting(true);
-    setDeleteError("");
+    // Call the delete account API
+    const response = await fetch("/api/delete-account", {
+      method: "DELETE",
+      headers: {
+        "Authorization": `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-    try {
-      // Delete user's posts
-      const { error: postsError } = await supabase
-        .from("posts")
-        .delete()
-        .eq("user_id", user.id);
+    const data = await response.json();
 
-      if (postsError) {
-        console.error("Error deleting posts:", postsError);
-      }
-
-      // Delete user's notifications
-      const { error: notifError } = await supabase
-        .from("notifications")
-        .delete()
-        .eq("user_id", user.id);
-
-      if (notifError) {
-        console.error("Error deleting notifications:", notifError);
-      }
-
-      // Delete user's confirmations
-      const { error: confirmError } = await supabase
-        .from("post_confirmations")
-        .delete()
-        .eq("user_id", user.id);
-
-      if (confirmError) {
-        console.error("Error deleting confirmations:", confirmError);
-      }
-
-      // Delete user's emergency contacts
-      const { error: contactsError } = await supabase
-        .from("emergency_contacts")
-        .delete()
-        .eq("user_id", user.id);
-
-      if (contactsError) {
-        console.error("Error deleting emergency contacts:", contactsError);
-      }
-
-      // Delete user's settings
-      const { error: settingsError } = await supabase
-        .from("user_settings")
-        .delete()
-        .eq("user_id", user.id);
-
-      if (settingsError) {
-        console.error("Error deleting settings:", settingsError);
-      }
-
-      // Delete the user record
-      const { error: userError } = await supabase
-        .from("users")
-        .delete()
-        .eq("id", user.id);
-
-      if (userError) {
-        throw new Error("Failed to delete account: " + userError.message);
-      }
-
-      // Sign out and redirect
-      await signOut();
-      router.push("/login");
-    } catch (err: any) {
-      console.error("Delete account error:", err);
-      setDeleteError(err.message || "Failed to delete account. Please try again.");
-      setDeleting(false);
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to delete account");
     }
-  };
+
+    // Sign out and redirect
+    await signOut();
+    router.push("/login");
+    
+  } catch (err: any) {
+    console.error("Delete account error:", err);
+    setDeleteError(err.message || "Failed to delete account. Please try again.");
+    setDeleting(false);
+  }
+};
 
   // --- SKELETON SHELL ---
   if (!user) {
