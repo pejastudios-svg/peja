@@ -642,7 +642,7 @@ useEffect(() => {
     <div className="min-h-screen pb-20 lg:pb-0">
     <Header onCreateClick={() => router.push("/create")} />
 
-      <main className="pt-16 lg:pl-64">
+            <main className="pt-16">
         {user && !user.occupation && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
             <div className="glass-card p-4 flex items-center justify-between">

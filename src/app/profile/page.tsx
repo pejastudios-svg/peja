@@ -17,6 +17,9 @@ import {
   ChevronRight,
   Edit,
   Camera,
+  Trash2,
+  AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
@@ -52,6 +55,10 @@ export default function ProfilePage() {
   const [postsLoading, setPostsLoading] = useState(() => userPosts.length === 0);
   const [confirmedLoading, setConfirmedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"posts" | "confirmed">("posts");
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   // --- 2. INSTANT SCROLL RESTORE ---
 useLayoutEffect(() => {
@@ -252,6 +259,88 @@ useEffect(() => {
     router.push("/login");
   };
 
+    const handleDeleteAccount = async () => {
+    if (!user) return; // Add this line
+    
+    if (deleteConfirmText !== "DELETE") {
+      setDeleteError("Please type DELETE to confirm");
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError("");
+
+    try {
+      // Delete user's posts
+      const { error: postsError } = await supabase
+        .from("posts")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (postsError) {
+        console.error("Error deleting posts:", postsError);
+      }
+
+      // Delete user's notifications
+      const { error: notifError } = await supabase
+        .from("notifications")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (notifError) {
+        console.error("Error deleting notifications:", notifError);
+      }
+
+      // Delete user's confirmations
+      const { error: confirmError } = await supabase
+        .from("post_confirmations")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (confirmError) {
+        console.error("Error deleting confirmations:", confirmError);
+      }
+
+      // Delete user's emergency contacts
+      const { error: contactsError } = await supabase
+        .from("emergency_contacts")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (contactsError) {
+        console.error("Error deleting emergency contacts:", contactsError);
+      }
+
+      // Delete user's settings
+      const { error: settingsError } = await supabase
+        .from("user_settings")
+        .delete()
+        .eq("user_id", user.id);
+
+      if (settingsError) {
+        console.error("Error deleting settings:", settingsError);
+      }
+
+      // Delete the user record
+      const { error: userError } = await supabase
+        .from("users")
+        .delete()
+        .eq("id", user.id);
+
+      if (userError) {
+        throw new Error("Failed to delete account: " + userError.message);
+      }
+
+      // Sign out and redirect
+      await signOut();
+      router.push("/login");
+    } catch (err: any) {
+      console.error("Delete account error:", err);
+      setDeleteError(err.message || "Failed to delete account. Please try again.");
+      setDeleting(false);
+    }
+  };
+
   // --- SKELETON SHELL ---
   if (!user) {
      return (
@@ -351,6 +440,10 @@ useEffect(() => {
               <button onClick={handleSignOut} className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors">
                 <div className="flex items-center gap-3"><LogOut className="w-5 h-5 text-red-400" /><span className="text-sm text-red-400">Sign Out</span></div>
               </button>
+              <button onClick={() => setShowDeleteModal(true)} className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-red-500/10 transition-colors">
+                <div className="flex items-center gap-3"><Trash2 className="w-5 h-5 text-red-500" /><span className="text-sm text-red-500">Delete Account</span></div>
+                <ChevronRight className="w-4 h-4 text-red-500" />
+              </button>
             </div>
           </div>
 
@@ -372,6 +465,85 @@ useEffect(() => {
               </div>
             )}
           </div>
+                {/* Delete Account Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80" onClick={() => !deleting && setShowDeleteModal(false)} />
+          <div className="relative glass-strong rounded-2xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Delete Account</h3>
+                <p className="text-sm text-dark-400">This action cannot be undone</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+                <p className="text-sm text-red-300 mb-2">This will permanently delete:</p>
+                <ul className="text-sm text-red-400 space-y-1">
+                  <li>• All your posts and media</li>
+                  <li>• Your profile information</li>
+                  <li>• Your emergency contacts</li>
+                  <li>• All your notifications</li>
+                  <li>• Your account settings</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-sm text-dark-300 mb-2">
+                  Type <span className="font-bold text-red-400">DELETE</span> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => {
+                    setDeleteConfirmText(e.target.value.toUpperCase());
+                    setDeleteError("");
+                  }}
+                  placeholder="DELETE"
+                  className="w-full px-4 py-3 glass-input text-base"
+                  disabled={deleting}
+                />
+              </div>
+
+              {deleteError && (
+                <p className="text-sm text-red-400">{deleteError}</p>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setDeleteConfirmText("");
+                    setDeleteError("");
+                  }}
+                  disabled={deleting}
+                  className="flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleting || deleteConfirmText !== "DELETE"}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {deleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    "Delete Forever"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
         </div>
       </main>
     </div>

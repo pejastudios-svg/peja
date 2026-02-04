@@ -427,7 +427,7 @@ export default function MapClient() {
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header variant="back" title="Map" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
 
-      <main className="pt-16 lg:pl-64 h-screen">
+            <main className="pt-16 h-screen">
         <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">
           {loading || !mapReady ? (
             <div className="h-full bg-dark-800 flex items-center justify-center">
