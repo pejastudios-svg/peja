@@ -58,9 +58,9 @@ function getCategoryColor(categoryId: string): string {
 // ============================================
 // SMOOTHING UTILITIES FOR COMPASS STABILIZATION
 // ============================================
-const SMOOTHING_FACTOR = 0.4;
-const MIN_BEARING_CHANGE = 1;
-const BEARING_UPDATE_INTERVAL = 16;
+const SMOOTHING_FACTOR = 0.15;
+const MIN_BEARING_CHANGE = 0.5;
+const BEARING_UPDATE_INTERVAL = 50;
 // Normalize angle to 0-360 range
 function normalizeAngle(angle: number): number {
   return ((angle % 360) + 360) % 360;
@@ -225,8 +225,10 @@ export default function IncidentMapGL({
         lastBearingUpdateTimeRef.current = now;
         setBearing(smoothed);
         if (mapRef.current) {
-  mapRef.current.rotateTo(smoothed, {
+  mapRef.current.easeTo({
+    bearing: smoothed,
     duration: 150,
+    easing: (t: number) => 1 - Math.pow(1 - t, 2),
   });
 }
       }
