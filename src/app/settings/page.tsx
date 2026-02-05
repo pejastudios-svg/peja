@@ -211,10 +211,10 @@ useScrollRestore("settings");
     <div className={`flex items-center justify-between py-4 px-2 rounded-lg ${onClick ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : ""} transition-colors`} onClick={onClick}>
       <div className="flex items-center gap-3">
         <div className={`p-2 rounded-lg ${danger ? "bg-red-500/10" : "bg-dark-700"}`}>
-          <Icon className={`w-5 h-5 ${danger ? "text-red-400" : "text-primary-400"}`} />
+          <Icon className={`w-5 h-5 ${danger ? "text-red-500" : "text-primary-400"}`} />
         </div>
         <div>
-          <p className={`font-medium ${danger ? "text-red-400" : "text-dark-100"}`}>{label}</p>
+          <p className={`font-medium ${danger ? "text-red-500" : "text-dark-100"}`}>{label}</p>
           {description && <p className="text-sm text-dark-400">{description}</p>}
         </div>
       </div>

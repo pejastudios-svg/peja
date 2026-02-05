@@ -14,6 +14,7 @@ import {
   Camera,
   Bell,
   MapPin,
+  BarChart3,
 } from "lucide-react";
 
 interface FAQItem {
@@ -47,6 +48,11 @@ const faqs: FAQItem[] = [
     question: "How do location alerts work?",
     answer: "You can set up alerts for: All of Nigeria, specific states, a custom radius around you, or saved locations like home and work. Customize this in Settings.",
     icon: MapPin,
+  },
+  {
+    question: "What does the Analytics button do?",
+    answer: "The Analytics button on the map shows you data insights about incidents in your area. View trends, hotspots, incident frequency by category, and time-based patterns. This helps you understand safety conditions and make informed decisions about where and when to travel.",
+    icon: BarChart3,
   },
 ];
 
