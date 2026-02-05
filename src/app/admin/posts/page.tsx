@@ -372,12 +372,14 @@ export default function AdminPostsPage() {
           {Array.from({ length: 6 }).map((_, i) => <AdminPostCardSkeleton key={i} />)}
         </div>
       ) : posts.length === 0 ? (
-        <HudPanel className="text-center py-20 flex flex-col items-center justify-center min-h-[400px]">
-          <div className="w-16 h-16 rounded-full bg-dark-800 flex items-center justify-center mb-4 border border-white/5">
-             <FileText className="w-8 h-8 text-dark-600" />
-          </div>
-          <p className="text-dark-300 font-medium text-lg">No posts found</p>
-        </HudPanel>
+        <HudPanel className="py-20 min-h-[400px]">
+  <div className="flex flex-col items-center justify-center text-center">
+    <div className="w-16 h-16 rounded-full bg-dark-800 flex items-center justify-center mb-4 border border-white/5">
+       <FileText className="w-8 h-8 text-dark-600" />
+    </div>
+    <p className="text-dark-300 font-medium text-lg">No posts found</p>
+  </div>
+</HudPanel>
       ) : (
         <>
           {loading && (

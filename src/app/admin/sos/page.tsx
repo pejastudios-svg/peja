@@ -274,8 +274,8 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
       title="SOS Monitor"
       subtitle="Critical emergency alerts and response coordination"
       right={
-         <div className="flex gap-1 bg-[#1E1B24] p-1 rounded-xl border border-white/10">
-            {["all", "active", "resolved"].map((status) => (
+   <div className="flex gap-1 bg-[#1E1B24] p-1 rounded-xl border border-white/10 w-fit">
+      {["all", "active", "resolved"].map((status) => (
                <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
@@ -312,13 +312,15 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
          {loading && sosAlerts.length === 0 ? (
             Array.from({ length: 6 }).map((_, i) => <AdminSOSRowSkeleton key={i} />)
          ) : sosAlerts.length === 0 ? (
-            <HudPanel className="text-center py-20 flex flex-col items-center">
-               <div className="w-20 h-20 rounded-full bg-green-500/5 border border-green-500/10 flex items-center justify-center mb-4">
-                 <CheckCircle className="w-10 h-10 text-green-500/50" />
-               </div>
-               <p className="text-dark-300 font-medium">System Secure</p>
-               <p className="text-dark-500 text-sm mt-1">No SOS alerts matching your criteria.</p>
-            </HudPanel>
+            <HudPanel className="py-20">
+   <div className="flex flex-col items-center justify-center text-center">
+     <div className="w-20 h-20 rounded-full bg-green-500/5 border border-green-500/10 flex items-center justify-center mb-4">
+       <CheckCircle className="w-10 h-10 text-green-500/50" />
+     </div>
+     <p className="text-dark-300 font-medium">System Secure</p>
+     <p className="text-dark-500 text-sm mt-1">No SOS alerts matching your criteria.</p>
+   </div>
+</HudPanel>
          ) : (
             sosAlerts.map((sos) => (
                <div
@@ -342,12 +344,12 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
                      </div>
                      
                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                           <p className="text-dark-100 font-bold text-lg">{sos.users?.full_name || "Unknown User"}</p>
-                           <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full border ${getStatusColor(sos.status)}`}>
-                              {sos.status.replace("_", " ")}
-                           </span>
-                        </div>
+                        <div className="flex items-center justify-between gap-3 mb-1">
+   <p className="text-dark-100 font-bold text-lg truncate">{sos.users?.full_name || "Unknown User"}</p>
+   <span className={`text-[10px] uppercase font-bold px-3 py-1 rounded-full border shrink-0 ${getStatusColor(sos.status)}`}>
+      {sos.status.replace("_", " ")}
+   </span>
+</div>
                         
                         <div className="flex items-center gap-2 mb-2 text-dark-300">
                            <MapPin className="w-4 h-4 text-dark-500 shrink-0" />
