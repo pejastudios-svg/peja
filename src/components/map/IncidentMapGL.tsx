@@ -193,19 +193,15 @@ export default function IncidentMapGL({
 
       // Only update if difference is significant
       if (Math.abs(diff) > 0.1) {
-        // Smooth interpolation - adjust 0.08 for smoothness (lower = smoother)
-        currentBearing.current += diff * 0.08;
-        
-        // Normalize to 0-360
-        currentBearing.current = ((currentBearing.current % 360) + 360) % 360;
+  currentBearing.current += diff * 0.08;
+  
+  currentBearing.current = ((currentBearing.current % 360) + 360) % 360;
 
-        if (mapRef.current) {
-          const map = mapRef.current.getMap();
-          if (map) {
-            map.setBearing(currentBearing.current);
-          }
-        }
-      }
+  setViewState(prev => ({
+    ...prev,
+    bearing: currentBearing.current
+  }));
+}
 
       animationFrameId.current = requestAnimationFrame(animate);
     };
@@ -454,18 +450,11 @@ export default function IncidentMapGL({
   }, []);
 
   const handleInteractionEnd = useCallback(() => {
-    // Delay before resuming compass
-    interactionTimeout.current = setTimeout(() => {
-      isUserInteracting.current = false;
-      // Sync current bearing to where map actually is
-      if (mapRef.current) {
-        const map = mapRef.current.getMap();
-        if (map) {
-          currentBearing.current = map.getBearing();
-        }
-      }
-    }, 500);
-  }, []);
+  interactionTimeout.current = setTimeout(() => {
+    isUserInteracting.current = false;
+    currentBearing.current = viewState.bearing;
+  }, 300);
+}, [viewState.bearing]);
 
   // Cleanup
   useEffect(() => {
