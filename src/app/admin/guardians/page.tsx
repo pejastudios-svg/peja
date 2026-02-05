@@ -528,11 +528,11 @@ export default function AdminGuardiansPage() {
 
   return (
     <HudShell
-      title="Guardian Network"
-      subtitle="Moderation force and application management"
-      right={
-        <div className="flex bg-[#121016] p-1.5 rounded-xl border border-white/10 gap-1">
-          <button
+  title="Guardian Network"
+  subtitle="Moderation force and application management"
+  right={
+    <div className="flex bg-[#121016] p-1.5 rounded-xl border border-white/10 gap-1 mt-4 md:mt-0">
+      <button
             onClick={() => setTab("applications")}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
               tab === "applications"

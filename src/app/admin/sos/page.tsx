@@ -393,14 +393,14 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
               </div>
               <div className="flex-1">
                 <p className="font-bold text-dark-100 text-xl">{selectedSOS.users?.full_name || "Unknown"}</p>
-                <div className="flex items-center gap-4 mt-1">
-                    {selectedSOS.users?.phone && (
-                    <a href={`tel:${selectedSOS.users.phone}`} className="px-3 py-1 rounded-lg bg-green-500/10 text-green-400 text-sm font-medium border border-green-500/20 flex items-center gap-2 hover:bg-green-500/20">
-                        <Phone className="w-3.5 h-3.5" /> {selectedSOS.users.phone}
-                    </a>
-                    )}
-                    <span className="text-dark-400 text-sm">{selectedSOS.users?.email}</span>
-                </div>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-1">
+                {selectedSOS.users?.phone && (
+                <a href={`tel:${selectedSOS.users.phone}`} className="px-3 py-1 rounded-lg bg-green-500/10 text-green-400 text-sm font-medium border border-green-500/20 flex items-center gap-2 hover:bg-green-500/20 w-fit">
+                <Phone className="w-3.5 h-3.5" /> {selectedSOS.users.phone}
+                </a>
+                )}
+               <span className="text-dark-400 text-sm truncate">{selectedSOS.users?.email}</span>
+               </div>
               </div>
             </div>
 
