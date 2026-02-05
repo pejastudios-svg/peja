@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import Map, { Marker, NavigationControl, MapRef } from "react-map-gl/maplibre";
-import type { MapLibreEvent } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Post, CATEGORIES, SOSAlert, SOS_TAGS } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
@@ -78,6 +77,13 @@ export default function IncidentMapGL({
   const mapRef = useRef<MapRef>(null);
   const modalContentRef = useRef<HTMLDivElement>(null);
   const autoOpenedRef = useRef(false);
+
+  // Compass smoothing refs
+  const targetBearing = useRef(0);
+  const currentBearing = useRef(0);
+  const animationFrameId = useRef<number | null>(null);
+  const isUserInteracting = useRef(false);
+  const interactionTimeout = useRef<NodeJS.Timeout | null>(null);
 
   const [viewState, setViewState] = useState<ViewState>({
     longitude: userLocation?.lng || 3.3792,
@@ -162,94 +168,105 @@ export default function IncidentMapGL({
     }
   }, [centerOnCoords]);
 
-  // Compass bearing listener - SMOOTH VERSION
-const isUserInteracting = useRef(false);
-const lastBearing = useRef(0);
-const smoothedBearing = useRef(0);
-const animationFrame = useRef<number | null>(null);
-
-useEffect(() => {
-  if (!compassEnabled) {
-    setBearing(0);
-    smoothedBearing.current = 0;
-    lastBearing.current = 0;
-    if (mapRef.current) {
-      mapRef.current.easeTo({ bearing: 0, duration: 500 });
-    }
-    return;
-  }
-
-  const handleOrientation = (event: DeviceOrientationEvent) => {
-    // Skip if user is dragging/rotating
-    if (isUserInteracting.current) return;
-
-    let rawBearing = 0;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((event as any).webkitCompassHeading !== undefined) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      rawBearing = (event as any).webkitCompassHeading;
-    } else if (event.alpha !== null) {
-      rawBearing = 360 - event.alpha;
-    }
-
-    const normalized = ((rawBearing % 360) + 360) % 360;
-    
-    // Calculate shortest rotation path
-    let diff = normalized - smoothedBearing.current;
-    if (diff > 180) diff -= 360;
-    if (diff < -180) diff += 360;
-    
-    // Dead zone - ignore tiny movements
-    if (Math.abs(diff) < 1.5) return;
-    
-    // Smooth interpolation (0.15 = smooth, 0.3 = responsive)
-    smoothedBearing.current = ((smoothedBearing.current + diff * 0.2) % 360 + 360) % 360;
-    
-    // Only update if meaningful change from last applied
-    const changeSinceLastUpdate = Math.abs(smoothedBearing.current - lastBearing.current);
-    if (changeSinceLastUpdate < 1) return;
-    
-    lastBearing.current = smoothedBearing.current;
-    setBearing(smoothedBearing.current);
-
-    if (mapRef.current) {
-      // Cancel previous animation frame
-      if (animationFrame.current) {
-        cancelAnimationFrame(animationFrame.current);
+  // Smooth animation loop for compass
+  useEffect(() => {
+    if (!compassEnabled) {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+        animationFrameId.current = null;
       }
+      return;
+    }
+
+    const animate = () => {
+      if (isUserInteracting.current) {
+        animationFrameId.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      // Calculate shortest path for rotation
+      let diff = targetBearing.current - currentBearing.current;
       
-      animationFrame.current = requestAnimationFrame(() => {
-        if (mapRef.current && !isUserInteracting.current) {
-          mapRef.current.easeTo({
-            bearing: smoothedBearing.current,
-            duration: 150,
-          });
-        }
-      });
-    }
-  };
+      // Handle wrap-around (e.g., 350 to 10 should go +20, not -340)
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
+      // Only update if difference is significant
+      if (Math.abs(diff) > 0.1) {
+        // Smooth interpolation - adjust 0.08 for smoothness (lower = smoother)
+        currentBearing.current += diff * 0.08;
+        
+        // Normalize to 0-360
+        currentBearing.current = ((currentBearing.current % 360) + 360) % 360;
+
+        if (mapRef.current) {
+          const map = mapRef.current.getMap();
+          if (map) {
+            map.setBearing(currentBearing.current);
+          }
+        }
+      }
+
+      animationFrameId.current = requestAnimationFrame(animate);
+    };
+
+    animationFrameId.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    };
+  }, [compassEnabled]);
+
+  // Compass sensor listener
+  useEffect(() => {
+    if (!compassEnabled) {
+      targetBearing.current = 0;
+      currentBearing.current = 0;
+      setBearing(0);
+      if (mapRef.current) {
+        mapRef.current.easeTo({ bearing: 0, duration: 500 });
+      }
+      return;
+    }
+
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      let newBearing = 0;
+      
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((event as any).webkitCompassHeading !== undefined) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        newBearing = (event as any).webkitCompassHeading;
+      } else if (event.alpha !== null) {
+        newBearing = 360 - event.alpha;
+      }
+
+      const normalized = ((newBearing % 360) + 360) % 360;
+      
+      // Update target - the animation loop will smoothly interpolate to this
+      targetBearing.current = normalized;
+      setBearing(normalized);
+    };
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (DeviceOrientationEvent as any).requestPermission()
-      .then((response: string) => {
-        if (response === "granted") {
-          window.addEventListener("deviceorientation", handleOrientation, true);
-        }
-      })
-      .catch(console.error);
-  } else {
-    window.addEventListener("deviceorientation", handleOrientation, true);
-  }
-
-  return () => {
-    window.removeEventListener("deviceorientation", handleOrientation, true);
-    if (animationFrame.current) {
-      cancelAnimationFrame(animationFrame.current);
+    if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (DeviceOrientationEvent as any).requestPermission()
+        .then((response: string) => {
+          if (response === "granted") {
+            window.addEventListener("deviceorientation", handleOrientation, true);
+          }
+        })
+        .catch(console.error);
+    } else {
+      window.addEventListener("deviceorientation", handleOrientation, true);
     }
-  };
-}, [compassEnabled]);
+
+    return () => {
+      window.removeEventListener("deviceorientation", handleOrientation, true);
+    };
+  }, [compassEnabled]);
 
   // Real-time SOS updates
   useEffect(() => {
@@ -375,7 +392,7 @@ useEffect(() => {
     const watchId = navigator.geolocation.watchPosition(
       async (position) => {
         const now = Date.now();
-        if (now - lastUpdateTime < 10000) return;
+        if (now - lastUpdateTime < 10000) return; // Update every 10 seconds
         lastUpdateTime = now;
 
         const lat = position.coords.latitude;
@@ -417,13 +434,49 @@ useEffect(() => {
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
     );
 
+    // Stop tracking after 1 hour maximum
     setTimeout(() => {
       navigator.geolocation.clearWatch(watchId);
     }, 60 * 60 * 1000);
   };
 
+  // Handle map move - don't fight with compass
   const handleMove = useCallback((evt: { viewState: ViewState }) => {
     setViewState(evt.viewState);
+  }, []);
+
+  // Interaction handlers - pause compass during user interaction
+  const handleInteractionStart = useCallback(() => {
+    isUserInteracting.current = true;
+    if (interactionTimeout.current) {
+      clearTimeout(interactionTimeout.current);
+    }
+  }, []);
+
+  const handleInteractionEnd = useCallback(() => {
+    // Delay before resuming compass
+    interactionTimeout.current = setTimeout(() => {
+      isUserInteracting.current = false;
+      // Sync current bearing to where map actually is
+      if (mapRef.current) {
+        const map = mapRef.current.getMap();
+        if (map) {
+          currentBearing.current = map.getBearing();
+        }
+      }
+    }, 500);
+  }, []);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (interactionTimeout.current) {
+        clearTimeout(interactionTimeout.current);
+      }
+      if (animationFrameId.current) {
+        cancelAnimationFrame(animationFrameId.current);
+      }
+    };
   }, []);
 
   const isOwnSOS = selectedSOS && myUserId && selectedSOS.user_id === myUserId;
@@ -432,17 +485,20 @@ useEffect(() => {
   return (
     <>
       <Map
-  ref={mapRef}
-  {...viewState}
-  onMove={handleMove}
-  onDragStart={() => { isUserInteracting.current = true; }}
-  onDragEnd={() => { setTimeout(() => { isUserInteracting.current = false; }, 500); }}
-  onRotateStart={() => { isUserInteracting.current = true; }}
-  onRotateEnd={() => { setTimeout(() => { isUserInteracting.current = false; }, 1000); }}
-  onZoomStart={() => { isUserInteracting.current = true; }}
-  onZoomEnd={() => { setTimeout(() => { isUserInteracting.current = false; }, 300); }}
-  dragRotate={true}
-  style={{ width: "100%", height: "100%" }}
+        ref={mapRef}
+        {...viewState}
+        onMove={handleMove}
+        onDragStart={handleInteractionStart}
+        onDragEnd={handleInteractionEnd}
+        onZoomStart={handleInteractionStart}
+        onZoomEnd={handleInteractionEnd}
+        onRotateStart={handleInteractionStart}
+        onRotateEnd={handleInteractionEnd}
+        onPitchStart={handleInteractionStart}
+        onPitchEnd={handleInteractionEnd}
+        dragRotate={true}
+        touchZoomRotate={true}
+        style={{ width: "100%", height: "100%" }}
         mapStyle={{
           version: 8,
           sources: {

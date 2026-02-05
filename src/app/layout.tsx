@@ -22,7 +22,7 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Peja - Community Safety Alerts",
+  title: "Peja - Be Your Brother's Keeper",
   description: "Real-time incident alerts for your community",
 };
 

@@ -23,6 +23,15 @@ export async function POST(req: NextRequest) {
     if (sosErr || !sos) return NextResponse.json({ ok: false, error: "SOS not found" }, { status: 404 });
     if (sos.user_id !== user.id) return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
 
+    // Get the SOS user's name
+    const { data: sosUser } = await supabaseAdmin
+      .from("users")
+      .select("full_name")
+      .eq("id", user.id)
+      .single();
+
+    const userName = sosUser?.full_name || user.email?.split("@")[0] || "Someone";
+
     const scriptUrl = process.env.APPS_SCRIPT_EMAIL_WEBHOOK_URL;
     if (!scriptUrl) return NextResponse.json({ ok: false, error: "Missing APPS_SCRIPT_EMAIL_WEBHOOK_URL" }, { status: 500 });
 
@@ -60,19 +69,22 @@ export async function POST(req: NextRequest) {
       : { data: [] as any[] };
 
     const recipients = (recUsers || [])
-      .filter((u: any) => u.email && u.status === "active") // email only to active users
+      .filter((u: any) => u.email && u.status === "active")
       .map((u: any) => ({ email: u.email, name: u.full_name || "Peja user" }));
 
     if (recipients.length === 0) return NextResponse.json({ ok: true, sent: 0 });
 
-    // Send one batch to Apps Script (Apps Script loops recipients)
+    // Send one batch to Apps Script
     await fetch(scriptUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Peja-Secret": process.env.APPS_SCRIPT_WEBHOOK_SECRET || "",},
+      headers: { 
+        "Content-Type": "application/json", 
+        "X-Peja-Secret": process.env.APPS_SCRIPT_WEBHOOK_SECRET || "",
+      },
       body: JSON.stringify({
-     secret: process.env.APPS_SCRIPT_WEBHOOK_SECRET || "",
-     template: "sos",
-     recipients,
+        secret: process.env.APPS_SCRIPT_WEBHOOK_SECRET || "",
+        template: "sos",
+        recipients,
         payload: {
           sos_id: sos.id,
           tag: sos.tag || null,
@@ -81,6 +93,7 @@ export async function POST(req: NextRequest) {
           latitude: sos.latitude,
           longitude: sos.longitude,
           created_at: sos.created_at,
+          user_name: userName,
         },
       }),
     });
