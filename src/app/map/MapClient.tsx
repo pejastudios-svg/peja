@@ -78,6 +78,22 @@ export default function MapClient() {
     });
   }, []);
 
+  // Listen for real-time location updates
+useEffect(() => {
+  const handleLocationUpdate = (e: CustomEvent) => {
+    setUserLocation({
+      lat: e.detail.lat,
+      lng: e.detail.lng
+    });
+  };
+
+  window.addEventListener('peja-user-location-update', handleLocationUpdate as EventListener);
+  
+  return () => {
+    window.removeEventListener('peja-user-location-update', handleLocationUpdate as EventListener);
+  };
+}, []);
+
   // Start watching location for real-time updates
   useEffect(() => {
     if (!navigator.geolocation) return;

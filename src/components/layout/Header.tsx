@@ -92,27 +92,30 @@ export function Header({ onMenuClick, onCreateClick, variant = "default", title,
       <span className="text-lg font-semibold text-dark-100">{title || "Back"}</span>
     </button>
   ) : (
-    <a 
-  href="https://www.youtube.com/@PejaStudios" 
-  target="_blank" 
-  rel="noopener noreferrer"
-  className="flex items-center peja-logo-morph"
-  aria-label="Peja Studios YouTube"
->
-  {/* Peja Text */}
-  <span className="peja-logo-text text-2xl font-bold">Peja</span>
-  
-  {/* YouTube Logo */}
-  <svg 
-    className="peja-logo-youtube" 
-    viewBox="0 0 24 24" 
-    width="28" 
-    height="28"
-    fill="currentColor"
+    <div className="flex flex-col">
+  <a 
+    href="https://www.youtube.com/@PejaStudios" 
+    target="_blank" 
+    rel="noopener noreferrer"
+    className="flex items-center peja-logo-morph"
+    aria-label="Peja Studios YouTube"
   >
-    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-  </svg>
-</a>
+    {/* PEJA Text - Uppercase */}
+    <span className="peja-logo-text text-2xl font-bold tracking-wider">PEJA</span>
+    
+    {/* YouTube Logo */}
+    <svg 
+      className="peja-logo-youtube" 
+      viewBox="0 0 24 24" 
+      width="28" 
+      height="28"
+      fill="currentColor"
+    >
+      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+    </svg>
+  </a>
+  <span className="text-[10px] text-dark-400 -mt-0.5 tracking-wide">Be your brother's keeper</span>
+</div>
   )}
 </div>
         <div className="flex items-center gap-2">

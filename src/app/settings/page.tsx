@@ -310,48 +310,32 @@ if (loading) {
   {pushEnabled && (
     <div className="ml-4 mt-2 space-y-4 p-4 glass-sm rounded-xl">
       {/* 🔴 DANGER ALERTS */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <p className="text-dark-100 font-medium">🔴 Danger Alerts</p>
-            <p className="text-xs text-dark-400">Crime, Fire, Accidents, Police, Flooding</p>
-          </div>
-          <ToggleSwitch enabled={dangerAlerts} onChange={setDangerAlerts} />
-        </div>
-      </div>
+<div>
+  <div className="flex items-center justify-between mb-2">
+    <div>
+      <p className="text-dark-100 font-medium">🔴 Danger Alerts</p>
+      <p className="text-xs text-dark-400">Crime/Theft, Fire, Kidnapping, Terrorist Attack</p>
+    </div>
+    <ToggleSwitch enabled={dangerAlerts} onChange={setDangerAlerts} />
+  </div>
+</div>
 
-      {/* 🟠 CAUTION ALERTS */}
-      <div className="pt-3 border-t border-white/5">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <p className="text-dark-100 font-medium">🟠 Caution Alerts</p>
-            <p className="text-xs text-dark-400">Road Work, Traffic, Power Outages</p>
-          </div>
-          <ToggleSwitch enabled={cautionAlerts} onChange={setCautionAlerts} />
-        </div>
-      </div>
+{/* 🟠 CAUTION ALERTS - Remove or hide this section */}
+{/* You can remove the Caution section entirely since there are no caution categories */}
 
-      {/* 🟡 AWARENESS ALERTS */}
-      <div className="pt-3 border-t border-white/5">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <p className="text-dark-100 font-medium">🟡 Awareness Alerts</p>
-            <p className="text-xs text-dark-400">Protests, Events, Animal Hazards, Disturbances</p>
-          </div>
-          <ToggleSwitch enabled={awarenessAlerts} onChange={setAwarenessAlerts} />
-        </div>
-      </div>
+{/* 🟡 AWARENESS ALERTS - Remove or hide this section */}
+{/* You can remove the Awareness section entirely since there are no awareness categories */}
 
-      {/* 🔵 INFO ALERTS */}
-      <div className="pt-3 border-t border-white/5">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <p className="text-dark-100 font-medium">🔵 Info Alerts</p>
-            <p className="text-xs text-dark-400">General Info, Store Closures, Transport Issues</p>
-          </div>
-          <ToggleSwitch enabled={infoAlerts} onChange={setInfoAlerts} />
-        </div>
-      </div>
+{/* 🔵 INFO ALERTS */}
+<div className="pt-3 border-t border-white/5">
+  <div className="flex items-center justify-between mb-2">
+    <div>
+      <p className="text-dark-100 font-medium">🔵 Info Alerts</p>
+      <p className="text-xs text-dark-400">General Alert</p>
+    </div>
+    <ToggleSwitch enabled={infoAlerts} onChange={setInfoAlerts} />
+  </div>
+</div>
 
       {/* Info message about defaults */}
       <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">

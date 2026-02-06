@@ -288,6 +288,58 @@ export default function IncidentMapGL({
     };
   }, [selectedSOS?.id]);
 
+  // Real-time user location tracking (purple dot moves in real-time)
+useEffect(() => {
+  if (!navigator.geolocation) return;
+
+  const watchId = navigator.geolocation.watchPosition(
+    (position) => {
+      // This will update the userLocation prop from the parent
+      // But we can also dispatch an event for the parent to update
+      window.dispatchEvent(new CustomEvent('peja-user-location-update', {
+        detail: {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        }
+      }));
+    },
+    (error) => {
+      console.warn("Location watch error:", error);
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+  );
+
+  return () => {
+    navigator.geolocation.clearWatch(watchId);
+  };
+}, []);
+
+// Real-time SOS location updates (SOS markers move in real-time)
+useEffect(() => {
+  const channel = supabase
+    .channel("sos-location-realtime")
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "sos_alerts" },
+      (payload) => {
+        const updated = payload.new as SOSAlert;
+        // Update position of SOS markers in real-time
+        setLiveSOSAlerts(prev =>
+          prev.map(sos => 
+            sos.id === updated.id 
+              ? { ...sos, latitude: updated.latitude, longitude: updated.longitude, bearing: updated.bearing }
+              : sos
+          )
+        );
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
+
   // Listen for helper notifications
   useEffect(() => {
     if (!myUserId) return;
@@ -404,6 +456,8 @@ export default function IncidentMapGL({
           navigator.geolocation.clearWatch(watchId);
           return;
         }
+
+        
 
         const eta = calculateETA(lat, lng, sosData.latitude, sosData.longitude);
 

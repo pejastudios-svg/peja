@@ -83,35 +83,42 @@ export function SOSButton({ className = "" }: { className?: string }) {
   }, [sosId]);
 
   useEffect(() => {
-    if (!sosActive || !sosId) return;
-    if (!navigator.geolocation) return;
+  if (!sosActive || !sosId) return;
+  if (!navigator.geolocation) return;
 
-    let lastSent = 0;
+  let lastSent = 0;
 
-    const watchId = navigator.geolocation.watchPosition(
-      async (pos) => {
-        const now = Date.now();
-        if (now - lastSent < 8000) return;
-        lastSent = now;
+  const watchId = navigator.geolocation.watchPosition(
+    async (pos) => {
+      const now = Date.now();
+      if (now - lastSent < 5000) return; // Changed to 5 seconds for smoother updates
+      lastSent = now;
 
-        try {
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          const address = await getAddress(lat, lng);
-
-          await supabase
-            .from("sos_alerts")
-            .update({
-              latitude: lat,
-              longitude: lng,
-              address,
-              last_updated: new Date().toISOString(),
-            })
-            .eq("id", sosId);
-        } catch (err) {
-          console.warn("SOS location update failed:", err);
+      try {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const address = await getAddress(lat, lng);
+        
+        // Get bearing/heading if available
+        let bearing = 0;
+        if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) {
+          bearing = pos.coords.heading;
         }
-      },
+
+        await supabase
+          .from("sos_alerts")
+          .update({
+            latitude: lat,
+            longitude: lng,
+            bearing, // Add bearing for direction arrow on map
+            address,
+            last_updated: new Date().toISOString(),
+          })
+          .eq("id", sosId);
+      } catch (err) {
+        console.warn("SOS location update failed:", err);
+      }
+    },
       (err) => {
         console.warn("SOS watchPosition error:", err.code, err.message);
       },

@@ -129,23 +129,14 @@ const handleConfirmClick = async (e: React.MouseEvent) => {
 
   // ✅ FIXED: Save scroll position before navigating to watch
   const handleCardClick = () => {
-  const currentScroll = window.scrollY;
-  
-  // Save to FeedContext
+  // Save scroll position
   if (sourceKey) {
-    feedCache.setScroll(sourceKey, currentScroll);
+    feedCache.setScroll(sourceKey, window.scrollY);
   }
   
-  // ✅ ALSO save to sessionStorage as backup (survives navigation)
-  sessionStorage.setItem("peja-scroll-restore", JSON.stringify({
-    key: sourceKey,
-    scrollY: currentScroll,
-    timestamp: Date.now()
-  }));
-  
-  console.log("[PostCard] Saved scroll:", currentScroll, "for", sourceKey);
-  
-  router.push(`/watch?postId=${post.id}&sourceKey=${encodeURIComponent(sourceKey || "feed")}`);
+  // Navigate to post detail instead of watch (watch is disabled for now)
+  const sk = sourceKey ? `?sourceKey=${encodeURIComponent(sourceKey)}` : "";
+  router.push(`/post/${post.id}${sk}`, { scroll: false });
 };
 
   const handleExpandVideo = (currentTime?: number) => {
