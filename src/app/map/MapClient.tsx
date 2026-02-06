@@ -6,7 +6,6 @@ import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES, SOSAlert } from "@/lib/types";
 import { Header } from "@/components/layout/Header";
-import { BottomNav } from "@/components/layout/BottomNav";
 import { Badge } from "@/components/ui/Badge";
 import { Loader2, Navigation, List, Map as MapIcon, AlertTriangle, BarChart3, Compass } from "lucide-react";
 import { subHours } from "date-fns";
@@ -627,8 +626,6 @@ useEffect(() => {
           </div>
         </div>
       </main>
-
-      <BottomNav />
 
       {/* Data Analytics Panel */}
       <DataAnalyticsPanel

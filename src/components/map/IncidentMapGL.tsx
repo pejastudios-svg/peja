@@ -100,7 +100,55 @@ export default function IncidentMapGL({
   const [sendingHelp, setSendingHelp] = useState(false);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [toast, setToast] = useState<string | null>(null);
-  const [helpers, setHelpers] = useState<Helper[]>([]);
+  const [helpers, setHelpers] = useState<Helper[]>(() => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('peja-active-helpers');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+  }
+  return [];
+});
+
+// Persist helpers whenever they change
+useEffect(() => {
+  if (helpers.length > 0) {
+    try {
+      localStorage.setItem('peja-active-helpers', JSON.stringify(helpers));
+    } catch {}
+  }
+}, [helpers]);
+
+// Clean up helpers for inactive SOS alerts
+useEffect(() => {
+  if (liveSOSAlerts.length === 0) {
+    setHelpers([]);
+    try {
+      localStorage.removeItem('peja-active-helpers');
+    } catch {}
+    return;
+  }
+
+  // Get all active SOS IDs
+  const activeSOSIds = new Set(liveSOSAlerts.map(s => s.id));
+  
+  // Remove helpers for SOSes that are no longer active
+  setHelpers(prev => {
+    const filtered = prev.filter(h => h.sosId && activeSOSIds.has(h.sosId));
+    if (filtered.length !== prev.length) {
+      try {
+        if (filtered.length > 0) {
+          localStorage.setItem('peja-active-helpers', JSON.stringify(filtered));
+        } else {
+          localStorage.removeItem('peja-active-helpers');
+        }
+      } catch {}
+    }
+    return filtered;
+  });
+}, [liveSOSAlerts]);
+
+
   const [helpedSOSIds, setHelpedSOSIds] = useState<Set<string>>(() => {
   // Persist in localStorage so it survives page refresh
   if (typeof window !== 'undefined') {

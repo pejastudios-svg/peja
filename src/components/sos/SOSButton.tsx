@@ -41,7 +41,15 @@ export function SOSButton({ className = "" }: { className?: string }) {
   const [sosId, setSosId] = useState<string | null>(null);
   const sosIdRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [notifyStatus, setNotifyStatus] = useState({ contacts: 0, nearby: 0 });
+  const [notifyStatus, setNotifyStatus] = useState(() => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('peja-sos-notify-status');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+  }
+  return { contacts: 0, nearby: 0 };
+});
 
   const [showOptions, setShowOptions] = useState(false);
   const [isHolding, setIsHolding] = useState(false);
@@ -135,23 +143,38 @@ export function SOSButton({ className = "" }: { className?: string }) {
     if (progressInterval.current) clearInterval(progressInterval.current);
   };
 
-  const checkActiveSOS = async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from("sos_alerts")
-      .select("id, tag, message")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .maybeSingle();
+ const checkActiveSOS = async () => {
+  if (!user) return;
+  const { data } = await supabase
+    .from("sos_alerts")
+    .select("id, tag, message")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
+  
+  if (data) {
+    setSosActive(true);
+    setSosId(data.id);
+    sosIdRef.current = data.id;
+    if (data.tag) setSelectedTag(data.tag);
+    if (data.message) setTextMessage(data.message);
     
-    if (data) {
-      setSosActive(true);
-      setSosId(data.id);
-      sosIdRef.current = data.id;
-      if (data.tag) setSelectedTag(data.tag);
-      if (data.message) setTextMessage(data.message);
+    // Count how many were notified by checking notifications sent for this SOS
+    const { count: notifiedCount } = await supabase
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("type", "sos_alert")
+      .contains("data", { sos_id: data.id });
+    
+    if (notifiedCount && notifiedCount > 0) {
+      const status = { contacts: 0, nearby: notifiedCount };
+      setNotifyStatus(status);
+      try {
+        localStorage.setItem('peja-sos-notify-status', JSON.stringify(status));
+      } catch {}
     }
-  };
+  }
+};
 
   const getAddress = async (lat: number, lng: number): Promise<string> => {
     try {
@@ -386,7 +409,12 @@ export function SOSButton({ className = "" }: { className?: string }) {
       // Wait for animation to complete
       await animationPromise;
 
-      setNotifyStatus({ contacts: contactsNotified, nearby: nearbyNotified });
+      const newStatus = { contacts: contactsNotified, nearby: nearbyNotified };
+setNotifyStatus(newStatus);
+// Persist to localStorage
+try {
+  localStorage.setItem('peja-sos-notify-status', JSON.stringify(newStatus));
+} catch {}
       setLoadingComplete(true);
       
       // Show notified card
@@ -416,28 +444,33 @@ export function SOSButton({ className = "" }: { className?: string }) {
     setCurrentStep(0);
   };
 
-  const cancelSOS = async () => {
-    if (!sosId && !sosIdRef.current) return;
-    const idToCancel = sosId || sosIdRef.current;
-    
-    setLoading(true);
+ const cancelSOS = async () => {
+  if (!sosId && !sosIdRef.current) return;
+  const idToCancel = sosId || sosIdRef.current;
+  
+  setLoading(true);
+  try {
+    await supabase
+      .from("sos_alerts")
+      .update({ status: "cancelled", resolved_at: new Date().toISOString() })
+      .eq("id", idToCancel);
+    setSosActive(false);
+    setSosId(null);
+    sosIdRef.current = null;
+    setShowActivePopup(false);
+    setSelectedTag(null);
+    setTextMessage("");
+    setNotifyStatus({ contacts: 0, nearby: 0 });
+    // Clear from localStorage
     try {
-      await supabase
-        .from("sos_alerts")
-        .update({ status: "cancelled", resolved_at: new Date().toISOString() })
-        .eq("id", idToCancel);
-      setSosActive(false);
-      setSosId(null);
-      sosIdRef.current = null;
-      setShowActivePopup(false);
-      setSelectedTag(null);
-      setTextMessage("");
-    } catch (err) {
-      console.error("Cancel error:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      localStorage.removeItem('peja-sos-notify-status');
+    } catch {}
+  } catch (err) {
+    console.error("Cancel error:", err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const closeOptions = () => {
     setShowOptions(false);
