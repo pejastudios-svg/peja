@@ -8,6 +8,7 @@ import { formatDistanceToNow } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/lib/notifications";
 import { useAuth } from "@/context/AuthContext";
+import { CheckCircle } from "lucide-react";
 
 interface IncidentMapGLProps {
   posts: Post[];
@@ -29,6 +30,7 @@ interface Helper {
   lat: number;
   lng: number;
   eta: number;
+  sosId?: string; 
 }
 
 interface ViewState {
@@ -99,6 +101,16 @@ export default function IncidentMapGL({
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [toast, setToast] = useState<string | null>(null);
   const [helpers, setHelpers] = useState<Helper[]>([]);
+  const [helpedSOSIds, setHelpedSOSIds] = useState<Set<string>>(() => {
+  // Persist in localStorage so it survives page refresh
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('peja-helped-sos');
+      if (saved) return new Set(JSON.parse(saved));
+    } catch {}
+  }
+  return new Set();
+});
 
   // Update SOS alerts from props
   useEffect(() => {
@@ -341,131 +353,202 @@ useEffect(() => {
 }, []);
 
   // Listen for helper notifications
-  useEffect(() => {
-    if (!myUserId) return;
+useEffect(() => {
+  if (!myUserId) return;
 
-    const channel = supabase
-      .channel("sos-helpers-realtime-gl")
-      .on(
-        "postgres_changes",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${myUserId}` } as any,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        async (payload: any) => {
-          const notification = payload.new;
+  const channel = supabase
+    .channel("sos-helpers-realtime-gl")
+    .on(
+      "postgres_changes",
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${myUserId}` } as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      async (payload: any) => {
+        const notification = payload.new;
 
-          if (notification?.type === "sos_alert" && notification?.data?.helper_id) {
-            const helperData = notification.data;
+        if (notification?.type === "sos_alert" && notification?.data?.helper_id) {
+          const helperData = notification.data;
+          const helperId = helperData.helper_id;
+          const sosId = helperData.sos_id;
 
-            setHelpers(prev => {
-              if (prev.some(h => h.id === helperData.helper_id)) {
-                return prev.map(h =>
-                  h.id === helperData.helper_id
-                    ? { ...h, lat: helperData.helper_lat, lng: helperData.helper_lng, eta: helperData.eta_minutes }
-                    : h
-                );
-              }
+          // Use functional update to ensure we always work with latest state
+          setHelpers(prevHelpers => {
+            // Check if this helper already exists
+            const existingIndex = prevHelpers.findIndex(h => h.id === helperId);
+            
+            if (existingIndex !== -1) {
+              // Update existing helper's position
+              const updated = [...prevHelpers];
+              updated[existingIndex] = {
+                ...updated[existingIndex],
+                lat: helperData.helper_lat,
+                lng: helperData.helper_lng,
+                eta: helperData.eta_minutes,
+              };
+              return updated;
+            }
 
-              return [...prev, {
-                id: helperData.helper_id,
+            // Add new helper - spread previous array to ensure accumulation
+            return [
+              ...prevHelpers,
+              {
+                id: helperId,
                 name: helperData.helper_name || "Someone",
                 avatar_url: helperData.helper_avatar,
                 lat: helperData.helper_lat,
                 lng: helperData.helper_lng,
                 eta: helperData.eta_minutes,
-              }];
-            });
-          }
+                sosId: sosId, // Track which SOS this helper is for
+              }
+            ];
+          });
         }
-      )
-      .subscribe();
+      }
+    )
+    .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [myUserId]);
-
-  const handleICanHelp = async (sos: SOSAlert) => {
-    if (!user || !userLocation) {
-      setToast("Please enable location to help");
-      setTimeout(() => setToast(null), 3000);
-      return;
-    }
-
-    setSendingHelp(true);
-    try {
-      const eta = calculateETA(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
-
-      const { data: userData } = await supabase
-        .from("users")
-        .select("full_name, avatar_url")
-        .eq("id", user.id)
-        .single();
-
-      await createNotification({
-        userId: sos.user_id,
-        type: "sos_alert",
-        title: "Help is on the way!",
-        body: `${userData?.full_name || "Someone"} is coming to help you. ETA: ${eta} minutes`,
-        data: {
-          sos_id: sos.id,
-          helper_id: user.id,
-          helper_name: userData?.full_name || "Someone",
-          helper_avatar: userData?.avatar_url || null,
-          helper_lat: userLocation.lat,
-          helper_lng: userLocation.lng,
-          eta_minutes: eta
-        },
-      });
-
-      startHelperLocationTracking(sos.user_id, sos.id, userData?.full_name || "Someone", userData?.avatar_url);
-
-      setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ETA: ${eta} minutes.`);
-      setTimeout(() => setToast(null), 3000);
-      setSelectedSOS(null);
-    } catch (err) {
-      console.error("Error:", err);
-      setToast("Failed to notify. Please try again.");
-      setTimeout(() => setToast(null), 3000);
-    } finally {
-      setSendingHelp(false);
-    }
+  return () => {
+    supabase.removeChannel(channel);
   };
+}, [myUserId]);
+
+ const handleICanHelp = async (sos: SOSAlert) => {
+  if (!user || !userLocation) {
+    setToast("Please enable location to help");
+    setTimeout(() => setToast(null), 3000);
+    return;
+  }
+
+  // Prevent double-clicking
+  if (helpedSOSIds.has(sos.id)) {
+    setToast("You've already offered to help!");
+    setTimeout(() => setToast(null), 3000);
+    return;
+  }
+
+  setSendingHelp(true);
+  try {
+    const eta = calculateETA(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
+
+    const { data: userData } = await supabase
+      .from("users")
+      .select("full_name, avatar_url")
+      .eq("id", user.id)
+      .single();
+
+    await createNotification({
+      userId: sos.user_id,
+      type: "sos_alert",
+      title: "Help is on the way!",
+      body: `${userData?.full_name || "Someone"} is coming to help you. ETA: ${eta} minutes`,
+      data: {
+        sos_id: sos.id,
+        helper_id: user.id,
+        helper_name: userData?.full_name || "Someone",
+        helper_avatar: userData?.avatar_url || null,
+        helper_lat: userLocation.lat,
+        helper_lng: userLocation.lng,
+        eta_minutes: eta
+      },
+    });
+
+    // Mark this SOS as helped and persist to localStorage
+    setHelpedSOSIds(prev => {
+      const newSet = new Set(prev);
+      newSet.add(sos.id);
+      // Persist to localStorage
+      try {
+        localStorage.setItem('peja-helped-sos', JSON.stringify([...newSet]));
+      } catch {}
+      return newSet;
+    });
+
+    startHelperLocationTracking(sos.user_id, sos.id, userData?.full_name || "Someone", userData?.avatar_url);
+
+    setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ETA: ${eta} minutes.`);
+    setTimeout(() => setToast(null), 3000);
+    setSelectedSOS(null);
+  } catch (err) {
+    console.error("Error:", err);
+    setToast("Failed to notify. Please try again.");
+    setTimeout(() => setToast(null), 3000);
+  } finally {
+    setSendingHelp(false);
+  }
+};
 
   const startHelperLocationTracking = (sosOwnerId: string, sosId: string, helperName: string, helperAvatar?: string) => {
-    if (!navigator.geolocation) return;
+  if (!navigator.geolocation) return;
 
-    let lastUpdateTime = 0;
+  let lastUpdateTime = 0;
+  let lastEta = Infinity;
+  let lastNotifiedEta = Infinity;
+  let lastLat = 0;
+  let lastLng = 0;
 
-    const watchId = navigator.geolocation.watchPosition(
-      async (position) => {
-        const now = Date.now();
-        if (now - lastUpdateTime < 10000) return; // Update every 10 seconds
-        lastUpdateTime = now;
+  // Helper function to calculate distance in km
+  const getDistanceKm = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
 
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+  const watchId = navigator.geolocation.watchPosition(
+    async (position) => {
+      const now = Date.now();
+      
+      // Throttle updates to every 10 seconds minimum
+      if (now - lastUpdateTime < 10000) return;
 
-        const { data: sosData } = await supabase
-          .from("sos_alerts")
-          .select("latitude, longitude, status")
-          .eq("id", sosId)
-          .single();
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
 
-        if (!sosData || sosData.status !== "active") {
-          navigator.geolocation.clearWatch(watchId);
-          return;
-        }
+      // Check if user has actually moved (at least 50 meters)
+      if (lastLat && lastLng) {
+        const distanceMoved = getDistanceKm(lastLat, lastLng, lat, lng);
+        if (distanceMoved < 0.05) return; // Less than 50 meters, skip update
+      }
 
-        
+      lastLat = lat;
+      lastLng = lng;
+      lastUpdateTime = now;
 
-        const eta = calculateETA(lat, lng, sosData.latitude, sosData.longitude);
+      // Check if SOS is still active
+      const { data: sosData } = await supabase
+        .from("sos_alerts")
+        .select("latitude, longitude, status")
+        .eq("id", sosId)
+        .single();
+
+      if (!sosData || sosData.status !== "active") {
+        navigator.geolocation.clearWatch(watchId);
+        return;
+      }
+
+      const eta = calculateETA(lat, lng, sosData.latitude, sosData.longitude);
+      
+      // Only send notification if:
+      // 1. First update (lastNotifiedEta is Infinity), OR
+      // 2. ETA decreased by at least 2 minutes (getting closer), OR
+      // 3. Significant change (ETA changed by 5+ minutes either direction)
+      const shouldNotify = 
+        lastNotifiedEta === Infinity || 
+        (eta < lastNotifiedEta - 2) || 
+        Math.abs(eta - lastNotifiedEta) >= 5;
+
+      if (shouldNotify) {
+        lastNotifiedEta = eta;
 
         await createNotification({
           userId: sosOwnerId,
           type: "sos_alert",
-          title: "Helper location update",
-          body: `${helperName} is ${eta} minutes away`,
+          title: eta < lastEta ? "Helper getting closer!" : "Helper location update",
+          body: `${helperName} is ${eta} minute${eta !== 1 ? 's' : ''} away`,
           data: {
             sos_id: sosId,
             helper_id: user?.id,
@@ -477,18 +560,21 @@ useEffect(() => {
             is_location_update: true,
           },
         });
-      },
-      (error) => {
-        console.warn("Helper location tracking error:", error);
-      },
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
-    );
+      }
 
-    // Stop tracking after 1 hour maximum
-    setTimeout(() => {
-      navigator.geolocation.clearWatch(watchId);
-    }, 60 * 60 * 1000);
-  };
+      lastEta = eta;
+    },
+    (error) => {
+      console.warn("Helper location tracking error:", error);
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+  );
+
+  // Stop tracking after 2 hours maximum
+  setTimeout(() => {
+    navigator.geolocation.clearWatch(watchId);
+  }, 2 * 60 * 60 * 1000);
+};
 
   // Handle map move - don't fight with compass
   const handleMove = useCallback((evt: { viewState: ViewState }) => {
@@ -918,24 +1004,31 @@ useEffect(() => {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setSelectedSOS(null)}
-                  className="flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium"
-                >
-                  Back
-                </button>
+<div className="flex gap-3 pt-2">
+  <button
+    onClick={() => setSelectedSOS(null)}
+    className="flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium"
+  >
+    Back
+  </button>
 
-                {!isOwnSOS && (
-                  <button
-                    onClick={() => handleICanHelp(selectedSOS)}
-                    disabled={sendingHelp}
-                    className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
-                  >
-                    {sendingHelp ? "Sending..." : "I Can Help"}
-                  </button>
-                )}
-              </div>
+  {!isOwnSOS && !helpedSOSIds.has(selectedSOS.id) && (
+    <button
+      onClick={() => handleICanHelp(selectedSOS)}
+      disabled={sendingHelp}
+      className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
+    >
+      {sendingHelp ? "Sending..." : "I Can Help"}
+    </button>
+  )}
+
+  {!isOwnSOS && helpedSOSIds.has(selectedSOS.id) && (
+    <div className="flex-1 py-3 bg-green-600/20 text-green-400 rounded-xl font-medium text-center flex items-center justify-center gap-2">
+      <CheckCircle className="w-5 h-5" />
+      You're Helping
+    </div>
+  )}
+</div>
             </div>
           </div>
         </div>
