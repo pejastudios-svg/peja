@@ -223,15 +223,22 @@ onTouchStartCapture={(e) => {
         }}
       >
         <video
-          ref={videoRef}
-          src={videoUrl}
-          className="max-w-full max-h-full w-full h-full object-contain pointer-events-none"
-          playsInline
-          autoPlay
-          muted={!soundEnabled}
-          onTimeUpdate={handleTimeUpdate}
-          onEnded={() => setIsPlaying(false)}
-        />
+  ref={videoRef}
+  src={videoUrl}
+  className="max-w-full max-h-full w-full h-full object-contain pointer-events-none"
+  playsInline
+  autoPlay
+  preload="auto"
+  muted={!soundEnabled}
+  onTimeUpdate={handleTimeUpdate}
+  onEnded={() => setIsPlaying(false)}
+  onCanPlay={() => {
+    const v = videoRef.current;
+    if (v && startTime > 0 && v.currentTime < startTime) {
+      v.currentTime = startTime;
+    }
+  }}
+/>
       </div>
 
       <div 

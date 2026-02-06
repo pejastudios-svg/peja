@@ -12,6 +12,8 @@ import { subHours } from "date-fns";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFeedCache } from "@/context/FeedContext";
 import DataAnalyticsPanel from "@/components/map/DataAnalyticsPanel";
+import { ChevronDown } from "lucide-react";
+
 
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
@@ -54,6 +56,8 @@ export default function MapClient() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [showLegend, setShowLegend] = useState(false);
+
 
   const [shouldCenterOnUser, setShouldCenterOnUser] = useState(false);
   const [centerOnSOS, setCenterOnSOS] = useState<{ lat: number; lng: number } | null>(null);
@@ -603,27 +607,43 @@ useEffect(() => {
             </div>
           </div>
 
-          {/* Map Legend */}
-          <div className="absolute top-32 right-4 z-1000 glass-float rounded-lg p-3 text-xs space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-red-500 rounded-full" />
-              <span className="text-dark-200">Danger</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-orange-500 rounded-full" />
-              <span className="text-dark-200">Caution</span>
-            </div>
-            <div className="flex items-center gap-2 pt-1 border-t border-white/10">
-              <span className="w-3 h-3 bg-primary-500 rounded-full" />
-              <span className="text-dark-200">You</span>
-            </div>
-            {compassEnabled && (
-              <div className="flex items-center gap-2 pt-1 border-t border-white/10">
-                <Compass className="w-3 h-3 text-primary-400" />
-                <span className="text-primary-400">Direction Active</span>
-              </div>
-            )}
-          </div>
+          {/* Map Legend - Collapsible */}
+<div className="absolute top-32 right-4 z-1000">
+  <button
+    onClick={() => setShowLegend(prev => !prev)}
+    className="glass-float rounded-lg p-2 text-xs flex items-center gap-2"
+  >
+    <div className="flex gap-1">
+      <span className="w-2 h-2 bg-red-500 rounded-full" />
+      <span className="w-2 h-2 bg-orange-500 rounded-full" />
+      <span className="w-2 h-2 bg-primary-500 rounded-full" />
+    </div>
+    <ChevronDown className={`w-3 h-3 text-dark-300 transition-transform ${showLegend ? 'rotate-180' : ''}`} />
+  </button>
+  
+  {showLegend && (
+    <div className="glass-float rounded-lg p-3 text-xs space-y-2 mt-1">
+      <div className="flex items-center gap-2">
+        <span className="w-3 h-3 bg-red-500 rounded-full" />
+        <span className="text-dark-200">Danger</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="w-3 h-3 bg-orange-500 rounded-full" />
+        <span className="text-dark-200">Caution</span>
+      </div>
+      <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+        <span className="w-3 h-3 bg-primary-500 rounded-full" />
+        <span className="text-dark-200">You</span>
+      </div>
+      {compassEnabled && (
+        <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+          <Compass className="w-3 h-3 text-primary-400" />
+          <span className="text-primary-400">Direction Active</span>
+        </div>
+      )}
+    </div>
+  )}
+</div>
         </div>
       </main>
 

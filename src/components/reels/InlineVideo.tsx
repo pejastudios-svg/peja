@@ -15,14 +15,16 @@ export function InlineVideo({
   showExpand = true,
   showMute = true,
   onError,
+  autoPlay = true, 
 }: {
   src: string;
   poster?: string;
   className?: string;
-  onExpand?: (currentTime?: number) => void; // ✅ FIX: Accept currentTime
+  onExpand?: (currentTime?: number) => void;
   showExpand?: boolean;
   showMute?: boolean;
   onError?: () => void;
+  autoPlay?: boolean; // NEW prop
 }) {
   const instanceId = useId();
   const pathname = usePathname();
@@ -32,7 +34,7 @@ export function InlineVideo({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [showControls, setShowControls] = useState(false);
+  const [showControls, setShowControls] = useState(true); // Show controls by default
   const { soundEnabled, setSoundEnabled } = useAudio();
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -61,6 +63,11 @@ export function InlineVideo({
 
   const handleContainerClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    // If not playing, start playing on tap (for non-autoplay mode)
+    if (!isPlaying && !autoPlay) {
+      play();
+      return;
+    }
     if (showControls) {
       setShowControls(false);
     } else {
@@ -99,14 +106,13 @@ export function InlineVideo({
     else pause();
   };
 
-  // ✅ FIX: Pass current time when expanding
   const handleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onExpand) {
       const v = videoRef.current;
       const currentTime = v?.currentTime || 0;
       pause(); 
-      onExpand(currentTime); // Pass the current playback time
+      onExpand(currentTime);
     }
   };
 
@@ -132,6 +138,7 @@ export function InlineVideo({
     if (v) v.muted = !soundEnabled;
   }, [soundEnabled]);
 
+  // Stop other videos when this one plays
   useEffect(() => {
     const handler = (e: any) => {
       if (e?.detail?.id === instanceId) return;
@@ -141,23 +148,46 @@ export function InlineVideo({
     return () => window.removeEventListener(PLAYING_EVENT, handler);
   }, [instanceId]);
 
+  // Intersection observer - only autoplay if autoPlay prop is true
   useEffect(() => {
+    if (!autoPlay) return; // Skip if autoPlay is disabled
+    
     const el = wrapRef.current;
     if (!el) return;
+    
     const obs = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        if (entry.intersectionRatio < 0.25) pause();
-        if (entry.intersectionRatio >= 0.6 && !blocked) {
-           const v = videoRef.current;
-           if (v && v.paused) play();
+        if (entry.intersectionRatio < 0.25) {
+          pause();
+        } else if (entry.intersectionRatio >= 0.6 && !blocked) {
+          const v = videoRef.current;
+          if (v && v.paused) play();
         }
       },
       { threshold: [0, 0.25, 0.6, 0.85] }
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [blocked]);
+  }, [blocked, autoPlay]);
+
+  // Pause when scrolling out of view (always, even without autoPlay)
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry.intersectionRatio < 0.1 && isPlaying) {
+          pause();
+        }
+      },
+      { threshold: [0, 0.1] }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [isPlaying]);
 
   useEffect(() => {
     const onModalOpen = () => { setBlocked(true); pause(); };
@@ -165,8 +195,8 @@ export function InlineVideo({
     window.addEventListener("peja-modal-open", onModalOpen);
     window.addEventListener("peja-modal-close", onModalClose);
     return () => {
-        window.removeEventListener("peja-modal-open", onModalOpen);
-        window.removeEventListener("peja-modal-close", onModalClose);
+      window.removeEventListener("peja-modal-open", onModalOpen);
+      window.removeEventListener("peja-modal-close", onModalClose);
     };
   }, []);
 
@@ -186,16 +216,15 @@ export function InlineVideo({
       ref={wrapRef}
       className="relative w-full h-full bg-black overflow-hidden group select-none"
       onPointerDownCapture={(e) => {
-  // Don't auto-enable sound if clicking on controls
-  const target = e.target as HTMLElement;
-  if (target.closest('button')) return;
-  setSoundEnabled(true);
-}}
-onTouchStartCapture={(e) => {
-  const target = e.target as HTMLElement;
-  if (target.closest('button')) return;
-  setSoundEnabled(true);
-}}
+        const target = e.target as HTMLElement;
+        if (target.closest('button')) return;
+        setSoundEnabled(true);
+      }}
+      onTouchStartCapture={(e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('button')) return;
+        setSoundEnabled(true);
+      }}
       onClick={handleContainerClick}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -215,8 +244,20 @@ onTouchStartCapture={(e) => {
         onError={() => onError?.()}
       />
 
+      {/* Play button overlay when paused (for non-autoplay mode) */}
+      {!isPlaying && !autoPlay && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-5">
+          <button
+            onClick={togglePlay}
+            className="p-4 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
+          >
+            <Play className="w-8 h-8 fill-current" />
+          </button>
+        </div>
+      )}
+
       <div 
-        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? 'opacity-100!' : ''}`}
+        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3">
@@ -228,35 +269,35 @@ onTouchStartCapture={(e) => {
           </button>
 
           <div className="flex-1 relative h-6 flex items-center group/slider">
-             <input
-               type="range"
-               min={0}
-               max={100}
-               step={0.1}
-               value={progress}
-               onChange={handleScrub}
-               onMouseDown={() => setIsScrubbing(true)}
-               onMouseUp={() => setIsScrubbing(false)}
-               onTouchStart={(e) => { e.stopPropagation(); setIsScrubbing(true); }}
-               onTouchEnd={() => setIsScrubbing(false)}
-               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-             />
-             <div className="w-full h-1.5 bg-white/30 rounded-full relative">
-                <div 
-                  className="absolute left-0 top-0 h-full bg-primary-500 rounded-full pointer-events-none" 
-                  style={{ width: `${progress}%` }} 
-                />
-                <div 
-                  className="absolute top-1/2 -mt-1.5 h-3 w-3 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover/slider:scale-125"
-                  style={{ left: `calc(${progress}% - 6px)` }}
-                />
-             </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={0.1}
+              value={progress}
+              onChange={handleScrub}
+              onMouseDown={() => setIsScrubbing(true)}
+              onMouseUp={() => setIsScrubbing(false)}
+              onTouchStart={(e) => { e.stopPropagation(); setIsScrubbing(true); }}
+              onTouchEnd={() => setIsScrubbing(false)}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+            />
+            <div className="w-full h-1.5 bg-white/30 rounded-full relative">
+              <div 
+                className="absolute left-0 top-0 h-full bg-primary-500 rounded-full pointer-events-none" 
+                style={{ width: `${progress}%` }} 
+              />
+              <div 
+                className="absolute top-1/2 -mt-1.5 h-3 w-3 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover/slider:scale-125"
+                style={{ left: `calc(${progress}% - 6px)` }}
+              />
+            </div>
           </div>
 
           {showMute && (
             <button
-            onPointerDownCapture={(e) => e.stopPropagation()} 
-            onTouchStartCapture={(e) => e.stopPropagation()}
+              onPointerDownCapture={(e) => e.stopPropagation()} 
+              onTouchStartCapture={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 setSoundEnabled(!soundEnabled);

@@ -670,6 +670,57 @@ useEffect(() => {
     };
   }, []);
 
+  // Restart helper location tracking on page load if user has helped an active SOS
+useEffect(() => {
+  if (!user || !userLocation) return;
+  
+  // Check if there are any active SOSs that this user is helping
+  const checkAndRestartTracking = async () => {
+    const helpedIds = Array.from(helpedSOSIds);
+    if (helpedIds.length === 0) return;
+    
+    for (const sosId of helpedIds) {
+      // Check if this SOS is still active
+      const { data: sosData } = await supabase
+        .from("sos_alerts")
+        .select("id, user_id, status, latitude, longitude")
+        .eq("id", sosId)
+        .eq("status", "active")
+        .maybeSingle();
+      
+      if (sosData) {
+        // Get user data for tracking
+        const { data: userData } = await supabase
+          .from("users")
+          .select("full_name, avatar_url")
+          .eq("id", user.id)
+          .single();
+        
+        // Restart tracking for this SOS
+        console.log("[Map] Restarting helper tracking for SOS:", sosId);
+        startHelperLocationTracking(
+          sosData.user_id, 
+          sosId, 
+          userData?.full_name || "Someone", 
+          userData?.avatar_url
+        );
+      } else {
+        // SOS is no longer active, remove from helped list
+        setHelpedSOSIds(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(sosId);
+          try {
+            localStorage.setItem('peja-helped-sos', JSON.stringify([...newSet]));
+          } catch {}
+          return newSet;
+        });
+      }
+    }
+  };
+  
+  checkAndRestartTracking();
+}, [user?.id, userLocation]); 
+
   const isOwnSOS = selectedSOS && myUserId && selectedSOS.user_id === myUserId;
   const tagInfo = selectedSOS?.tag ? SOS_TAGS.find(t => t.id === selectedSOS.tag) : null;
 
