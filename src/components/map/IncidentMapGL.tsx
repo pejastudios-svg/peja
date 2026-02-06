@@ -79,6 +79,7 @@ export default function IncidentMapGL({
   const mapRef = useRef<MapRef>(null);
   const modalContentRef = useRef<HTMLDivElement>(null);
   const autoOpenedRef = useRef(false);
+  const sosAlertsLoadedRef = useRef(false);
 
   // Compass smoothing refs
   const targetBearing = useRef(0);
@@ -119,8 +120,21 @@ useEffect(() => {
   }
 }, [helpers]);
 
-// Clean up helpers for inactive SOS alerts
+
+// Clean up helpers for inactive SOS alerts (but only after initial load)
 useEffect(() => {
+  // Skip cleanup on initial render when sosAlerts prop is empty
+  // Wait until we've received actual data from the parent
+  if (sosAlerts.length > 0) {
+    sosAlertsLoadedRef.current = true;
+  }
+  
+  // Don't run cleanup until we've loaded SOS alerts at least once
+  if (!sosAlertsLoadedRef.current) {
+    return;
+  }
+
+  // If there are no active SOS alerts, clear helpers
   if (liveSOSAlerts.length === 0) {
     setHelpers([]);
     try {
@@ -146,7 +160,7 @@ useEffect(() => {
     }
     return filtered;
   });
-}, [liveSOSAlerts]);
+}, [liveSOSAlerts, sosAlerts]);
 
 
   const [helpedSOSIds, setHelpedSOSIds] = useState<Set<string>>(() => {
