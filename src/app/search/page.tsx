@@ -485,7 +485,7 @@ useEffect(() => {
     ))}
   </div>
 ) : posts.length === 0 ? (
-  <div className="text-center py-12">...</div>
+  <div className="text-center py-12">No posts yet.</div>
 ) : (
   <div className="space-y-4">
     {loading && (
