@@ -12,12 +12,14 @@ export function VideoLightbox({
   videoUrl,
   startTime = 0,
   postId,
+  posterUrl,
 }: {
   isOpen: boolean;
   onClose: () => void;
   videoUrl: string | null;
   startTime?: number;
   postId?: string;
+  posterUrl?: string | null;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewedRef = useRef<Set<string>>(new Set());
@@ -48,6 +50,7 @@ const incrementView = async (id: string) => {
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [videoReady, setVideoReady] = useState(false);
   
   // Use global audio context instead of local state
   const { soundEnabled, setSoundEnabled } = useAudio();
@@ -60,6 +63,7 @@ const incrementView = async (id: string) => {
 
   useEffect(() => {
     if (isOpen) {
+      setVideoReady(false);
       setShowControls(true);
       setIsPlaying(true);
       resetFadeTimer();
@@ -222,15 +226,25 @@ onTouchStartCapture={(e) => {
           transition: isDragging ? 'none' : 'transform 0.3s ease-out' 
         }}
       >
+        {/* Poster image shown until video is actually playing */}
+        {posterUrl && !videoReady && (
+          <img
+            src={posterUrl}
+            alt=""
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none z-[1]"
+          />
+        )}
         <video
   ref={videoRef}
   src={videoUrl}
+  poster={posterUrl || undefined}
   className="max-w-full max-h-full w-full h-full object-contain pointer-events-none"
   playsInline
   autoPlay
   preload="auto"
   muted={!soundEnabled}
   onTimeUpdate={handleTimeUpdate}
+  onPlaying={() => setVideoReady(true)}
   onEnded={() => setIsPlaying(false)}
   onCanPlay={() => {
     const v = videoRef.current;

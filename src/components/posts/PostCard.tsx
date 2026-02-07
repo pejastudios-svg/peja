@@ -46,6 +46,7 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   const [showFullComment, setShowFullComment] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const [videoStartTime, setVideoStartTime] = useState(0);
+  const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
   const [showLightboxOptions, setShowLightboxOptions] = useState(false);
 
 
@@ -139,11 +140,13 @@ const handleConfirmClick = async (e: React.MouseEvent) => {
   router.push(`/post/${post.id}${sk}`, { scroll: false });
 };
 
-  const handleExpandVideo = (currentTime?: number) => {
+  const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
   const media = post.media?.[currentMediaIndex];
   if (media && media.media_type === 'video') {
     setLightboxUrl(media.url);
-    setVideoStartTime(currentTime || 0); // ✅ Save the current time
+    setVideoStartTime(currentTime || 0);
+    // Use captured frame, or media thumbnail_url, or null
+    setVideoThumbnail(capturedPoster || media.thumbnail_url || null);
     setVideoLightboxOpen(true);
   }
 };
@@ -437,7 +440,8 @@ const handleConfirmClick = async (e: React.MouseEvent) => {
   onClose={() => setVideoLightboxOpen(false)}
   videoUrl={lightboxUrl}
   startTime={videoStartTime}
-  postId={post.id} 
+  postId={post.id}
+  posterUrl={videoThumbnail}
 />
     </article>
   );

@@ -20,11 +20,11 @@ export function InlineVideo({
   src: string;
   poster?: string;
   className?: string;
-  onExpand?: (currentTime?: number) => void;
+    onExpand?: (currentTime?: number, posterDataUrl?: string) => void;
   showExpand?: boolean;
   showMute?: boolean;
   onError?: () => void;
-  autoPlay?: boolean; // NEW prop
+  autoPlay?: boolean; 
 }) {
   const instanceId = useId();
   const pathname = usePathname();
@@ -33,6 +33,9 @@ export function InlineVideo({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const blockedRef = useRef(false);
+  const playRef = useRef<(() => Promise<void>) | null>(null);
+  const pauseRef = useRef<(() => void) | null>(null);
 
   const [showControls, setShowControls] = useState(true); // Show controls by default
   const { soundEnabled, setSoundEnabled } = useAudio();
@@ -42,12 +45,14 @@ export function InlineVideo({
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
 
-  useEffect(() => {
+    useEffect(() => {
     if (pathname !== mountingPath.current) {
       setBlocked(true);
+      blockedRef.current = true;
       pause();
     } else {
       setBlocked(false);
+      blockedRef.current = false;
     }
   }, [pathname]);
 
@@ -83,6 +88,7 @@ export function InlineVideo({
     setShowControls(true);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
   };
+  pauseRef.current = pause;
 
   const play = async () => {
     const v = videoRef.current;
@@ -97,6 +103,7 @@ export function InlineVideo({
       // autoplay block ignored
     }
   };
+  playRef.current = play;
 
   const togglePlay = async (e?: React.MouseEvent | React.TouchEvent) => {
     e?.stopPropagation();
@@ -111,8 +118,26 @@ export function InlineVideo({
     if (onExpand) {
       const v = videoRef.current;
       const currentTime = v?.currentTime || 0;
-      pause(); 
-      onExpand(currentTime);
+      
+      // Capture current frame as poster for instant lightbox display
+      let posterDataUrl: string | undefined;
+      if (v && v.videoWidth > 0 && v.videoHeight > 0) {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = v.videoWidth;
+          canvas.height = v.videoHeight;
+          const ctx = canvas.getContext("2d");
+          if (ctx) {
+            ctx.drawImage(v, 0, 0);
+            posterDataUrl = canvas.toDataURL("image/jpeg", 0.7);
+          }
+        } catch {
+          // CORS or other error, ignore — will fall back to thumbnail_url
+        }
+      }
+      
+      pause();
+      onExpand(currentTime, posterDataUrl);
     }
   };
 
@@ -159,39 +184,21 @@ export function InlineVideo({
       (entries) => {
         const entry = entries[0];
         if (entry.intersectionRatio < 0.25) {
-          pause();
-        } else if (entry.intersectionRatio >= 0.6 && !blocked) {
+          pauseRef.current?.();
+        } else if (entry.intersectionRatio >= 0.6 && !blockedRef.current) {
           const v = videoRef.current;
-          if (v && v.paused) play();
+          if (v && v.paused) playRef.current?.();
         }
       },
       { threshold: [0, 0.25, 0.6, 0.85] }
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [blocked, autoPlay]);
-
-  // Pause when scrolling out of view (always, even without autoPlay)
-  useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
-    
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (entry.intersectionRatio < 0.1 && isPlaying) {
-          pause();
-        }
-      },
-      { threshold: [0, 0.1] }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [isPlaying]);
+  }, [autoPlay]);
 
   useEffect(() => {
-    const onModalOpen = () => { setBlocked(true); pause(); };
-    const onModalClose = () => { setBlocked(false); };
+    const onModalOpen = () => { setBlocked(true); blockedRef.current = true; pause(); };
+    const onModalClose = () => { setBlocked(false); blockedRef.current = false; };
     window.addEventListener("peja-modal-open", onModalOpen);
     window.addEventListener("peja-modal-close", onModalClose);
     return () => {

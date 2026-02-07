@@ -171,6 +171,14 @@ function isHideableSeen(store: SeenStore, postId: string) {
   return Date.now() - t >= SEEN_GRACE_MS;
 }
 
+const PRIORITY_CATEGORIES = new Set(["crime", "fire", "kidnapping", "terrorist"]);
+
+function categoryPriority(p: Post): number {
+  if (PRIORITY_CATEGORIES.has(p.category)) return 0;
+  if (p.category === "general") return 2;
+  return 1;
+}
+
 function engagementScore(p: Post) {
   // tune freely later
   return (p.confirmations || 0) * 10 + (p.comment_count || 0) * 4 + Math.min(p.views || 0, 5000) * 0.2;
@@ -287,6 +295,11 @@ if (activeTab === "nearby") {
 
   if (userLat != null && userLng != null) {
     finalPosts = [...baseList].sort((a, b) => {
+      // 1. Priority categories first
+      const pa = categoryPriority(a);
+      const pb = categoryPriority(b);
+      if (pa !== pb) return pa - pb;
+
       const aLat = a.location?.latitude ?? 0;
       const aLng = a.location?.longitude ?? 0;
       const bLat = b.location?.latitude ?? 0;
@@ -315,19 +328,28 @@ if (activeTab === "nearby") {
     // keep feed size sane
     finalPosts = finalPosts.slice(0, 30);
   } else {
-    // If we don't know user coords, fallback to newest
+    // If we don't know user coords, fallback to priority then newest
     finalPosts = [...baseList]
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .sort((a, b) => {
+      const pa = categoryPriority(a);
+      const pb = categoryPriority(b);
+      if (pa !== pb) return pa - pb;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    })
     .slice(0, 30);
-  }
-} else {
-  // Trending tab: sort by engagement (confirmations + views + comments)
+  }} else {
+  // Trending tab: sort by priority category first, then engagement
   const base = showSeenTop
     ? formattedPosts
     : formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
 
   finalPosts = base
-    .sort((a, b) => engagementScore(b) - engagementScore(a))
+    .sort((a, b) => {
+      const pa = categoryPriority(a);
+      const pb = categoryPriority(b);
+      if (pa !== pb) return pa - pb;
+      return engagementScore(b) - engagementScore(a);
+    })
     .slice(0, 30);
 }
 
