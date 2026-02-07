@@ -15,16 +15,16 @@ export function InlineVideo({
   showExpand = true,
   showMute = true,
   onError,
-  autoPlay = true, 
+  autoPlay = true,
 }: {
   src: string;
   poster?: string;
   className?: string;
-    onExpand?: (currentTime?: number, posterDataUrl?: string) => void;
+  onExpand?: (currentTime?: number, posterDataUrl?: string) => void;
   showExpand?: boolean;
   showMute?: boolean;
   onError?: () => void;
-  autoPlay?: boolean; 
+  autoPlay?: boolean;
 }) {
   const instanceId = useId();
   const pathname = usePathname();
@@ -34,10 +34,12 @@ export function InlineVideo({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const blockedRef = useRef(false);
-  const playRef = useRef<(() => Promise<void>) | null>(null);
-  const pauseRef = useRef<(() => void) | null>(null);
+  // Track whether the observer WANTS this video playing
+  const shouldPlayRef = useRef(false);
+  // Track whether user manually paused (so observer doesn't override)
+  const userPausedRef = useRef(false);
 
-  const [showControls, setShowControls] = useState(true); // Show controls by default
+  const [showControls, setShowControls] = useState(true);
   const { soundEnabled, setSoundEnabled } = useAudio();
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -45,11 +47,14 @@ export function InlineVideo({
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
 
-    useEffect(() => {
+  useEffect(() => {
     if (pathname !== mountingPath.current) {
       setBlocked(true);
       blockedRef.current = true;
-      pause();
+      const v = videoRef.current;
+      if (v && !v.paused) {
+        v.pause();
+      }
     } else {
       setBlocked(false);
       blockedRef.current = false;
@@ -59,7 +64,7 @@ export function InlineVideo({
   const resetControlsTimer = () => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     setShowControls(true);
-    if (isPlaying) {
+    if (!videoRef.current?.paused) {
       controlsTimeoutRef.current = setTimeout(() => {
         setShowControls(false);
       }, 3000);
@@ -68,9 +73,9 @@ export function InlineVideo({
 
   const handleContainerClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // If not playing, start playing on tap (for non-autoplay mode)
     if (!isPlaying && !autoPlay) {
-      play();
+      userPausedRef.current = false;
+      doPlay();
       return;
     }
     if (showControls) {
@@ -80,37 +85,46 @@ export function InlineVideo({
     }
   };
 
-  const pause = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.pause();
-    setIsPlaying(false);
-    setShowControls(true);
-    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
-  };
-  pauseRef.current = pause;
-
-  const play = async () => {
+  // Core play — always starts muted first, then unmutes if allowed
+  // This ensures mobile autoplay works (browsers require muted for autoplay)
+  const doPlay = async () => {
     const v = videoRef.current;
     if (!v) return;
     try {
-      if (v.muted && soundEnabled) v.muted = false;
+      // Always attempt muted first for autoplay compatibility
+      v.muted = true;
       await v.play();
-      setIsPlaying(true);
+      // If user has sound enabled and this was a user-initiated play or
+      // sound was already enabled, unmute after successful play
+      if (soundEnabled) {
+        v.muted = false;
+      }
       window.dispatchEvent(new CustomEvent(PLAYING_EVENT, { detail: { id: instanceId } }));
       resetControlsTimer();
     } catch {
-      // autoplay block ignored
+      // Autoplay blocked even when muted — very rare, ignore
     }
   };
-  playRef.current = play;
+
+  const doPause = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.pause();
+    setShowControls(true);
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+  };
 
   const togglePlay = async (e?: React.MouseEvent | React.TouchEvent) => {
     e?.stopPropagation();
     const v = videoRef.current;
     if (!v) return;
-    if (v.paused) await play();
-    else pause();
+    if (v.paused) {
+      userPausedRef.current = false;
+      await doPlay();
+    } else {
+      userPausedRef.current = true;
+      doPause();
+    }
   };
 
   const handleExpand = (e: React.MouseEvent) => {
@@ -118,8 +132,7 @@ export function InlineVideo({
     if (onExpand) {
       const v = videoRef.current;
       const currentTime = v?.currentTime || 0;
-      
-      // Capture current frame as poster for instant lightbox display
+
       let posterDataUrl: string | undefined;
       if (v && v.videoWidth > 0 && v.videoHeight > 0) {
         try {
@@ -132,11 +145,11 @@ export function InlineVideo({
             posterDataUrl = canvas.toDataURL("image/jpeg", 0.7);
           }
         } catch {
-          // CORS or other error, ignore — will fall back to thumbnail_url
+          // CORS or other error, ignore
         }
       }
-      
-      pause();
+
+      doPause();
       onExpand(currentTime, posterDataUrl);
     }
   };
@@ -158,6 +171,7 @@ export function InlineVideo({
     resetControlsTimer();
   };
 
+  // Sync muted state with global audio context
   useEffect(() => {
     const v = videoRef.current;
     if (v) v.muted = !soundEnabled;
@@ -167,38 +181,81 @@ export function InlineVideo({
   useEffect(() => {
     const handler = (e: any) => {
       if (e?.detail?.id === instanceId) return;
-      pause();
+      const v = videoRef.current;
+      if (v && !v.paused) {
+        v.pause();
+      }
     };
     window.addEventListener(PLAYING_EVENT, handler);
     return () => window.removeEventListener(PLAYING_EVENT, handler);
   }, [instanceId]);
 
-  // Intersection observer - only autoplay if autoPlay prop is true
+  // SINGLE intersection observer — the only one
+  // Pause at < 0.5 (half off screen), play at >= 0.9 (90% visible)
   useEffect(() => {
-    if (!autoPlay) return; // Skip if autoPlay is disabled
-    
+    if (!autoPlay) return;
+
     const el = wrapRef.current;
     if (!el) return;
-    
+
     const obs = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        if (entry.intersectionRatio < 0.25) {
-          pauseRef.current?.();
-        } else if (entry.intersectionRatio >= 0.6 && !blockedRef.current) {
+        const ratio = entry.intersectionRatio;
+
+        if (ratio < 0.5) {
+          // Scrolled away — at least half off screen → pause
+          shouldPlayRef.current = false;
           const v = videoRef.current;
-          if (v && v.paused) playRef.current?.();
+          if (v && !v.paused) {
+            v.pause();
+          }
+        } else if (ratio >= 0.9) {
+          // 90% visible → auto play (unless user manually paused)
+          shouldPlayRef.current = true;
+          if (blockedRef.current) return;
+          if (userPausedRef.current) return;
+          const v = videoRef.current;
+          if (v && v.paused) {
+            // Use muted autoplay for reliability
+            v.muted = true;
+            v.play()
+              .then(() => {
+                if (soundEnabled) {
+                  v.muted = false;
+                }
+                window.dispatchEvent(
+                  new CustomEvent(PLAYING_EVENT, { detail: { id: instanceId } })
+                );
+              })
+              .catch(() => {
+                // Autoplay blocked, ignore
+              });
+          }
         }
+        // Between 0.5 and 0.9: do nothing — keep current state
+        // This prevents rapid toggling when scrolling slowly
       },
-      { threshold: [0, 0.25, 0.6, 0.85] }
+      { threshold: [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0] }
     );
     obs.observe(el);
     return () => obs.disconnect();
   }, [autoPlay]);
+  // NOTE: No other dependencies — we use refs for everything inside the callback
+  // so the observer is created ONCE and never torn down/recreated
 
+  // Modal open/close
   useEffect(() => {
-    const onModalOpen = () => { setBlocked(true); blockedRef.current = true; pause(); };
-    const onModalClose = () => { setBlocked(false); blockedRef.current = false; };
+    const onModalOpen = () => {
+      setBlocked(true);
+      blockedRef.current = true;
+      const v = videoRef.current;
+      if (v && !v.paused) v.pause();
+    };
+    const onModalClose = () => {
+      setBlocked(false);
+      blockedRef.current = false;
+    };
     window.addEventListener("peja-modal-open", onModalOpen);
     window.addEventListener("peja-modal-close", onModalClose);
     return () => {
@@ -207,6 +264,7 @@ export function InlineVideo({
     };
   }, []);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       const v = videoRef.current;
@@ -224,12 +282,12 @@ export function InlineVideo({
       className="relative w-full h-full bg-black overflow-hidden group select-none"
       onPointerDownCapture={(e) => {
         const target = e.target as HTMLElement;
-        if (target.closest('button')) return;
+        if (target.closest("button")) return;
         setSoundEnabled(true);
       }}
       onTouchStartCapture={(e) => {
         const target = e.target as HTMLElement;
-        if (target.closest('button')) return;
+        if (target.closest("button")) return;
         setSoundEnabled(true);
       }}
       onClick={handleContainerClick}
@@ -247,7 +305,10 @@ export function InlineVideo({
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
+        onPause={() => {
+          setIsPlaying(false);
+          setShowControls(true);
+        }}
         onError={() => onError?.()}
       />
 
@@ -263,8 +324,8 @@ export function InlineVideo({
         </div>
       )}
 
-      <div 
-        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 ${showControls || !isPlaying ? 'opacity-100' : 'opacity-0'}`}
+      <div
+        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 ${showControls || !isPlaying ? "opacity-100" : "opacity-0"}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3">
@@ -272,7 +333,11 @@ export function InlineVideo({
             onClick={togglePlay}
             className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
           >
-            {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
+            {isPlaying ? (
+              <Pause className="w-4 h-4 fill-current" />
+            ) : (
+              <Play className="w-4 h-4 fill-current" />
+            )}
           </button>
 
           <div className="flex-1 relative h-6 flex items-center group/slider">
@@ -285,16 +350,19 @@ export function InlineVideo({
               onChange={handleScrub}
               onMouseDown={() => setIsScrubbing(true)}
               onMouseUp={() => setIsScrubbing(false)}
-              onTouchStart={(e) => { e.stopPropagation(); setIsScrubbing(true); }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                setIsScrubbing(true);
+              }}
               onTouchEnd={() => setIsScrubbing(false)}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
             />
             <div className="w-full h-1.5 bg-white/30 rounded-full relative">
-              <div 
-                className="absolute left-0 top-0 h-full bg-primary-500 rounded-full pointer-events-none" 
-                style={{ width: `${progress}%` }} 
+              <div
+                className="absolute left-0 top-0 h-full bg-primary-500 rounded-full pointer-events-none"
+                style={{ width: `${progress}%` }}
               />
-              <div 
+              <div
                 className="absolute top-1/2 -mt-1.5 h-3 w-3 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover/slider:scale-125"
                 style={{ left: `calc(${progress}% - 6px)` }}
               />
@@ -303,7 +371,7 @@ export function InlineVideo({
 
           {showMute && (
             <button
-              onPointerDownCapture={(e) => e.stopPropagation()} 
+              onPointerDownCapture={(e) => e.stopPropagation()}
               onTouchStartCapture={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
@@ -311,7 +379,11 @@ export function InlineVideo({
               }}
               className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
             >
-              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+              {soundEnabled ? (
+                <Volume2 className="w-4 h-4" />
+              ) : (
+                <VolumeX className="w-4 h-4" />
+              )}
             </button>
           )}
 
