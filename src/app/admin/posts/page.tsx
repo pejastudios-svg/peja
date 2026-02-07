@@ -10,6 +10,7 @@ import HudPanel from "@/components/dashboard/HudPanel";
 import { ChevronDown } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
+import { useToast } from "@/context/ToastContext";
 import {
   Search,
   FileText,
@@ -22,13 +23,12 @@ import {
   Play,
   CheckSquare,
   Square,
-  X,
   MinusSquare,
+  X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { useToast } from "@/context/ToastContext";
 interface PostData {
   id: string;
   user_id: string;
@@ -65,21 +65,23 @@ export default function AdminPostsPage() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
-  // =====================================================
-  // MULTI-SELECT STATE
-  // =====================================================
+  // Multi-select
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
-  // =====================================================
-  // DELETE CONFIRMATION STATE (in-app toast instead of browser confirm)
-  // =====================================================
+  // In-app delete confirmation
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   
   const isSearchMode = searchQuery.trim().length > 0;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pageSize = 20;
-  // Clear selection when posts change (page change, filter change, etc.)
+  // Auto-enter select mode when selections exist
+  useEffect(() => {
+    if (selectedIds.size > 0 && !selectMode) {
+      setSelectMode(true);
+    }
+  }, [selectedIds.size, selectMode]);
+  // Clear selection when page/filter changes
   useEffect(() => {
     setSelectedIds(new Set());
   }, [page, statusFilter, categoryFilter]);
@@ -242,24 +244,45 @@ export default function AdminPostsPage() {
     }
   };
   // =====================================================
+  // DELETE VIA API ROUTE (uses supabaseAdmin, bypasses RLS)
+  // =====================================================
+  const deletePostViaAPI = useCallback(async (postId: string): Promise<boolean> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.danger("Not authenticated");
+        return false;
+      }
+      const res = await fetch("/api/admin/delete-post", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ postId }),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.ok) {
+        console.error("Delete API error:", result.error);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("Delete API exception:", err);
+      return false;
+    }
+  }, [toast]);
+  // =====================================================
   // SINGLE DELETE (with in-app confirmation)
   // =====================================================
   const handleDeletePost = async (postId: string) => {
     setActionLoading(true);
     try {
-      await supabase.from("post_comments").delete().eq("post_id", postId);
-      await supabase.from("post_media").delete().eq("post_id", postId);
-      await supabase.from("post_tags").delete().eq("post_id", postId);
-      await supabase.from("post_confirmations").delete().eq("post_id", postId);
-      await supabase.from("post_reports").delete().eq("post_id", postId);
-      await supabase.from("flagged_content").delete().eq("post_id", postId);
-      await supabase.from("posts").delete().eq("id", postId);
-      await supabase.from("admin_logs").insert({
-        admin_id: (await supabase.auth.getUser()).data.user?.id,
-        action: "Deleted post",
-        target_type: "post",
-        target_id: postId,
-      });
+      const success = await deletePostViaAPI(postId);
+      if (!success) {
+        toast.danger("Failed to delete post");
+        return;
+      }
       setPosts(prev => prev.filter(p => p.id !== postId));
       setSelectedIds(prev => {
         const next = new Set(prev);
@@ -287,34 +310,33 @@ export default function AdminPostsPage() {
     let successCount = 0;
     let failCount = 0;
     try {
-      const adminId = (await supabase.auth.getUser()).data.user?.id;
       for (const postId of ids) {
-        try {
-          await supabase.from("post_comments").delete().eq("post_id", postId);
-          await supabase.from("post_media").delete().eq("post_id", postId);
-          await supabase.from("post_tags").delete().eq("post_id", postId);
-          await supabase.from("post_confirmations").delete().eq("post_id", postId);
-          await supabase.from("post_reports").delete().eq("post_id", postId);
-          await supabase.from("flagged_content").delete().eq("post_id", postId);
-          await supabase.from("posts").delete().eq("id", postId);
-          await supabase.from("admin_logs").insert({
-            admin_id: adminId,
-            action: "Deleted post (bulk)",
-            target_type: "post",
-            target_id: postId,
-          });
+        const success = await deletePostViaAPI(postId);
+        if (success) {
           successCount++;
-        } catch {
+        } else {
           failCount++;
         }
       }
-      setPosts(prev => prev.filter(p => !selectedIds.has(p.id)));
+      // Remove successfully deleted posts from local state
+      if (successCount > 0) {
+        setPosts(prev => prev.filter(p => !selectedIds.has(p.id) || failCount > 0));
+        // If some failed, only remove the successful ones
+        if (failCount > 0) {
+          // Refetch to get accurate state
+          if (isSearchMode) handleSearch();
+          else fetchPosts();
+        }
+      }
       setSelectedIds(new Set());
       setConfirmBulkDelete(false);
+      setSelectMode(false);
       if (failCount === 0) {
         toast.success(`${successCount} post${successCount > 1 ? "s" : ""} deleted successfully`);
-      } else {
+      } else if (successCount > 0) {
         toast.warning(`${successCount} deleted, ${failCount} failed`);
+      } else {
+        toast.danger("Failed to delete posts");
       }
     } catch (error) {
       console.error(error);
@@ -342,42 +364,28 @@ export default function AdminPostsPage() {
       setActionLoading(false);
     }
   };
-  // =====================================================
-  // SELECTION HELPERS
-  // =====================================================
-  const toggleSelect = useCallback((postId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  // Multi-select helpers
+  const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      if (next.has(postId)) {
-        next.delete(postId);
-      } else {
-        next.add(postId);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
-  }, []);
-  const selectAll = useCallback(() => {
+  };
+  const selectAll = () => {
     if (selectedIds.size === posts.length) {
-      // All selected → deselect all
       setSelectedIds(new Set());
     } else {
-      // Select all visible posts
       setSelectedIds(new Set(posts.map(p => p.id)));
     }
-  }, [posts, selectedIds.size]);
-  const clearSelection = useCallback(() => {
+  };
+  const clearSelection = () => {
     setSelectedIds(new Set());
     setSelectMode(false);
-  }, []);
+  };
   const isAllSelected = posts.length > 0 && selectedIds.size === posts.length;
   const isSomeSelected = selectedIds.size > 0 && selectedIds.size < posts.length;
-  // Auto-enter select mode when selections exist
-  useEffect(() => {
-    if (selectedIds.size > 0 && !selectMode) {
-      setSelectMode(true);
-    }
-  }, [selectedIds.size, selectMode]);
   const totalPages = Math.ceil(totalCount / pageSize);
   const getCategoryInfo = (categoryId: string) => CATEGORIES.find(c => c.id === categoryId);
   return (
@@ -386,14 +394,10 @@ export default function AdminPostsPage() {
       subtitle="Live feed of community incident reports"
       right={
         <div className="flex items-center gap-2">
-          {/* Select Mode Toggle */}
           <button
             onClick={() => {
-              if (selectMode) {
-                clearSelection();
-              } else {
-                setSelectMode(true);
-              }
+              if (selectMode) clearSelection();
+              else setSelectMode(true);
             }}
             className={`text-xs font-mono px-3 py-1.5 rounded-lg transition-all ${
               selectMode
@@ -409,7 +413,6 @@ export default function AdminPostsPage() {
         </div>
       }
     >
-      {/* Filters */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 mb-6">
         <div className="lg:col-span-5 relative group">
           <div className="absolute inset-0 bg-primary-500/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
@@ -456,19 +459,19 @@ export default function AdminPostsPage() {
           </Button>
         </div>
       </div>
-      {/* Select All Bar — visible when in select mode */}
+      {/* Select All Bar */}
       {selectMode && posts.length > 0 && (
-        <div className="flex items-center justify-between mb-4 px-3 py-2.5 rounded-xl bg-primary-600/10 border border-primary-500/20">
+        <div className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-primary-600/10 border border-primary-500/20 mb-4">
           <button
             onClick={selectAll}
             className="flex items-center gap-2 text-sm font-medium text-primary-300 hover:text-primary-200 transition-colors"
           >
             {isAllSelected ? (
-              <CheckSquare className="w-4.5 h-4.5 text-primary-400" />
+              <CheckSquare className="w-[18px] h-[18px] text-primary-400" />
             ) : isSomeSelected ? (
-              <MinusSquare className="w-4.5 h-4.5 text-primary-400" />
+              <MinusSquare className="w-[18px] h-[18px] text-primary-400" />
             ) : (
-              <Square className="w-4.5 h-4.5 text-dark-400" />
+              <Square className="w-[18px] h-[18px] text-dark-400" />
             )}
             {isAllSelected ? "Deselect All" : `Select All (${posts.length})`}
           </button>
@@ -485,7 +488,7 @@ export default function AdminPostsPage() {
         <HudPanel className="py-20 min-h-[400px]">
           <div className="flex flex-col items-center justify-center text-center">
             <div className="w-16 h-16 rounded-full bg-dark-800 flex items-center justify-center mb-4 border border-white/5">
-               <FileText className="w-8 h-8 text-dark-600" />
+              <FileText className="w-8 h-8 text-dark-600" />
             </div>
             <p className="text-dark-300 font-medium text-lg">No posts found</p>
           </div>
@@ -510,15 +513,7 @@ export default function AdminPostsPage() {
                   key={post.id}
                   onClick={() => {
                     if (selectMode) {
-                      setSelectedIds(prev => {
-                        const next = new Set(prev);
-                        if (next.has(post.id)) {
-                          next.delete(post.id);
-                        } else {
-                          next.add(post.id);
-                        }
-                        return next;
-                      });
+                      toggleSelect(post.id);
                     } else {
                       setSelectedPost(post);
                       setShowPostModal(true);
@@ -527,19 +522,22 @@ export default function AdminPostsPage() {
                   }}
                   className={`hud-panel p-0 relative group overflow-hidden cursor-pointer transition-all flex flex-col h-full ${
                     isSelected
-                      ? "ring-2 ring-primary-500 border-primary-500/40 shadow-[0_0_20px_rgba(124,58,237,0.15)]"
+                      ? "ring-2 ring-primary-500 shadow-[0_0_20px_rgba(124,58,237,0.15)]"
                       : "hover:border-primary-500/40 hover:shadow-[0_0_30px_rgba(0,0,0,0.3)]"
                   }`}
                 >
-                  {/* Selection checkbox */}
+                  {/* Checkbox */}
                   {selectMode && (
                     <button
-                      onClick={(e) => toggleSelect(post.id, e)}
-                      className={`absolute top-3 right-3 z-20 w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelect(post.id);
+                      }}
+                      className={`absolute top-3 right-3 z-20 w-7 h-7 rounded-lg flex items-center justify-center transition-all border ${
                         isSelected
                           ? "bg-primary-600 border-primary-500 shadow-[0_0_10px_rgba(124,58,237,0.4)]"
                           : "bg-black/50 border-white/20 backdrop-blur-md hover:bg-black/70"
-                      } border`}
+                      }`}
                     >
                       {isSelected ? (
                         <CheckCircle className="w-4 h-4 text-white" />
@@ -610,16 +608,7 @@ export default function AdminPostsPage() {
           </div>
         </>
       )}
-      {!isSearchMode && totalPages > 1 && (
-        <div className="flex items-center justify-between mt-6 px-1">
-           <Button variant="secondary" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
-           <span className="text-sm text-dark-400">Page {page} of {totalPages}</span>
-           <Button variant="secondary" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
-        </div>
-      )}
-      {/* =====================================================
-          FLOATING ACTION TOOLBAR — visible when posts are selected
-          ===================================================== */}
+      {/* Floating Action Toolbar */}
       {selectedIds.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100]" style={{ animation: "slideUp 0.3s ease-out" }}>
           <div
@@ -631,7 +620,6 @@ export default function AdminPostsPage() {
               backdropFilter: "blur(16px)",
             }}
           >
-            {/* Count badge */}
             <div className="flex items-center gap-2">
               <div
                 className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
@@ -644,13 +632,10 @@ export default function AdminPostsPage() {
               </div>
               <span className="text-sm text-dark-300 font-medium">selected</span>
             </div>
-            {/* Divider */}
             <div className="w-px h-8 bg-white/10" />
-            {/* Delete button */}
             <button
               onClick={() => setConfirmBulkDelete(true)}
-              disabled={actionLoading}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all hover:scale-105 active:scale-95"
               style={{
                 background: "rgba(239, 68, 68, 0.15)",
                 border: "1px solid rgba(239, 68, 68, 0.25)",
@@ -660,7 +645,6 @@ export default function AdminPostsPage() {
               <Trash2 className="w-4 h-4" />
               Delete
             </button>
-            {/* Clear button */}
             <button
               onClick={clearSelection}
               className="p-2 rounded-xl hover:bg-white/10 text-dark-400 hover:text-white transition-colors"
@@ -670,147 +654,14 @@ export default function AdminPostsPage() {
           </div>
         </div>
       )}
-      {/* =====================================================
-          SINGLE DELETE CONFIRMATION MODAL (in-app)
-          ===================================================== */}
-      {confirmDeleteId && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setConfirmDeleteId(null)} />
-          <div
-            className="relative w-full max-w-sm rounded-2xl p-6"
-            style={{
-              background: "rgba(12, 8, 24, 0.98)",
-              border: "1px solid rgba(239, 68, 68, 0.2)",
-              boxShadow: "0 0 60px rgba(239, 68, 68, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
-            }}
-          >
-            {/* Red glow strip */}
-            <div
-              className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl"
-              style={{
-                background: "linear-gradient(90deg, transparent, #ef4444, transparent)",
-                boxShadow: "0 0 20px rgba(239,68,68,0.5)",
-              }}
-            />
-            <div className="flex justify-center mb-4">
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center"
-                style={{
-                  background: "rgba(239, 68, 68, 0.15)",
-                  border: "2px solid rgba(239, 68, 68, 0.3)",
-                  boxShadow: "0 0 20px rgba(239, 68, 68, 0.15)",
-                }}
-              >
-                <Trash2 className="w-7 h-7 text-red-400" />
-              </div>
-            </div>
-            <h3 className="text-lg font-bold text-white text-center mb-2">Delete Post?</h3>
-            <p className="text-sm text-dark-400 text-center mb-6">
-              This will permanently delete this post and all its comments, media, and reports. This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmDeleteId(null)}
-                className="flex-1 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 active:scale-[0.98]"
-                style={{
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  color: "#94a3b8",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleDeletePost(confirmDeleteId)}
-                disabled={actionLoading}
-                className="flex-1 py-3 rounded-xl text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{
-                  background: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
-                  boxShadow: "0 4px 15px rgba(239,68,68,0.25)",
-                }}
-              >
-                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                Delete
-              </button>
-            </div>
-          </div>
+      {!isSearchMode && totalPages > 1 && (
+        <div className="flex items-center justify-between mt-6 px-1">
+           <Button variant="secondary" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+           <span className="text-sm text-dark-400">Page {page} of {totalPages}</span>
+           <Button variant="secondary" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
         </div>
       )}
-      {/* =====================================================
-          BULK DELETE CONFIRMATION MODAL (in-app)
-          ===================================================== */}
-      {confirmBulkDelete && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setConfirmBulkDelete(false)} />
-          <div
-            className="relative w-full max-w-sm rounded-2xl p-6"
-            style={{
-              background: "rgba(12, 8, 24, 0.98)",
-              border: "1px solid rgba(239, 68, 68, 0.2)",
-              boxShadow: "0 0 60px rgba(239, 68, 68, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
-            }}
-          >
-            {/* Red glow strip */}
-            <div
-              className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl"
-              style={{
-                background: "linear-gradient(90deg, transparent, #ef4444, transparent)",
-                boxShadow: "0 0 20px rgba(239,68,68,0.5)",
-              }}
-            />
-            <div className="flex justify-center mb-4">
-              <div
-                className="w-14 h-14 rounded-full flex items-center justify-center"
-                style={{
-                  background: "rgba(239, 68, 68, 0.15)",
-                  border: "2px solid rgba(239, 68, 68, 0.3)",
-                  boxShadow: "0 0 20px rgba(239, 68, 68, 0.15)",
-                }}
-              >
-                <Trash2 className="w-7 h-7 text-red-400" />
-              </div>
-            </div>
-            <h3 className="text-lg font-bold text-white text-center mb-2">
-              Delete {selectedIds.size} Post{selectedIds.size > 1 ? "s" : ""}?
-            </h3>
-            <p className="text-sm text-dark-400 text-center mb-6">
-              This will permanently delete {selectedIds.size} post{selectedIds.size > 1 ? "s" : ""} and all associated data. This action cannot be undone.
-            </p>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setConfirmBulkDelete(false)}
-                className="flex-1 py-3 rounded-xl text-sm font-medium transition-all hover:bg-white/5 active:scale-[0.98]"
-                style={{
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  color: "#94a3b8",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleBulkDelete}
-                disabled={actionLoading}
-                className="flex-1 py-3 rounded-xl text-sm font-medium text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{
-                  background: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
-                  boxShadow: "0 4px 15px rgba(239,68,68,0.25)",
-                }}
-              >
-                {actionLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-                Delete {selectedIds.size}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* =====================================================
-          POST DETAIL MODAL — updated delete to use in-app confirm
-          ===================================================== */}
+      {/* Post Detail Modal */}
       <Modal
         isOpen={showPostModal}
         onClose={() => { setShowPostModal(false); setSelectedPost(null); }}
@@ -914,6 +765,150 @@ export default function AdminPostsPage() {
           </div>
         )}
       </Modal>
+      {/* =====================================================
+          SINGLE DELETE CONFIRMATION MODAL
+          ===================================================== */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !actionLoading && setConfirmDeleteId(null)} />
+          <div
+            className="relative w-full max-w-sm rounded-2xl p-6"
+            style={{
+              background: "rgba(12, 8, 24, 0.98)",
+              border: "1px solid rgba(239, 68, 68, 0.2)",
+              boxShadow: "0 0 60px rgba(239, 68, 68, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
+            }}
+          >
+            <div
+              className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl"
+              style={{
+                background: "linear-gradient(90deg, transparent, #ef4444, transparent)",
+                boxShadow: "0 0 20px rgba(239,68,68,0.5)",
+              }}
+            />
+            <div className="flex justify-center mb-4">
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center"
+                style={{
+                  background: "rgba(239, 68, 68, 0.15)",
+                  border: "2px solid rgba(239, 68, 68, 0.3)",
+                  boxShadow: "0 0 20px rgba(239, 68, 68, 0.15)",
+                }}
+              >
+                <Trash2 className="w-7 h-7 text-red-400" />
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-white text-center mb-2">Delete Post?</h3>
+            <p className="text-sm text-dark-400 text-center mb-6">
+              This will permanently delete this post and all associated comments, media, tags, and reports. This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                disabled={actionLoading}
+                className="flex-1 py-3 rounded-xl text-sm font-medium text-dark-400 disabled:opacity-50"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeletePost(confirmDeleteId)}
+                disabled={actionLoading}
+                className="flex-1 py-3 rounded-xl text-sm font-medium text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                style={{
+                  background: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
+                  boxShadow: "0 4px 15px rgba(239,68,68,0.25)",
+                }}
+              >
+                {actionLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* =====================================================
+          BULK DELETE CONFIRMATION MODAL
+          ===================================================== */}
+      {confirmBulkDelete && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => !actionLoading && setConfirmBulkDelete(false)} />
+          <div
+            className="relative w-full max-w-sm rounded-2xl p-6"
+            style={{
+              background: "rgba(12, 8, 24, 0.98)",
+              border: "1px solid rgba(239, 68, 68, 0.2)",
+              boxShadow: "0 0 60px rgba(239, 68, 68, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
+            }}
+          >
+            <div
+              className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl"
+              style={{
+                background: "linear-gradient(90deg, transparent, #ef4444, transparent)",
+                boxShadow: "0 0 20px rgba(239,68,68,0.5)",
+              }}
+            />
+            <div className="flex justify-center mb-4">
+              <div
+                className="w-14 h-14 rounded-full flex items-center justify-center"
+                style={{
+                  background: "rgba(239, 68, 68, 0.15)",
+                  border: "2px solid rgba(239, 68, 68, 0.3)",
+                  boxShadow: "0 0 20px rgba(239, 68, 68, 0.15)",
+                }}
+              >
+                <Trash2 className="w-7 h-7 text-red-400" />
+              </div>
+            </div>
+            <h3 className="text-lg font-bold text-white text-center mb-2">
+              Delete {selectedIds.size} Post{selectedIds.size > 1 ? "s" : ""}?
+            </h3>
+            <p className="text-sm text-dark-400 text-center mb-6">
+              This will permanently delete {selectedIds.size} post{selectedIds.size > 1 ? "s" : ""} and all associated data including comments, media, tags, and reports. This action cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmBulkDelete(false)}
+                disabled={actionLoading}
+                className="flex-1 py-3 rounded-xl text-sm font-medium text-dark-400 disabled:opacity-50"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                disabled={actionLoading}
+                className="flex-1 py-3 rounded-xl text-sm font-medium text-white flex items-center justify-center gap-2 disabled:opacity-50"
+                style={{
+                  background: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
+                  boxShadow: "0 4px 15px rgba(239,68,68,0.25)",
+                }}
+              >
+                {actionLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete {selectedIds.size}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <ImageLightbox isOpen={lightboxOpen} onClose={() => setLightboxOpen(false)} imageUrl={lightboxUrl} />
       <VideoLightbox isOpen={videoLightboxOpen} onClose={() => setVideoLightboxOpen(false)} videoUrl={lightboxUrl} />
     </HudShell>

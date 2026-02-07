@@ -142,6 +142,55 @@ useEffect(() => {
     }
   }, [user]);
 
+    // --- 5. LISTEN FOR POST DELETED/ARCHIVED EVENTS ---
+  useEffect(() => {
+    const handlePostDeleted = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { postId } = customEvent.detail || {};
+      console.log("[Profile] Post deleted event received:", postId);
+
+      if (postId) {
+        setUserPosts(prev => {
+          const next = prev.filter(p => p.id !== postId);
+          feedCache.setPosts("profile:posts", next);
+          return next;
+        });
+        setConfirmedPosts(prev => {
+          const next = prev.filter(p => p.id !== postId);
+          feedCache.setPosts("profile:confirmed", next);
+          return next;
+        });
+      }
+    };
+
+    const handlePostArchived = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { postId } = customEvent.detail || {};
+      console.log("[Profile] Post archived event received:", postId);
+
+      if (postId) {
+        setUserPosts(prev => {
+          const next = prev.filter(p => p.id !== postId);
+          feedCache.setPosts("profile:posts", next);
+          return next;
+        });
+        setConfirmedPosts(prev => {
+          const next = prev.filter(p => p.id !== postId);
+          feedCache.setPosts("profile:confirmed", next);
+          return next;
+        });
+      }
+    };
+
+    window.addEventListener("peja-post-deleted", handlePostDeleted);
+    window.addEventListener("peja-post-archived", handlePostArchived);
+
+    return () => {
+      window.removeEventListener("peja-post-deleted", handlePostDeleted);
+      window.removeEventListener("peja-post-archived", handlePostArchived);
+    };
+  }, [feedCache]);
+
   const fetchUserPosts = async () => {
     if (!user) return;
     if (userPosts.length === 0) setPostsLoading(true);

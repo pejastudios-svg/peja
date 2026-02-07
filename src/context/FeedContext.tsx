@@ -16,6 +16,7 @@ type FeedContextType = {
   setPosts: (key: FeedKey, posts: Post[]) => void;
   setScroll: (key: FeedKey, y: number) => void;
   invalidateAll: () => void;
+  removePost: (postId: string) => void;
 };
 
 const FeedContext = createContext<FeedContextType | null>(null);
@@ -44,6 +45,17 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
       },
       invalidateAll: () => {
         storeRef.current.clear();
+      },
+      removePost: (postId: string) => {
+        storeRef.current.forEach((value, key) => {
+          const filtered = value.posts.filter(p => p.id !== postId);
+          if (filtered.length !== value.posts.length) {
+            storeRef.current.set(key, {
+              ...value,
+              posts: filtered,
+            });
+          }
+        });
       },
     };
   }, []);

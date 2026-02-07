@@ -917,7 +917,6 @@ setLikeBusy(prev => {
 
   // Delete comment
   const handleDeleteComment = async (commentId: string) => {
-    if (!window.confirm("Delete this comment?")) return;
 
     const commentToDelete = allComments.find(c => c.id === commentId);
     if (!commentToDelete) return;
@@ -1053,22 +1052,50 @@ setTimeout(() => setToastMsg(null), 2500);
     // Success - close modal and dispatch event
     setShowDeleteModal(false);
 
-    // Dispatch event for feed to remove post instantly
+    // Debug: Check cache before removal
+    console.log("[DELETE] Before removePost, checking all caches:");
+    const testKeys = ["home:nearby:unseen", "home:nearby:seen", "home:trending:unseen", "home:trending:seen"];
+    testKeys.forEach(k => {
+      const cached = feedCache.get(k);
+      if (cached) {
+        const found = cached.posts.find(p => p.id === postId);
+        console.log(`[DELETE] Cache key "${k}": ${cached.posts.length} posts, target post ${found ? "FOUND" : "not found"}`);
+      } else {
+        console.log(`[DELETE] Cache key "${k}": null`);
+      }
+    });
+
+    // Remove post from ALL feed caches
+    feedCache.removePost(postId);
+
+    // Debug: Check cache after removal
+    console.log("[DELETE] After removePost:");
+    testKeys.forEach(k => {
+      const cached = feedCache.get(k);
+      if (cached) {
+        const found = cached.posts.find(p => p.id === postId);
+        console.log(`[DELETE] Cache key "${k}": ${cached.posts.length} posts, target post ${found ? "STILL FOUND!" : "removed ✓"}`);
+      }
+    });
+
+    // Dispatch event so any mounted feed components also remove it from state
     window.dispatchEvent(new CustomEvent("peja-post-deleted", {
       detail: { postId }
     }));
 
-    // Invalidate caches
-    feedCache.invalidateAll();
+    // Show success toast
+    toastApi.success("Post deleted");
 
-    // Navigate away
-    if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
-      window.dispatchEvent(new Event("peja-close-post"));
-    } else if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-    } else {
-      window.location.href = "/";
-    }
+    // Navigate back
+    setTimeout(() => {
+      if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
+        window.dispatchEvent(new Event("peja-close-post"));
+      } else if (typeof window !== "undefined" && window.history.length > 1) {
+        router.back();
+      } else {
+        window.location.href = "/";
+      }
+    }, 300);
 
   } catch (err: any) {
     console.error("Delete error:", err);

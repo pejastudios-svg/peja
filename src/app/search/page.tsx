@@ -256,6 +256,45 @@ useEffect(() => {
   return () => window.removeEventListener("scroll", save);
 }, [feedKey]);
 
+  // Listen for post deleted/archived events
+  useEffect(() => {
+    const handlePostDeleted = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { postId } = customEvent.detail || {};
+      console.log("[Search] Post deleted event received:", postId);
+
+      if (postId) {
+        setPosts(prev => {
+          const next = prev.filter(p => p.id !== postId);
+          feedCache.setPosts(feedKey, next);
+          return next;
+        });
+      }
+    };
+
+    const handlePostArchived = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { postId } = customEvent.detail || {};
+      console.log("[Search] Post archived event received:", postId);
+
+      if (postId) {
+        setPosts(prev => {
+          const next = prev.filter(p => p.id !== postId);
+          feedCache.setPosts(feedKey, next);
+          return next;
+        });
+      }
+    };
+
+    window.addEventListener("peja-post-deleted", handlePostDeleted);
+    window.addEventListener("peja-post-archived", handlePostArchived);
+
+    return () => {
+      window.removeEventListener("peja-post-deleted", handlePostDeleted);
+      window.removeEventListener("peja-post-archived", handlePostArchived);
+    };
+  }, [feedKey, feedCache]);
+
 
   useEffect(() => {
     const debounce = setTimeout(() => {
