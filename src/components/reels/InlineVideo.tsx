@@ -33,11 +33,12 @@ export function InlineVideo({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Stable refs for use inside IntersectionObserver callback
+  // so the observer never needs to be re-created
   const blockedRef = useRef(false);
-  // Track whether the observer WANTS this video playing
-  const shouldPlayRef = useRef(false);
-  // Track whether user manually paused (so observer doesn't override)
   const userPausedRef = useRef(false);
+  const soundEnabledRef = useRef(false);
 
   const [showControls, setShowControls] = useState(true);
   const { soundEnabled, setSoundEnabled } = useAudio();
@@ -47,14 +48,18 @@ export function InlineVideo({
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
 
+  // Keep soundEnabledRef in sync
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  // Pathname change — block autoplay on other pages
   useEffect(() => {
     if (pathname !== mountingPath.current) {
       setBlocked(true);
       blockedRef.current = true;
       const v = videoRef.current;
-      if (v && !v.paused) {
-        v.pause();
-      }
+      if (v && !v.paused) v.pause();
     } else {
       setBlocked(false);
       blockedRef.current = false;
@@ -85,30 +90,33 @@ export function InlineVideo({
     }
   };
 
-  // Core play — always starts muted first, then unmutes if allowed
-  // This ensures mobile autoplay works (browsers require muted for autoplay)
+  // =========================================================
+  // doPlay: starts muted, then unmutes if soundEnabled
+  // This is called by user actions (tap play, toggle)
+  // =========================================================
   const doPlay = async () => {
     const v = videoRef.current;
     if (!v) return;
     try {
-      // Always attempt muted first for autoplay compatibility
+      // Always start muted for mobile autoplay compatibility
       v.muted = true;
       await v.play();
-      // If user has sound enabled and this was a user-initiated play or
-      // sound was already enabled, unmute after successful play
-      if (soundEnabled) {
+      // Unmute after successful play if sound is on
+      if (soundEnabledRef.current) {
         v.muted = false;
       }
-      window.dispatchEvent(new CustomEvent(PLAYING_EVENT, { detail: { id: instanceId } }));
+      window.dispatchEvent(
+        new CustomEvent(PLAYING_EVENT, { detail: { id: instanceId } })
+      );
       resetControlsTimer();
     } catch {
-      // Autoplay blocked even when muted — very rare, ignore
+      // Autoplay blocked, ignore
     }
   };
 
   const doPause = () => {
     const v = videoRef.current;
-    if (!v) return;
+    if (!v || v.paused) return;
     v.pause();
     setShowControls(true);
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
@@ -133,6 +141,7 @@ export function InlineVideo({
       const v = videoRef.current;
       const currentTime = v?.currentTime || 0;
 
+      // Capture current frame as poster for instant lightbox display
       let posterDataUrl: string | undefined;
       if (v && v.videoWidth > 0 && v.videoHeight > 0) {
         try {
@@ -171,27 +180,36 @@ export function InlineVideo({
     resetControlsTimer();
   };
 
-  // Sync muted state with global audio context
-  useEffect(() => {
+  // =========================================================
+  // Mute/unmute: ONLY when user clicks the mute button
+  // We do NOT have a useEffect that syncs v.muted = !soundEnabled
+  // because that caused autoplay rejection on mobile
+  // =========================================================
+  const handleMuteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newVal = !soundEnabled;
+    setSoundEnabled(newVal);
     const v = videoRef.current;
-    if (v) v.muted = !soundEnabled;
-  }, [soundEnabled]);
+    if (v) v.muted = !newVal;
+  };
 
   // Stop other videos when this one plays
   useEffect(() => {
     const handler = (e: any) => {
       if (e?.detail?.id === instanceId) return;
       const v = videoRef.current;
-      if (v && !v.paused) {
-        v.pause();
-      }
+      if (v && !v.paused) v.pause();
     };
     window.addEventListener(PLAYING_EVENT, handler);
     return () => window.removeEventListener(PLAYING_EVENT, handler);
   }, [instanceId]);
 
-  // SINGLE intersection observer — the only one
-  // Pause at < 0.5 (half off screen), play at >= 0.9 (90% visible)
+  // =========================================================
+  // SINGLE IntersectionObserver — the ONLY one
+  // Pause at < 0.5 (half off screen)
+  // Play at >= 0.9 (90% visible)
+  // Between 0.5 and 0.9: do nothing (dead zone)
+  // =========================================================
   useEffect(() => {
     if (!autoPlay) return;
 
@@ -200,28 +218,26 @@ export function InlineVideo({
 
     const obs = new IntersectionObserver(
       (entries) => {
-        const entry = entries[0];
-        const ratio = entry.intersectionRatio;
+        const ratio = entries[0].intersectionRatio;
 
         if (ratio < 0.5) {
-          // Scrolled away — at least half off screen → pause
-          shouldPlayRef.current = false;
+          // Half off screen → pause
+          // Also reset userPaused so when they scroll back, it auto-plays again
+          userPausedRef.current = false;
           const v = videoRef.current;
-          if (v && !v.paused) {
-            v.pause();
-          }
+          if (v && !v.paused) v.pause();
         } else if (ratio >= 0.9) {
-          // 90% visible → auto play (unless user manually paused)
-          shouldPlayRef.current = true;
+          // 90% visible → auto play
           if (blockedRef.current) return;
           if (userPausedRef.current) return;
           const v = videoRef.current;
           if (v && v.paused) {
-            // Use muted autoplay for reliability
+            // Always start muted for autoplay reliability
             v.muted = true;
             v.play()
               .then(() => {
-                if (soundEnabled) {
+                // Unmute after successful play if sound is enabled
+                if (soundEnabledRef.current) {
                   v.muted = false;
                 }
                 window.dispatchEvent(
@@ -229,20 +245,19 @@ export function InlineVideo({
                 );
               })
               .catch(() => {
-                // Autoplay blocked, ignore
+                // Autoplay blocked even muted — very rare, ignore
               });
           }
         }
-        // Between 0.5 and 0.9: do nothing — keep current state
-        // This prevents rapid toggling when scrolling slowly
+        // Between 0.5 and 0.9: do nothing — prevents rapid toggling
       },
       { threshold: [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0] }
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [autoPlay]);
-  // NOTE: No other dependencies — we use refs for everything inside the callback
-  // so the observer is created ONCE and never torn down/recreated
+  }, [autoPlay, instanceId]);
+  // Dependencies: only autoPlay and instanceId (both stable)
+  // Everything else is accessed via refs
 
   // Modal open/close
   useEffect(() => {
@@ -280,16 +295,6 @@ export function InlineVideo({
     <div
       ref={wrapRef}
       className="relative w-full h-full bg-black overflow-hidden group select-none"
-      onPointerDownCapture={(e) => {
-        const target = e.target as HTMLElement;
-        if (target.closest("button")) return;
-        setSoundEnabled(true);
-      }}
-      onTouchStartCapture={(e) => {
-        const target = e.target as HTMLElement;
-        if (target.closest("button")) return;
-        setSoundEnabled(true);
-      }}
       onClick={handleContainerClick}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -300,7 +305,7 @@ export function InlineVideo({
         className={className}
         playsInline
         preload="metadata"
-        muted={!soundEnabled}
+        muted
         loop
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
@@ -325,7 +330,9 @@ export function InlineVideo({
       )}
 
       <div
-        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 ${showControls || !isPlaying ? "opacity-100" : "opacity-0"}`}
+        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 ${
+          showControls || !isPlaying ? "opacity-100" : "opacity-0"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3">
@@ -373,10 +380,7 @@ export function InlineVideo({
             <button
               onPointerDownCapture={(e) => e.stopPropagation()}
               onTouchStartCapture={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setSoundEnabled(!soundEnabled);
-              }}
+              onClick={handleMuteClick}
               className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
             >
               {soundEnabled ? (

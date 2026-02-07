@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import Map, { Marker, NavigationControl, MapRef } from "react-map-gl/maplibre";
+import MapGL, { Marker, NavigationControl, MapRef } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Post, CATEGORIES, SOSAlert, SOS_TAGS } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
@@ -30,7 +30,7 @@ interface Helper {
   lat: number;
   lng: number;
   eta: number;
-  sosId?: string; 
+  sosId?: string;
 }
 
 interface ViewState {
@@ -41,15 +41,34 @@ interface ViewState {
   pitch: number;
 }
 
-function calculateETA(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
+// =====================================================================
+// MILESTONE-BASED HELPER TRACKING
+// =====================================================================
+const HELPER_MILESTONES = [30, 20, 10, 5, 2, 1] as const;
+const ARRIVAL_DISTANCE_KM = 0.3; // 300 meters = "arrived"
+const HELPER_TRACKING_TIMEOUT_MS = 5 * 60 * 60 * 1000; // 5 hours
+const HELPER_GPS_THROTTLE_MS = 30_000; // 30 seconds between GPS checks
+const HELPER_MIN_MOVEMENT_KM = 0.1; // 100 meters minimum movement
+
+// localStorage keys
+const HELPERS_STORAGE_KEY = "peja-active-helpers";
+const HELPED_SOS_KEY = "peja-helped-sos";
+const MILESTONE_STORAGE_KEY = "peja-helper-milestones"; // tracks which milestones fired
+
+function getDistanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
-  const dLat = (toLat - fromLat) * Math.PI / 180;
-  const dLng = (toLng - fromLng) * Math.PI / 180;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(fromLat * Math.PI / 180) * Math.cos(toLat * Math.PI / 180) *
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c;
+  return R * c;
+}
+
+function calculateETA(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
+  const distance = getDistanceKm(fromLat, fromLng, toLat, toLng);
+  // Average speed 30 km/h in urban areas
   return Math.max(1, Math.round((distance / 30) * 60));
 }
 
@@ -61,6 +80,41 @@ function getCategoryColor(categoryId: string): string {
     case "awareness": return "#eab308";
     default: return "#3b82f6";
   }
+}
+
+// Read/write milestones from localStorage
+function readFiredMilestones(sosId: string, helperId: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(MILESTONE_STORAGE_KEY);
+    if (!raw) return new Set();
+    const all = JSON.parse(raw);
+    const key = `${sosId}:${helperId}`;
+    return new Set(all[key] || []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveFiredMilestone(sosId: string, helperId: string, milestone: string) {
+  try {
+    const raw = localStorage.getItem(MILESTONE_STORAGE_KEY);
+    const all = raw ? JSON.parse(raw) : {};
+    const key = `${sosId}:${helperId}`;
+    if (!all[key]) all[key] = [];
+    if (!all[key].includes(milestone)) all[key].push(milestone);
+    localStorage.setItem(MILESTONE_STORAGE_KEY, JSON.stringify(all));
+  } catch {}
+}
+
+function clearFiredMilestones(sosId: string, helperId: string) {
+  try {
+    const raw = localStorage.getItem(MILESTONE_STORAGE_KEY);
+    if (!raw) return;
+    const all = JSON.parse(raw);
+    const key = `${sosId}:${helperId}`;
+    delete all[key];
+    localStorage.setItem(MILESTONE_STORAGE_KEY, JSON.stringify(all));
+  } catch {}
 }
 
 export default function IncidentMapGL({
@@ -80,6 +134,11 @@ export default function IncidentMapGL({
   const modalContentRef = useRef<HTMLDivElement>(null);
   const autoOpenedRef = useRef(false);
   const sosAlertsLoadedRef = useRef(false);
+
+  // Helper tracking refs
+  const helperWatchIdsRef = useRef<Map<string, number>>(new Map()); // sosId -> watchId
+  const helperTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map()); // sosId -> timeout
+  const restartedRef = useRef(false); // prevent double-restart
 
   // Compass smoothing refs
   const targetBearing = useRef(0);
@@ -101,78 +160,68 @@ export default function IncidentMapGL({
   const [sendingHelp, setSendingHelp] = useState(false);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [toast, setToast] = useState<string | null>(null);
+
   const [helpers, setHelpers] = useState<Helper[]>(() => {
-  if (typeof window !== 'undefined') {
-    try {
-      const saved = localStorage.getItem('peja-active-helpers');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-  }
-  return [];
-});
-
-// Persist helpers whenever they change
-useEffect(() => {
-  if (helpers.length > 0) {
-    try {
-      localStorage.setItem('peja-active-helpers', JSON.stringify(helpers));
-    } catch {}
-  }
-}, [helpers]);
-
-
-// Clean up helpers for inactive SOS alerts (but only after initial load)
-useEffect(() => {
-  // Skip cleanup on initial render when sosAlerts prop is empty
-  // Wait until we've received actual data from the parent
-  if (sosAlerts.length > 0) {
-    sosAlertsLoadedRef.current = true;
-  }
-  
-  // Don't run cleanup until we've loaded SOS alerts at least once
-  if (!sosAlertsLoadedRef.current) {
-    return;
-  }
-
-  // If there are no active SOS alerts, clear helpers
-  if (liveSOSAlerts.length === 0) {
-    setHelpers([]);
-    try {
-      localStorage.removeItem('peja-active-helpers');
-    } catch {}
-    return;
-  }
-
-  // Get all active SOS IDs
-  const activeSOSIds = new Set(liveSOSAlerts.map(s => s.id));
-  
-  // Remove helpers for SOSes that are no longer active
-  setHelpers(prev => {
-    const filtered = prev.filter(h => h.sosId && activeSOSIds.has(h.sosId));
-    if (filtered.length !== prev.length) {
+    if (typeof window !== "undefined") {
       try {
-        if (filtered.length > 0) {
-          localStorage.setItem('peja-active-helpers', JSON.stringify(filtered));
-        } else {
-          localStorage.removeItem('peja-active-helpers');
-        }
+        const saved = localStorage.getItem(HELPERS_STORAGE_KEY);
+        if (saved) return JSON.parse(saved);
       } catch {}
     }
-    return filtered;
+    return [];
   });
-}, [liveSOSAlerts, sosAlerts]);
-
 
   const [helpedSOSIds, setHelpedSOSIds] = useState<Set<string>>(() => {
-  // Persist in localStorage so it survives page refresh
-  if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(HELPED_SOS_KEY);
+        if (saved) return new Set(JSON.parse(saved));
+      } catch {}
+    }
+    return new Set();
+  });
+
+  // Persist helpers whenever they change
+  useEffect(() => {
     try {
-      const saved = localStorage.getItem('peja-helped-sos');
-      if (saved) return new Set(JSON.parse(saved));
+      if (helpers.length > 0) {
+        localStorage.setItem(HELPERS_STORAGE_KEY, JSON.stringify(helpers));
+      } else {
+        localStorage.removeItem(HELPERS_STORAGE_KEY);
+      }
     } catch {}
-  }
-  return new Set();
-});
+  }, [helpers]);
+
+  // Clean up helpers for inactive SOS alerts
+  useEffect(() => {
+    if (sosAlerts.length > 0) {
+      sosAlertsLoadedRef.current = true;
+    }
+
+    if (!sosAlertsLoadedRef.current) return;
+
+    if (liveSOSAlerts.length === 0) {
+      setHelpers([]);
+      try { localStorage.removeItem(HELPERS_STORAGE_KEY); } catch {}
+      return;
+    }
+
+    const activeSOSIds = new Set(liveSOSAlerts.map(s => s.id));
+
+    setHelpers(prev => {
+      const filtered = prev.filter(h => h.sosId && activeSOSIds.has(h.sosId));
+      if (filtered.length !== prev.length) {
+        try {
+          if (filtered.length > 0) {
+            localStorage.setItem(HELPERS_STORAGE_KEY, JSON.stringify(filtered));
+          } else {
+            localStorage.removeItem(HELPERS_STORAGE_KEY);
+          }
+        } catch {}
+      }
+      return filtered;
+    });
+  }, [liveSOSAlerts, sosAlerts]);
 
   // Update SOS alerts from props
   useEffect(() => {
@@ -193,9 +242,9 @@ useEffect(() => {
   useEffect(() => {
     if (selectedSOS) {
       const scrollY = window.scrollY;
-      document.body.style.overflow = 'hidden';
-      document.body.style.position = 'fixed';
-      document.body.style.width = '100%';
+      document.body.style.overflow = "hidden";
+      document.body.style.position = "fixed";
+      document.body.style.width = "100%";
       document.body.style.top = `-${scrollY}px`;
 
       setTimeout(() => {
@@ -205,18 +254,18 @@ useEffect(() => {
       }, 50);
     } else {
       const scrollY = document.body.style.top;
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
-      document.body.style.top = '';
-      window.scrollTo(0, parseInt(scrollY || '0') * -1);
+      document.body.style.overflow = "";
+      document.body.style.position = "";
+      document.body.style.width = "";
+      document.body.style.top = "";
+      window.scrollTo(0, parseInt(scrollY || "0") * -1);
     }
 
     return () => {
-      document.body.style.overflow = '';
-      document.body.style.position = '';
-      document.body.style.width = '';
-      document.body.style.top = '';
+      document.body.style.overflow = "";
+      document.body.style.position = "";
+      document.body.style.width = "";
+      document.body.style.top = "";
     };
   }, [selectedSOS]);
 
@@ -258,24 +307,15 @@ useEffect(() => {
         return;
       }
 
-      // Calculate shortest path for rotation
       let diff = targetBearing.current - currentBearing.current;
-      
-      // Handle wrap-around (e.g., 350 to 10 should go +20, not -340)
       if (diff > 180) diff -= 360;
       if (diff < -180) diff += 360;
 
-      // Only update if difference is significant
       if (Math.abs(diff) > 0.1) {
-  currentBearing.current += diff * 0.08;
-  
-  currentBearing.current = ((currentBearing.current % 360) + 360) % 360;
-
-  setViewState(prev => ({
-    ...prev,
-    bearing: currentBearing.current
-  }));
-}
+        currentBearing.current += diff * 0.08;
+        currentBearing.current = ((currentBearing.current % 360) + 360) % 360;
+        setViewState(prev => ({ ...prev, bearing: currentBearing.current }));
+      }
 
       animationFrameId.current = requestAnimationFrame(animate);
     };
@@ -283,9 +323,7 @@ useEffect(() => {
     animationFrameId.current = requestAnimationFrame(animate);
 
     return () => {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
+      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     };
   }, [compassEnabled]);
 
@@ -295,33 +333,23 @@ useEffect(() => {
       targetBearing.current = 0;
       currentBearing.current = 0;
       setBearing(0);
-      if (mapRef.current) {
-        mapRef.current.easeTo({ bearing: 0, duration: 500 });
-      }
+      if (mapRef.current) mapRef.current.easeTo({ bearing: 0, duration: 500 });
       return;
     }
 
     const handleOrientation = (event: DeviceOrientationEvent) => {
       let newBearing = 0;
-      
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((event as any).webkitCompassHeading !== undefined) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         newBearing = (event as any).webkitCompassHeading;
       } else if (event.alpha !== null) {
         newBearing = 360 - event.alpha;
       }
-
       const normalized = ((newBearing % 360) + 360) % 360;
-      
-      // Update target - the animation loop will smoothly interpolate to this
       targetBearing.current = normalized;
       setBearing(normalized);
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (DeviceOrientationEvent as any).requestPermission()
         .then((response: string) => {
           if (response === "granted") {
@@ -357,376 +385,432 @@ useEffect(() => {
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [selectedSOS?.id]);
 
-  // Real-time user location tracking (purple dot moves in real-time)
-useEffect(() => {
-  if (!navigator.geolocation) return;
+  // Real-time user location tracking (purple dot moves)
+  useEffect(() => {
+    if (!navigator.geolocation) return;
 
-  const watchId = navigator.geolocation.watchPosition(
-    (position) => {
-      // This will update the userLocation prop from the parent
-      // But we can also dispatch an event for the parent to update
-      window.dispatchEvent(new CustomEvent('peja-user-location-update', {
-        detail: {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        window.dispatchEvent(new CustomEvent("peja-user-location-update", {
+          detail: { lat: position.coords.latitude, lng: position.coords.longitude }
+        }));
+      },
+      (error) => console.warn("Location watch error:", error),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  // Real-time SOS location updates (SOS markers move)
+  useEffect(() => {
+    const channel = supabase
+      .channel("sos-location-realtime")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "sos_alerts" },
+        (payload) => {
+          const updated = payload.new as SOSAlert;
+          setLiveSOSAlerts(prev =>
+            prev.map(sos =>
+              sos.id === updated.id
+                ? { ...sos, latitude: updated.latitude, longitude: updated.longitude, bearing: updated.bearing }
+                : sos
+            )
+          );
         }
-      }));
-    },
-    (error) => {
-      console.warn("Location watch error:", error);
-    },
-    { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-  );
+      )
+      .subscribe();
 
-  return () => {
-    navigator.geolocation.clearWatch(watchId);
-  };
-}, []);
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
-// Real-time SOS location updates (SOS markers move in real-time)
-useEffect(() => {
-  const channel = supabase
-    .channel("sos-location-realtime")
-    .on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "sos_alerts" },
-      (payload) => {
-        const updated = payload.new as SOSAlert;
-        // Update position of SOS markers in real-time
-        setLiveSOSAlerts(prev =>
-          prev.map(sos => 
-            sos.id === updated.id 
-              ? { ...sos, latitude: updated.latitude, longitude: updated.longitude, bearing: updated.bearing }
-              : sos
-          )
-        );
-      }
-    )
-    .subscribe();
+  // Listen for helper notifications (SOS activator receives these)
+  useEffect(() => {
+    if (!myUserId) return;
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, []);
+    const channel = supabase
+      .channel("sos-helpers-realtime-gl")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${myUserId}` } as any,
+        async (payload: any) => {
+          const notification = payload.new;
 
-  // Listen for helper notifications
-useEffect(() => {
-  if (!myUserId) return;
+          if (notification?.type === "sos_alert" && notification?.data?.helper_id) {
+            const helperData = notification.data;
+            const helperId = helperData.helper_id;
+            const sosId = helperData.sos_id;
 
-  const channel = supabase
-    .channel("sos-helpers-realtime-gl")
-    .on(
-      "postgres_changes",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${myUserId}` } as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (payload: any) => {
-        const notification = payload.new;
+            setHelpers(prevHelpers => {
+              const existingIndex = prevHelpers.findIndex(h => h.id === helperId);
 
-        if (notification?.type === "sos_alert" && notification?.data?.helper_id) {
-          const helperData = notification.data;
-          const helperId = helperData.helper_id;
-          const sosId = helperData.sos_id;
-
-          // Use functional update to ensure we always work with latest state
-          setHelpers(prevHelpers => {
-            // Check if this helper already exists
-            const existingIndex = prevHelpers.findIndex(h => h.id === helperId);
-            
-            if (existingIndex !== -1) {
-              // Update existing helper's position
-              const updated = [...prevHelpers];
-              updated[existingIndex] = {
-                ...updated[existingIndex],
-                lat: helperData.helper_lat,
-                lng: helperData.helper_lng,
-                eta: helperData.eta_minutes,
-              };
-              return updated;
-            }
-
-            // Add new helper - spread previous array to ensure accumulation
-            return [
-              ...prevHelpers,
-              {
-                id: helperId,
-                name: helperData.helper_name || "Someone",
-                avatar_url: helperData.helper_avatar,
-                lat: helperData.helper_lat,
-                lng: helperData.helper_lng,
-                eta: helperData.eta_minutes,
-                sosId: sosId, // Track which SOS this helper is for
+              if (existingIndex !== -1) {
+                // Update existing helper's position
+                const updated = [...prevHelpers];
+                updated[existingIndex] = {
+                  ...updated[existingIndex],
+                  lat: helperData.helper_lat,
+                  lng: helperData.helper_lng,
+                  eta: helperData.eta_minutes,
+                };
+                return updated;
               }
-            ];
+
+              // Add new helper
+              return [
+                ...prevHelpers,
+                {
+                  id: helperId,
+                  name: helperData.helper_name || "Someone",
+                  avatar_url: helperData.helper_avatar,
+                  lat: helperData.helper_lat,
+                  lng: helperData.helper_lng,
+                  eta: helperData.eta_minutes,
+                  sosId: sosId,
+                },
+              ];
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [myUserId]);
+
+  // =====================================================================
+  // MILESTONE-BASED HELPER LOCATION TRACKING
+  // =====================================================================
+  const startHelperLocationTracking = useCallback((
+    sosOwnerId: string,
+    sosId: string,
+    helperName: string,
+    helperAvatar?: string,
+  ) => {
+    if (!user) return;
+    if (!navigator.geolocation) return;
+
+    const helperId = user.id;
+
+    // Clean up any existing watcher for this SOS
+    const existingWatchId = helperWatchIdsRef.current.get(sosId);
+    if (existingWatchId !== undefined) {
+      navigator.geolocation.clearWatch(existingWatchId);
+      helperWatchIdsRef.current.delete(sosId);
+    }
+    const existingTimeout = helperTimeoutsRef.current.get(sosId);
+    if (existingTimeout) {
+      clearTimeout(existingTimeout);
+      helperTimeoutsRef.current.delete(sosId);
+    }
+
+    // Load already-fired milestones from localStorage
+    const firedMilestones = readFiredMilestones(sosId, helperId);
+
+    let lastUpdateTime = 0;
+    let lastLat = 0;
+    let lastLng = 0;
+
+    const watchId = navigator.geolocation.watchPosition(
+      async (position) => {
+        const now = Date.now();
+
+        // Throttle: minimum 30 seconds between checks
+        if (now - lastUpdateTime < HELPER_GPS_THROTTLE_MS) return;
+
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+
+        // Check if user has actually moved (at least 100 meters)
+        if (lastLat && lastLng) {
+          const distanceMoved = getDistanceKm(lastLat, lastLng, lat, lng);
+          if (distanceMoved < HELPER_MIN_MOVEMENT_KM) return;
+        }
+
+        lastLat = lat;
+        lastLng = lng;
+        lastUpdateTime = now;
+
+        // Check if SOS is still active
+        const { data: sosData } = await supabase
+          .from("sos_alerts")
+          .select("latitude, longitude, status")
+          .eq("id", sosId)
+          .single();
+
+        if (!sosData || sosData.status !== "active") {
+          // SOS resolved/cancelled — stop tracking
+          navigator.geolocation.clearWatch(watchId);
+          helperWatchIdsRef.current.delete(sosId);
+          const t = helperTimeoutsRef.current.get(sosId);
+          if (t) { clearTimeout(t); helperTimeoutsRef.current.delete(sosId); }
+          clearFiredMilestones(sosId, helperId);
+          return;
+        }
+
+        const distanceKm = getDistanceKm(lat, lng, sosData.latitude, sosData.longitude);
+        const eta = calculateETA(lat, lng, sosData.latitude, sosData.longitude);
+
+        // ===== MILESTONE CHECK =====
+        let milestoneToFire: string | null = null;
+        let notificationTitle = "";
+        let notificationBody = "";
+
+        // Check "arrived" first (distance-based, not ETA-based)
+        if (distanceKm <= ARRIVAL_DISTANCE_KM && !firedMilestones.has("arrived")) {
+          milestoneToFire = "arrived";
+          notificationTitle = "Helper has arrived!";
+          notificationBody = `${helperName} has arrived at your location`;
+        } else {
+          // Check ETA milestones (highest first)
+          for (const milestone of HELPER_MILESTONES) {
+            const key = `${milestone}min`;
+            if (eta <= milestone && !firedMilestones.has(key)) {
+              milestoneToFire = key;
+              if (milestone <= 1) {
+                notificationTitle = "Helper is arriving!";
+                notificationBody = `${helperName} is less than a minute away`;
+              } else if (milestone <= 2) {
+                notificationTitle = "Helper is very close!";
+                notificationBody = `${helperName} is about ${milestone} minutes away`;
+              } else if (milestone <= 5) {
+                notificationTitle = "Helper is almost there!";
+                notificationBody = `${helperName} is about ${milestone} minutes away`;
+              } else {
+                notificationTitle = "Helper getting closer!";
+                notificationBody = `${helperName} is about ${milestone} minutes away`;
+              }
+              break; // Fire only the most relevant milestone
+            }
+          }
+        }
+
+        if (milestoneToFire) {
+          // Mark milestone as fired (persisted to localStorage)
+          firedMilestones.add(milestoneToFire);
+          saveFiredMilestone(sosId, helperId, milestoneToFire);
+
+          await createNotification({
+            userId: sosOwnerId,
+            type: "sos_alert",
+            title: notificationTitle,
+            body: notificationBody,
+            data: {
+              sos_id: sosId,
+              helper_id: helperId,
+              helper_name: helperName,
+              helper_avatar: helperAvatar || null,
+              helper_lat: lat,
+              helper_lng: lng,
+              eta_minutes: eta,
+              milestone: milestoneToFire,
+              is_location_update: true,
+            },
+          });
+        }
+
+        // If arrived, stop tracking
+        if (firedMilestones.has("arrived")) {
+          navigator.geolocation.clearWatch(watchId);
+          helperWatchIdsRef.current.delete(sosId);
+          const t = helperTimeoutsRef.current.get(sosId);
+          if (t) { clearTimeout(t); helperTimeoutsRef.current.delete(sosId); }
+          return;
+        }
+      },
+      (error) => {
+        console.warn("Helper location tracking error:", error);
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
+    );
+
+    // Store watchId for cleanup
+    helperWatchIdsRef.current.set(sosId, watchId);
+
+    // Stop tracking after 5 hours maximum
+    const timeout = setTimeout(() => {
+      navigator.geolocation.clearWatch(watchId);
+      helperWatchIdsRef.current.delete(sosId);
+      helperTimeoutsRef.current.delete(sosId);
+    }, HELPER_TRACKING_TIMEOUT_MS);
+
+    helperTimeoutsRef.current.set(sosId, timeout);
+  }, [user]);
+
+  // =====================================================================
+  // HANDLE "I CAN HELP" BUTTON
+  // =====================================================================
+  const handleICanHelp = async (sos: SOSAlert) => {
+    if (!user || !userLocation) {
+      setToast("Please enable location to help");
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+
+    if (helpedSOSIds.has(sos.id)) {
+      setToast("You've already offered to help!");
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+
+    setSendingHelp(true);
+    try {
+      const eta = calculateETA(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
+
+      const { data: userData } = await supabase
+        .from("users")
+        .select("full_name, avatar_url")
+        .eq("id", user.id)
+        .single();
+
+      const helperName = userData?.full_name || "Someone";
+      const helperAvatar = userData?.avatar_url;
+
+      // Send initial "on the way" notification
+      await createNotification({
+        userId: sos.user_id,
+        type: "sos_alert",
+        title: "Help is on the way!",
+        body: `${helperName} is coming to help you. ETA: ${eta} minutes`,
+        data: {
+          sos_id: sos.id,
+          helper_id: user.id,
+          helper_name: helperName,
+          helper_avatar: helperAvatar || null,
+          helper_lat: userLocation.lat,
+          helper_lng: userLocation.lng,
+          eta_minutes: eta,
+        },
+      });
+
+      // Mark this SOS as helped
+      setHelpedSOSIds(prev => {
+        const newSet = new Set(prev);
+        newSet.add(sos.id);
+        try { localStorage.setItem(HELPED_SOS_KEY, JSON.stringify([...newSet])); } catch {}
+        return newSet;
+      });
+
+      // Start milestone-based location tracking
+      startHelperLocationTracking(sos.user_id, sos.id, helperName, helperAvatar);
+
+      setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ETA: ${eta} minutes.`);
+      setTimeout(() => setToast(null), 3000);
+      setSelectedSOS(null);
+    } catch (err) {
+      console.error("Error:", err);
+      setToast("Failed to notify. Please try again.");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setSendingHelp(false);
+    }
+  };
+
+  // =====================================================================
+  // RESTART TRACKING ON PAGE LOAD (persistence across refresh)
+  // Only runs ONCE on mount — does NOT depend on userLocation
+  // =====================================================================
+  useEffect(() => {
+    if (!user) return;
+    if (restartedRef.current) return; // prevent double-restart
+    restartedRef.current = true;
+
+    const checkAndRestartTracking = async () => {
+      const helpedIds = Array.from(helpedSOSIds);
+      if (helpedIds.length === 0) return;
+
+      for (const sosId of helpedIds) {
+        // Check if this SOS is still active
+        const { data: sosData } = await supabase
+          .from("sos_alerts")
+          .select("id, user_id, status, latitude, longitude")
+          .eq("id", sosId)
+          .eq("status", "active")
+          .maybeSingle();
+
+        if (sosData) {
+          // Get user data for tracking
+          const { data: userData } = await supabase
+            .from("users")
+            .select("full_name, avatar_url")
+            .eq("id", user.id)
+            .single();
+
+          console.log("[Map] Restarting helper tracking for SOS:", sosId);
+          startHelperLocationTracking(
+            sosData.user_id,
+            sosId,
+            userData?.full_name || "Someone",
+            userData?.avatar_url
+          );
+        } else {
+          // SOS is no longer active, remove from helped list + clean up milestones
+          clearFiredMilestones(sosId, user.id);
+          setHelpedSOSIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(sosId);
+            try { localStorage.setItem(HELPED_SOS_KEY, JSON.stringify([...newSet])); } catch {}
+            return newSet;
           });
         }
       }
-    )
-    .subscribe();
+    };
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [myUserId]);
+    checkAndRestartTracking();
+  }, [user?.id, startHelperLocationTracking]); // NOT userLocation — that was causing infinite re-starts
 
- const handleICanHelp = async (sos: SOSAlert) => {
-  if (!user || !userLocation) {
-    setToast("Please enable location to help");
-    setTimeout(() => setToast(null), 3000);
-    return;
-  }
-
-  // Prevent double-clicking
-  if (helpedSOSIds.has(sos.id)) {
-    setToast("You've already offered to help!");
-    setTimeout(() => setToast(null), 3000);
-    return;
-  }
-
-  setSendingHelp(true);
-  try {
-    const eta = calculateETA(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
-
-    const { data: userData } = await supabase
-      .from("users")
-      .select("full_name, avatar_url")
-      .eq("id", user.id)
-      .single();
-
-    await createNotification({
-      userId: sos.user_id,
-      type: "sos_alert",
-      title: "Help is on the way!",
-      body: `${userData?.full_name || "Someone"} is coming to help you. ETA: ${eta} minutes`,
-      data: {
-        sos_id: sos.id,
-        helper_id: user.id,
-        helper_name: userData?.full_name || "Someone",
-        helper_avatar: userData?.avatar_url || null,
-        helper_lat: userLocation.lat,
-        helper_lng: userLocation.lng,
-        eta_minutes: eta
-      },
-    });
-
-    // Mark this SOS as helped and persist to localStorage
-    setHelpedSOSIds(prev => {
-      const newSet = new Set(prev);
-      newSet.add(sos.id);
-      // Persist to localStorage
-      try {
-        localStorage.setItem('peja-helped-sos', JSON.stringify([...newSet]));
-      } catch {}
-      return newSet;
-    });
-
-    startHelperLocationTracking(sos.user_id, sos.id, userData?.full_name || "Someone", userData?.avatar_url);
-
-    setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ETA: ${eta} minutes.`);
-    setTimeout(() => setToast(null), 3000);
-    setSelectedSOS(null);
-  } catch (err) {
-    console.error("Error:", err);
-    setToast("Failed to notify. Please try again.");
-    setTimeout(() => setToast(null), 3000);
-  } finally {
-    setSendingHelp(false);
-  }
-};
-
-  const startHelperLocationTracking = (sosOwnerId: string, sosId: string, helperName: string, helperAvatar?: string) => {
-  if (!navigator.geolocation) return;
-
-  let lastUpdateTime = 0;
-  let lastEta = Infinity;
-  let lastNotifiedEta = Infinity;
-  let lastLat = 0;
-  let lastLng = 0;
-
-  // Helper function to calculate distance in km
-  const getDistanceKm = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  const watchId = navigator.geolocation.watchPosition(
-    async (position) => {
-      const now = Date.now();
-      
-      // Throttle updates to every 10 seconds minimum
-      if (now - lastUpdateTime < 10000) return;
-
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
-
-      // Check if user has actually moved (at least 50 meters)
-      if (lastLat && lastLng) {
-        const distanceMoved = getDistanceKm(lastLat, lastLng, lat, lng);
-        if (distanceMoved < 0.05) return; // Less than 50 meters, skip update
-      }
-
-      lastLat = lat;
-      lastLng = lng;
-      lastUpdateTime = now;
-
-      // Check if SOS is still active
-      const { data: sosData } = await supabase
-        .from("sos_alerts")
-        .select("latitude, longitude, status")
-        .eq("id", sosId)
-        .single();
-
-      if (!sosData || sosData.status !== "active") {
+  // Cleanup all watchers on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all GPS watchers
+      helperWatchIdsRef.current.forEach((watchId) => {
         navigator.geolocation.clearWatch(watchId);
-        return;
-      }
+      });
+      helperWatchIdsRef.current.clear();
 
-      const eta = calculateETA(lat, lng, sosData.latitude, sosData.longitude);
-      
-      // Only send notification if:
-      // 1. First update (lastNotifiedEta is Infinity), OR
-      // 2. ETA decreased by at least 2 minutes (getting closer), OR
-      // 3. Significant change (ETA changed by 5+ minutes either direction)
-      const shouldNotify = 
-        lastNotifiedEta === Infinity || 
-        (eta < lastNotifiedEta - 2) || 
-        Math.abs(eta - lastNotifiedEta) >= 5;
+      // Clear all timeouts
+      helperTimeoutsRef.current.forEach((timeout) => {
+        clearTimeout(timeout);
+      });
+      helperTimeoutsRef.current.clear();
+    };
+  }, []);
 
-      if (shouldNotify) {
-        lastNotifiedEta = eta;
-
-        await createNotification({
-          userId: sosOwnerId,
-          type: "sos_alert",
-          title: eta < lastEta ? "Helper getting closer!" : "Helper location update",
-          body: `${helperName} is ${eta} minute${eta !== 1 ? 's' : ''} away`,
-          data: {
-            sos_id: sosId,
-            helper_id: user?.id,
-            helper_name: helperName,
-            helper_avatar: helperAvatar || null,
-            helper_lat: lat,
-            helper_lng: lng,
-            eta_minutes: eta,
-            is_location_update: true,
-          },
-        });
-      }
-
-      lastEta = eta;
-    },
-    (error) => {
-      console.warn("Helper location tracking error:", error);
-    },
-    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
-  );
-
-  // Stop tracking after 2 hours maximum
-  setTimeout(() => {
-    navigator.geolocation.clearWatch(watchId);
-  }, 2 * 60 * 60 * 1000);
-};
-
-  // Handle map move - don't fight with compass
+  // Handle map move
   const handleMove = useCallback((evt: { viewState: ViewState }) => {
     setViewState(evt.viewState);
   }, []);
 
-  // Interaction handlers - pause compass during user interaction
   const handleInteractionStart = useCallback(() => {
     isUserInteracting.current = true;
-    if (interactionTimeout.current) {
-      clearTimeout(interactionTimeout.current);
-    }
+    if (interactionTimeout.current) clearTimeout(interactionTimeout.current);
   }, []);
 
   const handleInteractionEnd = useCallback(() => {
-  interactionTimeout.current = setTimeout(() => {
-    isUserInteracting.current = false;
-    currentBearing.current = viewState.bearing;
-  }, 300);
-}, [viewState.bearing]);
+    interactionTimeout.current = setTimeout(() => {
+      isUserInteracting.current = false;
+      currentBearing.current = viewState.bearing;
+    }, 300);
+  }, [viewState.bearing]);
 
-  // Cleanup
+  // General cleanup
   useEffect(() => {
     return () => {
-      if (interactionTimeout.current) {
-        clearTimeout(interactionTimeout.current);
-      }
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current);
-      }
+      if (interactionTimeout.current) clearTimeout(interactionTimeout.current);
+      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
     };
   }, []);
-
-  // Restart helper location tracking on page load if user has helped an active SOS
-useEffect(() => {
-  if (!user || !userLocation) return;
-  
-  // Check if there are any active SOSs that this user is helping
-  const checkAndRestartTracking = async () => {
-    const helpedIds = Array.from(helpedSOSIds);
-    if (helpedIds.length === 0) return;
-    
-    for (const sosId of helpedIds) {
-      // Check if this SOS is still active
-      const { data: sosData } = await supabase
-        .from("sos_alerts")
-        .select("id, user_id, status, latitude, longitude")
-        .eq("id", sosId)
-        .eq("status", "active")
-        .maybeSingle();
-      
-      if (sosData) {
-        // Get user data for tracking
-        const { data: userData } = await supabase
-          .from("users")
-          .select("full_name, avatar_url")
-          .eq("id", user.id)
-          .single();
-        
-        // Restart tracking for this SOS
-        console.log("[Map] Restarting helper tracking for SOS:", sosId);
-        startHelperLocationTracking(
-          sosData.user_id, 
-          sosId, 
-          userData?.full_name || "Someone", 
-          userData?.avatar_url
-        );
-      } else {
-        // SOS is no longer active, remove from helped list
-        setHelpedSOSIds(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(sosId);
-          try {
-            localStorage.setItem('peja-helped-sos', JSON.stringify([...newSet]));
-          } catch {}
-          return newSet;
-        });
-      }
-    }
-  };
-  
-  checkAndRestartTracking();
-}, [user?.id, userLocation]); 
 
   const isOwnSOS = selectedSOS && myUserId && selectedSOS.user_id === myUserId;
   const tagInfo = selectedSOS?.tag ? SOS_TAGS.find(t => t.id === selectedSOS.tag) : null;
 
   return (
     <>
-      <Map
+      <MapGL
         ref={mapRef}
         {...viewState}
         onMove={handleMove}
@@ -755,13 +839,7 @@ useEffect(() => {
               attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
             },
           },
-          layers: [
-            {
-              id: "osm",
-              type: "raster",
-              source: "osm",
-            },
-          ],
+          layers: [{ id: "osm", type: "raster", source: "osm" }],
         }}
         maxZoom={18}
         minZoom={3}
@@ -772,42 +850,23 @@ useEffect(() => {
         {posts.map(post => {
           if (!post.location?.latitude || !post.location?.longitude) return null;
           const color = getCategoryColor(post.category);
-
           return (
             <Marker
               key={post.id}
               longitude={post.location.longitude}
               latitude={post.location.latitude}
               anchor="bottom"
-              onClick={(e) => {
-                e.originalEvent.stopPropagation();
-                onPostClick(post.id);
-              }}
+              onClick={(e) => { e.originalEvent.stopPropagation(); onPostClick(post.id); }}
             >
               <div
                 style={{
-                  width: 32,
-                  height: 32,
-                  background: color,
-                  borderRadius: "50% 50% 50% 0",
-                  transform: "rotate(-45deg)",
-                  border: "3px solid white",
-                  boxShadow: "0 3px 12px rgba(0,0,0,0.4)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
+                  width: 32, height: 32, background: color,
+                  borderRadius: "50% 50% 50% 0", transform: "rotate(-45deg)",
+                  border: "3px solid white", boxShadow: "0 3px 12px rgba(0,0,0,0.4)",
+                  display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
                 }}
               >
-                <div
-                  style={{
-                    width: 8,
-                    height: 8,
-                    background: "white",
-                    borderRadius: "50%",
-                    transform: "rotate(45deg)",
-                  }}
-                />
+                <div style={{ width: 8, height: 8, background: "white", borderRadius: "50%", transform: "rotate(45deg)" }} />
               </div>
             </Marker>
           );
@@ -817,69 +876,21 @@ useEffect(() => {
         {liveSOSAlerts.map(sos => {
           const avatarUrl = sos.user?.avatar_url || "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff";
           const sosBearing = sos.bearing || 0;
-
           return (
             <Marker
               key={sos.id}
               longitude={sos.longitude}
               latitude={sos.latitude}
               anchor="center"
-              onClick={(e) => {
-                e.originalEvent.stopPropagation();
-                setSelectedSOS(sos);
-              }}
+              onClick={(e) => { e.originalEvent.stopPropagation(); setSelectedSOS(sos); }}
             >
               <div className="sos-marker-wrapper" style={{ position: "relative", width: 56, height: 56, cursor: "pointer" }}>
                 <div className="sos-glow-ring" />
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "100%",
-                    transform: `rotate(${sosBearing}deg)`,
-                    transition: "transform 0.3s ease-out",
-                  }}
-                >
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 2,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      width: 0,
-                      height: 0,
-                      borderLeft: "8px solid transparent",
-                      borderRight: "8px solid transparent",
-                      borderBottom: "12px solid #dc2626",
-                      zIndex: 3,
-                    }}
-                  />
+                <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", transform: `rotate(${sosBearing}deg)`, transition: "transform 0.3s ease-out" }}>
+                  <div style={{ position: "absolute", top: 2, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderBottom: "12px solid #dc2626", zIndex: 3 }} />
                 </div>
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
-                    width: 40,
-                    height: 40,
-                    borderRadius: "50%",
-                    overflow: "hidden",
-                    border: "3px solid #dc2626",
-                    background: "white",
-                    zIndex: 2,
-                  }}
-                >
-                  <img
-                    src={avatarUrl}
-                    alt=""
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff";
-                    }}
-                  />
+                <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 40, height: 40, borderRadius: "50%", overflow: "hidden", border: "3px solid #dc2626", background: "white", zIndex: 2 }}>
+                  <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.target as HTMLImageElement).src = "https://ui-avatars.com/api/?name=SOS&background=dc2626&color=fff"; }} />
                 </div>
               </div>
             </Marker>
@@ -889,36 +900,12 @@ useEffect(() => {
         {/* Helper Markers */}
         {helpers.map(helper => {
           const avatarUrl = helper.avatar_url || "https://ui-avatars.com/api/?name=H&background=22c55e&color=fff";
-
           return (
-            <Marker
-              key={helper.id}
-              longitude={helper.lng}
-              latitude={helper.lat}
-              anchor="center"
-            >
+            <Marker key={helper.id} longitude={helper.lng} latitude={helper.lat} anchor="center">
               <div style={{ position: "relative", width: 48, height: 48 }}>
                 <div className="helper-glow-ring" />
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
-                    width: 36,
-                    height: 36,
-                    borderRadius: "50%",
-                    overflow: "hidden",
-                    border: "3px solid #22c55e",
-                    background: "white",
-                    zIndex: 2,
-                  }}
-                >
-                  <img
-                    src={avatarUrl}
-                    alt=""
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                  />
+                <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 36, height: 36, borderRadius: "50%", overflow: "hidden", border: "3px solid #22c55e", background: "white", zIndex: 2 }}>
+                  <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 </div>
               </div>
             </Marker>
@@ -927,58 +914,18 @@ useEffect(() => {
 
         {/* User Location Marker */}
         {userLocation && (
-          <Marker
-            longitude={userLocation.lng}
-            latitude={userLocation.lat}
-            anchor="center"
-          >
+          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
             <div style={{ position: "relative", width: 48, height: 48 }}>
               {compassEnabled && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "100%",
-                    transform: "rotate(0deg)",
-                  }}
-                >
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 2,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      width: 0,
-                      height: 0,
-                      borderLeft: "8px solid transparent",
-                      borderRight: "8px solid transparent",
-                      borderBottom: "12px solid #7c3aed",
-                      zIndex: 3,
-                    }}
-                  />
+                <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", transform: "rotate(0deg)" }}>
+                  <div style={{ position: "absolute", top: 2, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderBottom: "12px solid #7c3aed", zIndex: 3 }} />
                 </div>
               )}
-              <div
-                style={{
-                  position: "absolute",
-                  top: "50%",
-                  left: "50%",
-                  transform: "translate(-50%, -50%)",
-                  width: 18,
-                  height: 18,
-                  background: "#7c3aed",
-                  border: "3px solid white",
-                  borderRadius: "50%",
-                  boxShadow: "0 0 0 4px rgba(124,58,237,0.25)",
-                  zIndex: 2,
-                }}
-              />
+              <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 18, height: 18, background: "#7c3aed", border: "3px solid white", borderRadius: "50%", boxShadow: "0 0 0 4px rgba(124,58,237,0.25)", zIndex: 2 }} />
             </div>
           </Marker>
         )}
-      </Map>
+        </MapGL>
 
       {/* Toast */}
       {toast && (
@@ -991,42 +938,21 @@ useEffect(() => {
       {selectedSOS && (
         <div className="fixed inset-0 z-5000 flex items-start justify-center overflow-hidden">
           <div className="absolute inset-0 bg-black/80" onClick={() => setSelectedSOS(null)} />
-          <div
-            ref={modalContentRef}
-            className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col"
-          >
+          <div ref={modalContentRef} className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col">
             {/* User Info Header */}
             <div className="border-b border-white/10 p-4 shrink-0">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xl font-bold text-white">
-                  {isOwnSOS ? "Your SOS Alert" : "SOS Alert"}
-                </h3>
-                <button
-                  onClick={() => setSelectedSOS(null)}
-                  className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-dark-400 text-xl"
-                >
-                  ×
-                </button>
+                <h3 className="text-xl font-bold text-white">{isOwnSOS ? "Your SOS Alert" : "SOS Alert"}</h3>
+                <button onClick={() => setSelectedSOS(null)} className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-dark-400 text-xl">×</button>
               </div>
-
               <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
                 <div className="w-14 h-14 rounded-full overflow-hidden border-3 border-red-500 shrink-0 sos-avatar-glow">
-                  <img
-                    src={selectedSOS.user?.avatar_url || "https://ui-avatars.com/api/?name=User"}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={selectedSOS.user?.avatar_url || "https://ui-avatars.com/api/?name=User"} alt="" className="w-full h-full object-cover" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-white truncate text-lg">
-                    {isOwnSOS ? "You" : (selectedSOS.user?.full_name || "Someone")}
-                  </p>
-                  <p className="text-sm text-dark-400 truncate">
-                    {selectedSOS.address || "Location unavailable"}
-                  </p>
-                  <p className="text-xs text-dark-500">
-                    {formatDistanceToNow(new Date(selectedSOS.created_at), { addSuffix: true })}
-                  </p>
+                  <p className="font-semibold text-white truncate text-lg">{isOwnSOS ? "You" : (selectedSOS.user?.full_name || "Someone")}</p>
+                  <p className="text-sm text-dark-400 truncate">{selectedSOS.address || "Location unavailable"}</p>
+                  <p className="text-xs text-dark-500">{formatDistanceToNow(new Date(selectedSOS.created_at), { addSuffix: true })}</p>
                 </div>
               </div>
             </div>
@@ -1069,11 +995,7 @@ useEffect(() => {
                     {helpers.map(helper => (
                       <div key={helper.id} className="flex items-center gap-3 p-2 bg-green-500/10 rounded-lg">
                         <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-green-500 shrink-0">
-                          <img
-                            src={helper.avatar_url || "https://ui-avatars.com/api/?name=H&background=22c55e&color=fff"}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
+                          <img src={helper.avatar_url || "https://ui-avatars.com/api/?name=H&background=22c55e&color=fff"} alt="" className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-white truncate">{helper.name}</p>
@@ -1089,9 +1011,7 @@ useEffect(() => {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-dark-500 mt-2">
-                    Helper locations are shown on the map with green markers
-                  </p>
+                  <p className="text-xs text-dark-500 mt-2">Helper locations are shown on the map with green markers</p>
                 </div>
               )}
 
@@ -1108,40 +1028,31 @@ useEffect(() => {
 
               {/* Emergency Call Buttons */}
               <div className="flex gap-2">
-                <a href="tel:112" className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium text-center">
-                  Call 112
-                </a>
-                <a href="tel:767" className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium text-center">
-                  Call 767
-                </a>
+                <a href="tel:112" className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium text-center">Call 112</a>
+                <a href="tel:767" className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium text-center">Call 767</a>
               </div>
 
               {/* Action Buttons */}
-<div className="flex gap-3 pt-2">
-  <button
-    onClick={() => setSelectedSOS(null)}
-    className="flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium"
-  >
-    Back
-  </button>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setSelectedSOS(null)} className="flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium">Back</button>
 
-  {!isOwnSOS && !helpedSOSIds.has(selectedSOS.id) && (
-    <button
-      onClick={() => handleICanHelp(selectedSOS)}
-      disabled={sendingHelp}
-      className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
-    >
-      {sendingHelp ? "Sending..." : "I Can Help"}
-    </button>
-  )}
+                {!isOwnSOS && !helpedSOSIds.has(selectedSOS.id) && (
+                  <button
+                    onClick={() => handleICanHelp(selectedSOS)}
+                    disabled={sendingHelp}
+                    className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
+                  >
+                    {sendingHelp ? "Sending..." : "I Can Help"}
+                  </button>
+                )}
 
-  {!isOwnSOS && helpedSOSIds.has(selectedSOS.id) && (
-    <div className="flex-1 py-3 bg-green-600/20 text-green-400 rounded-xl font-medium text-center flex items-center justify-center gap-2">
-      <CheckCircle className="w-5 h-5" />
-      You're Helping
-    </div>
-  )}
-</div>
+                {!isOwnSOS && helpedSOSIds.has(selectedSOS.id) && (
+                  <div className="flex-1 py-3 bg-green-600/20 text-green-400 rounded-xl font-medium text-center flex items-center justify-center gap-2">
+                    <CheckCircle className="w-5 h-5" />
+                    You're Helping
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
