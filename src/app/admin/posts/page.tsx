@@ -272,7 +272,7 @@ export default function AdminPostsPage() {
       toast.success("Post deleted successfully");
     } catch (error) {
       console.error(error);
-      toast.error("Failed to delete post");
+      toast.danger("Failed to delete post");
     } finally {
       setActionLoading(false);
     }
@@ -318,7 +318,7 @@ export default function AdminPostsPage() {
       }
     } catch (error) {
       console.error(error);
-      toast.error("Bulk delete failed");
+      toast.danger("Bulk delete failed");
     } finally {
       setActionLoading(false);
     }
@@ -337,7 +337,7 @@ export default function AdminPostsPage() {
       toast.success(`Post status changed to ${newStatus}`);
     } catch (error) {
       console.error(error);
-      toast.error("Failed to update status");
+      toast.danger("Failed to update status");
     } finally {
       setActionLoading(false);
     }
