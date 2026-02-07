@@ -1360,8 +1360,8 @@ body.modal-open {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  animation: peja-text-morph 6s ease-in-out infinite;
-  will-change: opacity, transform;
+  animation: peja-text-morph 6s ease-in-out infinite, peja-glow-text 3s ease-in-out infinite;
+  will-change: opacity, transform, filter;
 }
 
 .peja-logo-youtube {
@@ -1388,6 +1388,15 @@ body.modal-open {
   90%, 100% {
     opacity: 0;
     transform: scale(0.8) translateY(-4px);
+  }
+}
+
+@keyframes peja-glow-text {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.3));
+  }
+  50% {
+    filter: drop-shadow(0 0 14px rgba(139, 92, 246, 0.7)) drop-shadow(0 0 24px rgba(167, 139, 250, 0.35));
   }
 }
 

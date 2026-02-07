@@ -7,13 +7,21 @@ import {
   Camera,
   Video,
   Image as ImageIcon,
-  MapPin,
   X,
   Loader2,
   Hash,
   ChevronLeft,
   AlertTriangle,
   Play,
+  Shield,
+  Eye,
+  EyeOff,
+  Upload,
+  Crosshair,
+  Flame,
+  UserX,
+  Skull,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -22,10 +30,27 @@ import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
 import { notifyUsersAboutIncident } from "@/lib/notifications";
 
+// Category icon mapping
+const CATEGORY_ICONS: Record<string, React.ReactNode> = {
+  crime: <AlertTriangle className="w-5 h-5" />,
+  fire: <Flame className="w-5 h-5" />,
+  kidnapping: <UserX className="w-5 h-5" />,
+  terrorist: <Skull className="w-5 h-5" />,
+  general: <Info className="w-5 h-5" />,
+};
+
+// Category color themes
+const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string; glow: string }> = {
+  crime: { bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.3)", text: "#f87171", glow: "0 0 20px rgba(239,68,68,0.15)" },
+  fire: { bg: "rgba(249,115,22,0.1)", border: "rgba(249,115,22,0.3)", text: "#fb923c", glow: "0 0 20px rgba(249,115,22,0.15)" },
+  kidnapping: { bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.3)", text: "#f87171", glow: "0 0 20px rgba(239,68,68,0.15)" },
+  terrorist: { bg: "rgba(220,38,38,0.15)", border: "rgba(220,38,38,0.4)", text: "#ef4444", glow: "0 0 20px rgba(220,38,38,0.2)" },
+  general: { bg: "rgba(59,130,246,0.1)", border: "rgba(59,130,246,0.3)", text: "#60a5fa", glow: "0 0 20px rgba(59,130,246,0.15)" },
+};
+
 // Image compression utility
 async function compressImage(file: File, maxWidth = 1920, quality = 0.8): Promise<File> {
   return new Promise((resolve) => {
-    // If file is small enough, don't compress
     if (file.size < 500 * 1024) {
       resolve(file);
       return;
@@ -38,7 +63,6 @@ async function compressImage(file: File, maxWidth = 1920, quality = 0.8): Promis
     img.onload = () => {
       let { width, height } = img;
 
-      // Scale down if larger than maxWidth
       if (width > maxWidth) {
         height = (height * maxWidth) / width;
         width = maxWidth;
@@ -56,7 +80,6 @@ async function compressImage(file: File, maxWidth = 1920, quality = 0.8): Promis
                 type: "image/jpeg",
                 lastModified: Date.now(),
               });
-              // Only use compressed if it's actually smaller
               resolve(compressedFile.size < file.size ? compressedFile : file);
             } else {
               resolve(file);
@@ -75,10 +98,8 @@ async function compressImage(file: File, maxWidth = 1920, quality = 0.8): Promis
   });
 }
 
-// Video compression - we can't truly compress video in browser,
-// but we can validate and warn about large files
 function validateVideoSize(file: File): { valid: boolean; warning?: string } {
-  const maxSize = 50 * 1024 * 1024; // 50MB recommended
+  const maxSize = 50 * 1024 * 1024;
   if (file.size > maxSize) {
     return {
       valid: true,
@@ -115,7 +136,6 @@ export default function CreatePostPage() {
     isMounted.current = true;
     return () => {
       isMounted.current = false;
-      // Cleanup previews
       mediaPreviews.forEach(p => URL.revokeObjectURL(p.url));
     };
   }, []);
@@ -129,26 +149,25 @@ export default function CreatePostPage() {
   }, [user, authLoading, router]);
 
   if (authLoading) {
-  return (
-    <div className="min-h-screen pb-8">
-      <div className="fixed top-0 left-0 right-0 z-40 glass-header">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Skeleton className="h-9 w-9 rounded-lg" />
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-9 w-9 rounded-lg" />
+    return (
+      <div className="min-h-screen pb-8">
+        <div className="fixed top-0 left-0 right-0 z-40 glass-header">
+          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+            <Skeleton className="h-9 w-9 rounded-lg" />
+            <Skeleton className="h-4 w-32" />
+            <Skeleton className="h-9 w-9 rounded-lg" />
+          </div>
         </div>
+        <main className="pt-20 px-4 max-w-2xl mx-auto space-y-4">
+          <Skeleton className="h-40 w-full rounded-2xl" />
+          <Skeleton className="h-20 w-full rounded-2xl" />
+          <Skeleton className="h-40 w-full rounded-2xl" />
+          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-12 w-full rounded-2xl" />
+        </main>
       </div>
-
-      <main className="pt-20 px-4 max-w-2xl mx-auto space-y-4">
-        <Skeleton className="h-40 w-full rounded-2xl" />
-        <Skeleton className="h-20 w-full rounded-2xl" />
-        <Skeleton className="h-40 w-full rounded-2xl" />
-        <Skeleton className="h-24 w-full rounded-2xl" />
-        <Skeleton className="h-12 w-full rounded-2xl" />
-      </main>
-    </div>
-  );
-}
+    );
+  }
 
   if (!user) return null;
 
@@ -175,45 +194,45 @@ export default function CreatePostPage() {
   };
 
   async function createVideoThumbnail(file: File): Promise<Blob | null> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement("video");
-    video.src = url;
-    video.muted = true;
-    video.playsInline = true;
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const video = document.createElement("video");
+      video.src = url;
+      video.muted = true;
+      video.playsInline = true;
 
-    const cleanup = () => URL.revokeObjectURL(url);
+      const cleanup = () => URL.revokeObjectURL(url);
 
-    video.addEventListener("loadeddata", async () => {
-      try {
-        video.currentTime = Math.min(0.2, video.duration || 0.2);
-      } catch {}
-    });
+      video.addEventListener("loadeddata", async () => {
+        try {
+          video.currentTime = Math.min(0.2, video.duration || 0.2);
+        } catch {}
+      });
 
-    video.addEventListener("seeked", () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 360;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) { cleanup(); return resolve(null); }
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((b) => {
+      video.addEventListener("seeked", () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 360;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) { cleanup(); return resolve(null); }
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((b) => {
+            cleanup();
+            resolve(b || null);
+          }, "image/jpeg", 0.8);
+        } catch {
           cleanup();
-          resolve(b || null);
-        }, "image/jpeg", 0.8);
-      } catch {
+          resolve(null);
+        }
+      });
+
+      video.addEventListener("error", () => {
         cleanup();
         resolve(null);
-      }
+      });
     });
-
-    video.addEventListener("error", () => {
-      cleanup();
-      resolve(null);
-    });
-  });
-}
+  }
 
   const handleGetLocation = () => {
     setLocationLoading(true);
@@ -247,7 +266,7 @@ export default function CreatePostPage() {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    
+
     const currentPhotos = media.filter((m) => m.type.startsWith("image/")).length;
     const currentVideos = media.filter((m) => m.type.startsWith("video/")).length;
     const newPhotos = files.filter((f) => f.type.startsWith("image/")).length;
@@ -274,7 +293,7 @@ export default function CreatePostPage() {
       url: URL.createObjectURL(file),
       type: file.type.startsWith("video/") ? "video" : "image",
     }));
-    
+
     setMedia((prev) => [...prev, ...files]);
     setMediaPreviews((prev) => [...prev, ...newPreviews]);
     setError("");
@@ -305,13 +324,13 @@ export default function CreatePostPage() {
     setError("");
 
     if (user?.status === "suspended") {
-  setError("Your account is suspended. You can still receive alerts, but you cannot post.");
-  return;
-}
-if (user?.status === "banned") {
-  setError("Your account is banned.");
-  return;
-}
+      setError("Your account is suspended. You can still receive alerts, but you cannot post.");
+      return;
+    }
+    if (user?.status === "banned") {
+      setError("Your account is banned.");
+      return;
+    }
 
     if (media.length === 0) {
       setError("Please add at least one photo or video");
@@ -340,76 +359,74 @@ if (user?.status === "banned") {
     setUploadProgress(0);
 
     try {
-const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
-const totalFiles = media.length;
+      const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
+      const totalFiles = media.length;
 
-let done = 0;
-let cursor = 0;
-const concurrency = 3;
+      let done = 0;
+      let cursor = 0;
+      const concurrency = 3;
 
-const uploadOne = async (file: File) => {
-  let fileToUpload = file;
-  
-  // Compress images before upload
-  if (file.type.startsWith("image/")) {
-    try {
-      fileToUpload = await compressImage(file, 1920, 0.85);
-      console.log(`Compressed ${file.name}: ${(file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`);
-    } catch (e) {
-      console.warn("Compression failed, using original:", e);
-    }
-  }
+      const uploadOne = async (file: File) => {
+        let fileToUpload = file;
 
-  const isVideo = file.type.startsWith("video/");
-  const fileExt = isVideo ? (file.name.split(".").pop()?.toLowerCase() || "mp4") : "jpg";
-  const fileName = `posts/${authUser.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        if (file.type.startsWith("image/")) {
+          try {
+            fileToUpload = await compressImage(file, 1920, 0.85);
+            console.log(`Compressed ${file.name}: ${(file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`);
+          } catch (e) {
+            console.warn("Compression failed, using original:", e);
+          }
+        }
 
-  const { error: uploadError } = await supabase.storage
-    .from("media")
-    .upload(fileName, fileToUpload, { cacheControl: "3600", upsert: false });
+        const isVideo = file.type.startsWith("video/");
+        const fileExt = isVideo ? (file.name.split(".").pop()?.toLowerCase() || "mp4") : "jpg";
+        const fileName = `posts/${authUser.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
 
-  if (uploadError) throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
+        const { error: uploadError } = await supabase.storage
+          .from("media")
+          .upload(fileName, fileToUpload, { cacheControl: "3600", upsert: false });
 
-  const { data: publicUrl } = supabase.storage.from("media").getPublicUrl(fileName);
+        if (uploadError) throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
 
-  mediaUrls.push({
-    url: publicUrl.publicUrl,
-    type: isVideo ? "video" : "photo",
-  });
+        const { data: publicUrl } = supabase.storage.from("media").getPublicUrl(fileName);
 
-  done++;
-  setUploadProgress(Math.round((done / totalFiles) * 80));
-};
+        mediaUrls.push({
+          url: publicUrl.publicUrl,
+          type: isVideo ? "video" : "photo",
+        });
 
-const worker = async () => {
-  while (cursor < media.length) {
-    const i = cursor++;
-    await uploadOne(media[i]);
-  }
-};
+        done++;
+        setUploadProgress(Math.round((done / totalFiles) * 80));
+      };
 
-await Promise.all(Array.from({ length: Math.min(concurrency, media.length) }, worker));
+      const worker = async () => {
+        while (cursor < media.length) {
+          const i = cursor++;
+          await uploadOne(media[i]);
+        }
+      };
 
-      // Create post with proper coordinates
-const { data: post, error: postError } = await supabase
-  .from("posts")
-  .insert({
-    user_id: authUser.id,
-    category,
-    comment: comment.trim() || null,
-    latitude: location.latitude,  // Store as separate column
-    longitude: location.longitude,  // Store as separate column
-    address: location.address || null,
-    is_anonymous: false,
-    is_sensitive: isSensitive,
-    status: "live",
-    confirmations: 0,
-    views: 0,
-    comment_count: 0,
-    report_count: 0,
-  })
-  .select()
-  .single();
+      await Promise.all(Array.from({ length: Math.min(concurrency, media.length) }, worker));
+
+      const { data: post, error: postError } = await supabase
+        .from("posts")
+        .insert({
+          user_id: authUser.id,
+          category,
+          comment: comment.trim() || null,
+          latitude: location.latitude,
+          longitude: location.longitude,
+          address: location.address || null,
+          is_anonymous: false,
+          is_sensitive: isSensitive,
+          status: "live",
+          confirmations: 0,
+          views: 0,
+          comment_count: 0,
+          report_count: 0,
+        })
+        .select()
+        .single();
 
       if (postError) {
         throw new Error(postError.message);
@@ -417,7 +434,6 @@ const { data: post, error: postError } = await supabase
 
       setUploadProgress(85);
 
-      // Insert media records
       for (const mediaItem of mediaUrls) {
         await supabase.from("post_media").insert({
           post_id: post.id,
@@ -427,7 +443,6 @@ const { data: post, error: postError } = await supabase
         });
       }
 
-      // Insert tags
       for (const tag of tags) {
         await supabase.from("post_tags").insert({
           post_id: post.id,
@@ -437,7 +452,6 @@ const { data: post, error: postError } = await supabase
 
       setUploadProgress(90);
 
-      // Update user's last known location (for radius-based notifications)
       await supabase
         .from("users")
         .update({
@@ -449,7 +463,6 @@ const { data: post, error: postError } = await supabase
 
       setUploadProgress(95);
 
-      // Notify users based on their settings (runs in background)
       notifyUsersAboutIncident(
         post.id,
         authUser.id,
@@ -463,20 +476,18 @@ const { data: post, error: postError } = await supabase
         console.error("Error notifying users:", err);
       });
 
-setUploadProgress(100);
-setToast("Post uploaded ✓");
+      setUploadProgress(100);
+      setToast("Post uploaded ✓");
 
-window.dispatchEvent(new Event("peja-post-created"));
+      window.dispatchEvent(new Event("peja-post-created"));
+      sessionStorage.setItem("peja-feed-refresh", "true");
 
-// Set flag to trigger refresh on home page
-sessionStorage.setItem("peja-feed-refresh", "true");
+      setTimeout(() => {
+        const inOverlay = typeof window !== "undefined" && (window as any).__pejaOverlayOpen;
+        if (inOverlay) router.back();
+        else router.push("/");
+      }, 650);
 
-setTimeout(() => {
-  const inOverlay = typeof window !== "undefined" && (window as any).__pejaOverlayOpen;
-  if (inOverlay) router.back();
-  else router.push("/");
-}, 650);
-      
     } catch (err: any) {
       console.error("Submit error:", err);
       setError(err.message || "Something went wrong");
@@ -486,117 +497,165 @@ setTimeout(() => {
     }
   };
 
+  const photoCount = media.filter(m => m.type.startsWith("image/")).length;
+  const videoCount = media.filter(m => m.type.startsWith("video/")).length;
+  const mediaCountText = media.length > 0
+    ? `${photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? "s" : ""}` : ""}${photoCount > 0 && videoCount > 0 ? ", " : ""}${videoCount > 0 ? `${videoCount} video${videoCount > 1 ? "s" : ""}` : ""}`
+    : "0 files";
+
   return (
     <div className="min-h-screen pb-8">
+      {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-40 glass-header">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/5 rounded-lg">
             <ChevronLeft className="w-5 h-5 text-dark-200" />
           </button>
-          <h1 className="font-semibold text-dark-50">Report Incident</h1>
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-primary-400" />
+            <h1 className="font-semibold text-dark-50 text-sm">Report Incident</h1>
+          </div>
           <div className="w-9" />
         </div>
       </header>
 
       <main className="pt-20 px-4 max-w-2xl mx-auto">
+        {/* Error */}
         {error && (
-          <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex items-start gap-2">
+          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
             <p className="text-sm text-red-400">{error}</p>
           </div>
         )}
 
+        {/* Upload Progress */}
         {isLoading && uploadProgress > 0 && (
-          <div className="mb-4 p-3 rounded-lg bg-primary-500/10 border border-primary-500/20">
+          <div className="mb-4 p-4 rounded-xl bg-primary-500/10 border border-primary-500/20">
             <div className="flex justify-between mb-2">
-              <span className="text-sm text-primary-400">Uploading...</span>
+              <span className="text-sm text-primary-400 font-medium">Uploading...</span>
               <span className="text-sm text-primary-400">{uploadProgress}%</span>
             </div>
-            <div className="w-full bg-dark-700 rounded-full h-2">
-              <div className="bg-primary-500 h-2 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
+            <div className="w-full bg-dark-700 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-primary-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${uploadProgress}%`, boxShadow: "0 0 10px rgba(139,92,246,0.5)" }}
+              />
             </div>
           </div>
         )}
 
         {/* Media Upload */}
         <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">Photos / Videos *</label>
-
           <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*,video/*" multiple className="hidden" />
           <input type="file" ref={cameraInputRef} onChange={handleFileSelect} accept="image/*" capture="environment" className="hidden" />
           <input type="file" ref={videoInputRef} onChange={handleFileSelect} accept="video/*" capture="environment" className="hidden" />
 
-          <div className="grid grid-cols-4 gap-2">
-            {mediaPreviews.map((preview, index) => (
-              <div key={index} className="relative aspect-square rounded-lg overflow-hidden bg-dark-800">
-                {preview.type === "video" ? (
-                  <div className="relative w-full h-full">
-                    <video src={preview.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                      <Play className="w-6 h-6 text-white" />
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Upload className="w-4 h-4 text-primary-400" />
+              <span className="text-sm font-medium text-dark-200">Evidence</span>
+            </div>
+            <span className="text-xs text-dark-500">{mediaCountText}</span>
+          </div>
+
+          {/* Media previews */}
+          {mediaPreviews.length > 0 && (
+            <div className="grid grid-cols-4 gap-2 mb-3">
+              {mediaPreviews.map((preview, index) => (
+                <div key={index} className="relative aspect-square rounded-xl overflow-hidden bg-dark-800">
+                  {preview.type === "video" ? (
+                    <div className="relative w-full h-full">
+                      <video src={preview.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                        <Play className="w-5 h-5 text-white" />
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <img src={preview.url} alt="" className="w-full h-full object-cover" />
-                )}
-                <button
-                  type="button"
-                  onClick={() => handleRemoveMedia(index)}
-                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 flex items-center justify-center z-10"
-                >
-                  <X className="w-4 h-4 text-white" />
-                </button>
+                  ) : (
+                    <img src={preview.url} alt="" className="w-full h-full object-cover" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveMedia(index)}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center z-10"
+                  >
+                    <X className="w-3 h-3 text-white" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Upload buttons */}
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => cameraInputRef.current?.click()}
+              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
+              style={{
+                background: "rgba(139, 92, 246, 0.08)",
+                border: "1px dashed rgba(139, 92, 246, 0.3)",
+              }}
+            >
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(139, 92, 246, 0.15)" }}>
+                <Camera className="w-5 h-5 text-primary-400" />
               </div>
-            ))}
+              <span className="text-[10px] text-dark-400 font-medium">Photo</span>
+            </button>
 
-            {media.length < 50 && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => cameraInputRef.current?.click()}
-                  className="aspect-square rounded-lg border-2 border-dashed border-dark-600 flex flex-col items-center justify-center hover:border-primary-500/50"
-                >
-                  <Camera className="w-6 h-6 text-dark-400 mb-1" />
-                  <span className="text-xs text-dark-400">Camera</span>
-                </button>
+            <button
+              type="button"
+              onClick={() => videoInputRef.current?.click()}
+              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
+              style={{
+                background: "rgba(139, 92, 246, 0.08)",
+                border: "1px dashed rgba(139, 92, 246, 0.3)",
+              }}
+            >
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(139, 92, 246, 0.15)" }}>
+                <Video className="w-5 h-5 text-primary-400" />
+              </div>
+              <span className="text-[10px] text-dark-400 font-medium">Video</span>
+            </button>
 
-                <button
-                  type="button"
-                  onClick={() => videoInputRef.current?.click()}
-                  className="aspect-square rounded-lg border-2 border-dashed border-dark-600 flex flex-col items-center justify-center hover:border-primary-500/50"
-                >
-                  <Video className="w-6 h-6 text-dark-400 mb-1" />
-                  <span className="text-xs text-dark-400">Video</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="aspect-square rounded-lg border-2 border-dashed border-dark-600 flex flex-col items-center justify-center hover:border-primary-500/50"
-                >
-                  <ImageIcon className="w-6 h-6 text-dark-400 mb-1" />
-                  <span className="text-xs text-dark-400">Gallery</span>
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
+              style={{
+                background: "rgba(139, 92, 246, 0.08)",
+                border: "1px dashed rgba(139, 92, 246, 0.3)",
+              }}
+            >
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(139, 92, 246, 0.15)" }}>
+                <ImageIcon className="w-5 h-5 text-primary-400" />
+              </div>
+              <span className="text-[10px] text-dark-400 font-medium">Gallery</span>
+            </button>
           </div>
         </div>
 
         {/* Location */}
         <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">Location *</label>
           <button
             type="button"
             onClick={handleGetLocation}
             disabled={locationLoading}
-            className="w-full flex items-center gap-3 p-3 rounded-xl glass-sm hover:bg-white/10 text-left"
+            className="w-full flex items-center gap-3"
           >
-            {locationLoading ? (
-              <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
-            ) : (
-              <MapPin className="w-5 h-5 text-primary-400" />
-            )}
-            <div className="flex-1 min-w-0">
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+              style={{
+                background: location ? "rgba(34, 197, 94, 0.15)" : "rgba(139, 92, 246, 0.15)",
+                border: `1px solid ${location ? "rgba(34, 197, 94, 0.3)" : "rgba(139, 92, 246, 0.3)"}`,
+              }}
+            >
+              {locationLoading ? (
+                <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+              ) : (
+                <Crosshair className={`w-5 h-5 ${location ? "text-green-400" : "text-primary-400"}`} />
+              )}
+            </div>
+            <div className="flex-1 text-left min-w-0">
               {location ? (
                 <>
                   <p className="text-sm text-dark-200 truncate">{location.address || "Location captured"}</p>
@@ -606,31 +665,71 @@ setTimeout(() => {
                 <p className="text-sm text-dark-400">{locationLoading ? "Getting location..." : "Tap to get location"}</p>
               )}
             </div>
+            {location && (
+              <div className="flex items-center gap-1 px-2 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.1)" }}>
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-[10px] text-green-400 font-medium">LIVE</span>
+              </div>
+            )}
           </button>
         </div>
 
         {/* Category */}
         <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">Category *</label>
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle className="w-4 h-4 text-primary-400" />
+            <span className="text-sm font-medium text-dark-200">Threat Level *</span>
+          </div>
           <div className="grid grid-cols-2 gap-2">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setCategory(cat.id)}
-                className={`p-3 rounded-xl text-left transition-all ${
-                  category === cat.id ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/10"
-                }`}
-              >
-                <span className="text-sm font-medium text-dark-200">{cat.name}</span>
-              </button>
-            ))}
+            {CATEGORIES.map((cat) => {
+              const colors = CATEGORY_COLORS[cat.id] || CATEGORY_COLORS.general;
+              const icon = CATEGORY_ICONS[cat.id] || <Info className="w-5 h-5" />;
+              const isSelected = category === cat.id;
+
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setCategory(cat.id)}
+                  className="relative p-3 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                  style={{
+                    background: isSelected ? colors.bg : "rgba(255,255,255,0.02)",
+                    border: `1px solid ${isSelected ? colors.border : "rgba(255,255,255,0.06)"}`,
+                    boxShadow: isSelected ? colors.glow : "none",
+                  }}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
+                      style={{
+                        background: isSelected ? colors.bg : "rgba(255,255,255,0.04)",
+                        color: isSelected ? colors.text : "#94a3b8",
+                      }}
+                    >
+                      {icon}
+                    </div>
+                    <span
+                      className="text-sm font-medium transition-colors"
+                      style={{ color: isSelected ? colors.text : "#e2e8f0" }}
+                    >
+                      {cat.name}
+                    </span>
+                  </div>
+                  {isSelected && (
+                    <div
+                      className="absolute top-2 right-2 w-2 h-2 rounded-full"
+                      style={{ background: colors.text, boxShadow: `0 0 8px ${colors.text}` }}
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {/* Description */}
         <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">Description (Optional)</label>
+          <label className="block text-sm font-medium text-dark-200 mb-2">Description (Optional)</label>
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
@@ -640,72 +739,105 @@ setTimeout(() => {
           />
         </div>
 
-        {/* Tags */}
-        <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-3">Tags (Optional)</label>
-          <div className="flex gap-2 mb-2">
-            <Input
-              value={tagInput}
-              onChange={(e) => setTagInput(e.target.value)}
-              placeholder="Add a tag"
-              leftIcon={<Hash className="w-4 h-4" />}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleAddTag();
-                }
-              }}
-            />
-            <Button type="button" variant="secondary" onClick={handleAddTag}>Add</Button>
+        {/* Tags + Sensitive Toggle Row */}
+        <div className="flex gap-3 mb-4">
+          {/* Tags */}
+          <div className="flex-1 glass-card !p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Hash className="w-3.5 h-3.5 text-primary-400" />
+              <span className="text-xs font-medium text-dark-300">Tags</span>
+            </div>
+            <div className="flex gap-2 mb-2">
+              <Input
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                placeholder="Add tag"
+                className="text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddTag();
+                  }
+                }}
+              />
+              <Button type="button" variant="secondary" size="sm" onClick={handleAddTag}>+</Button>
+            </div>
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs max-w-full wrap-anywhere"
+                    style={{
+                      background: "rgba(124, 58, 237, 0.15)",
+                      border: "1px solid rgba(139, 92, 246, 0.25)",
+                      color: "#c4b5fd",
+                    }}
+                  >
+                    #{tag}
+                    <button type="button" onClick={() => handleRemoveTag(tag)}>
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {tags.map((tag) => (
-                <span
-                key={tag}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary-600/20 text-primary-400 text-sm max-w-full wrap-anywhere"
-                >
-                #{tag}
-                  <button type="button" onClick={() => handleRemoveTag(tag)}>
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
+
+          {/* Sensitive Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsSensitive(!isSensitive)}
+            className="w-16 shrink-0 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
+            style={{
+              background: isSensitive ? "rgba(249, 115, 22, 0.1)" : "rgba(30, 16, 51, 1)",
+              border: `1px solid ${isSensitive ? "rgba(249, 115, 22, 0.3)" : "rgba(139, 92, 246, 0.2)"}`,
+              boxShadow: isSensitive ? "0 0 15px rgba(249,115,22,0.15)" : "none",
+            }}
+          >
+            {isSensitive ? (
+              <EyeOff className="w-5 h-5 text-orange-400" />
+            ) : (
+              <Eye className="w-5 h-5 text-dark-500" />
+            )}
+            <span
+              className="text-[9px] font-medium"
+              style={{ color: isSensitive ? "#fb923c" : "#64748b" }}
+            >
+              {isSensitive ? "NSFW" : "SFW"}
+            </span>
+          </button>
+        </div>
+
+        {/* Submit */}
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={isLoading}
+          className="w-full py-3.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:hover:scale-100"
+          style={{
+            background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+            boxShadow: "0 4px 20px rgba(124, 58, 237, 0.4), 0 0 40px rgba(124, 58, 237, 0.1)",
+          }}
+        >
+          {isLoading ? (
+            <div className="flex items-center justify-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Uploading... {uploadProgress}%
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2">
+              <Shield className="w-5 h-5" />
+              Post to Peja
             </div>
           )}
-        </div>
+        </button>
 
-        {/* Sensitive Content */}
-        <div className="glass-card mb-6">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isSensitive}
-              onChange={(e) => setIsSensitive(e.target.checked)}
-              className="w-5 h-5 mt-0.5 rounded border-dark-600 bg-dark-800 text-orange-600 focus:ring-orange-500"
-            />
-            <div>
-              <span className="text-sm text-dark-200 font-medium">⚠️ Contains sensitive content</span>
-              <p className="text-xs text-dark-500 mt-1">Content will be blurred until viewers choose to see it.</p>
-            </div>
-          </label>
-        </div>
-
-        <Button
-          type="button"
-          variant="primary"
-          className="w-full"
-          onClick={handleSubmit}
-          isLoading={isLoading}
-          disabled={isLoading}
-        >
-          {isLoading ? `Uploading... ${uploadProgress}%` : "Post to Peja"}
-        </Button>
         {toast && (
-  <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[99999] px-4 py-2 rounded-xl glass-float text-dark-100">
-    {toast}
-  </div>
-)}
+          <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[99999] px-4 py-2 rounded-xl glass-float text-dark-100">
+            {toast}
+          </div>
+        )}
       </main>
     </div>
   );
