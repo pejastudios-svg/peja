@@ -52,8 +52,6 @@ export default function Home() {
   const [trendingMode, setTrendingMode] = useState<TrendingMode>(initialUI.trendingMode ?? "recommended");
   const [showSeenTop, setShowSeenTop] = useState<boolean>(initialUI.showSeenTop ?? false);
   const [showSeenNearby, setShowSeenNearby] = useState(false);
-  const [newPostToast, setNewPostToast] = useState<Post | null>(null);
-
 
   // --- COMPUTE KEY EARLY ---
   const feedKey = activeTab === "trending"
@@ -426,62 +424,83 @@ useEffect(() => {
 
 
   // Real-time subscription
-useEffect(() => {
-  const unsubscribe = realtimeManager.subscribeToPosts(
-    // On new post
-    async (newPost) => {
-      if (newPost.status === "live") {
-        const formatted = await formatPost(newPost);
-        if (formatted) {
-          // Check if post is nearby (within 10km)
-          const userLat = user?.last_latitude;
-          const userLng = user?.last_longitude;
-          const postLat = formatted.location?.latitude;
-          const postLng = formatted.location?.longitude;
-          
-          let isNearby = false;
-          if (userLat && userLng && postLat && postLng) {
-            const distance = distanceKm(userLat, userLng, postLat, postLng);
-            isNearby = distance <= 10; // Within 10km
-          }
-          
-          setPosts((prev) => {
-            const merged = [formatted, ...prev];
+  useEffect(() => {
+    const unsubscribe = realtimeManager.subscribeToPosts(
+      // On new post
+      async (newPost) => {
+        if (newPost.status === "live") {
+          const formatted = await formatPost(newPost);
+          if (formatted) {
+            setPosts((prev) => {
+  const merged = [formatted, ...prev];
 
-            if (activeTab === "nearby") {
-              if (userLat != null && userLng != null) {
-                const sorted = merged.sort((a, b) => {
-                  const aHas = !!a.location?.latitude && !!a.location?.longitude;
-                  const bHas = !!b.location?.latitude && !!b.location?.longitude;
-                  if (!aHas && bHas) return 1;
-                  if (aHas && !bHas) return -1;
-                  if (!aHas && !bHas) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  if (activeTab === "nearby") {
+    const userLat = user?.last_latitude ?? null;
+    const userLng = user?.last_longitude ?? null;
 
-                  const da = distanceKm(userLat, userLng, a.location.latitude, a.location.longitude);
-                  const db = distanceKm(userLat, userLng, b.location.latitude, b.location.longitude);
-                  if (da !== db) return da - db;
-                  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-                });
+    if (userLat != null && userLng != null) {
+      const sorted = merged.sort((a, b) => {
+        const aHas = !!a.location?.latitude && !!a.location?.longitude;
+        const bHas = !!b.location?.latitude && !!b.location?.longitude;
+        if (!aHas && bHas) return 1;
+        if (aHas && !bHas) return -1;
+        if (!aHas && !bHas) return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 
-                const next = sorted.slice(0, 30);
-                feedCache.setPosts(feedKey, next);
-                return next;
-              }
-            }
+        const da = distanceKm(userLat, userLng, a.location.latitude, a.location.longitude);
+        const db = distanceKm(userLat, userLng, b.location.latitude, b.location.longitude);
+        if (da !== db) return da - db;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
 
-            const next = merged.slice(0, 30);
-            feedCache.setPosts(feedKey, next);
-            return next;
-          });
-          
-          // Show toast for nearby posts
-          if (isNearby && activeTab === "nearby") {
-            setNewPostToast(formatted);
-            setTimeout(() => setNewPostToast(null), 5000);
-          }
+      const next = sorted.slice(0, 30);
+      feedCache.setPosts(feedKey, next);
+      return next;
+    }
+  }
+
+  const next = merged.slice(0, 30);
+  feedCache.setPosts(feedKey, next);
+  return next;
+});
+    }
         }
-      }
-    }, 
+      },
+     // On post update
+(updatedPost) => {
+  console.log("[Realtime] Post updated:", updatedPost.id, "status:", updatedPost.status);
+  
+  setPosts((prev) => {
+    // If post is archived/deleted, remove it
+    if (updatedPost.status === "archived" || updatedPost.status === "deleted") {
+      console.log("[Realtime] Removing archived post:", updatedPost.id);
+      const next = prev.filter((p) => p.id !== updatedPost.id);
+      feedCache.setPosts(feedKey, next);
+      return next;
+    }
+    
+    // Otherwise update the post
+    const next = prev
+      .map((p) => {
+        if (p.id === updatedPost.id) {
+          return {
+            ...p,
+            confirmations: updatedPost.confirmations ?? p.confirmations,
+            views: updatedPost.views ?? p.views,
+            comment_count: updatedPost.comment_count ?? p.comment_count,
+            report_count: updatedPost.report_count ?? p.report_count,
+            status: updatedPost.status ?? p.status,
+            is_sensitive: updatedPost.is_sensitive ?? p.is_sensitive,
+          };
+        }
+        return p;
+      })
+      .filter((p) => p.status === "live" || p.status === "resolved");
+    
+    feedCache.setPosts(feedKey, next);
+    return next;
+  });
+},
+      
       // On post delete
       (deletedPost) => {
         setPosts((prev) => {
@@ -734,20 +753,6 @@ useEffect(() => {
   </div>
 )}
         </div>
-        {/* New nearby post toast */}
-{newPostToast && activeTab === "nearby" && (
-  <div 
-    className="fixed top-20 left-1/2 -translate-x-1/2 z-50 glass-float rounded-xl p-3 flex items-center gap-3 cursor-pointer animate-slide-down max-w-sm"
-    onClick={() => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      setNewPostToast(null);
-    }}
-  >
-    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-    <span className="text-sm text-dark-100">New incident nearby</span>
-    <span className="text-xs text-primary-400">Tap to view</span>
-  </div>
-)}
       </main>
 
       <BottomNav />
