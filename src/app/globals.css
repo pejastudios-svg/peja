@@ -1520,20 +1520,28 @@ body.modal-open {
 :root {
   --cap-status-bar-height: 0px;
 }
-
 html.capacitor-native {
   --cap-status-bar-height: 36px;
 }
-
 html.capacitor-native .fixed.top-0,
 html.capacitor-native header.fixed {
   top: var(--cap-status-bar-height) !important;
 }
-
+/* Post detail page uses absolute header, not fixed */
+html.capacitor-native header.absolute.top-0 {
+  top: var(--cap-status-bar-height) !important;
+}
 html.capacitor-native main.pt-16 {
   padding-top: calc(4rem + var(--cap-status-bar-height)) !important;
 }
-
 html.capacitor-native main.pt-14 {
   padding-top: calc(3.5rem + var(--cap-status-bar-height)) !important;
+}
+/* Post detail full-screen layout: push scrollable area down */
+html.capacitor-native .fixed.inset-0 > main.pt-14 {
+  padding-top: calc(3.5rem + var(--cap-status-bar-height)) !important;
+}
+/* SOS modals and other full-screen overlays that use fixed inset-0 + z-index 25000+ */
+html.capacitor-native .cap-status-pad {
+  padding-top: var(--cap-status-bar-height) !important;
 }

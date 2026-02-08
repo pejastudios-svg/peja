@@ -417,10 +417,10 @@ export function SOSButton({ className = "" }: { className?: string }) {
   // =====================================================
   // LOADING ANIMATION MODAL
   // =====================================================
-  if (showLoadingAnimation) {
+if (showLoadingAnimation) {
     return (
       <Portal>
-        <div className="fixed inset-0 z-[25000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[25000] flex items-center justify-center p-4 cap-status-pad">
           <div className="absolute inset-0 bg-black/80" />
           
           <div className="relative sos-loading-card w-full max-w-sm p-6">
@@ -523,10 +523,10 @@ export function SOSButton({ className = "" }: { className?: string }) {
   // =====================================================
   // OPTIONS MODAL — REDESIGNED
   // =====================================================
-  if (showOptions) {
+ if (showOptions) {
     return (
       <Portal>
-        <div className="fixed inset-0 z-[25000] flex items-end sm:items-center justify-center">
+        <div className="fixed inset-0 z-[25000] flex items-end sm:items-center justify-center cap-status-pad">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={closeOptions} />
           
           <div
@@ -681,14 +681,14 @@ export function SOSButton({ className = "" }: { className?: string }) {
   // =====================================================
   // ACTIVE SOS POPUP — REDESIGNED
   // =====================================================
-  if (showActivePopup && sosActive) {
+ if (showActivePopup && sosActive) {
     const tagInfo = selectedTag ? SOS_TAGS.find(t => t.id === selectedTag) : null;
     return (
       <Portal>
         <div
           className="fixed inset-0 z-[25000] flex items-center justify-center px-4"
           style={{
-            paddingTop: "calc(16px + env(safe-area-inset-top, 0px))",
+            paddingTop: "calc(16px + env(safe-area-inset-top, 0px) + var(--cap-status-bar-height, 0px))",
             paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
           }}
         >

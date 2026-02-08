@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase, restoreNativeSession, syncSessionToNative, clearNativeSession } from "@/lib/supabase";
 import { User as SupabaseUser, Session } from "@supabase/supabase-js";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { setFlashToast } from "@/context/ToastContext";
@@ -318,10 +318,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (initRef.current) return;
     initRef.current = true;
 
-    const initAuth = async () => {
+const initAuth = async () => {
       try {
+        // Restore session from native storage BEFORE checking Supabase
+        await restoreNativeSession();
         const { data: { session: currentSession } } = await supabase.auth.getSession();
-
         if (currentSession?.user) {
           setSession(currentSession);
           setSupabaseUser(currentSession.user);
@@ -552,8 +553,8 @@ console.error("Profile fetch error:", {
             if (newStatus === "banned") {
               // ✅ immediate kick out + in-app toast on login
               setFlashToast("danger", "Your account has been banned.");
-
               // sign out + clear state
+              await clearNativeSession();
               await supabase.auth.signOut();
               userProfileCache = null;
               locationTracker.stop();
@@ -728,9 +729,10 @@ console.error("Profile fetch error:", {
     }
   }
 
-  async function signOut() {
+ async function signOut() {
     userProfileCache = null;
     locationTracker.stop();
+    await clearNativeSession();
     await supabase.auth.signOut();
     setUser(null);
     setSupabaseUser(null);
