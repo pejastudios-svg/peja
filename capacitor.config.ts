@@ -8,6 +8,11 @@ const config: CapacitorConfig = {
     url: "https://peja.vercel.app",
     cleartext: false,
   },
+  android: {
+    webContentsDebuggingEnabled: false,
+    allowMixedContent: false,
+    appendUserAgent: "CapacitorApp",
+  },
   plugins: {
     SplashScreen: {
       launchAutoHide: true,
@@ -18,6 +23,12 @@ const config: CapacitorConfig = {
     StatusBar: {
       style: "DARK",
       backgroundColor: "#0c0818",
+    },
+    CapacitorCookies: {
+      enabled: true,
+    },
+    CapacitorHttp: {
+      enabled: true,
     },
   },
 };

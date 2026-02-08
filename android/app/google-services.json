@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "785380950580",
+    "project_id": "peja-f1be0",
+    "storage_bucket": "peja-f1be0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:785380950580:android:2b62a8d246ff0373084061",
+        "android_client_info": {
+          "package_name": "com.peja.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAnxraQ7FGoVCjU7zUR6kRWwq0r8TJHyPs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
