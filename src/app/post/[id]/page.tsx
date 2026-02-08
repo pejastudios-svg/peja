@@ -952,14 +952,23 @@ setLikeBusy(prev => {
 
   // Share
   const handleShare = async () => {
-    const url = `${window.location.origin}/post/${postId}`;
+    const url = `https://peja.vercel.app/post/${postId}`;
     if (navigator.share) {
       try {
-        await navigator.share({ title: "Peja Alert", url });
+        await navigator.share({
+          title: "Peja Alert",
+          text: "Check out this incident on Peja",
+          url,
+        });
       } catch {}
     } else {
-      await navigator.clipboard.writeText(url);
-      alert("Link copied!");
+      try {
+        await navigator.clipboard.writeText(url);
+        toastApi.success("Link copied!");
+      } catch {
+        // Fallback for older browsers
+        prompt("Copy this link:", url);
+      }
     }
   };
 
