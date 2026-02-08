@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { createNotification } from "@/lib/notifications";
 import { Portal } from "@/components/ui/Portal";
 import { useToast } from "@/context/ToastContext";
+import { apiUrl } from "@/lib/api";
 import { 
   AlertTriangle, X, Phone, Loader2, CheckCircle, Users, 
   ArrowLeft, Scan, MapPin, Radio, Shield, Send,
@@ -308,7 +309,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
       supabase.auth.getSession().then(({ data: auth }) => {
         const token = auth.session?.access_token;
         if (!token) return;
-        fetch("/api/sos/send-emails", {
+                fetch(apiUrl("/api/sos/send-emails"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

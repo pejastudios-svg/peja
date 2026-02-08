@@ -21,6 +21,7 @@ import { PostDetailSkeleton } from "@/components/posts/PostDetailSkeleton";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/context/ToastContext";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
+import { apiUrl } from "@/lib/api";
 import {
   ArrowLeft,
   MapPin,
@@ -974,7 +975,7 @@ if (!token) {
   return;
 }
 
-const res = await fetch("/api/report-post", {
+const res = await fetch(apiUrl("/api/report-post"), {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -1034,7 +1035,7 @@ setTimeout(() => setToastMsg(null), 2500);
     }
 
     // Call the delete API
-    const res = await fetch("/api/delete-my-post", {
+        const res = await fetch(apiUrl("/api/delete-my-post"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1183,7 +1184,7 @@ setTimeout(() => setToastMsg(null), 2500);
       reason: reportReason,
     });
     
-    const res = await fetch("/api/report-comment", {
+        const res = await fetch(apiUrl("/api/report-comment"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

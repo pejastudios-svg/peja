@@ -10,6 +10,7 @@ import { InlineVideo } from "@/components/reels/InlineVideo";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { FlaggedContentListener } from "@/components/notifications/FlaggedContentListener";
+import { apiUrl } from "@/lib/api";
 import {
   Flag,
   CheckCircle,
@@ -299,7 +300,7 @@ export default function GuardianQueuePage() {
       throw new Error("Session expired");
     }
 
-    const res = await fetch("/api/guardian/review-flagged", {
+        const res = await fetch(apiUrl("/api/guardian/review-flagged"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

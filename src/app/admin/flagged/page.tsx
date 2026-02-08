@@ -14,6 +14,7 @@ import GlowButton from "@/components/dashboard/GlowButton";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { FlaggedContentListener } from "@/components/notifications/FlaggedContentListener";
+import { apiUrl } from "@/lib/api";
 import {
   Flag,
   Loader2,
@@ -214,7 +215,7 @@ export default function AdminFlaggedPage() {
       const token = auth.session?.access_token;
       if (!token) throw new Error("Session expired");
 
-      const res = await fetch("/api/admin/review-flagged", {
+            const res = await fetch(apiUrl("/api/admin/review-flagged"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

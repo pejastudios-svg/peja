@@ -15,6 +15,7 @@ import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import { useLayoutEffect } from "react"
+import { apiUrl } from "@/lib/api";
 
 type FeedTab = "nearby" | "trending";
 
@@ -438,7 +439,7 @@ useEffect(() => {
   useEffect(() => {
   if (!session?.access_token) return;
 
-  fetch("/api/jobs/expire", {
+      fetch(apiUrl("/api/jobs/expire"), {
     method: "POST",
     headers: { Authorization: `Bearer ${session.access_token}` },
   }).catch(() => {});

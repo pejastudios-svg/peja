@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
-import { useRouter, usePathname } from "next/navigation"; // <--- Added usePathname
+import { useRouter, usePathname } from "next/navigation"; 
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
+import { apiUrl } from "@/lib/api";
 import {
   User,
   Mail,
@@ -328,7 +329,7 @@ useEffect(() => {
     }
 
     // Call the delete account API
-    const response = await fetch("/api/delete-account", {
+        const response = await fetch(apiUrl("/api/delete-account"), {
       method: "DELETE",
       headers: {
         "Authorization": `Bearer ${session.access_token}`,

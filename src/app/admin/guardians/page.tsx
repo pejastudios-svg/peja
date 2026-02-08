@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { apiUrl } from "@/lib/api";
 import { 
   Loader2, Shield, CheckCircle, XCircle, User, Search, 
   Activity, Eye, Trash2, AlertTriangle, ThumbsUp 
@@ -409,7 +410,7 @@ export default function AdminGuardiansPage() {
       const token = auth.session?.access_token;
       if (!token) throw new Error("Session expired. Please sign in again.");
 
-      const res = await fetch("/api/admin/review-guardian-application", {
+         const res = await fetch(apiUrl("/api/admin/review-guardian-application"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ applicationId: selected.id, action }),
@@ -441,7 +442,7 @@ export default function AdminGuardiansPage() {
       const token = auth.session?.access_token;
       if (!token) throw new Error("Session expired. Please sign in again.");
 
-      const res = await fetch("/api/admin/delete-guardian-application", {
+            const res = await fetch(apiUrl("/api/admin/delete-guardian-application"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ applicationId: selected.id }),
@@ -475,7 +476,7 @@ export default function AdminGuardiansPage() {
       const token = auth.session?.access_token;
       if (!token) throw new Error("Session expired. Please sign in again.");
 
-      const res = await fetch("/api/admin/set-user-role", {
+            const res = await fetch(apiUrl("/api/admin/set-user-role"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

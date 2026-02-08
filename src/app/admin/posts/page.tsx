@@ -11,6 +11,7 @@ import { ChevronDown } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { useToast } from "@/context/ToastContext";
+import { apiUrl } from "@/lib/api";
 import {
   Search,
   FileText,
@@ -253,7 +254,7 @@ export default function AdminPostsPage() {
         toast.danger("Not authenticated");
         return false;
       }
-      const res = await fetch("/api/admin/delete-post", {
+            const res = await fetch(apiUrl("/api/admin/delete-post"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
