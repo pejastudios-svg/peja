@@ -49,9 +49,10 @@ export async function sendPushNotification(params: {
         notification: {
           channelId: params.data?.sos_id ? "peja_sos" : "peja_alerts",
           priority: "max",
-          defaultSound: true,
+          sound: "peja_alert",
           defaultVibrateTimings: true,
           visibility: "public",
+          icon: "ic_notification",
         },
       },
     });

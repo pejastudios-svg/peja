@@ -36,9 +36,9 @@ export function CapacitorPushNotifications() {
             id: "peja_alerts",
             name: "Peja Alerts",
             description: "Incident alerts and notifications",
-            importance: 5, // MAX importance = heads-up popup
-            visibility: 1, // PUBLIC
-            sound: "default",
+            importance: 5,
+            visibility: 1,
+            sound: "peja_alert",
             vibration: true,
             lights: true,
           });
@@ -49,7 +49,7 @@ export function CapacitorPushNotifications() {
             description: "Emergency SOS notifications",
             importance: 5,
             visibility: 1,
-            sound: "default",
+            sound: "peja_alert",
             vibration: true,
             lights: true,
           });

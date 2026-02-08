@@ -39,54 +39,75 @@ async function persistAuthSession() {
   try {
     const { Preferences } = await import("@capacitor/preferences");
 
-    // On app start, check if we have a saved session in native storage
-    const { value: savedSession } = await Preferences.get({ key: "peja-auth" });
+    const AUTH_KEY = "peja-auth";
+    const NATIVE_KEY = "peja-auth-backup";
 
-    if (savedSession) {
-      // Check if localStorage already has a session
-      const currentSession = localStorage.getItem("peja-auth");
+    // Step 1: Check if localStorage has a valid session
+    const currentSession = localStorage.getItem(AUTH_KEY);
+    const hasValidSession =
+      currentSession &&
+      currentSession !== "null" &&
+      currentSession !== "{}" &&
+      currentSession.length > 10;
 
-      if (!currentSession || currentSession === "null" || currentSession === "{}") {
-        // Restore session from native storage to localStorage
-        console.log("[CapacitorInit] Restoring auth session from native storage");
-        localStorage.setItem("peja-auth", savedSession);
+    if (hasValidSession) {
+      // Save to native storage immediately
+      await Preferences.set({ key: NATIVE_KEY, value: currentSession });
+      console.log("[Auth] Session backed up to native storage");
+    } else {
+      // No valid session in localStorage — try to restore from native
+      const { value: savedSession } = await Preferences.get({
+        key: NATIVE_KEY,
+      });
 
-        // Reload to pick up the restored session
-        window.location.reload();
-        return;
+      if (
+        savedSession &&
+        savedSession !== "null" &&
+        savedSession !== "{}" &&
+        savedSession.length > 10
+      ) {
+        console.log("[Auth] Restoring session from native storage");
+        localStorage.setItem(AUTH_KEY, savedSession);
+
+        // Give Supabase a moment to pick it up, then reload
+        setTimeout(() => {
+          window.location.reload();
+        }, 100);
+        return; // Stop here, page will reload
       }
     }
 
-    // Watch for localStorage changes and sync to native storage
-    const syncInterval = setInterval(() => {
+    // Step 2: Continuously sync localStorage to native storage
+    // Use both interval and visibility change for maximum reliability
+    const syncToNative = async () => {
       try {
-        const session = localStorage.getItem("peja-auth");
-        if (session && session !== "null" && session !== "{}") {
-          Preferences.set({ key: "peja-auth", value: session });
+        const session = localStorage.getItem(AUTH_KEY);
+        if (session && session !== "null" && session !== "{}" && session.length > 10) {
+          await Preferences.set({ key: NATIVE_KEY, value: session });
         }
       } catch {}
-    }, 5000); // Sync every 5 seconds
+    };
 
-    // Also sync on page visibility change (app going to background)
-    const handleVisibilityChange = () => {
+    // Sync every 3 seconds
+    const interval = setInterval(syncToNative, 3000);
+
+    // Sync when app goes to background
+    document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") {
-        try {
-          const session = localStorage.getItem("peja-auth");
-          if (session && session !== "null" && session !== "{}") {
-            Preferences.set({ key: "peja-auth", value: session });
-          }
-        } catch {}
+        syncToNative();
       }
-    };
+    });
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    // Sync before page unload
+    window.addEventListener("beforeunload", () => {
+      syncToNative();
+    });
 
-    // Cleanup (though this component never unmounts)
-    return () => {
-      clearInterval(syncInterval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    // Sync on pagehide (more reliable on mobile)
+    window.addEventListener("pagehide", () => {
+      syncToNative();
+    });
   } catch (err) {
-    console.warn("[CapacitorInit] Preferences not available:", err);
+    console.warn("[Auth] Native persistence not available:", err);
   }
 }

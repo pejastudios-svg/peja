@@ -46,10 +46,10 @@ export async function createNotification({
       return false;
     }
 
-    // Also send FCM push notification (fire and forget)
-    sendFCMPush(userId, title, body || "", data || {}).catch((err) => {
-      console.warn("[FCM] Push failed (non-blocking):", err);
-    });
+    // Also send FCM push notification (fire and forget, never blocks)
+    try {
+      sendFCMPush(userId, title, body || "", data || {}).catch(() => {});
+    } catch {}
 
     return true;
   } catch (error) {
@@ -73,12 +73,14 @@ async function sendFCMPush(
     // Convert all data values to strings (FCM requirement)
     const stringData: Record<string, string> = {};
     for (const [key, value] of Object.entries(data)) {
-      stringData[key] = String(value ?? "");
+      if (value !== null && value !== undefined) {
+        stringData[key] = String(value);
+      }
     }
 
     const { apiUrl } = await import("./api");
 
-    await fetch(apiUrl("/api/send-push"), {
+    fetch(apiUrl("/api/send-push"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -90,10 +92,9 @@ async function sendFCMPush(
         body,
         data: stringData,
       }),
-    });
-  } catch (err) {
-    // Non-blocking, don't throw
-    console.warn("[FCM] Push send error:", err);
+    }).catch(() => {});
+  } catch {
+    // Completely silent, never throw
   }
 }
 
