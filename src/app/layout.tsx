@@ -14,6 +14,8 @@ import UserGestureAudioUnlocker from "@/components/notifications/UserGestureAudi
 import AccountStatusBanner from "@/components/system/AccountStatusBanner";
 import { ToastProvider } from "@/context/ToastContext";
 import GlobalScrollManager from "@/components/navigation/GlobalScrollManager";
+import { CapacitorInit } from "@/components/navigation/CapacitorInit";
+import { CapacitorBackButton } from "@/components/navigation/CapacitorBackButton";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -58,10 +60,11 @@ export default function RootLayout({
                   <Suspense fallback={null}>
                     <HistorySyncGuard />
                   </Suspense>
-
                   <UserGestureAudioUnlocker />
                   <InAppNotificationToasts />
                   <AccountStatusBanner />
+                  <CapacitorInit />
+                  <CapacitorBackButton />
                   {children}
                   {overlay}
                   {modal}

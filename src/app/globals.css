@@ -1516,29 +1516,11 @@ body.modal-open {
   animation: slide-down 0.3s ease-out;
 }
 
-/* =====================================================
-   CAPACITOR NATIVE APP - SAFE AREA HANDLING
-   ===================================================== */
-
-/* Apply safe area padding to the HTML element */
-html {
-  --sat: env(safe-area-inset-top, 0px);
-  --sab: env(safe-area-inset-bottom, 0px);
-  --sal: env(safe-area-inset-left, 0px);
-  --sar: env(safe-area-inset-right, 0px);
-}
-
-/* Ensure the viewport extends behind system bars */
-body {
-  padding-top: var(--sat);
-  padding-bottom: var(--sab);
-}
-
 /* Capacitor native app - status bar spacing */
-html.capacitor-android {
-  --cap-status-bar-height: 36px;
+:root {
+  --cap-status-bar-height: 0px;
 }
 
-html.capacitor-android body {
-  padding-top: var(--cap-status-bar-height, 0px);
+html.capacitor-native body {
+  padding-top: var(--cap-status-bar-height);
 }
