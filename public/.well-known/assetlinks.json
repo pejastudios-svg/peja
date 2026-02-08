@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.peja.app",
+      "sha256_cert_fingerprints": [
+        "47:65:43:3F:3E:33:BA:C9:9B:A1:D0:3B:36:22:3F:39:60:10:13:21:AE:DA:94:1D:94:73:48:13:5B:B9:2A:A8"
+      ]
+    }
+  }
+]
