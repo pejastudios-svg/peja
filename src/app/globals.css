@@ -1534,9 +1534,11 @@ body {
   padding-bottom: var(--sab);
 }
 
-/* Capacitor native app - status bar safe area */
-@supports (padding-top: env(safe-area-inset-top)) {
-  body {
-    padding-top: env(safe-area-inset-top, 0px);
-  }
+/* Capacitor native app - status bar spacing */
+html.capacitor-android {
+  --cap-status-bar-height: 36px;
+}
+
+html.capacitor-android body {
+  padding-top: var(--cap-status-bar-height, 0px);
 }
