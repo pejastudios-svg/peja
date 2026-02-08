@@ -46,10 +46,54 @@ export async function createNotification({
       return false;
     }
 
+    // Also send FCM push notification (fire and forget)
+    sendFCMPush(userId, title, body || "", data || {}).catch((err) => {
+      console.warn("[FCM] Push failed (non-blocking):", err);
+    });
+
     return true;
   } catch (error) {
     console.error("Notification error:", error);
     return false;
+  }
+}
+
+async function sendFCMPush(
+  userId: string,
+  title: string,
+  body: string,
+  data: Record<string, any>
+): Promise<void> {
+  try {
+    const { data: authData } = await supabase.auth.getSession();
+    const token = authData.session?.access_token;
+
+    if (!token) return;
+
+    // Convert all data values to strings (FCM requirement)
+    const stringData: Record<string, string> = {};
+    for (const [key, value] of Object.entries(data)) {
+      stringData[key] = String(value ?? "");
+    }
+
+    const { apiUrl } = await import("./api");
+
+    await fetch(apiUrl("/api/send-push"), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        userId,
+        title,
+        body,
+        data: stringData,
+      }),
+    });
+  } catch (err) {
+    // Non-blocking, don't throw
+    console.warn("[FCM] Push send error:", err);
   }
 }
 
