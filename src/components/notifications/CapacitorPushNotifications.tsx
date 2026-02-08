@@ -29,11 +29,38 @@ export function CapacitorPushNotifications() {
           "@capacitor/push-notifications"
         );
 
+        // Create high-priority notification channel (Android 8+)
+        // This is what makes notifications pop up as heads-up
+        try {
+          await PushNotifications.createChannel({
+            id: "peja_alerts",
+            name: "Peja Alerts",
+            description: "Incident alerts and notifications",
+            importance: 5, // MAX importance = heads-up popup
+            visibility: 1, // PUBLIC
+            sound: "default",
+            vibration: true,
+            lights: true,
+          });
+
+          await PushNotifications.createChannel({
+            id: "peja_sos",
+            name: "SOS Alerts",
+            description: "Emergency SOS notifications",
+            importance: 5,
+            visibility: 1,
+            sound: "default",
+            vibration: true,
+            lights: true,
+          });
+        } catch (channelErr) {
+          console.warn("[Push] Channel creation error:", channelErr);
+        }
+
         // Request permission
         const permResult = await PushNotifications.requestPermissions();
 
         if (permResult.receive === "granted") {
-          // Register with FCM
           await PushNotifications.register();
         } else {
           console.log("[Push] Permission denied");
@@ -44,7 +71,6 @@ export function CapacitorPushNotifications() {
         PushNotifications.addListener("registration", async (token) => {
           console.log("[Push] FCM Token:", token.value);
 
-          // Save the token to your database
           try {
             await supabase
               .from("user_push_tokens")
@@ -74,14 +100,10 @@ export function CapacitorPushNotifications() {
           "pushNotificationReceived",
           (notification) => {
             console.log("[Push] Foreground notification:", notification);
-
-            // You can show an in-app toast or banner here
-            // The notification is already handled by your existing
-            // InAppNotificationToasts component via Supabase realtime
           }
         );
 
-        // Listen for notification taps (user clicked the notification)
+        // Listen for notification taps
         PushNotifications.addListener(
           "pushNotificationActionPerformed",
           (action) => {
@@ -89,11 +111,14 @@ export function CapacitorPushNotifications() {
 
             const data = action.notification.data;
 
-            // Navigate based on notification data
-            if (data?.post_id) {
+            if (data?.sos_id) {
+              if (data?.latitude && data?.longitude) {
+                router.push(`/map?lat=${data.latitude}&lng=${data.longitude}&sos=${data.sos_id}`);
+              } else {
+                router.push("/map");
+              }
+            } else if (data?.post_id) {
               router.push(`/post/${data.post_id}`);
-            } else if (data?.sos_id) {
-              router.push("/sos");
             } else if (data?.type === "guardian_approved") {
               router.push("/guardian");
             } else {
