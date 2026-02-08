@@ -1521,6 +1521,19 @@ body.modal-open {
   --cap-status-bar-height: 0px;
 }
 
-html.capacitor-native body {
-  padding-top: var(--cap-status-bar-height);
+html.capacitor-native {
+  --cap-status-bar-height: 36px;
+}
+
+html.capacitor-native .fixed.top-0,
+html.capacitor-native header.fixed {
+  top: var(--cap-status-bar-height) !important;
+}
+
+html.capacitor-native main.pt-16 {
+  padding-top: calc(4rem + var(--cap-status-bar-height)) !important;
+}
+
+html.capacitor-native main.pt-14 {
+  padding-top: calc(3.5rem + var(--cap-status-bar-height)) !important;
 }
