@@ -22,7 +22,7 @@ export function CapacitorInit() {
     // so we use a known safe value for Android status bars
     document.documentElement.style.setProperty(
       "--cap-status-bar-height",
-      "32px"
+      "48px"
     );
 
     // Try to style the status bar if plugin is available
