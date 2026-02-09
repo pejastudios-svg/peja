@@ -29,9 +29,15 @@ export function CapacitorPushNotifications() {
           "@capacitor/push-notifications"
         );
 
-        // Create high-priority notification channel (Android 8+)
-        // This is what makes notifications pop up as heads-up
+        // Delete old channels and recreate with correct settings
+        // Android caches channel settings — deleting forces a fresh start
         try {
+          // Delete old channels (silently fails if they don't exist)
+          try { await PushNotifications.deleteChannel({ id: "peja_alerts" }); } catch {}
+          try { await PushNotifications.deleteChannel({ id: "peja_sos" }); } catch {}
+          try { await PushNotifications.deleteChannel({ id: "default" }); } catch {}
+
+          // Create channels fresh with maximum importance
           await PushNotifications.createChannel({
             id: "peja_alerts",
             name: "Peja Alerts",
@@ -53,6 +59,8 @@ export function CapacitorPushNotifications() {
             vibration: true,
             lights: true,
           });
+
+          console.log("[Push] Notification channels created successfully");
         } catch (channelErr) {
           console.warn("[Push] Channel creation error:", channelErr);
         }
