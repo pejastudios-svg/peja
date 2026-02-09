@@ -7,6 +7,7 @@ const config: CapacitorConfig = {
   server: {
     url: "https://peja.vercel.app",
     cleartext: false,
+    errorPath: "/offline.html",
   },
   android: {
     webContentsDebuggingEnabled: false,
