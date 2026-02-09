@@ -234,7 +234,10 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
       <div className="fixed inset-0 z-[5000] flex items-start justify-center overflow-hidden">
         <div className="absolute inset-0 bg-black/70" onClick={handleCloseDetails} />
         
-        <div className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col">
+        <div
+          className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col"
+          style={{ paddingTop: "var(--cap-status-bar-height, 0px)" }}
+        >
           {/* Header */}
           <div className="flex items-center gap-3 p-4 border-b border-white/10 shrink-0">
             <button
@@ -430,7 +433,10 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
     <div className="fixed inset-0 z-[5000] flex items-start justify-center overflow-hidden">
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
       
-      <div className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col">
+      <div
+        className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col"
+        style={{ paddingTop: "var(--cap-status-bar-height, 0px)" }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-3">
