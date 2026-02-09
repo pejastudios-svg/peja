@@ -36,7 +36,8 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden"
+    <div
+      className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden"
       style={{ background: "linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e1033 100%)" }}
     >
       {/* Background grid */}
@@ -54,44 +55,24 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
 
       {/* Ambient glow */}
       <div
-        className="absolute"
+        className="absolute pointer-events-none"
         style={{
-          width: 350,
-          height: 350,
-          background: "radial-gradient(circle, rgba(124,58,237,0.2) 0%, transparent 70%)",
+          width: 300,
+          height: 300,
+          borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(124,58,237,0.18) 0%, transparent 70%)",
           animation: "peja-load-ambient 2.5s ease-in-out infinite",
         }}
       />
 
       <div className="relative z-10 flex flex-col items-center text-center px-6 max-w-sm">
-        {/* Logo */}
-        <div className="relative w-24 h-24 mb-8">
-          <div
-            className="absolute rounded-full"
-            style={{
-              inset: -20,
-              background: "radial-gradient(circle, rgba(124,58,237,0.2) 0%, transparent 70%)",
-              animation: "peja-load-ambient 3s ease-in-out infinite",
-            }}
-          />
-          <img
-            src="/peja-logo.png"
-            alt="Peja"
-            className="relative z-10 w-full h-full object-contain"
-            style={{
-              filter: "drop-shadow(0 0 10px rgba(124,58,237,0.3)) grayscale(0.3) brightness(0.8)",
-              animation: "peja-load-float 3s ease-in-out infinite",
-            }}
-          />
-        </div>
-
         {/* Wifi off icon */}
-        <div className="w-14 h-14 mb-6 relative">
+        <div className="w-16 h-16 mb-7 relative">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
             fill="none"
-            stroke="#64748b"
+            stroke="#475569"
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -101,9 +82,8 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
             <path d="M5 12.55a11 11 0 0 1 14.08 0" />
             <path d="M1.42 9a16 16 0 0 1 21.16 0" />
             <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-            <circle cx="12" cy="20" r="1" fill="#64748b" />
+            <circle cx="12" cy="20" r="1" fill="#475569" />
           </svg>
-          {/* Red slash */}
           <div
             className="absolute top-1/2 left-1/2 rounded-sm"
             style={{
@@ -111,18 +91,16 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
               height: 3,
               background: "linear-gradient(90deg, transparent, #ef4444, #ef4444, transparent)",
               transform: "translate(-50%, -50%) rotate(-45deg)",
-              boxShadow: "0 0 10px rgba(239, 68, 68, 0.4)",
+              boxShadow: "0 0 10px rgba(239, 68, 68, 0.3)",
             }}
           />
         </div>
 
-        {/* Text */}
         <h1 className="text-xl font-bold text-dark-100 mb-2">No Internet Connection</h1>
-        <p className="text-sm text-dark-500 leading-relaxed mb-8">
+        <p className="text-sm text-dark-500 leading-relaxed mb-9">
           Please check your Wi-Fi or mobile data and try again. Peja needs an internet connection to keep you safe.
         </p>
 
-        {/* Retry button */}
         <button
           onClick={handleRetry}
           disabled={checking}
@@ -149,34 +127,25 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
           {checking ? "Checking..." : "Retry"}
         </button>
 
-        {/* Status indicator */}
         <div
-          className="mt-6 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium"
+          className="mt-7 flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium"
           style={{
             background:
               status === "checking"
-                ? "rgba(234, 179, 8, 0.1)"
-                : status === "still-offline"
-                ? "rgba(239, 68, 68, 0.15)"
-                : "rgba(239, 68, 68, 0.1)",
+                ? "rgba(234, 179, 8, 0.08)"
+                : "rgba(239, 68, 68, 0.08)",
             border: `1px solid ${
               status === "checking"
-                ? "rgba(234, 179, 8, 0.2)"
-                : "rgba(239, 68, 68, 0.2)"
+                ? "rgba(234, 179, 8, 0.15)"
+                : "rgba(239, 68, 68, 0.15)"
             }`,
-            color:
-              status === "checking"
-                ? "#facc15"
-                : status === "still-offline"
-                ? "#f87171"
-                : "#f87171",
+            color: status === "checking" ? "#facc15" : "#f87171",
           }}
         >
           <div
             className="w-1.5 h-1.5 rounded-full"
             style={{
-              background:
-                status === "checking" ? "#eab308" : "#ef4444",
+              background: status === "checking" ? "#eab308" : "#ef4444",
               animation: "peja-status-blink 1.5s ease-in-out infinite",
             }}
           />
