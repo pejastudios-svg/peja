@@ -1,92 +1,148 @@
 "use client";
-import { useEffect } from "react";
-import { syncSessionToNative, isCapacitorNative } from "@/lib/supabase";
+
+import { useEffect, useState } from "react";
+import { syncSessionToNative } from "@/lib/supabase";
+import { OfflineScreen } from "@/components/system/OfflineScreen";
+
 export function CapacitorInit() {
+  const [isOffline, setIsOffline] = useState(false);
+  const [isCapacitor, setIsCapacitor] = useState(false);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!isCapacitorNative()) return;
-    // Mark the document for CSS rules
+
+    const ua = navigator.userAgent || "";
+    const isAndroidWebView = /Android/.test(ua) && /wv/.test(ua);
+    const isCapacitorBridge = (window as any).Capacitor !== undefined;
+
+    if (!isAndroidWebView && !isCapacitorBridge) return;
+
+    setIsCapacitor(true);
+
+    // Mark the document for CSS targeting
     document.documentElement.classList.add("capacitor-native");
-    // Set status bar height CSS variable
+
+    // Set status bar height
     document.documentElement.style.setProperty(
       "--cap-status-bar-height",
       "36px"
     );
+
     // Style the status bar
     import("@capacitor/status-bar")
       .then(({ StatusBar }) => {
         StatusBar.setBackgroundColor({ color: "#0c0818" }).catch(() => {});
       })
       .catch(() => {});
-    // ---------------------------------------------------------
-    // Continuous session sync to native storage
-    // ---------------------------------------------------------
-    const syncInterval = setInterval(syncSessionToNative, 3000);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        syncSessionToNative();
-      }
-    };
-    const handlePageHide = () => {
-      syncSessionToNative();
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", handlePageHide);
-    window.addEventListener("beforeunload", handlePageHide);
-    // ---------------------------------------------------------
-    // Deep link handling (Problem 2)
-    // ---------------------------------------------------------
+
+    // Start continuous session sync to native storage
+    startSessionSync();
+
+    // Setup deep link listener
     setupDeepLinkListener();
-    return () => {
-      clearInterval(syncInterval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("pagehide", handlePageHide);
-      window.removeEventListener("beforeunload", handlePageHide);
-    };
+
+    // Setup network monitoring
+    setupNetworkMonitor(setIsOffline);
   }, []);
+
+  // Show offline screen if no network in Capacitor
+  if (isCapacitor && isOffline) {
+    return (
+      <div className="fixed inset-0 z-[99999]">
+        <OfflineScreen
+          onRetry={() => {
+            window.location.reload();
+          }}
+        />
+      </div>
+    );
+  }
+
   return null;
 }
-/**
- * Listen for deep links / app links via @capacitor/app.
- * When the OS opens the app with a URL like https://peja.vercel.app/post/abc123,
- * we extract the path and use Next.js router to navigate to it.
- */
+
+// =====================================================
+// SESSION SYNC (localStorage → Native Preferences)
+// =====================================================
+function startSessionSync() {
+  // Sync every 5 seconds
+  setInterval(() => {
+    syncSessionToNative();
+  }, 5000);
+
+  // Sync when app goes to background
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      syncSessionToNative();
+    }
+  });
+
+  // Sync before page unload
+  window.addEventListener("pagehide", () => {
+    syncSessionToNative();
+  });
+}
+
+// =====================================================
+// DEEP LINK HANDLER
+// =====================================================
 async function setupDeepLinkListener() {
   try {
     const { App } = await import("@capacitor/app");
-    // Handle URL when app is already running (brought to foreground via link)
+
     App.addListener("appUrlOpen", (event) => {
-      console.log("[DeepLink] App opened with URL:", event.url);
+      console.log("[DeepLink] URL:", event.url);
+
+      let path: string | null = null;
+
       try {
         const url = new URL(event.url);
-        const path = url.pathname + url.search + url.hash;
-        if (path && path !== "/") {
-          console.log("[DeepLink] Navigating to:", path);
-          // Use window.location for reliable navigation in Capacitor WebView
-          window.location.href = path;
+        if (
+          url.hostname === "peja.vercel.app" ||
+          url.hostname === "www.peja.vercel.app"
+        ) {
+          path = url.pathname + url.search + url.hash;
         }
-      } catch (err) {
-        console.warn("[DeepLink] Failed to parse URL:", err);
+      } catch {
+        if (event.url.startsWith("peja://")) {
+          const afterScheme = event.url.replace("peja://app", "");
+          path = afterScheme || "/";
+        }
+      }
+
+      if (path && path !== window.location.pathname) {
+        console.log("[DeepLink] Navigating to:", path);
+        window.location.assign(path);
       }
     });
-    // Check if the app was cold-started with a URL
-    const launchUrl = await App.getLaunchUrl();
-    if (launchUrl?.url) {
-      console.log("[DeepLink] App launched with URL:", launchUrl.url);
-      try {
-        const url = new URL(launchUrl.url);
-        const path = url.pathname + url.search + url.hash;
-        if (path && path !== "/") {
-          // Small delay to let the app initialize
-          setTimeout(() => {
-            window.location.href = path;
-          }, 500);
-        }
-      } catch (err) {
-        console.warn("[DeepLink] Failed to parse launch URL:", err);
-      }
-    }
   } catch (err) {
     console.warn("[DeepLink] @capacitor/app not available:", err);
+  }
+}
+
+// =====================================================
+// NETWORK MONITOR
+// =====================================================
+async function setupNetworkMonitor(setIsOffline: (offline: boolean) => void) {
+  try {
+    const { Network } = await import("@capacitor/network");
+
+    // Check initial status
+    const status = await Network.getStatus();
+    if (!status.connected) {
+      setIsOffline(true);
+    }
+
+    // Listen for changes
+    Network.addListener("networkStatusChange", (status) => {
+      console.log("[Network] Status changed:", status.connected, status.connectionType);
+      setIsOffline(!status.connected);
+    });
+  } catch {
+    // Fallback to browser APIs
+    setIsOffline(!navigator.onLine);
+
+    window.addEventListener("online", () => setIsOffline(false));
+    window.addEventListener("offline", () => setIsOffline(true));
   }
 }

@@ -1589,6 +1589,16 @@ body.modal-open {
   }
 }
 
+@keyframes peja-wifi-fade {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.25; }
+}
+
+@keyframes peja-status-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 /* Capacitor native app - status bar spacing */
 :root {
   --cap-status-bar-height: 0px;
