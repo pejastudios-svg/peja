@@ -420,7 +420,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
 if (showLoadingAnimation) {
     return (
       <Portal>
-        <div className="fixed inset-0 z-[25000] flex items-center justify-center p-4 cap-status-pad">
+        <div className="fixed inset-0 z-[25000] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/80" />
           
           <div className="relative sos-loading-card w-full max-w-sm p-6">
@@ -688,7 +688,7 @@ if (showLoadingAnimation) {
         <div
           className="fixed inset-0 z-[25000] flex items-center justify-center px-4"
           style={{
-            paddingTop: "calc(16px + env(safe-area-inset-top, 0px) + var(--cap-status-bar-height, 0px))",
+            paddingTop: "calc(16px + var(--cap-status-bar-height, 0px) + env(safe-area-inset-top, 0px))",
             paddingBottom: "calc(16px + env(safe-area-inset-bottom, 0px))",
           }}
         >

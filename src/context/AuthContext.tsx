@@ -1,10 +1,11 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
-import { supabase, restoreNativeSession, syncSessionToNative, clearNativeSession } from "@/lib/supabase";
+import { supabase, restoreNativeSession, clearNativeSession } from "@/lib/supabase";
 import { User as SupabaseUser, Session } from "@supabase/supabase-js";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { setFlashToast } from "@/context/ToastContext";
+
 
 
 interface User {
@@ -318,18 +319,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (initRef.current) return;
     initRef.current = true;
 
-const initAuth = async () => {
+    const initAuth = async () => {
       try {
-        // Restore session from native storage BEFORE checking Supabase
+        // Step 1: Restore session from native storage BEFORE Supabase reads localStorage
         await restoreNativeSession();
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        if (currentSession?.user) {
-          setSession(currentSession);
-          setSupabaseUser(currentSession.user);
-          await fetchUserProfile(currentSession.user.id);
-          checkAndStartLocationTracking(currentSession.user.id);
-          await startUserRowSubscription(currentSession.user.id);
-          subscribeToMyUserRow(currentSession.user.id);
+
+        // Step 2: Try getSession first (reads from localStorage, fast)
+        const { data: { session: cachedSession } } = await supabase.auth.getSession();
+
+        if (cachedSession?.user) {
+          // We have a cached session — use it immediately for fast UI
+          setSession(cachedSession);
+          setSupabaseUser(cachedSession.user);
+          await fetchUserProfile(cachedSession.user.id);
+          checkAndStartLocationTracking(cachedSession.user.id);
+          await startUserRowSubscription(cachedSession.user.id);
+          subscribeToMyUserRow(cachedSession.user.id);
+        } else {
+          // No cached session — try to refresh via setSession
+          // This forces Supabase to use the refresh_token if access_token expired
+          console.log("[Auth] No cached session, attempting token refresh...");
+          const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
+
+          if (refreshedSession?.user && !refreshError) {
+            console.log("[Auth] Token refresh successful");
+            setSession(refreshedSession);
+            setSupabaseUser(refreshedSession.user);
+            await fetchUserProfile(refreshedSession.user.id);
+            checkAndStartLocationTracking(refreshedSession.user.id);
+            await startUserRowSubscription(refreshedSession.user.id);
+            subscribeToMyUserRow(refreshedSession.user.id);
+          } else {
+            console.log("[Auth] No valid session found after refresh attempt");
+          }
         }
       } catch (error) {
         console.error("Auth init error:", error);
@@ -553,6 +575,7 @@ console.error("Profile fetch error:", {
             if (newStatus === "banned") {
               // ✅ immediate kick out + in-app toast on login
               setFlashToast("danger", "Your account has been banned.");
+
               // sign out + clear state
               await clearNativeSession();
               await supabase.auth.signOut();
@@ -729,7 +752,7 @@ console.error("Profile fetch error:", {
     }
   }
 
- async function signOut() {
+   async function signOut() {
     userProfileCache = null;
     locationTracker.stop();
     await clearNativeSession();

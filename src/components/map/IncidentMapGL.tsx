@@ -1057,6 +1057,7 @@ export default function IncidentMapGL({
           <div
             ref={modalContentRef}
             className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col"
+            style={{ paddingTop: "var(--cap-status-bar-height, 0px)" }}
           >
             {/* User Info Header */}
             <div className="border-b border-white/10 p-4 shrink-0">

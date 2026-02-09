@@ -1388,8 +1388,8 @@ if (error || !post) {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black">
-  {/* Header - Absolute Top */}
-      <header className="absolute top-0 inset-x-0 z-50 glass-header cap-status-pad">
+       {/* Header - Absolute Top */}
+      <header className="absolute top-0 inset-x-0 z-50 glass-header">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto w-full">
           <button
             onClick={() => {
@@ -1433,7 +1433,10 @@ if (error || !post) {
       </header>
 
       {/* Main Content - Scrollable Area */}
-         <main className="flex-1 overflow-y-auto w-full pb-24 overscroll-contain" style={{ paddingTop: 'calc(3.5rem + var(--cap-status-bar-height, 0px))' }}>
+               <main
+        className="flex-1 overflow-y-auto w-full pb-24 overscroll-contain"
+        style={{ paddingTop: "calc(3.5rem + var(--cap-status-bar-height, 0px))" }}
+      >
         <div className="max-w-2xl mx-auto">
          {/* Media Carousel */}
 {post.media && post.media.length > 0 && (
@@ -1809,7 +1812,10 @@ if (error || !post) {
         initialIndex={lightboxIndex}
       />
         {toastMsg && (
-        <div className="fixed left-1/2 -translate-x-1/2 z-9999 px-4 py-2 rounded-xl glass-float text-dark-100" style={{ top: 'calc(4rem + var(--cap-status-bar-height, 0px))' }}>
+        <div
+          className="fixed left-1/2 -translate-x-1/2 z-9999 px-4 py-2 rounded-xl glass-float text-dark-100"
+          style={{ top: "calc(4rem + var(--cap-status-bar-height, 0px))" }}
+        >
           {toastMsg}
         </div>
       )}
