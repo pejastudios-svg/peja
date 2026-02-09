@@ -209,7 +209,10 @@ onTouchStartCapture={(e) => {
         style={{ opacity: bgOpacity }}
       />
 
-      <div className={`absolute top-4 left-4 z-10 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? 'opacity-100!' : 'pointer-events-none'}`}>
+            <div
+        className={`absolute left-4 z-10 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? 'opacity-100!' : 'pointer-events-none'}`}
+        style={{ top: "calc(1rem + var(--cap-status-bar-height, 0px))" }}
+      >
         <button 
           onClick={(e) => { e.stopPropagation(); onClose(); }}
           className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60"
