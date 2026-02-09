@@ -16,6 +16,7 @@ import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import { useLayoutEffect } from "react"
 import { apiUrl } from "@/lib/api";
+import { PejaLoadingScreen } from "@/components/ui/PejaLoadingScreen";
 
 type FeedTab = "nearby" | "trending";
 
@@ -690,19 +691,11 @@ useEffect(() => {
   }, [authLoading, user, router]);
 
   if (authLoading || (!user && !authCheckDone)) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-      </div>
-    );
+    return <PejaLoadingScreen />;
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
-      </div>
-    );
+    return <PejaLoadingScreen />;
   }
 
   return (
