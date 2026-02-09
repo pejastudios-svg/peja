@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Peja</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e1033 100%);
+      color: #f8fafc;
+      font-family: 'Poppins', system-ui, -apple-system, sans-serif;
+      padding: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.1;
+      background-image:
+        linear-gradient(rgba(167,139,250,0.3) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(167,139,250,0.3) 1px, transparent 1px);
+      background-size: 44px 44px;
+      -webkit-mask-image: radial-gradient(circle at 50% 50%, black 0%, transparent 70%);
+      mask-image: radial-gradient(circle at 50% 50%, black 0%, transparent 70%);
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      max-width: 340px;
+    }
+
+    .ambient {
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(124,58,237,0.18) 0%, transparent 70%);
+      animation: ambient-pulse 2.5s ease-in-out infinite;
+      pointer-events: none;
+    }
+
+    .wifi-icon {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 28px;
+      position: relative;
+    }
+
+    .wifi-icon svg {
+      width: 100%;
+      height: 100%;
+      color: #475569;
+      animation: wifi-fade 2s ease-in-out infinite;
+    }
+
+    .wifi-slash {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 72px;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #ef4444, #ef4444, transparent);
+      border-radius: 2px;
+      transform: translate(-50%, -50%) rotate(-45deg);
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+    }
+
+    .title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: #64748b;
+      line-height: 1.6;
+      margin-bottom: 36px;
+    }
+
+    .retry-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 15px 28px;
+      background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+      color: white;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 16px;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(124, 58, 237, 0.35);
+      transition: all 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .retry-btn:active {
+      transform: scale(0.96);
+      box-shadow: 0 2px 12px rgba(124, 58, 237, 0.3);
+    }
+
+    .retry-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .retry-btn.loading svg {
+      animation: spin 1s linear infinite;
+    }
+
+    .status {
+      margin-top: 28px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      background: rgba(239, 68, 68, 0.08);
+      border: 1px solid rgba(239, 68, 68, 0.15);
+      border-radius: 999px;
+      font-size: 12px;
+      color: #f87171;
+      font-weight: 500;
+    }
+
+    .status.checking {
+      background: rgba(234, 179, 8, 0.08);
+      border-color: rgba(234, 179, 8, 0.15);
+      color: #facc15;
+    }
+
+    .status.checking .status-dot {
+      background: #eab308;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: blink 1.5s ease-in-out infinite;
+    }
+
+    @keyframes ambient-pulse {
+      0%, 100% { opacity: 0.5; transform: scale(1); }
+      50% { opacity: 0.9; transform: scale(1.12); }
+    }
+
+    @keyframes wifi-fade {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 0.2; }
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient"></div>
+
+  <div class="container">
+    <div class="wifi-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12.55a11 11 0 0 1 14.08 0" />
+        <path d="M1.42 9a16 16 0 0 1 21.16 0" />
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
+        <circle cx="12" cy="20" r="1" fill="currentColor" />
+      </svg>
+      <div class="wifi-slash"></div>
+    </div>
+
+    <h1 class="title">No Internet Connection</h1>
+    <p class="subtitle">
+      Please check your Wi-Fi or mobile data and try again. Peja needs an internet connection to keep you safe.
+    </p>
+
+    <button class="retry-btn" id="retryBtn" onclick="handleRetry()">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10" />
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+      </svg>
+      Retry
+    </button>
+
+    <div class="status" id="statusEl">
+      <div class="status-dot"></div>
+      <span id="statusText">Offline</span>
+    </div>
+  </div>
+
+  <script>
+    var busy = false;
+
+    function handleRetry() {
+      if (busy) return;
+      busy = true;
+
+      var btn = document.getElementById('retryBtn');
+      var statusEl = document.getElementById('statusEl');
+      var statusText = document.getElementById('statusText');
+
+      btn.classList.add('loading');
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg> Checking...';
+      statusEl.className = 'status checking';
+      statusText.textContent = 'Checking connection...';
+
+      fetch('https://peja.vercel.app/', { method: 'HEAD', cache: 'no-store', mode: 'no-cors' })
+        .then(function() {
+          statusText.textContent = 'Connected! Loading...';
+          setTimeout(function() {
+            window.location.href = 'https://peja.vercel.app';
+          }, 300);
+        })
+        .catch(function() {
+          statusEl.className = 'status';
+          statusText.textContent = 'Still offline';
+          btn.classList.remove('loading');
+          btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg> Retry';
+          busy = false;
+        });
+    }
+
+    window.addEventListener('online', function() {
+      handleRetry();
+    });
+  </script>
+</body>
+</html>

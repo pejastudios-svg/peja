@@ -37,29 +37,34 @@ export async function sendPushNotification(params: {
     const firebaseApp = getFirebaseAdmin();
     const messaging = firebaseApp.messaging();
 
+    const channelId = params.data?.sos_id ? "peja_sos" : "peja_alerts";
+
     await messaging.send({
       token: params.token,
-      notification: {
+      data: {
+        ...(params.data || {}),
         title: params.title,
-        body: params.body,
+        body: params.body || "",
+        channelId: channelId,
       },
-      data: params.data || {},
       android: {
         priority: "high",
+        ttl: 300000,
         notification: {
-          channelId: params.data?.sos_id ? "peja_sos" : "peja_alerts",
-          priority: "max",
+          channelId: channelId,
+          title: params.title,
+          body: params.body,
           sound: "peja_alert",
-          defaultVibrateTimings: true,
           visibility: "public",
           icon: "ic_notification",
+          defaultVibrateTimings: true,
+          notificationCount: 1,
         },
       },
     });
 
     return true;
   } catch (error: any) {
-    // If token is invalid/expired, return false so we can clean it up
     if (
       error?.code === "messaging/registration-token-not-registered" ||
       error?.code === "messaging/invalid-registration-token"
