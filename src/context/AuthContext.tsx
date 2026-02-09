@@ -321,36 +321,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const initAuth = async () => {
       try {
-        // Step 1: Restore session from native storage BEFORE Supabase reads localStorage
+        // Step 1: On Capacitor, restore session from native storage into localStorage
         await restoreNativeSession();
 
-        // Step 2: Try getSession first (reads from localStorage, fast)
-        const { data: { session: cachedSession } } = await supabase.auth.getSession();
+        // Step 2: Get session from localStorage
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
 
-        if (cachedSession?.user) {
-          // We have a cached session — use it immediately for fast UI
-          setSession(cachedSession);
-          setSupabaseUser(cachedSession.user);
-          await fetchUserProfile(cachedSession.user.id);
-          checkAndStartLocationTracking(cachedSession.user.id);
-          await startUserRowSubscription(cachedSession.user.id);
-          subscribeToMyUserRow(cachedSession.user.id);
+        if (currentSession?.user) {
+          setSession(currentSession);
+          setSupabaseUser(currentSession.user);
+          await fetchUserProfile(currentSession.user.id);
+          checkAndStartLocationTracking(currentSession.user.id);
+          await startUserRowSubscription(currentSession.user.id);
+          subscribeToMyUserRow(currentSession.user.id);
         } else {
-          // No cached session — try to refresh via setSession
-          // This forces Supabase to use the refresh_token if access_token expired
-          console.log("[Auth] No cached session, attempting token refresh...");
-          const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession();
-
-          if (refreshedSession?.user && !refreshError) {
-            console.log("[Auth] Token refresh successful");
-            setSession(refreshedSession);
-            setSupabaseUser(refreshedSession.user);
-            await fetchUserProfile(refreshedSession.user.id);
-            checkAndStartLocationTracking(refreshedSession.user.id);
-            await startUserRowSubscription(refreshedSession.user.id);
-            subscribeToMyUserRow(refreshedSession.user.id);
-          } else {
-            console.log("[Auth] No valid session found after refresh attempt");
+          // No cached session — try refreshing (handles expired access tokens)
+          const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+          if (refreshed?.user) {
+            setSession(refreshed);
+            setSupabaseUser(refreshed.user);
+            await fetchUserProfile(refreshed.user.id);
+            checkAndStartLocationTracking(refreshed.user.id);
+            await startUserRowSubscription(refreshed.user.id);
+            subscribeToMyUserRow(refreshed.user.id);
           }
         }
       } catch (error) {

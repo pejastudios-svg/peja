@@ -647,13 +647,57 @@ useEffect(() => {
   };
 
   // Redirect to login if not authenticated
+  // Use a delay to give auth system time to restore session from native storage
+  // and refresh expired tokens before deciding the user is not logged in
+  const [authCheckDone, setAuthCheckDone] = useState(false);
+
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/login");
+    if (authLoading) return; // Still loading, wait
+
+    if (user) {
+      // User is authenticated, no redirect needed
+      setAuthCheckDone(true);
+      return;
     }
+
+    // authLoading is false but user is null
+    // Before redirecting, wait a moment and double-check
+    // This handles race conditions with token refresh and native session restore
+    const timer = setTimeout(async () => {
+      try {
+        // Force a session check — this will use refresh_token if access_token expired
+        const { data: { session: freshSession } } = await supabase.auth.getSession();
+
+        if (freshSession?.user) {
+          // Session exists but user state hasn't caught up yet — wait for it
+          console.log("[Home] Session found on recheck, waiting for user state...");
+          // Give AuthProvider time to process
+          setTimeout(() => {
+            setAuthCheckDone(true);
+          }, 1000);
+          return;
+        }
+
+        // Truly no session — redirect to login
+        console.log("[Home] No session found, redirecting to login");
+        router.push("/login");
+      } catch {
+        router.push("/login");
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
   }, [authLoading, user, router]);
 
-  if (authLoading || !user) {
+  if (authLoading || (!user && !authCheckDone)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
