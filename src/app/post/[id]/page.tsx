@@ -1391,13 +1391,18 @@ if (error || !post) {
        {/* Header - Absolute Top */}
       <header className="absolute top-0 inset-x-0 z-50 glass-header">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto w-full">
-          <button
+                    <button
             onClick={() => {
               if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
                 window.dispatchEvent(new Event("peja-close-post"));
                 return;
               }
-              router.back();
+              // If there's no real history (direct link / shared link), go home
+              if (typeof window !== "undefined" && window.history.length <= 2) {
+                router.replace("/");
+              } else {
+                router.back();
+              }
             }}
             className="p-2 -ml-2 hover:bg-white/10 rounded-lg"
           >
@@ -1662,7 +1667,7 @@ if (error || !post) {
       </main>
 
       {/* Comment Input - Absolute Bottom */}
-      <div className="absolute bottom-0 inset-x-0 z-50 bg-dark-950/95 backdrop-blur-lg border-t border-white/10">
+        <div className="absolute bottom-0 inset-x-0 z-50 bg-dark-950/95 backdrop-blur-lg border-t border-white/10" style={{ paddingBottom: "var(--cap-bottom-inset, env(safe-area-inset-bottom, 0px))" }}>
         <div className="max-w-2xl mx-auto p-3 w-full">
           {replyingTo && (
             <div className="flex items-center justify-between mb-2 px-1">

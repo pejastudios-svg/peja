@@ -129,6 +129,24 @@ export function PejaLoadingScreen() {
           PEJA
         </span>
       </div>
+            {/* Motto */}
+      <div
+        className="mt-2"
+        style={{
+          opacity: phase >= 3 ? 1 : 0,
+          transform: phase >= 3 ? "translateY(0)" : "translateY(6px)",
+          transition: "opacity 0.6s ease-out 0.3s, transform 0.6s ease-out 0.3s",
+        }}
+      >
+        <span
+          className="text-xs font-medium tracking-[0.15em] uppercase"
+          style={{
+            color: "rgba(167, 139, 250, 0.6)",
+          }}
+        >
+          Your brother&apos;s keeper
+        </span>
+      </div>
 
       {/* Loading dots */}
       <div

@@ -61,6 +61,31 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
     };
   }, [isOpen]);
 
+    // Register with back button system
+  useEffect(() => {
+    if (isOpen) {
+      (window as any).__pejaAnalyticsOpen = true;
+    } else {
+      (window as any).__pejaAnalyticsOpen = false;
+    }
+    return () => {
+      (window as any).__pejaAnalyticsOpen = false;
+    };
+  }, [isOpen]);
+
+  // Listen for back button close event
+  useEffect(() => {
+    const handleBackClose = () => {
+      if (selectedHotspot) {
+        setSelectedHotspot(null);
+      } else {
+        onClose();
+      }
+    };
+    window.addEventListener("peja-close-analytics", handleBackClose);
+    return () => window.removeEventListener("peja-close-analytics", handleBackClose);
+  }, [selectedHotspot, onClose]);
+
   useEffect(() => {
     if (isOpen && hotspots.length === 0) {
       fetchAllIncidents();

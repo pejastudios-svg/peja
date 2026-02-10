@@ -233,7 +233,7 @@ export default function EditProfilePage() {
         </div>
       </header>
 
-      <main className="pt-20 px-4 max-w-2xl mx-auto pb-20">
+            <main className="pt-24 px-4 max-w-2xl mx-auto pb-20">
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-400">{error}</p>

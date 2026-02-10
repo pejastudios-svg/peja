@@ -272,10 +272,12 @@ if (action === "remove" && selected.post_id) {
         {loading && items.length === 0 ? (
           Array.from({ length: 8 }).map((_, i) => <FlaggedRowSkeleton key={i} />)
         ) : items.length === 0 ? (
-          <HudPanel className="text-center py-20 flex flex-col items-center justify-center">
-            <CheckCircle className="w-16 h-16 text-green-500/20 mb-4" />
-            <p className="text-dark-300 font-bold text-lg">Queue Clear</p>
-            <p className="text-dark-500">No flagged content pending review.</p>
+          <HudPanel className="text-center py-20">
+            <div className="flex flex-col items-center justify-center w-full">
+              <CheckCircle className="w-16 h-16 text-green-500/20 mb-4" />
+              <p className="text-dark-300 font-bold text-lg">Queue Clear</p>
+              <p className="text-dark-500">No flagged content pending review.</p>
+            </div>
           </HudPanel>
         ) : (
           <>

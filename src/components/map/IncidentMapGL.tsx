@@ -320,6 +320,29 @@ export default function IncidentMapGL({
       document.body.style.top = "";
     };
   }, [selectedSOS]);
+
+    // Register SOS detail modal with back button system
+  useEffect(() => {
+    if (selectedSOS) {
+      (window as any).__pejaSosDetailOpen = true;
+    } else {
+      (window as any).__pejaSosDetailOpen = false;
+    }
+    return () => {
+      (window as any).__pejaSosDetailOpen = false;
+    };
+  }, [selectedSOS]);
+
+  // Listen for back button close event
+  useEffect(() => {
+    const handleBackClose = () => {
+      setSelectedSOS(null);
+    };
+    window.addEventListener("peja-close-sos-detail", handleBackClose);
+    return () => window.removeEventListener("peja-close-sos-detail", handleBackClose);
+  }, []);
+
+  
   // Center on user when requested
   useEffect(() => {
     if (centerOnUser && mapRef.current && userLocation) {

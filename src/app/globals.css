@@ -297,6 +297,16 @@ body {
   }
 }
 
+/* Android Capacitor: ensure bottom elements clear the gesture bar */
+html.capacitor-native .safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), var(--cap-bottom-inset, 0px));
+}
+
+/* Android Capacitor: ensure bottom nav clears the gesture bar */
+html.capacitor-native .safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+}
+
 /* Prevent iOS zoom on input focus */
 input, textarea, select {
   font-size: 16px !important;
@@ -1602,9 +1612,11 @@ body.modal-open {
 /* Capacitor native app - status bar spacing */
 :root {
   --cap-status-bar-height: 0px;
+  --cap-bottom-inset: 0px;
 }
 html.capacitor-native {
   --cap-status-bar-height: 36px;
+  --cap-bottom-inset: env(safe-area-inset-bottom, 0px);
 }
 html.capacitor-native .fixed.top-0,
 html.capacitor-native header.fixed {

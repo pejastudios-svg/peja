@@ -25,6 +25,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const toast = useToast();
   const toastApi = useToast();
 
+  const loadedRef = useRef<Set<string>>(new Set());
+
   const hydrateCounts = (pairs: { postId: string; confirmations: number }[]) => {
     setCounts((prev) => {
       const next = { ...prev };
@@ -33,6 +35,34 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
+
+    // Auto-load confirmed status for any post IDs we haven't checked yet
+    if (user?.id) {
+      const newIds = pairs
+        .map((p) => p.postId)
+        .filter((id) => !loadedRef.current.has(id));
+      if (newIds.length > 0) {
+        newIds.forEach((id) => loadedRef.current.add(id));
+        // Call loadConfirmedFor asynchronously — it's defined below in the same closure
+        // and will be available when this callback actually executes
+        supabase
+          .from("post_confirmations")
+          .select("post_id")
+          .eq("user_id", user.id)
+          .in("post_id", newIds)
+          .then(({ data, error }) => {
+            if (error) {
+              console.error("hydrateCounts auto-load error:", error);
+              return;
+            }
+            setConfirmed((prev) => {
+              const next = new Set(prev);
+              (data || []).forEach((r: any) => next.add(r.post_id));
+              return next;
+            });
+          });
+      }
+    }
   };
 
   const loadConfirmedFor = async (postIds: string[]) => {

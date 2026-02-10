@@ -66,6 +66,36 @@ export function SOSButton({ className = "" }: { className?: string }) {
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const toast = useToast();
+
+    // Register SOS modals with back button system
+  useEffect(() => {
+    if (showOptions || showActivePopup || showLoadingAnimation) {
+      (window as any).__pejaSosModalOpen = true;
+    } else {
+      (window as any).__pejaSosModalOpen = false;
+    }
+    return () => {
+      (window as any).__pejaSosModalOpen = false;
+    };
+  }, [showOptions, showActivePopup, showLoadingAnimation]);
+
+  // Listen for back button close event
+  useEffect(() => {
+    const handleBackClose = () => {
+      if (showLoadingAnimation && loadingComplete) {
+        handleLoadingContinue();
+      } else if (showLoadingAnimation) {
+        // Don't close during loading animation
+        return;
+      } else if (showActivePopup) {
+        setShowActivePopup(false);
+      } else if (showOptions) {
+        closeOptions();
+      }
+    };
+    window.addEventListener("peja-close-sos-modal", handleBackClose);
+    return () => window.removeEventListener("peja-close-sos-modal", handleBackClose);
+  }, [showOptions, showActivePopup, showLoadingAnimation, loadingComplete]);
   
   const HOLD_DURATION = 3000;
   const loadingSteps: LoadingStep[] = [

@@ -20,7 +20,7 @@ export function BottomNav() {
   if (pathname.startsWith("/post/")) return null;
 
   return (
-        <nav className="fixed bottom-0 left-0 right-0 z-50 glass-footer safe-bottom">
+        <nav className="fixed bottom-0 left-0 right-0 z-50 glass-footer safe-bottom" style={{ paddingBottom: "var(--cap-bottom-inset, env(safe-area-inset-bottom, 0px))" }}>
       <div className="flex items-center justify-around h-16 px-2">
         {navItems.slice(0, 2).map((item) => {
   const isActive = pathname === item.href;

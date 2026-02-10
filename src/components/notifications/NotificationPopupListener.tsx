@@ -183,7 +183,27 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
     setPopup(null);
 
     const route = getRoute();
-    if (route) router.push(route);
+    if (!route) return;
+
+    // Close any open modals/overlays before navigating
+    if ((window as any).__pejaPostModalOpen) {
+      window.dispatchEvent(new Event("peja-close-post"));
+      // Wait for the modal close animation to finish before navigating
+      setTimeout(() => {
+        router.push(route);
+      }, 350);
+      return;
+    }
+
+    if ((window as any).__pejaOverlayOpen) {
+      router.back();
+      setTimeout(() => {
+        router.push(route);
+      }, 350);
+      return;
+    }
+
+    router.push(route);
   };
 
   const getIcon = () => {

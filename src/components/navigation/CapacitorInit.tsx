@@ -28,6 +28,51 @@ export function CapacitorInit() {
       "36px"
     );
 
+    // Set bottom inset for Android gesture navigation
+    // env(safe-area-inset-bottom) often returns 0 on Android WebViews,
+    // so we detect gesture navigation and set a manual fallback
+    const detectBottomInset = () => {
+      // Check if env(safe-area-inset-bottom) actually returns a value
+      const testEl = document.createElement("div");
+      testEl.style.paddingBottom = "env(safe-area-inset-bottom, 0px)";
+      document.body.appendChild(testEl);
+      const computed = window.getComputedStyle(testEl).paddingBottom;
+      document.body.removeChild(testEl);
+
+      const envValue = parseInt(computed, 10) || 0;
+
+      if (envValue > 0) {
+        // env() works correctly, use it
+        document.documentElement.style.setProperty(
+          "--cap-bottom-inset",
+          `${envValue}px`
+        );
+      } else {
+        // env() returned 0 — likely Android gesture nav not reporting insets
+        // Check screen vs viewport height difference as a heuristic
+        const screenH = window.screen.height;
+        const innerH = window.innerHeight;
+        const statusBar = 36;
+        const diff = screenH - innerH - statusBar;
+
+        // If there's a significant gap, there's probably a gesture bar
+        if (diff > 20) {
+          document.documentElement.style.setProperty(
+            "--cap-bottom-inset",
+            "16px"
+          );
+        } else {
+          document.documentElement.style.setProperty(
+            "--cap-bottom-inset",
+            "0px"
+          );
+        }
+      }
+    };
+
+    // Run after a short delay to let the WebView settle
+    setTimeout(detectBottomInset, 500);
+
     // Style the status bar
     import("@capacitor/status-bar")
       .then(({ StatusBar }) => {
