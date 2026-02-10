@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/lib/notifications";
 import { useAuth } from "@/context/AuthContext";
 import { CheckCircle } from "lucide-react";
+import SOSLocation from "@/lib/sosLocation";
 interface IncidentMapGLProps {
   posts: Post[];
   userLocation: { lat: number; lng: number } | null;
@@ -342,7 +343,7 @@ export default function IncidentMapGL({
     return () => window.removeEventListener("peja-close-sos-detail", handleBackClose);
   }, []);
 
-  
+
   // Center on user when requested
   useEffect(() => {
     if (centerOnUser && mapRef.current && userLocation) {
@@ -727,6 +728,29 @@ export default function IncidentMapGL({
       });
       // Start milestone-based location tracking
       startHelperLocationTracking(sos.user_id, sos.id, helperName, helperAvatar);
+            // Start native background tracking for helper
+      try {
+        const isCapacitor = typeof (window as any).Capacitor !== 'undefined';
+        if (isCapacitor) {
+          const { data: authData } = await supabase.auth.getSession();
+          const token = authData.session?.access_token;
+          if (token) {
+            await SOSLocation.startTracking({
+              sosId: sos.id,
+              supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+              supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+              accessToken: token,
+              mode: 'helper',
+              helperId: user.id,
+              sosOwnerId: sos.user_id,
+              helperName: helperName,
+            });
+            console.log('[Map] Native helper background tracking started');
+          }
+        }
+      } catch (e) {
+        console.warn('[Map] Native helper tracking not available', e);
+      }
       setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ETA: ${eta} minutes.`);
       setTimeout(() => setToast(null), 3000);
       setSelectedSOS(null);

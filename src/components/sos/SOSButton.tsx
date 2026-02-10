@@ -1,12 +1,13 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { createNotification } from "@/lib/notifications";
 import { Portal } from "@/components/ui/Portal";
 import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
+import SOSLocation from "@/lib/sosLocation";
+import { supabase } from "@/lib/supabase";
 import { 
   AlertTriangle, X, Phone, Loader2, CheckCircle, Users, 
   ArrowLeft, Scan, MapPin, Radio, Shield, Send,
@@ -389,6 +390,26 @@ export function SOSButton({ className = "" }: { className?: string }) {
       try {
         localStorage.setItem('peja-sos-notify-status', JSON.stringify(newStatus));
       } catch {}
+            // Start native background location tracking
+      try {
+        const isCapacitor = typeof (window as any).Capacitor !== 'undefined';
+        if (isCapacitor) {
+          const { data: authData } = await supabase.auth.getSession();
+          const token = authData.session?.access_token;
+          if (token) {
+            await SOSLocation.startTracking({
+              sosId: sosData.id,
+              supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+              supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+              accessToken: token,
+              mode: 'activator',
+            });
+            console.log('[SOS] Native background tracking started');
+          }
+        }
+      } catch (e) {
+        console.warn('[SOS] Native tracking not available, using web fallback', e);
+      }
       setLoadingComplete(true);
       
       setTimeout(() => {
@@ -423,6 +444,16 @@ export function SOSButton({ className = "" }: { className?: string }) {
         .from("sos_alerts")
         .update({ status: "cancelled", resolved_at: new Date().toISOString() })
         .eq("id", idToCancel);
+              // Stop native background tracking
+      try {
+        const isCapacitor = typeof (window as any).Capacitor !== 'undefined';
+        if (isCapacitor) {
+          await SOSLocation.stopTracking();
+          console.log('[SOS] Native background tracking stopped');
+        }
+      } catch (e) {
+        console.warn('[SOS] Failed to stop native tracking', e);
+      }
       setSosActive(false);
       setSosId(null);
       sosIdRef.current = null;
