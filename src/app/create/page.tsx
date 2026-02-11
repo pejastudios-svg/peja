@@ -739,10 +739,9 @@ export default function CreatePostPage() {
           />
         </div>
 
-        {/* Tags + Sensitive Toggle Row */}
-        <div className="flex gap-3 mb-4">
-          {/* Tags */}
-          <div className="flex-1 glass-card !p-3">
+        {/* Tags */}
+        <div className="mb-4">
+          <div className="glass-card !p-3">
             <div className="flex items-center gap-1.5 mb-2">
               <Hash className="w-3.5 h-3.5 text-primary-400" />
               <span className="text-xs font-medium text-dark-300">Tags</span>
@@ -783,29 +782,50 @@ export default function CreatePostPage() {
               </div>
             )}
           </div>
+        </div>
 
-          {/* Sensitive Toggle */}
+        {/* Sensitive Content Toggle */}
+        <div className="glass-card mb-4">
           <button
             type="button"
             onClick={() => setIsSensitive(!isSensitive)}
-            className="w-16 shrink-0 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all active:scale-95"
-            style={{
-              background: isSensitive ? "rgba(249, 115, 22, 0.1)" : "rgba(30, 16, 51, 1)",
-              border: `1px solid ${isSensitive ? "rgba(249, 115, 22, 0.3)" : "rgba(139, 92, 246, 0.2)"}`,
-              boxShadow: isSensitive ? "0 0 15px rgba(249,115,22,0.15)" : "none",
-            }}
+            className="w-full flex items-center gap-3 transition-all active:scale-[0.98]"
           >
-            {isSensitive ? (
-              <EyeOff className="w-5 h-5 text-orange-400" />
-            ) : (
-              <Eye className="w-5 h-5 text-dark-500" />
-            )}
-            <span
-              className="text-[9px] font-medium"
-              style={{ color: isSensitive ? "#fb923c" : "#64748b" }}
+            <div
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all"
+              style={{
+                background: isSensitive ? "rgba(249, 115, 22, 0.15)" : "rgba(255,255,255,0.04)",
+                border: `1px solid ${isSensitive ? "rgba(249, 115, 22, 0.3)" : "rgba(255,255,255,0.08)"}`,
+              }}
             >
-              {isSensitive ? "NSFW" : "SFW"}
-            </span>
+              {isSensitive ? (
+                <EyeOff className="w-5 h-5 text-orange-400" />
+              ) : (
+                <Eye className="w-5 h-5 text-dark-500" />
+              )}
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-medium" style={{ color: isSensitive ? "#fb923c" : "#e2e8f0" }}>
+                {isSensitive ? "Sensitive Content" : "Safe Content"}
+              </p>
+              <p className="text-xs text-dark-500">
+                Turn this on if the content contains blood, graphic injuries, or anything disturbing
+              </p>
+            </div>
+            <div
+              className="w-11 h-6 rounded-full relative transition-all shrink-0"
+              style={{
+                background: isSensitive ? "rgba(249, 115, 22, 0.5)" : "rgba(255,255,255,0.1)",
+              }}
+            >
+              <div
+                className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
+                style={{
+                  left: isSensitive ? "calc(100% - 22px)" : "2px",
+                  background: isSensitive ? "#fb923c" : "#64748b",
+                }}
+              />
+            </div>
           </button>
         </div>
 

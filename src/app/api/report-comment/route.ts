@@ -90,10 +90,10 @@ export async function POST(req: NextRequest) {
       .update({ report_count: totalReports })
       .eq("id", commentId);
 
-    // 7) Auto-delete if 3+ reports
+    // 7) Auto-delete if 5+ reports
     let deleted = false;
-    if (totalReports >= 3) {
-      console.log("[Report Comment] AUTO-DELETING comment (3+ reports)");
+    if (totalReports >= 5) {
+      console.log("[Report Comment] AUTO-DELETING comment (5+ reports)");
 
       await supabaseAdmin.from("comment_likes").delete().eq("comment_id", commentId);
       await supabaseAdmin.from("comment_media").delete().eq("comment_id", commentId);

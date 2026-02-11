@@ -11,23 +11,16 @@ import { supabase } from "@/lib/supabase";
 import { 
   AlertTriangle, X, Phone, Loader2, CheckCircle, Users, 
   ArrowLeft, Scan, MapPin, Radio, Shield, Send,
-  Siren, Cross, Car, UserX, Flame, Sword, Droplets, 
-  MapPinOff, HeartPulse, HelpCircle
+  Siren, Car, UserX, Flame,
 } from "lucide-react";
 // =====================================================
 // SOS TAG DEFINITIONS WITH ICONS & COLORS
 // =====================================================
 const SOS_TAGS = [
-  { id: "medical", label: "Medical Emergency", icon: Cross, color: "#ef4444", suggestion: "Call an ambulance or get the person to a hospital immediately. If trained, provide first aid." },
   { id: "accident", label: "Car Accident", icon: Car, color: "#f97316", suggestion: "Check for injuries, call emergency services, and do not move the injured unless there is immediate danger." },
   { id: "robbery", label: "Armed Robbery", icon: Siren, color: "#dc2626", suggestion: "DANGER: Do NOT approach. Contact police immediately at 112 or 767. Stay safe and observe from a distance." },
   { id: "kidnapping", label: "Kidnapping", icon: UserX, color: "#dc2626", suggestion: "EXTREME DANGER: Do NOT approach. Contact police immediately. Do not attempt rescue alone." },
   { id: "fire", label: "Fire", icon: Flame, color: "#f97316", suggestion: "Call fire service. Evacuate the area immediately. Do not enter burning buildings." },
-  { id: "assault", label: "Physical Assault", icon: Sword, color: "#ef4444", suggestion: "Ensure the scene is safe before approaching. Call police and provide first aid if you are trained." },
-  { id: "flood", label: "Flooding", icon: Droplets, color: "#3b82f6", suggestion: "Avoid flooded areas. Help evacuate people to higher ground if safe to do so." },
-  { id: "stuck", label: "Stuck or Stranded", icon: MapPinOff, color: "#eab308", suggestion: "User may need transport or mechanical help. Safe to approach and assist." },
-  { id: "health", label: "Health Crisis", icon: HeartPulse, color: "#ef4444", suggestion: "Person may need medication or medical attention. Ask before administering any help." },
-  { id: "other", label: "Other Emergency", icon: HelpCircle, color: "#8b5cf6", suggestion: "Assess the situation carefully before providing help. Your safety comes first." },
 ];
 type SOSTagId = typeof SOS_TAGS[number]["id"];
 interface LoadingStep {
@@ -591,8 +584,9 @@ if (showLoadingAnimation) {
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={closeOptions} />
           
           <div
-            className="relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[90vh] overflow-y-auto select-none"
+            className="relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-y-auto select-none"
             style={{
+              maxHeight: "calc(100dvh - var(--cap-status-bar-height, 0px) - env(safe-area-inset-bottom, 0px) - 32px)",
               background: "rgba(12, 8, 24, 0.98)",
               border: "1px solid rgba(239, 68, 68, 0.15)",
               boxShadow: "0 0 80px rgba(239, 68, 68, 0.08), 0 -20px 60px rgba(0,0,0,0.5)",

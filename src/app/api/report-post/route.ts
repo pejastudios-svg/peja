@@ -89,10 +89,10 @@ export async function POST(req: NextRequest) {
       .update({ report_count: totalReports })
       .eq("id", postId);
 
-    // 7) Auto-archive if 3+ reports
+    // 7) Auto-archive if 5+ reports
     let archived = false;
-    if (totalReports >= 3) {
-      console.log("[Report Post] AUTO-ARCHIVING post (3+ reports)");
+    if (totalReports >= 5) {
+      console.log("[Report Post] AUTO-ARCHIVING post (5+ reports)");
 
       await supabaseAdmin
         .from("posts")
