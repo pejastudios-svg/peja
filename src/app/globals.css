@@ -1969,3 +1969,27 @@ html.capacitor-native .cap-status-pad {
 .duration-200 {
   animation-duration: 200ms;
 }
+
+/* =====================================================
+   ANDROID KEYBOARD FIX
+   ===================================================== */
+@supports (height: 100dvh) {
+  .fixed-bottom-input {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+  }
+}
+
+/* Ensure inputs don't trigger zoom */
+input, textarea, [contenteditable] {
+  font-size: 16px !important;
+}
+
+/* Visual viewport resize handler */
+@supports (height: 1dvh) {
+  :root {
+    --vh: 1dvh;
+  }
+}

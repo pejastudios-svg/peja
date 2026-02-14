@@ -627,13 +627,29 @@ export async function notifyDMMessage(
   messagePreview: string,
   conversationId: string
 ): Promise<boolean> {
+  // Check if recipient has muted this conversation
+  try {
+    const { data: participant } = await supabase
+      .from("conversation_participants")
+      .select("is_muted")
+      .eq("conversation_id", conversationId)
+      .eq("user_id", recipientId)
+      .maybeSingle();
+
+    if (participant?.is_muted) {
+      return false; // Don't notify — conversation is muted
+    }
+  } catch {
+    // If check fails, proceed with notification
+  }
+
   const preview =
     messagePreview.length > 60 ? messagePreview.slice(0, 60) + "..." : messagePreview;
 
   return createNotification({
     userId: recipientId,
     type: "dm_message",
-    title: `💬 ${senderName}`,
+    title: `📩 ${senderName}`,
     body: preview || "Sent you a message",
     data: { conversation_id: conversationId, sender_name: senderName },
   });

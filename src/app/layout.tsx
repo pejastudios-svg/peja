@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Poppins } from "next/font/google";
 import "./globals.css";
@@ -27,6 +27,14 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "Peja - Your Brother's Keeper",
   description: "Real-time incident alerts for your community",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -61,7 +69,6 @@ export default function RootLayout({
                   <AnalyticsTracker />
                   <RoutePrefetcher />
                   <GlobalScrollManager />
-
                   <Suspense fallback={null}>
                     <HistorySyncGuard />
                   </Suspense>

@@ -226,14 +226,15 @@ export interface Message {
   is_deleted: boolean;
   created_at: string;
   edited_at: string | null;
+  reply_to_id: string | null;
   // Joined data
   sender?: VIPUser;
   media?: MessageMediaItem[];
-  // Read receipt states: "sent" | "delivered" | "read"
-  delivery_status?: "sent" | "delivered" | "read";
+  delivery_status?: "sent" | "seen";
   read_at?: string | null;
-  // For delete-for-me
   hidden_for_me?: boolean;
+  reactions?: MessageReaction[];
+  reply_to?: Message | null;
 }
 
 export interface MessageMediaItem {
@@ -279,5 +280,13 @@ export interface MessageDeletion {
   id: string;
   message_id: string;
   user_id: string;
+  created_at: string;
+}
+
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
   created_at: string;
 }
