@@ -133,7 +133,8 @@ export function BottomNav() {
                   if (pathname === "/") {
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   } else {
-                    router.push("/");
+                  router.push("/", { scroll: false });
+
                   }
                 }}
                 className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
@@ -210,11 +211,11 @@ export function BottomNav() {
 
           {/* VIP Drop-up Menu */}
           {showProfileMenu && isVip && (
-            <div className="profile-dropup absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-44 glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10">
+                        <div className="profile-dropup fixed bottom-20 right-3 w-44 glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 z-50">
               <button
                 onClick={() => {
                   setShowProfileMenu(false);
-                  router.push("/profile");
+                  router.push("/profile", { scroll: false });
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-white/5 ${
                   pathname === "/profile" ? "text-primary-400" : "text-dark-200"
@@ -227,7 +228,7 @@ export function BottomNav() {
               <button
                 onClick={() => {
                   setShowProfileMenu(false);
-                  router.push("/messages");
+                  router.push("/messages", { scroll: false });
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-white/5 ${
                   pathname === "/messages" ? "text-primary-400" : "text-dark-200"

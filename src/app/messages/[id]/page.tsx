@@ -41,7 +41,7 @@ import {
   VolumeX,
   Volume2,
   Trash2,
-  File,
+  File as FileIcon,
   Download,
   Copy,
   Pencil,
@@ -147,6 +147,12 @@ export default function ChatPage() {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const myDeletionsRef = useRef<Set<string>>(new Set());
+  const otherUserOnlineRef = useRef(false);
+
+    // Reset scroll flag when conversation changes
+  useEffect(() => {
+    initialScrollDone.current = false;
+  }, [conversationId]);
 
   // =====================================================
   // AUTH GUARD
@@ -219,11 +225,14 @@ export default function ChatPage() {
   useEffect(() => {
     if (!otherUser?.id) return;
 
-    setOtherUserOnline(presenceManager.isOnline(otherUser.id));
+    const online = presenceManager.isOnline(otherUser.id);
+    setOtherUserOnline(online);
+    otherUserOnlineRef.current = online;
 
     const unsub = presenceManager.onStatusChange((userId, isOnline) => {
       if (userId === otherUser.id) {
         setOtherUserOnline(isOnline);
+        otherUserOnlineRef.current = isOnline;
       }
     });
 
@@ -287,7 +296,9 @@ export default function ChatPage() {
           if (m.sender_id === user.id) {
             if (readMap[m.id]) {
               deliveryStatus = "read";
-            } else if (otherUserOnline) {
+            } else {
+              // If message exists in DB, it's at least delivered
+              // "sent" is only for optimistic local messages
               deliveryStatus = "delivered";
             }
           }
@@ -300,7 +311,7 @@ export default function ChatPage() {
           };
         })
     );
-  }, [user?.id, conversationId, otherUserOnline]);
+   }, [user?.id, conversationId]);
 
   // =====================================================
   // MARK AS READ
@@ -337,10 +348,14 @@ export default function ChatPage() {
   // =====================================================
   // SCROLL TO BOTTOM
   // =====================================================
-  useEffect(() => {
+   useEffect(() => {
     if (messages.length > 0 && messagesEndRef.current) {
       if (!initialScrollDone.current) {
+        // Use instant scroll + RAF to ensure DOM is rendered
         messagesEndRef.current.scrollIntoView();
+        requestAnimationFrame(() => {
+          messagesEndRef.current?.scrollIntoView();
+        });
         initialScrollDone.current = true;
       } else {
         const c = messagesContainerRef.current;
@@ -375,6 +390,8 @@ export default function ChatPage() {
 
           let media: MessageMediaItem[] = [];
           if (newMsg.content_type === "media" || newMsg.content_type === "document") {
+            // Small delay to ensure media records are inserted before we query
+            await new Promise((r) => setTimeout(r, 500));
             const { data } = await supabase
               .from("message_media")
               .select("*")
@@ -383,13 +400,21 @@ export default function ChatPage() {
           }
 
           setMessages((prev) => {
-            if (prev.some((m) => m.id === newMsg.id)) return prev;
+            // If message already exists (from optimistic insert), upgrade its status
+            const existing = prev.find((m) => m.id === newMsg.id);
+            if (existing) {
+              return prev.map((m) =>
+                m.id === newMsg.id
+                  ? { ...m, media: media.length > 0 ? media : m.media, delivery_status: "delivered" as const }
+                  : m
+              );
+            }
             return [
               ...prev,
               {
                 ...newMsg,
                 media,
-                delivery_status: newMsg.sender_id === user.id ? "sent" : undefined,
+                delivery_status: newMsg.sender_id === user.id ? "delivered" as const : undefined,
               },
             ];
           });
@@ -563,9 +588,9 @@ export default function ChatPage() {
       /`(.*?)`/g,
       '<code class="px-1 py-0.5 rounded bg-white/10 text-xs font-mono">$1</code>'
     );
-    // URLs
+    // URLs - only match if not already inside an anchor tag
     html = html.replace(
-      /(https?:\/\/[^\s<]+)/g,
+      /(?<!href=["'])(?<!>)(https?:\/\/[^\s<)]+)/g,
       '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline hover:text-primary-300 break-all">$1</a>'
     );
     // Bullet lists: lines starting with - or •
@@ -612,8 +637,13 @@ export default function ChatPage() {
         case "i":
         case "em":
           return `*${childText}*`;
-        case "a":
-          return el.getAttribute("href") || childText;
+        case "a": {
+          const href = el.getAttribute("href");
+          if (href && childText && childText !== href) {
+            return `${childText} (${href})`;
+          }
+          return href || childText;
+        }
         case "br":
           return "\n";
         case "div":
@@ -645,6 +675,20 @@ export default function ChatPage() {
   const handleSend = useCallback(async () => {
     const textContent = getEditorContent();
     if ((!textContent && pendingMedia.length === 0) || sending || !user?.id) return;
+
+    // Check if blocked by the other user
+    if (otherUser?.id) {
+      const { data: blocked } = await supabase
+        .from("dm_blocks")
+        .select("id")
+        .eq("blocker_id", otherUser.id)
+        .eq("blocked_id", user.id)
+        .maybeSingle();
+      if (blocked) {
+        toast.warning("You cannot send messages to this user");
+        return;
+      }
+    }
 
     setSending(true);
     try {
@@ -731,6 +775,35 @@ export default function ChatPage() {
         );
       }
 
+            // Optimistically add message to local state
+      if (newMsg) {
+        const localMedia: MessageMediaItem[] = mediaItems.map((m, i) => ({
+          id: `temp-${i}-${Date.now()}`,
+          message_id: newMsg.id,
+          url: m.url,
+          media_type: m.media_type as "image" | "video" | "document" | "audio",
+          file_name: m.file_name,
+          file_size: m.file_size,
+          mime_type: null,
+          thumbnail_url: null,
+          created_at: new Date().toISOString(),
+        }));
+
+        setMessages((prev) => {
+          if (prev.some((msg) => msg.id === newMsg.id)) return prev;
+          return [
+            ...prev,
+            {
+              ...newMsg,
+              media: localMedia,
+              delivery_status: "sent" as const,
+              read_at: null,
+              hidden_for_me: false,
+            },
+          ];
+        });
+      }
+
       // Update conversation
       await supabase
         .from("conversations")
@@ -799,25 +872,22 @@ export default function ChatPage() {
   const insertLink = () => {
     if (!linkUrl.trim()) return;
     const url = linkUrl.startsWith("http") ? linkUrl : `https://${linkUrl}`;
+    const displayText = linkText || url;
 
-    if (linkText) {
-      document.execCommand(
-        "insertHTML",
-        false,
-        `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline">${linkText}</a>`
-      );
-    } else {
-      document.execCommand(
-        "insertHTML",
-        false,
-        `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline">${url}</a>`
-      );
+    // Focus editor first, then insert
+    const editor = editorRef.current;
+    if (editor) {
+      editor.focus();
+      // Use a timeout to ensure focus is established
+      setTimeout(() => {
+        const linkHTML = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline">${displayText}</a>&nbsp;`;
+        document.execCommand("insertHTML", false, linkHTML);
+      }, 50);
     }
 
     setShowLinkInput(false);
     setLinkUrl("");
     setLinkText("");
-    editorRef.current?.focus();
   };
 
   // =====================================================
@@ -880,7 +950,6 @@ export default function ChatPage() {
           type: recordedMimeType,
         });
         const ext = recordedMimeType.includes("webm") ? "webm" : "m4a";
-        // @ts-ignore - File constructor typing incomplete
         const file = new File([blob], `voice-note-${Date.now()}.${ext}`, {
           type: recordedMimeType,
         });
@@ -1517,7 +1586,7 @@ export default function ChatPage() {
                         <span className="text-[9px] text-dark-400">Voice</span>
                       </>
                     ) : (
-                      <File className="w-6 h-6 text-dark-400" />
+                      <FileIcon className="w-6 h-6 text-dark-400" />
                     )}
                   </div>
                 )}
@@ -1853,7 +1922,7 @@ export default function ChatPage() {
           ===================================================== */}
       {showChatInfo && typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[99999] bg-[#0a0812] flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="fixed inset-0 z-[99998] bg-[#0a0812] flex flex-col animate-in slide-in-from-right duration-200">
             {/* Header */}
             <header className="glass-header h-14 flex items-center gap-3 px-4 shrink-0">
               <button
@@ -1906,15 +1975,15 @@ export default function ChatPage() {
                     {chatMediaFiles.slice(0, 12).map((m) => (
                       <div key={m.id}>
                         {m.media_type === "image" ? (
-                          <button
-                            onClick={() => { setShowChatInfo(false); setLightboxImage(m.url); }}
+                            <button
+                            onClick={() => { setLightboxImage(m.url); }}
                             className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800"
                           >
                             <img src={m.url} alt="" className="w-full h-full object-cover" />
                           </button>
                         ) : m.media_type === "video" ? (
-                          <button
-                            onClick={() => { setShowChatInfo(false); setLightboxVideo(m.url); }}
+                           <button
+                            onClick={() => { setLightboxVideo(m.url); }}
                             className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800 relative"
                           >
                             <video src={m.url} className="w-full h-full object-cover" preload="metadata" />

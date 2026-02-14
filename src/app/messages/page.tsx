@@ -43,6 +43,21 @@ export default function MessagesPage() {
   const [vipSearchLoading, setVipSearchLoading] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const CONV_CACHE_KEY = "peja-conversations-cache";
+
+  // Restore from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem(CONV_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setConversations(parsed);
+          setLoading(false);
+        }
+      }
+    } catch {}
+  }, []);
 
   // =====================================================
   // AUTH GUARD
@@ -203,6 +218,7 @@ export default function MessagesPage() {
         .filter(Boolean) as ConversationWithUser[];
 
       setConversations(merged);
+      try { sessionStorage.setItem(CONV_CACHE_KEY, JSON.stringify(merged)); } catch {}
     } catch (e: any) {
       console.error("fetchConversations error:", e?.message || e);
     } finally {
@@ -392,8 +408,8 @@ export default function MessagesPage() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-40 glass-header">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <button
-            onClick={() => router.back()}
+            <button
+            onClick={() => router.push("/")}
             className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-dark-200" />
