@@ -50,6 +50,7 @@ import {
   Info,
   ChevronRight,
   Clock,
+  Reply,
 } from "lucide-react";
 import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns";
 import type { Message, VIPUser, MessageMediaItem } from "@/lib/types";
@@ -68,6 +69,11 @@ const EMOJI_TABS = [
   { key: "symbols", label: "⭐", emojis: ["⭐","🌟","💫","✨","🔥","💯","✅","❌","⚠️","🚀","💎","🎉","🏆","🎯","💡","🔔","🔒","🔑","💰","📍","⚡","🌍","📱","💻","📸","🎵","📧","📎","✏️","📝","📊","🛡️","♻️","☮️","♾️","⬆️","➡️","⬇️","⬅️","↩️","🔄","❗","❓","💤"] },
   { key: "kaomoji", label: "ツ", emojis: ["ʕ•ᴥ•ʔ","(╯°□°)╯︵ ┻━┻","┬─┬ノ( º _ ºノ)","(☞ﾟヮﾟ)☞","( ͡° ͜ʖ ͡°)","ಠ_ಠ","ಠ‿ಠ","(ง'̀-'́)ง","(づ｡◕‿‿◕｡)づ","¯\\_(ツ)_/¯","(⌐■_■)","༼ つ ◕_◕ ༽つ","(◕‿◕✿)","ヽ(´▽`)/","(*≧ω≦)","(╥_╥)","(✿◠‿◠)","٩(◕‿◕｡)۶","( ˘ ³˘)♥","OwO","UwU",">_<","^_^","T_T","-_-","O_O","=^.^=","★彡","♪♫♬","→_→","←_←","◉_◉","꒰ᐢ. ̫ .ᐢ꒱","₍ᐢ..ᐢ₎","𓃠","𓆏","𓃰"] },
 ];
+
+// =====================================================
+// REACTION EMOJIS (quick reactions like WhatsApp)
+// =====================================================
+const QUICK_REACTIONS = ["❤️", "😂", "😮", "😢", "🙏", "👍"];
 
 // =====================================================
 // DOCUMENT ICON HELPER
@@ -123,6 +129,9 @@ export default function ChatPage() {
   // ------ Edit Mode ------
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
 
+  // ------ Reply Mode ------
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+
   // ------ Lightbox ------
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [lightboxVideo, setLightboxVideo] = useState<string | null>(null);
@@ -131,6 +140,11 @@ export default function ChatPage() {
   // ------ Voice Note ------
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+
+  // ------ Swipe to Reply ------
+  const [swipingMsgId, setSwipingMsgId] = useState<string | null>(null);
+  const [swipeX, setSwipeX] = useState(0);
+  const swipeStartRef = useRef<{ x: number; y: number; locked: boolean } | null>(null);
 
   // ------ Refs ------
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -149,7 +163,7 @@ export default function ChatPage() {
   const myDeletionsRef = useRef<Set<string>>(new Set());
   const otherUserOnlineRef = useRef(false);
 
-    // Reset scroll flag when conversation changes
+  // Reset scroll flag when conversation changes
   useEffect(() => {
     initialScrollDone.current = false;
   }, [conversationId]);
@@ -172,7 +186,6 @@ export default function ChatPage() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Get participants
         const { data: participants, error: pErr } = await supabase
           .from("conversation_participants")
           .select("user_id, is_muted, is_blocked")
@@ -186,7 +199,6 @@ export default function ChatPage() {
         setIsMuted(myP?.is_muted || false);
         setIsBlocked(myP?.is_blocked || false);
 
-        // Get other user profile
         const { data: otherUserData, error: uErr } = await supabase
           .from("users")
           .select("id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status")
@@ -199,7 +211,6 @@ export default function ChatPage() {
         setOtherUser(otherVIP);
         setOtherUserOnline(presenceManager.isOnline(otherVIP.id));
 
-        // Fetch my deletions for this conversation
         const { data: myDeletions } = await supabase
           .from("message_deletions")
           .select("message_id")
@@ -286,21 +297,42 @@ export default function ChatPage() {
       });
     }
 
+    // Fetch reactions
+    const allIds = msgs.map((m) => m.id);
+    let reactionsMap: Record<string, any[]> = {};
+    if (allIds.length > 0) {
+      const { data: reactions } = await supabase
+        .from("message_reactions")
+        .select("*")
+        .in("message_id", allIds);
+      (reactions || []).forEach((r: any) => {
+        if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
+        reactionsMap[r.message_id].push(r);
+      });
+    }
+
+    // Fetch reply-to messages
+    const replyIds = msgs.filter((m) => m.reply_to_id).map((m) => m.reply_to_id!);
+    let replyMap: Record<string, Message> = {};
+    if (replyIds.length > 0) {
+      const { data: replies } = await supabase
+        .from("messages")
+        .select("*")
+        .in("id", replyIds);
+      (replies || []).forEach((r: any) => {
+        replyMap[r.id] = r;
+      });
+    }
+
     const deletedForMe = myDeletionsRef.current;
 
     setMessages(
       msgs
         .filter((m) => !deletedForMe.has(m.id))
         .map((m) => {
-          let deliveryStatus: "sent" | "delivered" | "read" = "sent";
+          let deliveryStatus: "sent" | "seen" | undefined;
           if (m.sender_id === user.id) {
-            if (readMap[m.id]) {
-              deliveryStatus = "read";
-            } else {
-              // If message exists in DB, it's at least delivered
-              // "sent" is only for optimistic local messages
-              deliveryStatus = "delivered";
-            }
+            deliveryStatus = readMap[m.id] ? "seen" : "sent";
           }
           return {
             ...m,
@@ -308,10 +340,12 @@ export default function ChatPage() {
             delivery_status: deliveryStatus,
             read_at: m.sender_id === user.id ? readMap[m.id] || null : null,
             hidden_for_me: false,
+            reactions: reactionsMap[m.id] || [],
+            reply_to: m.reply_to_id ? replyMap[m.reply_to_id] || null : null,
           };
         })
     );
-   }, [user?.id, conversationId]);
+  }, [user?.id, conversationId]);
 
   // =====================================================
   // MARK AS READ
@@ -348,14 +382,16 @@ export default function ChatPage() {
   // =====================================================
   // SCROLL TO BOTTOM
   // =====================================================
-   useEffect(() => {
+  useEffect(() => {
     if (messages.length > 0 && messagesEndRef.current) {
       if (!initialScrollDone.current) {
-        // Use instant scroll + RAF to ensure DOM is rendered
-        messagesEndRef.current.scrollIntoView();
-        requestAnimationFrame(() => {
+        // Force scroll to bottom after DOM renders
+        setTimeout(() => {
           messagesEndRef.current?.scrollIntoView();
-        });
+          requestAnimationFrame(() => {
+            messagesEndRef.current?.scrollIntoView();
+          });
+        }, 50);
         initialScrollDone.current = true;
       } else {
         const c = messagesContainerRef.current;
@@ -367,7 +403,32 @@ export default function ChatPage() {
   }, [messages]);
 
   // =====================================================
-  // REALTIME: Messages + Read receipts + Deletions
+  // ANDROID KEYBOARD: adjust layout when keyboard opens
+  // =====================================================
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return;
+
+    const vv = window.visualViewport;
+    const onResize = () => {
+      const keyboardHeight = window.innerHeight - vv!.height;
+      document.documentElement.style.setProperty(
+        "--keyboard-height",
+        `${Math.max(keyboardHeight, 0)}px`
+      );
+      // Scroll to bottom when keyboard opens
+      if (keyboardHeight > 100) {
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 100);
+      }
+    };
+
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
+
+  // =====================================================
+  // REALTIME: Messages + Read receipts + Reactions
   // =====================================================
   useEffect(() => {
     if (!user?.id || !conversationId) return;
@@ -384,13 +445,10 @@ export default function ChatPage() {
         { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
         async (payload) => {
           const newMsg = payload.new as Message;
-
-          // Skip if deleted for me
           if (myDeletionsRef.current.has(newMsg.id)) return;
 
           let media: MessageMediaItem[] = [];
           if (newMsg.content_type === "media" || newMsg.content_type === "document") {
-            // Small delay to ensure media records are inserted before we query
             await new Promise((r) => setTimeout(r, 500));
             const { data } = await supabase
               .from("message_media")
@@ -399,13 +457,23 @@ export default function ChatPage() {
             media = (data || []) as MessageMediaItem[];
           }
 
+          // Fetch reply_to if present
+          let replyTo: Message | null = null;
+          if (newMsg.reply_to_id) {
+            const { data: replyData } = await supabase
+              .from("messages")
+              .select("*")
+              .eq("id", newMsg.reply_to_id)
+              .single();
+            if (replyData) replyTo = replyData as Message;
+          }
+
           setMessages((prev) => {
-            // If message already exists (from optimistic insert), upgrade its status
             const existing = prev.find((m) => m.id === newMsg.id);
             if (existing) {
               return prev.map((m) =>
                 m.id === newMsg.id
-                  ? { ...m, media: media.length > 0 ? media : m.media, delivery_status: "delivered" as const }
+                  ? { ...m, media: media.length > 0 ? media : m.media, delivery_status: "sent" as const }
                   : m
               );
             }
@@ -414,7 +482,9 @@ export default function ChatPage() {
               {
                 ...newMsg,
                 media,
-                delivery_status: newMsg.sender_id === user.id ? "delivered" as const : undefined,
+                delivery_status: newMsg.sender_id === user.id ? ("sent" as const) : undefined,
+                reactions: [],
+                reply_to: replyTo,
               },
             ];
           });
@@ -451,11 +521,32 @@ export default function ChatPage() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === read.message_id
-                  ? { ...m, delivery_status: "read" as const, read_at: read.read_at }
+                  ? { ...m, delivery_status: "seen" as const, read_at: read.read_at }
                   : m
               )
             );
           }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "message_reactions" },
+        async () => {
+          // Refetch all reactions for this conversation's messages
+          const msgIds = messages.map((m) => m.id);
+          if (msgIds.length === 0) return;
+          const { data: reactions } = await supabase
+            .from("message_reactions")
+            .select("*")
+            .in("message_id", msgIds);
+          const reactionsMap: Record<string, any[]> = {};
+          (reactions || []).forEach((r: any) => {
+            if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
+            reactionsMap[r.message_id].push(r);
+          });
+          setMessages((prev) =>
+            prev.map((m) => ({ ...m, reactions: reactionsMap[m.id] || m.reactions || [] }))
+          );
         }
       )
       .subscribe();
@@ -469,21 +560,6 @@ export default function ChatPage() {
       }
     };
   }, [user?.id, conversationId, markAsRead]);
-
-  // =====================================================
-  // Update delivery status when other user comes online
-  // =====================================================
-  useEffect(() => {
-    if (!otherUserOnline) return;
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.sender_id === user?.id && m.delivery_status === "sent") {
-          return { ...m, delivery_status: "delivered" as const };
-        }
-        return m;
-      })
-    );
-  }, [otherUserOnline, user?.id]);
 
   // =====================================================
   // TYPING INDICATOR
@@ -534,7 +610,7 @@ export default function ChatPage() {
   }, []);
 
   // =====================================================
-  // GET EDITOR CONTENT (from contenteditable div)
+  // EDITOR HELPERS
   // =====================================================
   const getEditorContent = useCallback((): string => {
     const el = editorRef.current;
@@ -548,12 +624,6 @@ export default function ChatPage() {
     return el.innerHTML;
   }, []);
 
-  const setEditorContent = useCallback((text: string) => {
-    const el = editorRef.current;
-    if (!el) return;
-    el.innerText = text;
-  }, []);
-
   const clearEditor = useCallback(() => {
     const el = editorRef.current;
     if (!el) return;
@@ -563,8 +633,7 @@ export default function ChatPage() {
   const isEditorEmpty = useCallback((): boolean => {
     const el = editorRef.current;
     if (!el) return true;
-    const text = el.innerText.trim();
-    return text.length === 0;
+    return el.innerText.trim().length === 0;
   }, []);
 
   // =====================================================
@@ -573,32 +642,25 @@ export default function ChatPage() {
   const renderContent = useCallback((content: string | null) => {
     if (!content) return null;
 
-    // Convert stored markdown-style formatting to HTML
     let html = content
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
-    // Bold: **text**
     html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-    // Italic: *text*
     html = html.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
-    // Code: `text`
     html = html.replace(
       /`(.*?)`/g,
       '<code class="px-1 py-0.5 rounded bg-white/10 text-xs font-mono">$1</code>'
     );
-    // URLs - only match if not already inside an anchor tag
     html = html.replace(
       /(?<!href=["'])(?<!>)(https?:\/\/[^\s<)]+)/g,
       '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline hover:text-primary-300 break-all">$1</a>'
     );
-    // Bullet lists: lines starting with - or •
     html = html.replace(
       /^[-•]\s+(.+)$/gm,
       '<div class="flex gap-2 items-start"><span class="text-primary-400 mt-0.5">•</span><span>$1</span></div>'
     );
-    // Numbered lists: lines starting with N.
     html = html.replace(
       /^(\d+)\.\s+(.+)$/gm,
       '<div class="flex gap-2 items-start"><span class="text-primary-400 font-medium min-w-[1.2em]">$1.</span><span>$2</span></div>'
@@ -613,17 +675,14 @@ export default function ChatPage() {
   }, []);
 
   // =====================================================
-  // CONVERT EDITOR HTML TO MARKDOWN FOR STORAGE
+  // HTML TO MARKDOWN
   // =====================================================
   const htmlToMarkdown = useCallback((html: string): string => {
     const div = document.createElement("div");
     div.innerHTML = html;
 
     const walk = (node: Node): string => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        return node.textContent || "";
-      }
-
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
       if (node.nodeType !== Node.ELEMENT_NODE) return "";
 
       const el = node as HTMLElement;
@@ -631,28 +690,16 @@ export default function ChatPage() {
       const childText = Array.from(el.childNodes).map(walk).join("");
 
       switch (tag) {
-        case "b":
-        case "strong":
-          return `**${childText}**`;
-        case "i":
-        case "em":
-          return `*${childText}*`;
+        case "b": case "strong": return `**${childText}**`;
+        case "i": case "em": return `*${childText}*`;
         case "a": {
           const href = el.getAttribute("href");
-          if (href && childText && childText !== href) {
-            return `${childText} (${href})`;
-          }
+          if (href && childText && childText !== href) return `${childText} (${href})`;
           return href || childText;
         }
-        case "br":
-          return "\n";
-        case "div":
-        case "p":
-          return childText + "\n";
-        case "ul":
-          return childText;
-        case "ol":
-          return childText;
+        case "br": return "\n";
+        case "div": case "p": return childText + "\n";
+        case "ul": case "ol": return childText;
         case "li": {
           const parent = el.parentElement;
           if (parent?.tagName.toLowerCase() === "ol") {
@@ -661,8 +708,7 @@ export default function ChatPage() {
           }
           return `- ${childText}\n`;
         }
-        default:
-          return childText;
+        default: return childText;
       }
     };
 
@@ -685,7 +731,7 @@ export default function ChatPage() {
         .eq("blocked_id", user.id)
         .maybeSingle();
       if (blocked) {
-        toast.warning("You cannot send messages to this user");
+        toast.warning("You have been blocked by this user");
         return;
       }
     }
@@ -695,13 +741,17 @@ export default function ChatPage() {
       let contentType = "text";
       let mediaItems: { url: string; media_type: string; file_name: string; file_size: number }[] = [];
 
-      // Upload pending media
       if (pendingMedia.length > 0) {
         contentType = pendingMedia.some(
           (m) => m.type.startsWith("image/") || m.type.startsWith("video/")
         )
           ? "media"
           : "document";
+
+        // Check if any are audio — if ALL are audio, use media type
+        if (pendingMedia.every((m) => m.type.startsWith("audio/"))) {
+          contentType = "media";
+        }
 
         for (const media of pendingMedia) {
           const ext = media.file.name.split(".").pop() || "file";
@@ -730,7 +780,6 @@ export default function ChatPage() {
         }
       }
 
-      // Convert editor HTML to markdown for storage
       const editorHTML = getEditorHTML();
       const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
 
@@ -739,6 +788,7 @@ export default function ChatPage() {
         sender_id: user.id,
         content: markdownContent || null,
         content_type: contentType,
+        reply_to_id: replyingTo?.id || null,
       };
 
       // If editing, update instead
@@ -760,7 +810,6 @@ export default function ChatPage() {
         return;
       }
 
-      // Insert new message
       const { data: newMsg, error: msgError } = await supabase
         .from("messages")
         .insert(messageData)
@@ -768,14 +817,13 @@ export default function ChatPage() {
         .single();
       if (msgError) throw msgError;
 
-      // Insert media items
       if (mediaItems.length > 0 && newMsg) {
         await supabase.from("message_media").insert(
           mediaItems.map((m) => ({ message_id: newMsg.id, ...m }))
         );
       }
 
-            // Optimistically add message to local state
+      // Optimistically add message
       if (newMsg) {
         const localMedia: MessageMediaItem[] = mediaItems.map((m, i) => ({
           id: `temp-${i}-${Date.now()}`,
@@ -799,12 +847,13 @@ export default function ChatPage() {
               delivery_status: "sent" as const,
               read_at: null,
               hidden_for_me: false,
+              reactions: [],
+              reply_to: replyingTo || null,
             },
           ];
         });
       }
 
-      // Update conversation
       await supabase
         .from("conversations")
         .update({
@@ -814,7 +863,6 @@ export default function ChatPage() {
         })
         .eq("id", conversationId);
 
-      // Notify
       if (otherUser) {
         notifyDMMessage(
           otherUser.id,
@@ -826,6 +874,7 @@ export default function ChatPage() {
 
       clearEditor();
       setPendingMedia([]);
+      setReplyingTo(null);
     } catch (e: any) {
       console.error("Send error:", e?.message || e);
       toast.danger("Failed to send message");
@@ -834,38 +883,21 @@ export default function ChatPage() {
     }
   }, [
     getEditorContent, getEditorHTML, htmlToMarkdown, pendingMedia,
-    sending, user, conversationId, otherUser, editingMessage,
+    sending, user, conversationId, otherUser, editingMessage, replyingTo,
     clearEditor, toast, markAsRead,
   ]);
 
   // =====================================================
-  // FORMAT COMMANDS (execCommand for contenteditable)
+  // FORMAT COMMANDS
   // =====================================================
-  const applyBold = () => {
-    document.execCommand("bold");
-    editorRef.current?.focus();
-  };
-
-  const applyItalic = () => {
-    document.execCommand("italic");
-    editorRef.current?.focus();
-  };
-
-  const applyBulletList = () => {
-    document.execCommand("insertUnorderedList");
-    editorRef.current?.focus();
-  };
-
-  const applyNumberedList = () => {
-    document.execCommand("insertOrderedList");
-    editorRef.current?.focus();
-  };
+  const applyBold = () => { document.execCommand("bold"); editorRef.current?.focus(); };
+  const applyItalic = () => { document.execCommand("italic"); editorRef.current?.focus(); };
+  const applyBulletList = () => { document.execCommand("insertUnorderedList"); editorRef.current?.focus(); };
+  const applyNumberedList = () => { document.execCommand("insertOrderedList"); editorRef.current?.focus(); };
 
   const openLinkInput = () => {
     const selection = window.getSelection();
-    if (selection && selection.toString()) {
-      setLinkText(selection.toString());
-    }
+    if (selection && selection.toString()) setLinkText(selection.toString());
     setShowLinkInput(true);
   };
 
@@ -873,18 +905,14 @@ export default function ChatPage() {
     if (!linkUrl.trim()) return;
     const url = linkUrl.startsWith("http") ? linkUrl : `https://${linkUrl}`;
     const displayText = linkText || url;
-
-    // Focus editor first, then insert
     const editor = editorRef.current;
     if (editor) {
       editor.focus();
-      // Use a timeout to ensure focus is established
       setTimeout(() => {
         const linkHTML = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline">${displayText}</a>&nbsp;`;
         document.execCommand("insertHTML", false, linkHTML);
       }, 50);
     }
-
     setShowLinkInput(false);
     setLinkUrl("");
     setLinkText("");
@@ -927,16 +955,13 @@ export default function ChatPage() {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
       const mimeType =
         typeof MediaRecorder !== "undefined" &&
         MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
           ? "audio/webm;codecs=opus"
           : "audio/mp4";
 
-      // @ts-ignore - MediaRecorder options typing is incomplete in some TS versions
       const recorder = new MediaRecorder(stream, { mimeType });
-
       audioChunksRef.current = [];
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
@@ -944,19 +969,11 @@ export default function ChatPage() {
 
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
-
         const recordedMimeType = mimeType || "audio/webm";
-        const blob = new Blob(audioChunksRef.current, {
-          type: recordedMimeType,
-        });
+        const blob = new Blob(audioChunksRef.current, { type: recordedMimeType });
         const ext = recordedMimeType.includes("webm") ? "webm" : "m4a";
-        const file = new File([blob], `voice-note-${Date.now()}.${ext}`, {
-          type: recordedMimeType,
-        });
-        setPendingMedia((prev) => [
-          ...prev,
-          { file, preview: "", type: recorder.mimeType },
-        ]);
+        const file = new File([blob], `voice-note-${Date.now()}.${ext}`, { type: recordedMimeType });
+        setPendingMedia((prev) => [...prev, { file, preview: "", type: recorder.mimeType }]);
 
         if (recordingIntervalRef.current) {
           clearInterval(recordingIntervalRef.current);
@@ -993,7 +1010,57 @@ export default function ChatPage() {
   };
 
   // =====================================================
-  // DELETE / EDIT / COPY
+  // REACTIONS
+  // =====================================================
+  const toggleReaction = async (messageId: string, emoji: string) => {
+    if (!user?.id) return;
+
+    try {
+      // Check if reaction already exists
+      const { data: existing } = await supabase
+        .from("message_reactions")
+        .select("id")
+        .eq("message_id", messageId)
+        .eq("user_id", user.id)
+        .eq("emoji", emoji)
+        .maybeSingle();
+
+      if (existing) {
+        // Remove reaction
+        await supabase.from("message_reactions").delete().eq("id", existing.id);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, reactions: (m.reactions || []).filter((r) => r.id !== existing.id) }
+              : m
+          )
+        );
+      } else {
+        // Add reaction
+        const { data: newReaction } = await supabase
+          .from("message_reactions")
+          .insert({ message_id: messageId, user_id: user.id, emoji })
+          .select()
+          .single();
+
+        if (newReaction) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, reactions: [...(m.reactions || []), newReaction] }
+                : m
+            )
+          );
+        }
+      }
+    } catch {
+      toast.danger("Failed to react");
+    }
+    setContextMenuMsg(null);
+  };
+
+  // =====================================================
+  // DELETE / EDIT / COPY / REPLY
   // =====================================================
   const handleDeleteForEveryone = async (messageId: string) => {
     try {
@@ -1029,7 +1096,6 @@ export default function ChatPage() {
 
   const handleCopy = (content: string | null) => {
     if (!content) return;
-    // Strip markdown formatting for clipboard
     const clean = content
       .replace(/\*\*(.*?)\*\*/g, "$1")
       .replace(/\*(.*?)\*/g, "$1")
@@ -1042,7 +1108,6 @@ export default function ChatPage() {
 
   const handleEdit = (msg: Message) => {
     setEditingMessage(msg);
-    // Set editor content to the message text
     setTimeout(() => {
       if (editorRef.current && msg.content) {
         editorRef.current.innerText = msg.content
@@ -1052,6 +1117,12 @@ export default function ChatPage() {
       }
     }, 50);
     setContextMenuMsg(null);
+  };
+
+  const handleReply = (msg: Message) => {
+    setReplyingTo(msg);
+    setContextMenuMsg(null);
+    setTimeout(() => editorRef.current?.focus(), 100);
   };
 
   // =====================================================
@@ -1096,7 +1167,6 @@ export default function ChatPage() {
   const deleteChat = async () => {
     if (!user?.id) return;
     try {
-      // Delete all messages for me
       const { data: allMsgs } = await supabase
         .from("messages")
         .select("id")
@@ -1107,7 +1177,6 @@ export default function ChatPage() {
           message_id: m.id,
           user_id: user.id,
         }));
-
         await supabase.from("message_deletions").upsert(deletions, {
           onConflict: "message_id,user_id",
         });
@@ -1144,6 +1213,58 @@ export default function ChatPage() {
   };
 
   // =====================================================
+  // SWIPE TO REPLY
+  // =====================================================
+  const handleSwipeStart = (msgId: string, e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY, locked: false };
+    setSwipingMsgId(msgId);
+  };
+
+  const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
+    if (!swipeStartRef.current || msg.is_deleted) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - swipeStartRef.current.x;
+    const dy = touch.clientY - swipeStartRef.current.y;
+
+    // Determine if horizontal or vertical swipe
+    if (!swipeStartRef.current.locked) {
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        swipeStartRef.current.locked = true;
+        if (Math.abs(dy) > Math.abs(dx)) {
+          // Vertical scroll — cancel swipe
+          swipeStartRef.current = null;
+          setSwipingMsgId(null);
+          setSwipeX(0);
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
+    // Only allow right swipe (positive dx), capped at 80px
+    const clamped = Math.max(0, Math.min(dx, 80));
+    setSwipeX(clamped);
+
+    // Cancel long press if swiping
+    if (clamped > 10 && longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleSwipeEnd = (msg: Message) => {
+    if (swipeX > 60) {
+      // Trigger reply
+      handleReply(msg);
+    }
+    setSwipeX(0);
+    setSwipingMsgId(null);
+    swipeStartRef.current = null;
+  };
+
+  // =====================================================
   // DATE SEPARATOR
   // =====================================================
   const getDateLabel = (dateStr: string) => {
@@ -1154,22 +1275,22 @@ export default function ChatPage() {
   };
 
   // =====================================================
-  // DELIVERY STATUS ICON
+  // DELIVERY STATUS DISPLAY
   // =====================================================
-  const DeliveryIcon = ({ status }: { status?: "sent" | "delivered" | "read" }) => {
-    switch (status) {
-      case "read":
-        return <CheckCheck className="w-3.5 h-3.5 text-purple-400 drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]" />;
-      case "delivered":
-        return <CheckCheck className="w-3.5 h-3.5 text-white/40" />;
-      case "sent":
-      default:
-        return <Check className="w-3.5 h-3.5 text-white/40" />;
+  const DeliveryLabel = ({ status }: { status?: "sent" | "seen" }) => {
+    if (!status) return null;
+    if (status === "seen") {
+      return (
+        <span className="text-[10px] text-purple-400 font-medium drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]">
+          Seen
+        </span>
+      );
     }
+    return <span className="text-[10px] text-white/40">Sent</span>;
   };
 
   // =====================================================
-  // CHAT INFO PANEL: files sent, delete chat, block
+  // CHAT INFO PANEL: files sent
   // =====================================================
   const chatMediaFiles = useMemo(() => {
     return messages
@@ -1196,17 +1317,8 @@ export default function ChatPage() {
       e.preventDefault();
       handleSend();
     }
-
-    // Ctrl/Cmd+B for bold
-    if ((e.ctrlKey || e.metaKey) && e.key === "b") {
-      e.preventDefault();
-      applyBold();
-    }
-    // Ctrl/Cmd+I for italic
-    if ((e.ctrlKey || e.metaKey) && e.key === "i") {
-      e.preventDefault();
-      applyItalic();
-    }
+    if ((e.ctrlKey || e.metaKey) && e.key === "b") { e.preventDefault(); applyBold(); }
+    if ((e.ctrlKey || e.metaKey) && e.key === "i") { e.preventDefault(); applyItalic(); }
   };
 
   // =====================================================
@@ -1218,7 +1330,7 @@ export default function ChatPage() {
   if (loading) {
     return (
       <div className="fixed inset-0 flex flex-col bg-[#0a0812]">
-        <div className="glass-header h-14 flex items-center gap-3 px-4 shrink-0">
+        <div className="glass-header flex items-center gap-3 px-4 shrink-0" style={{ height: "calc(3.5rem + env(safe-area-inset-top, 0px))", paddingTop: "env(safe-area-inset-top, 0px)" }}>
           <Skeleton className="w-5 h-5 rounded" />
           <Skeleton className="w-10 h-10 rounded-full" />
           <div>
@@ -1242,9 +1354,15 @@ export default function ChatPage() {
   return (
     <div className="fixed inset-0 flex flex-col bg-[#0a0812]">
       {/* =====================================================
-          HEADER
+          HEADER — with safe area inset
           ===================================================== */}
-      <header className="glass-header h-14 flex items-center justify-between px-4 shrink-0 z-10">
+      <header
+        className="glass-header flex items-center justify-between px-4 shrink-0 z-10"
+        style={{
+          height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
+          paddingTop: "env(safe-area-inset-top, 0px)",
+        }}
+      >
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => router.push("/messages")}
@@ -1253,7 +1371,6 @@ export default function ChatPage() {
             <ArrowLeft className="w-5 h-5 text-dark-200" />
           </button>
 
-          {/* Avatar — tap to preview */}
           <button
             onClick={() => {
               if (otherUser.avatar_url) setAvatarPreview(otherUser.avatar_url);
@@ -1268,11 +1385,10 @@ export default function ChatPage() {
               )}
             </div>
             {otherUserOnline && (
-              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-[#0a0812]" />
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-purple-500 border-2 border-[#0a0812] online-dot-pulse" />
             )}
           </button>
 
-          {/* Name + status — tap to open chat info */}
           <button onClick={() => setShowChatInfo(true)} className="min-w-0 text-left">
             <div className="flex items-center gap-1.5">
               <span className="text-sm font-semibold text-dark-100 truncate">
@@ -1284,13 +1400,12 @@ export default function ChatPage() {
               {typingUsers.length > 0 ? (
                 <span className="text-primary-400">typing...</span>
               ) : (
-                <span className={otherUserOnline ? "text-green-400" : ""}>{lastSeenText}</span>
+                <span className={otherUserOnline ? "text-purple-400" : ""}>{lastSeenText}</span>
               )}
             </p>
           </button>
         </div>
 
-        {/* Menu */}
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
@@ -1343,6 +1458,7 @@ export default function ChatPage() {
               const prev = idx > 0 ? messages[idx - 1] : null;
               const showDate = !prev || getDateLabel(msg.created_at) !== getDateLabel(prev.created_at);
               const showAvatar = !isMine && (!messages[idx + 1] || messages[idx + 1].sender_id !== msg.sender_id);
+              const isSwipingThis = swipingMsgId === msg.id;
 
               return (
                 <div key={msg.id}>
@@ -1355,9 +1471,20 @@ export default function ChatPage() {
                   )}
 
                   <div
-                    className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"}`}
-                    onTouchStart={(e) => handleTouchStart(msg, e)}
-                    onTouchEnd={handleTouchEnd}
+                    className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} transition-transform`}
+                    style={{
+                      transform: isSwipingThis ? `translateX(${swipeX}px)` : undefined,
+                      transition: isSwipingThis ? "none" : "transform 200ms ease-out",
+                    }}
+                    onTouchStart={(e) => {
+                      handleTouchStart(msg, e);
+                      handleSwipeStart(msg.id, e);
+                    }}
+                    onTouchMove={(e) => handleSwipeMove(msg, e)}
+                    onTouchEnd={() => {
+                      handleTouchEnd();
+                      handleSwipeEnd(msg);
+                    }}
                     onMouseDown={(e) => handleTouchStart(msg, e)}
                     onMouseUp={handleTouchEnd}
                     onMouseLeave={handleTouchEnd}
@@ -1369,6 +1496,18 @@ export default function ChatPage() {
                       }
                     }}
                   >
+                    {/* Swipe reply indicator */}
+                    {isSwipingThis && swipeX > 20 && (
+                      <div
+                        className="absolute left-0 flex items-center justify-center"
+                        style={{ opacity: Math.min(swipeX / 60, 1) }}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
+                          <Reply className="w-4 h-4 text-primary-400" />
+                        </div>
+                      </div>
+                    )}
+
                     {/* Other user avatar */}
                     {!isMine && (
                       <div className="w-7 shrink-0">
@@ -1401,105 +1540,180 @@ export default function ChatPage() {
                           Message deleted
                         </div>
                       ) : (
-                        <div
-                          className={`px-4 py-2.5 rounded-2xl ${
-                            isMine
-                              ? "bg-primary-600/90 text-white rounded-br-md"
-                              : "bg-[#1a1525] border border-white/5 text-dark-100 rounded-bl-md"
-                          }`}
-                        >
-                          {/* Media */}
-                          {msg.media && msg.media.length > 0 && (
-                            <div className="mb-2 space-y-2">
-                              {msg.media.map((m) => (
-                                <div key={m.id}>
-                                  {m.media_type === "image" && (
-                                    <img
-                                      src={m.url}
-                                      alt=""
-                                      className="rounded-xl max-w-full max-h-60 object-cover cursor-pointer active:scale-[0.98] transition-transform"
-                                      onClick={() => setLightboxImage(m.url)}
-                                    />
-                                  )}
-                                  {m.media_type === "video" && (
-                                    <div
-                                      className="cursor-pointer active:scale-[0.98] transition-transform"
-                                      onClick={() => setLightboxVideo(m.url)}
-                                    >
-                                      <video
-                                        src={m.url}
-                                        className="rounded-xl max-w-full max-h-60"
-                                        preload="metadata"
-                                      />
-                                      <div className="absolute inset-0 flex items-center justify-center">
-                                        <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
-                                          <div className="w-0 h-0 border-t-[8px] border-t-transparent border-b-[8px] border-b-transparent border-l-[14px] border-l-white ml-1" />
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-                                  {(m.media_type === "document" || m.media_type === "audio") && (
-                                    <a
-                                      href={m.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className={`flex items-center gap-3 p-3 rounded-xl border active:scale-[0.98] transition-transform ${
-                                        isMine
-                                          ? "border-white/20 bg-white/10"
-                                          : "border-white/10 bg-white/5"
-                                      }`}
-                                    >
-                                      <div className="w-10 h-10 rounded-lg bg-primary-600/20 flex items-center justify-center shrink-0 text-lg">
-                                        {m.media_type === "audio" ? "🎵" : getDocIcon(m.file_name)}
-                                      </div>
-                                      <div className="min-w-0 flex-1">
-                                        <p className="text-sm font-medium truncate">
-                                          {m.file_name || (m.media_type === "audio" ? "Voice note" : "Document")}
-                                        </p>
-                                        <p className={`text-xs ${isMine ? "text-white/60" : "text-dark-500"}`}>
-                                          {m.file_size
-                                            ? m.file_size > 1024 * 1024
-                                              ? `${(m.file_size / (1024 * 1024)).toFixed(1)} MB`
-                                              : `${(m.file_size / 1024).toFixed(0)} KB`
-                                            : "Download"}
-                                        </p>
-                                      </div>
-                                      <Download className={`w-4 h-4 shrink-0 ${isMine ? "text-white/60" : "text-dark-400"}`} />
-                                    </a>
-                                  )}
-                                </div>
-                              ))}
+                        <div>
+                          {/* Reply preview */}
+                          {msg.reply_to && (
+                            <div
+                              className={`px-3 py-1.5 mb-0.5 rounded-t-2xl border-l-2 border-primary-500 ${
+                                isMine ? "bg-primary-700/30" : "bg-white/5"
+                              }`}
+                            >
+                              <p className="text-[10px] text-primary-400 font-medium">
+                                {msg.reply_to.sender_id === user.id ? "You" : otherUser?.full_name || "Unknown"}
+                              </p>
+                              <p className="text-[11px] text-dark-400 truncate">
+                                {msg.reply_to.content?.slice(0, 60) || "Attachment"}
+                              </p>
                             </div>
                           )}
 
-                          {/* Post share */}
-                          {msg.content_type === "post_share" && msg.metadata?.post_id && (
-                            <button
-                              onClick={() => router.push(`/post/${msg.metadata.post_id}`)}
-                              className={`mb-2 w-full p-3 rounded-xl border text-left active:scale-[0.98] transition-transform ${
-                                isMine ? "border-white/20 bg-white/10" : "border-white/10 bg-white/5"
-                              }`}
-                            >
-                              <p className="text-xs font-medium text-primary-400 mb-1">📍 Shared Post</p>
-                              <p className="text-sm truncate">{msg.metadata.post_preview || "View post"}</p>
-                            </button>
-                          )}
-
-                          {/* Text content */}
-                          {msg.content && renderContent(msg.content)}
-
-                          {/* Timestamp + delivery status */}
-                          <div className={`flex items-center gap-1 mt-1.5 ${isMine ? "justify-end" : "justify-start"}`}>
-                            <span className={`text-[10px] ${isMine ? "text-white/50" : "text-dark-500"}`}>
-                              {format(new Date(msg.created_at), "HH:mm")}
-                            </span>
-                            {msg.edited_at && (
-                              <span className={`text-[10px] ${isMine ? "text-white/40" : "text-dark-600"}`}>
-                                · edited
-                              </span>
+                          <div
+                            className={`px-4 py-2.5 ${msg.reply_to ? "rounded-b-2xl" : "rounded-2xl"} ${
+                              isMine
+                                ? `bg-primary-600/90 text-white ${msg.reply_to ? "rounded-br-md" : "rounded-br-md"}`
+                                : `bg-[#1a1525] border border-white/5 text-dark-100 ${msg.reply_to ? "rounded-bl-md" : "rounded-bl-md"}`
+                            }`}
+                          >
+                            {/* Media */}
+                            {msg.media && msg.media.length > 0 && (
+                              <div className="mb-2 space-y-2">
+                                {msg.media.map((m) => (
+                                  <div key={m.id}>
+                                    {m.media_type === "image" && (
+                                      <img
+                                        src={m.url}
+                                        alt=""
+                                        className="rounded-xl max-w-full max-h-60 object-cover cursor-pointer active:scale-[0.98] transition-transform"
+                                        onClick={() => setLightboxImage(m.url)}
+                                      />
+                                    )}
+                                    {m.media_type === "video" && (
+                                      <div
+                                        className="cursor-pointer active:scale-[0.98] transition-transform relative"
+                                        onClick={() => setLightboxVideo(m.url)}
+                                      >
+                                        <video
+                                          src={m.url}
+                                          className="rounded-xl max-w-full max-h-60"
+                                          preload="metadata"
+                                        />
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                          <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                                            <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-14 border-l-white ml-1" />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {m.media_type === "audio" && (
+                                      <div
+                                        className={`p-3 rounded-xl border ${
+                                          isMine
+                                            ? "border-white/20 bg-white/10"
+                                            : "border-white/10 bg-white/5"
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <Mic className="w-4 h-4 text-primary-400 shrink-0" />
+                                          <span className="text-xs font-medium">
+                                            {m.file_name || "Voice note"}
+                                          </span>
+                                        </div>
+                                        <audio
+                                          controls
+                                          preload="metadata"
+                                          className="w-full h-8 [&::-webkit-media-controls-panel]:bg-transparent"
+                                          style={{ maxWidth: "100%" }}
+                                        >
+                                          <source src={m.url} />
+                                          Your browser does not support audio.
+                                        </audio>
+                                      </div>
+                                    )}
+                                    {m.media_type === "document" && (
+                                      <a
+                                        href={m.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className={`flex items-center gap-3 p-3 rounded-xl border active:scale-[0.98] transition-transform ${
+                                          isMine
+                                            ? "border-white/20 bg-white/10"
+                                            : "border-white/10 bg-white/5"
+                                        }`}
+                                      >
+                                        <div className="w-10 h-10 rounded-lg bg-primary-600/20 flex items-center justify-center shrink-0 text-lg">
+                                          {getDocIcon(m.file_name)}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-sm font-medium truncate">
+                                            {m.file_name || "Document"}
+                                          </p>
+                                          <p className={`text-xs ${isMine ? "text-white/60" : "text-dark-500"}`}>
+                                            {m.file_size
+                                              ? m.file_size > 1024 * 1024
+                                                ? `${(m.file_size / (1024 * 1024)).toFixed(1)} MB`
+                                                : `${(m.file_size / 1024).toFixed(0)} KB`
+                                              : "Download"}
+                                          </p>
+                                        </div>
+                                        <Download className={`w-4 h-4 shrink-0 ${isMine ? "text-white/60" : "text-dark-400"}`} />
+                                      </a>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             )}
-                            {isMine && <DeliveryIcon status={msg.delivery_status} />}
+
+                            {/* Post share */}
+                            {msg.content_type === "post_share" && msg.metadata?.post_id && (
+                              <button
+                                onClick={() => router.push(`/post/${msg.metadata.post_id}`)}
+                                className={`mb-2 w-full p-3 rounded-xl border text-left active:scale-[0.98] transition-transform ${
+                                  isMine ? "border-white/20 bg-white/10" : "border-white/10 bg-white/5"
+                                }`}
+                              >
+                                <p className="text-xs font-medium text-primary-400 mb-1">📍 Shared Post</p>
+                                <p className="text-sm truncate">{msg.metadata.post_preview || "View post"}</p>
+                              </button>
+                            )}
+
+                            {/* Text content */}
+                            {msg.content && renderContent(msg.content)}
+
+                            {/* Timestamp + delivery status */}
+                            <div className={`flex items-center gap-1.5 mt-1.5 ${isMine ? "justify-end" : "justify-start"}`}>
+                              <span className={`text-[10px] ${isMine ? "text-white/50" : "text-dark-500"}`}>
+                                {format(new Date(msg.created_at), "HH:mm")}
+                              </span>
+                              {msg.edited_at && (
+                                <span className={`text-[10px] ${isMine ? "text-white/40" : "text-dark-600"}`}>
+                                  · edited
+                                </span>
+                              )}
+                              {isMine && <DeliveryLabel status={msg.delivery_status} />}
+                            </div>
                           </div>
+
+                          {/* Reactions display */}
+                          {msg.reactions && msg.reactions.length > 0 && (
+                            <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? "justify-end" : "justify-start"}`}>
+                              {Object.entries(
+                                msg.reactions.reduce((acc, r) => {
+                                  acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                                  return acc;
+                                }, {} as Record<string, number>)
+                              ).map(([emoji, count]) => {
+                                const myReaction = msg.reactions?.some(
+                                  (r) => r.emoji === emoji && r.user_id === user.id
+                                );
+                                return (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => toggleReaction(msg.id, emoji)}
+                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors ${
+                                      myReaction
+                                        ? "border-primary-500/40 bg-primary-600/20"
+                                        : "border-white/10 bg-white/5 hover:bg-white/10"
+                                    }`}
+                                  >
+                                    <span>{emoji}</span>
+                                    {(count as number) > 1 && (
+                                      <span className="text-[10px] text-dark-300">{count as number}</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1543,6 +1757,29 @@ export default function ChatPage() {
           <p className="text-sm text-red-400">You have blocked this user</p>
           <button onClick={toggleBlock} className="text-xs text-red-300 underline mt-1">
             Unblock
+          </button>
+        </div>
+      )}
+
+      {/* =====================================================
+          REPLY BANNER
+          ===================================================== */}
+      {replyingTo && !isBlocked && (
+        <div className="px-4 py-2 border-t border-primary-500/20 bg-primary-600/5 flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <Reply className="w-4 h-4 text-primary-400 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs text-primary-400 font-medium">
+                Replying to {replyingTo.sender_id === user.id ? "yourself" : otherUser?.full_name || "Unknown"}
+              </p>
+              <p className="text-xs text-dark-400 truncate">{replyingTo.content?.slice(0, 60) || "Attachment"}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setReplyingTo(null)}
+            className="p-1 rounded-lg hover:bg-white/10"
+          >
+            <X className="w-4 h-4 text-dark-400" />
           </button>
         </div>
       )}
@@ -1607,21 +1844,11 @@ export default function ChatPage() {
           ===================================================== */}
       {showFormatBar && !isBlocked && (
         <div className="px-4 py-2 border-t border-white/5 bg-[#0d0a14] flex items-center justify-center gap-3">
-          <button onClick={applyBold} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bold">
-            <Bold className="w-4 h-4" />
-          </button>
-          <button onClick={applyItalic} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Italic">
-            <Italic className="w-4 h-4" />
-          </button>
-          <button onClick={openLinkInput} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Link">
-            <Link2 className="w-4 h-4" />
-          </button>
-          <button onClick={applyBulletList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bullets">
-            <List className="w-4 h-4" />
-          </button>
-          <button onClick={applyNumberedList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Numbers">
-            <ListOrdered className="w-4 h-4" />
-          </button>
+          <button onClick={applyBold} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bold"><Bold className="w-4 h-4" /></button>
+          <button onClick={applyItalic} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Italic"><Italic className="w-4 h-4" /></button>
+          <button onClick={openLinkInput} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Link"><Link2 className="w-4 h-4" /></button>
+          <button onClick={applyBulletList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bullets"><List className="w-4 h-4" /></button>
+          <button onClick={applyNumberedList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Numbers"><ListOrdered className="w-4 h-4" /></button>
         </div>
       )}
 
@@ -1722,7 +1949,6 @@ export default function ChatPage() {
           style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))" }}
         >
           <div className="flex items-end gap-1.5">
-            {/* Attach */}
             <div className="relative shrink-0">
               <button
                 onClick={() => { setShowAttach(!showAttach); setShowEmoji(false); setShowLinkInput(false); }}
@@ -1753,14 +1979,13 @@ export default function ChatPage() {
               )}
             </div>
 
-            {/* WYSIWYG Editor */}
             <div className="flex-1 min-w-0">
               <div
                 ref={editorRef}
                 contentEditable
                 role="textbox"
                 aria-multiline="true"
-                data-placeholder={editingMessage ? "Edit message..." : "Message..."}
+                data-placeholder={editingMessage ? "Edit message..." : replyingTo ? "Reply..." : "Message..."}
                 onInput={() => sendTyping()}
                 onKeyDown={handleEditorKeyDown}
                 className="w-full bg-[#1a1525] border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-dark-100 focus:outline-none focus:border-primary-500/40 resize-none transition-colors overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-dark-500 empty:before:pointer-events-none [&_b]:font-bold [&_strong]:font-bold [&_i]:italic [&_em]:italic [&_a]:text-primary-400 [&_a]:underline [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4"
@@ -1769,7 +1994,6 @@ export default function ChatPage() {
               />
             </div>
 
-            {/* Format toggle */}
             <button
               onClick={() => { setShowFormatBar(!showFormatBar); setShowEmoji(false); setShowLinkInput(false); }}
               className={`w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 active:scale-90 transition-all shrink-0 ${
@@ -1779,7 +2003,6 @@ export default function ChatPage() {
               <Bold className="w-4 h-4" />
             </button>
 
-            {/* Emoji */}
             <button
               onClick={() => { setShowEmoji(!showEmoji); setShowAttach(false); setShowFormatBar(false); setShowLinkInput(false); }}
               className={`w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 active:scale-90 transition-all shrink-0 ${
@@ -1789,9 +2012,7 @@ export default function ChatPage() {
               <Smile className="w-5 h-5" />
             </button>
 
-            {/* Voice note / Send */}
             {isEditorEmpty() && pendingMedia.length === 0 && !editingMessage ? (
-              // Voice note button
               isRecording ? (
                 <button
                   onClick={stopRecording}
@@ -1808,7 +2029,6 @@ export default function ChatPage() {
                 </button>
               )
             ) : (
-              // Send button
               <button
                 onClick={handleSend}
                 disabled={sending}
@@ -1819,7 +2039,6 @@ export default function ChatPage() {
             )}
           </div>
 
-          {/* Recording indicator */}
           {isRecording && (
             <div className="flex items-center gap-2 mt-2 px-2">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -1835,19 +2054,45 @@ export default function ChatPage() {
       <input ref={docInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.pptx,.ppt,.zip,.rar" multiple className="hidden" onChange={handleFileSelect} />
 
       {/* =====================================================
-          CONTEXT MENU (Long Press Menu)
+          CONTEXT MENU (Long Press Menu) — with reactions + reply
           ===================================================== */}
       {contextMenuMsg && contextMenuPos && typeof document !== "undefined" &&
         createPortal(
           <div className="fixed inset-0 z-[99999]" onClick={() => setContextMenuMsg(null)}>
             <div
-              className="absolute glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 w-52 animate-in fade-in zoom-in-95 duration-150"
+              className="absolute glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 w-56 animate-in fade-in zoom-in-95 duration-150"
               style={{
-                left: Math.min(contextMenuPos.x, window.innerWidth - 220),
-                top: Math.min(contextMenuPos.y - 10, window.innerHeight - 300),
+                left: Math.min(contextMenuPos.x, window.innerWidth - 240),
+                top: Math.min(contextMenuPos.y - 10, window.innerHeight - 400),
               }}
               onClick={(e) => e.stopPropagation()}
             >
+              {/* Quick Reactions row */}
+              {!contextMenuMsg.is_deleted && (
+                <div className="flex items-center justify-around px-3 py-2.5 border-b border-white/5">
+                  {QUICK_REACTIONS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      onClick={() => toggleReaction(contextMenuMsg.id, emoji)}
+                      className="text-xl hover:scale-125 active:scale-90 transition-transform p-1"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Reply */}
+              {!contextMenuMsg.is_deleted && (
+                <button
+                  onClick={() => handleReply(contextMenuMsg)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
+                >
+                  <Reply className="w-4 h-4 text-dark-400" />
+                  <span className="text-sm text-dark-200">Reply</span>
+                </button>
+              )}
+
               {/* Copy */}
               {contextMenuMsg.content && (
                 <button
@@ -1859,7 +2104,7 @@ export default function ChatPage() {
                 </button>
               )}
 
-              {/* Edit (own messages only, text only) */}
+              {/* Edit */}
               {contextMenuMsg.sender_id === user.id &&
                 contextMenuMsg.content &&
                 !contextMenuMsg.is_deleted && (
@@ -1881,7 +2126,7 @@ export default function ChatPage() {
                 <span className="text-sm text-dark-200">Delete for me</span>
               </button>
 
-              {/* Delete for everyone (own messages only) */}
+              {/* Delete for everyone */}
               {contextMenuMsg.sender_id === user.id && !contextMenuMsg.is_deleted && (
                 <button
                   onClick={() => handleDeleteForEveryone(contextMenuMsg.id)}
@@ -1897,15 +2142,18 @@ export default function ChatPage() {
         )}
 
       {/* =====================================================
-          AVATAR PREVIEW (Circle, WhatsApp-style)
+          AVATAR PREVIEW
           ===================================================== */}
       {avatarPreview && typeof document !== "undefined" &&
         createPortal(
           <div
             className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
-            onClick={() => setAvatarPreview(null)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAvatarPreview(null);
+            }}
           >
-            <div className="animate-in fade-in zoom-in-90 duration-200">
+            <div className="animate-in fade-in zoom-in-90 duration-200" onClick={(e) => e.stopPropagation()}>
               <div className="w-72 h-72 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl">
                 <img src={avatarPreview} alt="" className="w-full h-full object-cover" />
               </div>
@@ -1923,8 +2171,13 @@ export default function ChatPage() {
       {showChatInfo && typeof document !== "undefined" &&
         createPortal(
           <div className="fixed inset-0 z-[99998] bg-[#0a0812] flex flex-col animate-in slide-in-from-right duration-200">
-            {/* Header */}
-            <header className="glass-header h-14 flex items-center gap-3 px-4 shrink-0">
+            <header
+              className="glass-header flex items-center gap-3 px-4 shrink-0"
+              style={{
+                height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
+                paddingTop: "env(safe-area-inset-top, 0px)",
+              }}
+            >
               <button
                 onClick={() => setShowChatInfo(false)}
                 className="p-1.5 -ml-1 hover:bg-white/5 rounded-lg active:scale-95 transition-transform"
@@ -1935,7 +2188,6 @@ export default function ChatPage() {
             </header>
 
             <div className="flex-1 overflow-y-auto">
-              {/* Profile section */}
               <div className="flex flex-col items-center py-8 px-4">
                 <button
                   onClick={() => {
@@ -1944,12 +2196,15 @@ export default function ChatPage() {
                       setAvatarPreview(otherUser.avatar_url);
                     }
                   }}
-                  className="w-24 h-24 rounded-full overflow-hidden bg-dark-800 border-2 border-white/10 mb-3"
+                  className="relative w-24 h-24 rounded-full overflow-hidden bg-dark-800 border-2 border-white/10 mb-3"
                 >
                   {otherUser?.avatar_url ? (
                     <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
                   ) : (
                     <User className="w-12 h-12 text-dark-400 m-auto mt-5" />
+                  )}
+                  {otherUserOnline && (
+                    <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-purple-500 border-3 border-[#0a0812] online-dot-pulse" />
                   )}
                 </button>
                 <h3 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
@@ -1957,12 +2212,11 @@ export default function ChatPage() {
                   {otherUser?.is_admin && <Crown className="w-4 h-4 text-yellow-400" />}
                 </h3>
                 <p className="text-sm text-dark-400">{otherUser?.email}</p>
-                <p className={`text-xs mt-1 ${otherUserOnline ? "text-green-400" : "text-dark-500"}`}>
+                <p className={`text-xs mt-1 ${otherUserOnline ? "text-purple-400" : "text-dark-500"}`}>
                   {lastSeenText}
                 </p>
               </div>
 
-              {/* Shared media */}
               <div className="px-4 py-4 border-t border-white/5">
                 <h4 className="text-sm font-medium text-dark-200 mb-3 flex items-center gap-2">
                   <ImageIcon className="w-4 h-4 text-primary-400" />
@@ -1975,21 +2229,21 @@ export default function ChatPage() {
                     {chatMediaFiles.slice(0, 12).map((m) => (
                       <div key={m.id}>
                         {m.media_type === "image" ? (
-                            <button
-                            onClick={() => { setLightboxImage(m.url); }}
+                          <button
+                            onClick={() => setLightboxImage(m.url)}
                             className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800"
                           >
                             <img src={m.url} alt="" className="w-full h-full object-cover" />
                           </button>
                         ) : m.media_type === "video" ? (
-                           <button
-                            onClick={() => { setLightboxVideo(m.url); }}
+                          <button
+                            onClick={() => setLightboxVideo(m.url)}
                             className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800 relative"
                           >
                             <video src={m.url} className="w-full h-full object-cover" preload="metadata" />
                             <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                               <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center">
-                                <div className="w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-l-[7px] border-l-black ml-0.5" />
+                                <div className="w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-l-[7px] border-l-black ml-0.5" />
                               </div>
                             </div>
                           </button>
@@ -2000,7 +2254,7 @@ export default function ChatPage() {
                             rel="noopener noreferrer"
                             className="w-full aspect-square rounded-lg bg-dark-800 border border-white/10 flex flex-col items-center justify-center gap-1"
                           >
-                            <span className="text-lg">{getDocIcon(m.file_name)}</span>
+                            <span className="text-lg">{m.media_type === "audio" ? "🎵" : getDocIcon(m.file_name)}</span>
                             <span className="text-[9px] text-dark-400 truncate max-w-full px-1">
                               {m.file_name?.split(".").pop()?.toUpperCase() || "FILE"}
                             </span>
@@ -2012,7 +2266,6 @@ export default function ChatPage() {
                 )}
               </div>
 
-              {/* Actions */}
               <div className="px-4 py-4 border-t border-white/5 space-y-1">
                 <button
                   onClick={toggleMute}

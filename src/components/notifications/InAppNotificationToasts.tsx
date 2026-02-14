@@ -68,43 +68,23 @@ export default function InAppNotificationToasts() {
   const channelRef = useRef<any>(null);
   const mountedRef = useRef(true);
 
-  // Don't show on admin/guardian pages
   const isModPage = pathname.startsWith("/admin") || pathname.startsWith("/guardian");
 
   useEffect(() => {
     mountedRef.current = true;
-    
-    return () => {
-      mountedRef.current = false;
-    };
+    return () => { mountedRef.current = false; };
   }, []);
 
   useEffect(() => {
-    // Early returns with logging
-    if (!user?.id) {
-      console.log("[InAppToasts] No user, skipping");
-      return;
-    }
-    
-    if (isModPage) {
-      console.log("[InAppToasts] On mod page, skipping");
-      return;
-    }
+    if (!user?.id) return;
+    if (isModPage) return;
 
-    console.log("[InAppToasts] ========================================");
-    console.log("[InAppToasts] Setting up for user:", user.id);
-    console.log("[InAppToasts] Current pathname:", pathname);
-    console.log("[InAppToasts] ========================================");
-
-    // Cleanup existing
     if (channelRef.current) {
-      console.log("[InAppToasts] Cleaning up old channel");
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
 
     const channelName = `user-toasts-${user.id}-${Date.now()}`;
-    console.log("[InAppToasts] Creating channel:", channelName);
 
     const channel = supabase
       .channel(channelName)
@@ -117,41 +97,36 @@ export default function InAppNotificationToasts() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log("[InAppToasts] ========================================");
-          console.log("[InAppToasts] 🔔 RECEIVED NOTIFICATION!");
-          console.log("[InAppToasts] Payload:", payload);
-          console.log("[InAppToasts] ========================================");
-          
-          if (!mountedRef.current) {
-            console.log("[InAppToasts] Component unmounted, ignoring");
-            return;
-          }
+          if (!mountedRef.current) return;
 
           const n = payload.new as NotificationRow;
-          console.log("[InAppToasts] Notification title:", n.title);
-          console.log("[InAppToasts] Notification type:", n.type);
 
-          // Play sound
+          // Always play sound
           try {
             playNotificationSound();
-            console.log("[InAppToasts] Sound played");
           } catch (e) {
             console.error("[InAppToasts] Sound error:", e);
           }
 
+          // Check if user is currently viewing the chat this DM is from
+          // If so, suppress the visual toast but still play sound
+          if (n.type === "dm_message" && n.data?.conversation_id) {
+            const currentPath = window.location.pathname;
+            if (currentPath === `/messages/${n.data.conversation_id}`) {
+              // User is in this chat — don't show toast, just mark as read
+              supabase.from("notifications").update({ is_read: true }).eq("id", n.id).then(() => {});
+              window.dispatchEvent(new Event("peja-notifications-changed"));
+              return;
+            }
+          }
+
           // Add toast
           setToasts((prev) => {
-            if (prev.some((t) => t.id === n.id)) {
-              console.log("[InAppToasts] Duplicate, skipping");
-              return prev;
-            }
-            console.log("[InAppToasts] Adding toast to state");
+            if (prev.some((t) => t.id === n.id)) return prev;
             return [n, ...prev].slice(0, 3);
           });
 
-          // Notify header
           window.dispatchEvent(new Event("peja-notifications-changed"));
-          console.log("[InAppToasts] Dispatched peja-notifications-changed event");
 
           // Auto-dismiss
           setTimeout(() => {
@@ -161,26 +136,17 @@ export default function InAppNotificationToasts() {
           }, 6000);
         }
       )
-      .subscribe((status, err) => {
-        console.log("[InAppToasts] Subscription status:", status);
-        if (err) console.error("[InAppToasts] Subscription error:", err);
-      });
+      .subscribe();
 
     channelRef.current = channel;
 
     return () => {
       if (channelRef.current) {
-        console.log("[InAppToasts] Cleanup on unmount");
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
     };
   }, [user?.id, isModPage, pathname]);
-
-  // Debug log when toasts change
-  useEffect(() => {
-    console.log("[InAppToasts] Toasts state changed:", toasts.length, "toasts");
-  }, [toasts]);
 
   const dismiss = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -198,16 +164,8 @@ export default function InAppNotificationToasts() {
     if (route) router.push(route, { scroll: false });
   };
 
-  // Don't render on admin/guardian pages or if no user
-  if (!user?.id || isModPage) {
-    return null;
-  }
-  
-  if (toasts.length === 0) {
-    return null;
-  }
-
-  console.log("[InAppToasts] Rendering", toasts.length, "toasts");
+  if (!user?.id || isModPage) return null;
+  if (toasts.length === 0) return null;
 
   return (
     <div
