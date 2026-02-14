@@ -11,7 +11,9 @@ export type NotificationType =
   | "system"
   | "post_comment"
   | "comment_reply"
-  | "comment_liked";
+  | "comment_liked"
+  | "dm_message";       
+
 
 interface CreateNotificationParams {
   userId: string;
@@ -46,10 +48,10 @@ export async function createNotification({
       return false;
     }
 
-    // Also send FCM push notification (fire and forget, never blocks)
-    try {
-      sendFCMPush(userId, title, body || "", data || {}).catch(() => {});
-    } catch {}
+    // Also send FCM push notification (fire and forget)
+    sendFCMPush(userId, title, body || "", data || {}).catch((err) => {
+      console.warn("[FCM] Push failed (non-blocking):", err);
+    });
 
     return true;
   } catch (error) {
@@ -73,14 +75,12 @@ async function sendFCMPush(
     // Convert all data values to strings (FCM requirement)
     const stringData: Record<string, string> = {};
     for (const [key, value] of Object.entries(data)) {
-      if (value !== null && value !== undefined) {
-        stringData[key] = String(value);
-      }
+      stringData[key] = String(value ?? "");
     }
 
     const { apiUrl } = await import("./api");
 
-    fetch(apiUrl("/api/send-push"), {
+    await fetch(apiUrl("/api/send-push"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -92,9 +92,10 @@ async function sendFCMPush(
         body,
         data: stringData,
       }),
-    }).catch(() => {});
-  } catch {
-    // Completely silent, never throw
+    });
+  } catch (err) {
+    // Non-blocking, don't throw
+    console.warn("[FCM] Push send error:", err);
   }
 }
 
@@ -615,4 +616,25 @@ export async function cleanupOldSOSNotifications(): Promise<void> {
   } catch (error) {
     console.error("Error cleaning up SOS notifications:", error);
   }
+}
+
+// ============================================
+// DM MESSAGE NOTIFICATION
+// ============================================
+export async function notifyDMMessage(
+  recipientId: string,
+  senderName: string,
+  messagePreview: string,
+  conversationId: string
+): Promise<boolean> {
+  const preview =
+    messagePreview.length > 60 ? messagePreview.slice(0, 60) + "..." : messagePreview;
+
+  return createNotification({
+    userId: recipientId,
+    type: "dm_message",
+    title: `💬 ${senderName}`,
+    body: preview || "Sent you a message",
+    data: { conversation_id: conversationId, sender_name: senderName },
+  });
 }

@@ -188,3 +188,96 @@ export interface SOSAlertFull extends SOSAlert {
   voice_note_url?: string;
   message?: string;
 }
+
+// =====================================================
+// DM / MESSAGING TYPES
+// =====================================================
+
+export interface Conversation {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  last_message_text: string | null;
+  last_message_at: string | null;
+  last_message_sender_id: string | null;
+  // Joined data
+  participant?: ConversationParticipant;
+  other_user?: VIPUser;
+  unread_count?: number;
+}
+
+export interface ConversationParticipant {
+  id: string;
+  conversation_id: string;
+  user_id: string;
+  joined_at: string;
+  is_muted: boolean;
+  is_blocked: boolean;
+  last_read_at: string;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string | null;
+  content_type: "text" | "media" | "document" | "post_share" | "system";
+  metadata: Record<string, any>;
+  is_deleted: boolean;
+  created_at: string;
+  edited_at: string | null;
+  // Joined data
+  sender?: VIPUser;
+  media?: MessageMediaItem[];
+  // Read receipt states: "sent" | "delivered" | "read"
+  delivery_status?: "sent" | "delivered" | "read";
+  read_at?: string | null;
+  // For delete-for-me
+  hidden_for_me?: boolean;
+}
+
+export interface MessageMediaItem {
+  id: string;
+  message_id: string;
+  url: string;
+  media_type: "image" | "video" | "document" | "audio";
+  file_name: string | null;
+  file_size: number | null;
+  mime_type: string | null;
+  thumbnail_url: string | null;
+  created_at: string;
+}
+
+export interface MessageRead {
+  id: string;
+  message_id: string;
+  user_id: string;
+  read_at: string;
+}
+
+export interface VIPUser {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  is_vip: boolean;
+  is_admin?: boolean;
+  is_guardian?: boolean;
+  last_seen_at?: string | null;
+  status?: string;
+  is_online?: boolean;
+}
+
+export interface DMBlock {
+  id: string;
+  blocker_id: string;
+  blocked_id: string;
+  created_at: string;
+}
+
+export interface MessageDeletion {
+  id: string;
+  message_id: string;
+  user_id: string;
+  created_at: string;
+}

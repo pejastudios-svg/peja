@@ -6,7 +6,7 @@ const nextConfig = {
   
   // Disable static generation for dynamic pages
   experimental: {
-    // This helps with dynamic routes
+    scrollRestoration: true,
   },
 
   eslint: {

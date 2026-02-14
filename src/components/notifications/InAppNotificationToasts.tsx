@@ -30,6 +30,8 @@ function getIcon(type: string) {
       return <CheckCircle className="w-5 h-5 text-green-400" />;
     case "comment_liked":
       return <Heart className="w-5 h-5 text-red-400" />;
+    case "dm_message":                                       
+      return <MessageCircle className="w-5 h-5 text-primary-400" />;  
     default:
       return <Bell className="w-5 h-5 text-primary-400" />;
   }
@@ -50,6 +52,8 @@ function getRoute(n: NotificationRow): string | null {
     case "guardian_approved":
     case "guardian_rejected":
       return "/become-guardian";
+    case "dm_message":                                                                   
+      return data.conversation_id ? `/messages/${encodeURIComponent(data.conversation_id)}` : "/messages"; 
     default:
       return data.post_id ? `/post/${encodeURIComponent(data.post_id)}` : "/notifications";
   }

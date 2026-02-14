@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   Loader2,
+  Crown,     
 } from "lucide-react";
 
 const navItems = [
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/admin/sos", icon: AlertTriangle, label: "SOS Alerts", badge: false },
   { href: "/admin/flagged", icon: Flag, label: "Flagged Content", badge: false },
   { href: "/admin/guardians", icon: Shield, label: "Guardians", badge: false },
+  { href: "/admin/vips", icon: Crown, label: "VIPs", badge: false }, 
   { href: "/admin/analytics", icon: BarChart3, label: "Analytics", badge: false },
 ];
 

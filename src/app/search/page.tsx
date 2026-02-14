@@ -8,7 +8,6 @@ import { PostCard } from "@/components/posts/PostCard";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { useFeedCache } from "@/context/FeedContext";
-import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import {
@@ -242,19 +241,6 @@ setPosts(top);
 }, [query, selectedCategory, dateRange]);
 
   
-
-useEffect(() => {
-  const cached = feedCache.get(feedKey);
-  if (cached && cached.scrollY > 0) {
-    requestAnimationFrame(() => window.scrollTo(0, cached.scrollY));
-  }
-}, [feedKey]);
-
-useEffect(() => {
-  const save = () => feedCache.setScroll(feedKey, window.scrollY);
-  window.addEventListener("scroll", save, { passive: true });
-  return () => window.removeEventListener("scroll", save);
-}, [feedKey]);
 
   // Listen for post deleted/archived events
   useEffect(() => {

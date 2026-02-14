@@ -1651,3 +1651,321 @@ html.capacitor-native .fixed.inset-0 > main.pt-14 {
 html.capacitor-native .cap-status-pad {
   padding-top: var(--cap-status-bar-height) !important;
 }
+/* ============================================
+   VIP BADGE - PURPLE GLOW WITH SLIDING SHINE
+   ============================================ */
+.vip-badge {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3), rgba(168, 85, 247, 0.25));
+  border: 1px solid rgba(168, 85, 247, 0.5);
+  color: #e9d5ff;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 0 12px rgba(139, 92, 246, 0.3),
+    0 0 24px rgba(139, 92, 246, 0.15);
+  animation: vip-glow 3s ease-in-out infinite;
+}
+
+.vip-badge::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.25),
+    transparent
+  );
+  animation: vip-shine 3s ease-in-out infinite;
+}
+
+@keyframes vip-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 12px rgba(139, 92, 246, 0.3),
+      0 0 24px rgba(139, 92, 246, 0.15);
+  }
+  50% {
+    box-shadow:
+      0 0 18px rgba(139, 92, 246, 0.5),
+      0 0 36px rgba(139, 92, 246, 0.25),
+      0 0 48px rgba(168, 85, 247, 0.15);
+  }
+}
+
+@keyframes vip-shine {
+  0%, 100% {
+    left: -100%;
+  }
+  50% {
+    left: 150%;
+  }
+}
+
+/* ============================================
+   ONLINE DOT PULSE
+   ============================================ */
+.online-dot-pulse {
+  animation: online-pulse 2s ease-in-out infinite;
+}
+
+@keyframes online-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0);
+  }
+}
+
+/* ============================================
+   DM CHAT STYLES
+   ============================================ */
+.dm-bubble-sent {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.4), rgba(109, 40, 217, 0.35));
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 18px 18px 4px 18px;
+}
+
+.dm-bubble-received {
+  background: rgba(30, 16, 51, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px 18px 18px 4px;
+}
+
+.dm-input-bar {
+  background: rgba(20, 10, 40, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 1px solid rgba(139, 92, 246, 0.2);
+}
+
+/* Message link detection styling */
+.dm-message-content a {
+  color: #a78bfa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dm-message-content a:hover {
+  color: #c4b5fd;
+}
+
+/* Rich text formatting in messages */
+.dm-message-content strong,
+.dm-message-content b {
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.dm-message-content em,
+.dm-message-content i {
+  font-style: italic;
+}
+
+.dm-message-content ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin: 4px 0;
+}
+
+.dm-message-content ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin: 4px 0;
+}
+
+/* Read receipt icons */
+.dm-read-sent {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.dm-read-seen {
+  color: #a78bfa;
+}
+
+/* Profile drop-up menu */
+.profile-dropup {
+  animation: dropup-enter 200ms ease-out;
+  transform-origin: bottom center;
+}
+
+@keyframes dropup-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Typing indicator animation */
+.typing-dot {
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(1) { animation-delay: 0s; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+/* Emoji picker container */
+.emoji-picker-container {
+  animation: emoji-slide-up 200ms ease-out;
+}
+
+@keyframes emoji-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Format toolbar */
+.format-toolbar {
+  animation: format-fade-in 150ms ease-out;
+}
+
+@keyframes format-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* =====================================================
+   CONTENTEDITABLE EDITOR STYLES
+   ===================================================== */
+[contenteditable]:empty:before {
+  content: attr(data-placeholder);
+  color: var(--dark-500, #6b7280);
+  pointer-events: none;
+  position: absolute;
+}
+
+[contenteditable] {
+  position: relative;
+  -webkit-user-select: text;
+  user-select: text;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+[contenteditable]:focus {
+  outline: none;
+}
+
+/* =====================================================
+   BUTTON BOUNCE ANIMATIONS
+   ===================================================== */
+@keyframes bounce-click {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+
+.btn-bounce:active {
+  animation: bounce-click 150ms ease-out;
+}
+
+/* =====================================================
+   SLIDE UP ANIMATION (emoji picker)
+   ===================================================== */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* =====================================================
+   PURPLE GLOW FOR READ RECEIPTS
+   ===================================================== */
+.read-glow {
+  filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.6));
+}
+
+/* =====================================================
+   ANIMATE-IN UTILITIES (if not already present)
+   ===================================================== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes zoomIn95 {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes slideInFromRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slideInFromTop2 {
+  from { transform: translateY(-8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slideInFromBottom2 {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-in {
+  animation-fill-mode: both;
+}
+
+.fade-in {
+  animation-name: fadeIn;
+}
+
+.zoom-in-95 {
+  animation-name: zoomIn95;
+}
+
+.zoom-in-90 {
+  animation-name: fadeIn, zoomIn95;
+}
+
+.slide-in-from-right {
+  animation-name: slideInFromRight;
+}
+
+.slide-in-from-top-2 {
+  animation-name: slideInFromTop2;
+}
+
+.slide-in-from-bottom-2 {
+  animation-name: slideInFromBottom2;
+}
+
+.duration-150 {
+  animation-duration: 150ms;
+}
+
+.duration-200 {
+  animation-duration: 200ms;
+}

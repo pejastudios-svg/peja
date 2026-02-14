@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
 import { supabase, restoreNativeSession, clearNativeSession } from "@/lib/supabase";
+import { presenceManager } from "@/lib/presence";
 import { User as SupabaseUser, Session } from "@supabase/supabase-js";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { setFlashToast } from "@/context/ToastContext";
@@ -18,6 +19,7 @@ interface User {
 
   is_guardian?: boolean;
   is_admin?: boolean;
+  is_vip?: boolean;      
 
   email_verified: boolean;
   phone_verified: boolean;
@@ -332,6 +334,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSupabaseUser(currentSession.user);
           await fetchUserProfile(currentSession.user.id);
           checkAndStartLocationTracking(currentSession.user.id);
+          presenceManager.start(currentSession.user.id);
           await startUserRowSubscription(currentSession.user.id);
           subscribeToMyUserRow(currentSession.user.id);
         } else {
@@ -342,6 +345,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setSupabaseUser(refreshed.user);
             await fetchUserProfile(refreshed.user.id);
             checkAndStartLocationTracking(refreshed.user.id);
+            presenceManager.start(refreshed.user.id);
             await startUserRowSubscription(refreshed.user.id);
             subscribeToMyUserRow(refreshed.user.id);
           }
@@ -378,14 +382,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           startUserRowSubscription(newSession.user.id).catch(() => {});
           subscribeToMyUserRow(newSession.user.id);
           
-          if (event === 'SIGNED_IN') {
+            if (event === 'SIGNED_IN') {
             checkAndStartLocationTracking(newSession.user.id);
+            presenceManager.start(newSession.user.id);
           }
         } else {
           setUser(null);
           setSupabaseUser(null);
           userProfileCache = null;
           locationTracker.stop();
+          presenceManager.stop();
         }
       }
     );
@@ -478,6 +484,7 @@ console.error("Profile fetch error:", {
         last_longitude: data.last_longitude,
         is_guardian: data.is_guardian || false,
         is_admin: data.is_admin || false,
+        is_vip: data.is_vip || false,
       } : {
         id: userId,
         email: supabaseUser?.email || "",
@@ -552,6 +559,7 @@ console.error("Profile fetch error:", {
               status: next.status,
               is_guardian: next.is_guardian ?? prev.is_guardian,
               is_admin: next.is_admin ?? prev.is_admin,
+              is_vip: next.is_vip ?? prev.is_vip, 
             };
           });
 
@@ -611,6 +619,7 @@ console.error("Profile fetch error:", {
               status: u.status,
               is_guardian: u.is_guardian ?? prev.is_guardian,
               is_admin: u.is_admin ?? prev.is_admin,
+              is_vip: u.is_vip ?? prev.is_vip,
             };
           });
 
@@ -748,6 +757,7 @@ console.error("Profile fetch error:", {
    async function signOut() {
     userProfileCache = null;
     locationTracker.stop();
+    presenceManager.stop();
     await clearNativeSession();
     await supabase.auth.signOut();
     setUser(null);

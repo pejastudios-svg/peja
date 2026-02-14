@@ -6,6 +6,7 @@ import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import { apiUrl } from "@/lib/api";
+import { VipBadge } from "@/components/ui/VipBadge";
 import {
   User,
   Mail,
@@ -414,12 +415,18 @@ useEffect(() => {
                 <h2 className="text-lg font-semibold text-dark-50">{user.full_name || "User"}</h2>
                 <p className="text-sm text-dark-400">{user.email}</p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-dark-500">{userPosts.length} posts</span>
-                  <span className="text-dark-600">•</span>
-                  <span className="text-xs text-green-400 flex items-center gap-1">
-                    <Shield className="w-3 h-3" /> Verified
-                  </span>
-                </div>
+  <span className="text-xs text-dark-500">{userPosts.length} posts</span>
+  <span className="text-dark-600">•</span>
+  <span className="text-xs text-green-400 flex items-center gap-1">
+    <Shield className="w-3 h-3" /> Verified
+  </span>
+  {user.is_vip && (
+    <>
+      <span className="text-dark-600">•</span>
+      <VipBadge size="sm" showLabel />
+    </>
+  )}
+</div>
               </div>
 
               <Button variant="secondary" size="sm" onClick={() => router.push("/profile/edit")}>
