@@ -69,34 +69,35 @@ export default function MessagesPage() {
     if (user.is_vip === false) { router.replace("/"); return; }
   }, [user, authLoading, router]);
 
-  // =====================================================
-  // PRESENCE: Subscribe to online status changes
-  // Uses presenceManager (real-time) + last_seen_at fallback
+   // =====================================================
+  // PRESENCE: Online status with debug logging
   // =====================================================
   useEffect(() => {
-    // Build online set from presence manager + last_seen_at
     const buildOnlineSet = () => {
       const online = new Set<string>();
       conversations.forEach((c) => {
         if (!c.other_user?.id) return;
-        if (presenceManager.isOnline(c.other_user.id)) {
+        
+        const presenceOnline = presenceManager.isOnline(c.other_user.id);
+        const lastSeen = c.other_user.last_seen_at;
+        const lastSeenDiff = lastSeen ? Date.now() - new Date(lastSeen).getTime() : null;
+        const lastSeenOnline = lastSeenDiff !== null && lastSeenDiff < 2 * 60 * 1000;
+        
+        console.log(`[Online] ${c.other_user.full_name}: presence=${presenceOnline}, lastSeen=${lastSeen}, diff=${lastSeenDiff ? Math.round(lastSeenDiff/1000) + 's' : 'null'}, online=${presenceOnline || lastSeenOnline}`);
+        
+        if (presenceOnline || lastSeenOnline) {
           online.add(c.other_user.id);
-          return;
-        }
-        if (c.other_user.last_seen_at) {
-          const diff = Date.now() - new Date(c.other_user.last_seen_at).getTime();
-          if (diff < 2 * 60 * 1000) {
-            online.add(c.other_user.id);
-          }
         }
       });
       return online;
     };
 
-    setOnlineUsers(buildOnlineSet());
+    const initialSet = buildOnlineSet();
+    console.log("[Online] Initial online users:", initialSet.size, [...initialSet]);
+    setOnlineUsers(initialSet);
 
-    // Subscribe to real-time presence changes
     const unsub = presenceManager.onStatusChange((userId, isOnline) => {
+      console.log("[Online] Presence change:", userId, isOnline);
       setOnlineUsers((prev) => {
         const next = new Set(prev);
         if (isOnline) next.add(userId);
@@ -105,22 +106,26 @@ export default function MessagesPage() {
       });
     });
 
-    // Poll last_seen_at from DB every 30s to catch users who are
-    // active but haven't joined the presence channel
     const otherIds = conversations.map((c) => c.other_user?.id).filter(Boolean) as string[];
 
     const pollLastSeen = async () => {
       if (otherIds.length === 0) return;
+      
       const { data } = await supabase
         .from("users")
-        .select("id, last_seen_at")
+        .select("id, last_seen_at, full_name")
         .in("id", otherIds);
 
       if (data) {
+        console.log("[Online] Poll results:", data.map((u: any) => ({
+          name: u.full_name,
+          lastSeen: u.last_seen_at,
+          diffSec: u.last_seen_at ? Math.round((Date.now() - new Date(u.last_seen_at).getTime()) / 1000) : null,
+        })));
+
         setOnlineUsers((prev) => {
           const next = new Set(prev);
           data.forEach((u: any) => {
-            // Always trust presenceManager first
             if (presenceManager.isOnline(u.id)) {
               next.add(u.id);
               return;
@@ -134,14 +139,14 @@ export default function MessagesPage() {
               }
             }
           });
+          console.log("[Online] Updated set:", next.size, [...next]);
           return next;
         });
       }
     };
 
-    // Initial poll after a short delay
     const initialTimer = setTimeout(pollLastSeen, 1000);
-    const pollInterval = setInterval(pollLastSeen, 30000);
+    const pollInterval = setInterval(pollLastSeen, 15000); // Poll every 15s for testing
 
     return () => {
       unsub();
