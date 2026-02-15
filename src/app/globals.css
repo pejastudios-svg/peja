@@ -1993,3 +1993,10 @@ input, textarea, [contenteditable] {
     --vh: 1dvh;
   }
 }
+
+/* =====================================================
+   KEYBOARD HEIGHT VARIABLE
+   ===================================================== */
+:root {
+  --keyboard-height: 0px;
+}

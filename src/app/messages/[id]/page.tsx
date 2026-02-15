@@ -382,50 +382,72 @@ export default function ChatPage() {
   // =====================================================
   // SCROLL TO BOTTOM
   // =====================================================
+  const scrollToBottom = useCallback((instant = true) => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    if (instant) {
+      container.scrollTop = container.scrollHeight;
+    } else {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    }
+  }, []);
+
   useEffect(() => {
-    if (messages.length > 0 && messagesEndRef.current) {
-      if (!initialScrollDone.current) {
-        // Force scroll to bottom after DOM renders
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView();
-          requestAnimationFrame(() => {
-            messagesEndRef.current?.scrollIntoView();
-          });
-        }, 50);
-        initialScrollDone.current = true;
-      } else {
-        const c = messagesContainerRef.current;
-        if (c && c.scrollHeight - c.scrollTop - c.clientHeight < 150) {
-          messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
-        }
+    if (messages.length === 0) return;
+
+    if (!initialScrollDone.current) {
+      // Multiple attempts for async image/media loading
+      scrollToBottom(true);
+      requestAnimationFrame(() => scrollToBottom(true));
+      setTimeout(() => scrollToBottom(true), 100);
+      setTimeout(() => scrollToBottom(true), 300);
+      setTimeout(() => scrollToBottom(true), 600);
+      initialScrollDone.current = true;
+    } else {
+      // Auto-scroll only if user is near bottom
+      const c = messagesContainerRef.current;
+      if (c && c.scrollHeight - c.scrollTop - c.clientHeight < 150) {
+        scrollToBottom(false);
       }
     }
-  }, [messages]);
+  }, [messages, scrollToBottom]);
+
+  // Scroll when loading finishes
+  useEffect(() => {
+    if (!loading && messages.length > 0) {
+      setTimeout(() => scrollToBottom(true), 50);
+    }
+  }, [loading, scrollToBottom]);
 
   // =====================================================
   // ANDROID KEYBOARD: adjust layout when keyboard opens
   // =====================================================
   useEffect(() => {
-    if (typeof window === "undefined" || !window.visualViewport) return;
+    if (typeof window === "undefined") return;
 
     const vv = window.visualViewport;
+    if (!vv) return;
+
     const onResize = () => {
-      const keyboardHeight = window.innerHeight - vv!.height;
-      document.documentElement.style.setProperty(
-        "--keyboard-height",
-        `${Math.max(keyboardHeight, 0)}px`
-      );
+      const keyboardHeight = window.innerHeight - vv.height;
+      const offset = Math.max(keyboardHeight, 0);
+      document.documentElement.style.setProperty("--keyboard-height", `${offset}px`);
+
       // Scroll to bottom when keyboard opens
-      if (keyboardHeight > 100) {
-        setTimeout(() => {
-          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-        }, 100);
+      if (offset > 100) {
+        setTimeout(() => scrollToBottom(false), 150);
       }
     };
 
     vv.addEventListener("resize", onResize);
-    return () => vv.removeEventListener("resize", onResize);
-  }, []);
+    vv.addEventListener("scroll", onResize);
+
+    return () => {
+      vv.removeEventListener("resize", onResize);
+      vv.removeEventListener("scroll", onResize);
+      document.documentElement.style.setProperty("--keyboard-height", "0px");
+    };
+  }, [scrollToBottom]);
 
   // =====================================================
   // REALTIME: Messages + Read receipts + Reactions
@@ -440,6 +462,7 @@ export default function ChatPage() {
 
     const channel = supabase
       .channel(`chat-rt-${conversationId}-${Date.now()}`)
+      // New messages
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
@@ -473,7 +496,7 @@ export default function ChatPage() {
             if (existing) {
               return prev.map((m) =>
                 m.id === newMsg.id
-                  ? { ...m, media: media.length > 0 ? media : m.media, delivery_status: "sent" as const }
+                  ? { ...m, media: media.length > 0 ? media : m.media }
                   : m
               );
             }
@@ -489,9 +512,12 @@ export default function ChatPage() {
             ];
           });
 
+          // If we received a message from the other user, mark as read
+          // This also triggers a message_reads INSERT which the sender will pick up
           if (newMsg.sender_id !== user.id) markAsRead();
         }
       )
+      // Message updates (edits, deletions)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
@@ -512,41 +538,59 @@ export default function ChatPage() {
           );
         }
       )
+      // Read receipts — listen to ALL inserts on message_reads
+      // and filter client-side for this conversation's messages
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "message_reads" },
         (payload) => {
           const read = payload.new as any;
-          if (read.user_id !== user.id) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === read.message_id
-                  ? { ...m, delivery_status: "seen" as const, read_at: read.read_at }
-                  : m
-              )
+          // Only care about reads from the OTHER user (meaning they read OUR messages)
+          if (read.user_id === user.id) return;
+
+          setMessages((prev) => {
+            // Check if this read receipt is for a message in our conversation
+            const msgExists = prev.some((m) => m.id === read.message_id);
+            if (!msgExists) return prev;
+
+            return prev.map((m) =>
+              m.id === read.message_id && m.sender_id === user.id
+                ? { ...m, delivery_status: "seen" as const, read_at: read.read_at }
+                : m
             );
-          }
+          });
         }
       )
+      // Reactions
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "message_reactions" },
-        async () => {
-          // Refetch all reactions for this conversation's messages
-          const msgIds = messages.map((m) => m.id);
-          if (msgIds.length === 0) return;
-          const { data: reactions } = await supabase
-            .from("message_reactions")
-            .select("*")
-            .in("message_id", msgIds);
-          const reactionsMap: Record<string, any[]> = {};
-          (reactions || []).forEach((r: any) => {
-            if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
-            reactionsMap[r.message_id].push(r);
+        async (payload) => {
+          // Quick check: is this reaction for a message in our view?
+          const reactionData = (payload.new || payload.old) as any;
+          if (!reactionData?.message_id) return;
+
+          setMessages((prev) => {
+            const msgExists = prev.some((m) => m.id === reactionData.message_id);
+            if (!msgExists) return prev;
+
+            // Refetch reactions for this specific message
+            supabase
+              .from("message_reactions")
+              .select("*")
+              .eq("message_id", reactionData.message_id)
+              .then(({ data: reactions }) => {
+                setMessages((p) =>
+                  p.map((m) =>
+                    m.id === reactionData.message_id
+                      ? { ...m, reactions: reactions || [] }
+                      : m
+                  )
+                );
+              });
+
+            return prev;
           });
-          setMessages((prev) =>
-            prev.map((m) => ({ ...m, reactions: reactionsMap[m.id] || m.reactions || [] }))
-          );
         }
       )
       .subscribe();
@@ -560,6 +604,54 @@ export default function ChatPage() {
       }
     };
   }, [user?.id, conversationId, markAsRead]);
+
+  // =====================================================
+  // POLLING FALLBACK: Check for read receipts every 5s
+  // =====================================================
+  useEffect(() => {
+    if (!user?.id || !conversationId) return;
+
+    const checkReadReceipts = async () => {
+      // Get current messages from state via ref-like approach
+      setMessages((prev) => {
+        const ownUnseenIds = prev
+          .filter((m) => m.sender_id === user.id && m.delivery_status === "sent")
+          .map((m) => m.id);
+
+        if (ownUnseenIds.length === 0) return prev;
+
+        // Fire async query outside of setState
+        supabase
+          .from("message_reads")
+          .select("message_id, read_at")
+          .in("message_id", ownUnseenIds)
+          .neq("user_id", user.id)
+          .then(({ data: reads }) => {
+            if (reads && reads.length > 0) {
+              const readSet = new Set(reads.map((r) => r.message_id));
+              const readAtMap: Record<string, string> = {};
+              reads.forEach((r) => { readAtMap[r.message_id] = r.read_at; });
+
+              setMessages((p) =>
+                p.map((m) =>
+                  readSet.has(m.id)
+                    ? { ...m, delivery_status: "seen" as const, read_at: readAtMap[m.id] }
+                    : m
+                )
+              );
+            }
+          });
+
+        return prev; // Don't modify state here
+      });
+    };
+
+    // Check immediately once
+    setTimeout(checkReadReceipts, 1000);
+
+    const interval = setInterval(checkReadReceipts, 5000);
+    return () => clearInterval(interval);
+  }, [user?.id, conversationId]);
 
   // =====================================================
   // TYPING INDICATOR
@@ -1329,7 +1421,15 @@ export default function ChatPage() {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 flex flex-col bg-[#0a0812]">
+          <div
+      className="fixed flex flex-col bg-[#0a0812]"
+      style={{
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: "var(--keyboard-height, 0px)",
+      }}
+    >
         <div className="glass-header flex items-center gap-3 px-4 shrink-0" style={{ height: "calc(3.5rem + env(safe-area-inset-top, 0px))", paddingTop: "env(safe-area-inset-top, 0px)" }}>
           <Skeleton className="w-5 h-5 rounded" />
           <Skeleton className="w-10 h-10 rounded-full" />
@@ -1460,7 +1560,7 @@ export default function ChatPage() {
               const showAvatar = !isMine && (!messages[idx + 1] || messages[idx + 1].sender_id !== msg.sender_id);
               const isSwipingThis = swipingMsgId === msg.id;
 
-              return (
+                            return (
                 <div key={msg.id}>
                   {showDate && (
                     <div className="flex justify-center my-4">
@@ -1471,11 +1571,7 @@ export default function ChatPage() {
                   )}
 
                   <div
-                    className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} transition-transform`}
-                    style={{
-                      transform: isSwipingThis ? `translateX(${swipeX}px)` : undefined,
-                      transition: isSwipingThis ? "none" : "transform 200ms ease-out",
-                    }}
+                    className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} relative`}
                     onTouchStart={(e) => {
                       handleTouchStart(msg, e);
                       handleSwipeStart(msg.id, e);
@@ -1496,11 +1592,24 @@ export default function ChatPage() {
                       }
                     }}
                   >
-                    {/* Swipe reply indicator */}
-                    {isSwipingThis && swipeX > 20 && (
+                    {/* Swipe reply indicator — positioned behind the bubble */}
+                    {isSwipingThis && swipeX > 10 && !isMine && (
                       <div
-                        className="absolute left-0 flex items-center justify-center"
+                        className="absolute left-0 top-1/2 -translate-y-1/2 z-0"
                         style={{ opacity: Math.min(swipeX / 60, 1) }}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
+                          <Reply className="w-4 h-4 text-primary-400" />
+                        </div>
+                      </div>
+                    )}
+                    {isSwipingThis && swipeX > 10 && isMine && (
+                      <div
+                        className="absolute right-0 top-1/2 -translate-y-1/2 z-0"
+                        style={{
+                          opacity: Math.min(swipeX / 60, 1),
+                          transform: `translate(${swipeX}px, -50%)`,
+                        }}
                       >
                         <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
                           <Reply className="w-4 h-4 text-primary-400" />
@@ -1528,7 +1637,14 @@ export default function ChatPage() {
                       </div>
                     )}
 
-                    <div className="max-w-[75%] relative">
+                    {/* Message bubble — THIS is what moves on swipe */}
+                    <div
+                      className="max-w-[75%] relative z-[1]"
+                      style={{
+                        transform: isSwipingThis ? `translateX(${swipeX}px)` : undefined,
+                        transition: isSwipingThis ? "none" : "transform 200ms ease-out",
+                      }}
+                    >
                       {msg.is_deleted ? (
                         <div
                           className={`px-4 py-2.5 rounded-2xl text-xs italic ${
@@ -1945,8 +2061,11 @@ export default function ChatPage() {
           ===================================================== */}
       {!isBlocked && (
         <div
-          className="px-3 py-2 border-t border-white/5 bg-[#0d0a14]"
-          style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))" }}
+          className="px-3 py-2 border-t border-white/5 bg-[#0d0a14] shrink-0"
+          style={{
+            paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
+            marginBottom: "var(--keyboard-height, 0px)",
+          }}
         >
           <div className="flex items-end gap-1.5">
             <div className="relative shrink-0">
