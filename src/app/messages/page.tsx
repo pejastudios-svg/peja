@@ -71,17 +71,31 @@ export default function MessagesPage() {
 
   // =====================================================
   // PRESENCE: Subscribe to online status changes
+  // Uses presenceManager (real-time) + last_seen_at fallback
   // =====================================================
   useEffect(() => {
-    // Build initial online set from current conversations
-    const initialOnline = new Set<string>();
-    conversations.forEach((c) => {
-      if (c.other_user?.id && presenceManager.isOnline(c.other_user.id)) {
-        initialOnline.add(c.other_user.id);
-      }
-    });
-    setOnlineUsers(initialOnline);
+    // Build online set from presence manager + last_seen_at
+    const buildOnlineSet = () => {
+      const online = new Set<string>();
+      conversations.forEach((c) => {
+        if (!c.other_user?.id) return;
+        if (presenceManager.isOnline(c.other_user.id)) {
+          online.add(c.other_user.id);
+          return;
+        }
+        if (c.other_user.last_seen_at) {
+          const diff = Date.now() - new Date(c.other_user.last_seen_at).getTime();
+          if (diff < 2 * 60 * 1000) {
+            online.add(c.other_user.id);
+          }
+        }
+      });
+      return online;
+    };
 
+    setOnlineUsers(buildOnlineSet());
+
+    // Subscribe to real-time presence changes
     const unsub = presenceManager.onStatusChange((userId, isOnline) => {
       setOnlineUsers((prev) => {
         const next = new Set(prev);
@@ -91,8 +105,50 @@ export default function MessagesPage() {
       });
     });
 
-    return unsub;
-  }, [conversations.length]);
+    // Poll last_seen_at from DB every 30s to catch users who are
+    // active but haven't joined the presence channel
+    const otherIds = conversations.map((c) => c.other_user?.id).filter(Boolean) as string[];
+
+    const pollLastSeen = async () => {
+      if (otherIds.length === 0) return;
+      const { data } = await supabase
+        .from("users")
+        .select("id, last_seen_at")
+        .in("id", otherIds);
+
+      if (data) {
+        setOnlineUsers((prev) => {
+          const next = new Set(prev);
+          data.forEach((u: any) => {
+            // Always trust presenceManager first
+            if (presenceManager.isOnline(u.id)) {
+              next.add(u.id);
+              return;
+            }
+            if (u.last_seen_at) {
+              const diff = Date.now() - new Date(u.last_seen_at).getTime();
+              if (diff < 2 * 60 * 1000) {
+                next.add(u.id);
+              } else {
+                next.delete(u.id);
+              }
+            }
+          });
+          return next;
+        });
+      }
+    };
+
+    // Initial poll after a short delay
+    const initialTimer = setTimeout(pollLastSeen, 1000);
+    const pollInterval = setInterval(pollLastSeen, 30000);
+
+    return () => {
+      unsub();
+      clearTimeout(initialTimer);
+      clearInterval(pollInterval);
+    };
+  }, [conversations]);
 
   // =====================================================
   // FETCH CONVERSATIONS

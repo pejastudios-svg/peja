@@ -120,6 +120,7 @@ export default function ChatPage() {
   const [isBlocked, setIsBlocked] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [otherUserOnline, setOtherUserOnline] = useState(false);
+  const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{ file: File; preview: string; type: string }[]>([]);
 
   // ------ Long Press / Context Menu ------
@@ -188,7 +189,7 @@ export default function ChatPage() {
       try {
         const { data: participants, error: pErr } = await supabase
           .from("conversation_participants")
-          .select("user_id, is_muted, is_blocked")
+          .select("user_id, is_muted, is_blocked, last_read_at")
           .eq("conversation_id", conversationId);
         if (pErr) throw pErr;
 
@@ -198,6 +199,10 @@ export default function ChatPage() {
 
         setIsMuted(myP?.is_muted || false);
         setIsBlocked(myP?.is_blocked || false);
+
+        // Store other user's last_read_at for seen status
+        const otherReadAt = otherP.last_read_at || null;
+        setOtherLastReadAt(otherReadAt);
 
         const { data: otherUserData, error: uErr } = await supabase
           .from("users")
@@ -217,7 +222,8 @@ export default function ChatPage() {
           .eq("user_id", user.id);
         myDeletionsRef.current = new Set((myDeletions || []).map((d: any) => d.message_id));
 
-        await fetchMessages();
+        // Pass otherReadAt directly — don't rely on state
+        await fetchMessages(otherReadAt);
         await markAsRead();
       } catch (e: any) {
         console.error("Chat fetch error:", e?.message || e);
@@ -236,10 +242,21 @@ export default function ChatPage() {
   useEffect(() => {
     if (!otherUser?.id) return;
 
-    const online = presenceManager.isOnline(otherUser.id);
+    const checkOnline = (lastSeen?: string | null) => {
+      if (presenceManager.isOnline(otherUser.id)) return true;
+      const ls = lastSeen ?? otherUser.last_seen_at;
+      if (ls) {
+        const diff = Date.now() - new Date(ls).getTime();
+        if (diff < 2 * 60 * 1000) return true;
+      }
+      return false;
+    };
+
+    const online = checkOnline();
     setOtherUserOnline(online);
     otherUserOnlineRef.current = online;
 
+    // Subscribe to real-time presence changes
     const unsub = presenceManager.onStatusChange((userId, isOnline) => {
       if (userId === otherUser.id) {
         setOtherUserOnline(isOnline);
@@ -247,13 +264,35 @@ export default function ChatPage() {
       }
     });
 
-    return unsub;
+    // Poll last_seen_at from DB every 30s as fallback
+    const pollLastSeen = async () => {
+      const { data } = await supabase
+        .from("users")
+        .select("last_seen_at")
+        .eq("id", otherUser.id)
+        .single();
+
+      if (data?.last_seen_at) {
+        const nowOnline = checkOnline(data.last_seen_at);
+        setOtherUserOnline(nowOnline);
+        otherUserOnlineRef.current = nowOnline;
+      }
+    };
+
+    const initialTimer = setTimeout(pollLastSeen, 1000);
+    const pollInterval = setInterval(pollLastSeen, 30000);
+
+    return () => {
+      unsub();
+      clearTimeout(initialTimer);
+      clearInterval(pollInterval);
+    };
   }, [otherUser?.id]);
 
   // =====================================================
   // FETCH MESSAGES
   // =====================================================
-  const fetchMessages = useCallback(async () => {
+   const fetchMessages = useCallback(async (otherReadAt?: string | null) => {
     if (!user?.id) return;
 
     const { data, error } = await supabase
@@ -332,7 +371,13 @@ export default function ChatPage() {
         .map((m) => {
           let deliveryStatus: "sent" | "seen" | undefined;
           if (m.sender_id === user.id) {
-            deliveryStatus = readMap[m.id] ? "seen" : "sent";
+            if (readMap[m.id]) {
+              deliveryStatus = "seen";
+            } else if (otherReadAt && new Date(otherReadAt) >= new Date(m.created_at)) {
+              deliveryStatus = "seen";
+            } else {
+              deliveryStatus = "sent";
+            }
           }
           return {
             ...m,
@@ -593,6 +638,28 @@ export default function ChatPage() {
           });
         }
       )
+      // Listen for participant updates (last_read_at changes = seen status)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "conversation_participants", filter: `conversation_id=eq.${conversationId}` },
+        (payload) => {
+          const updated = payload.new as any;
+          // If the OTHER user updated their last_read_at, update seen statuses
+          if (updated.user_id !== user.id && updated.last_read_at) {
+            setOtherLastReadAt(updated.last_read_at);
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (m.sender_id !== user.id) return m;
+                if (m.delivery_status === "seen") return m;
+                if (new Date(updated.last_read_at) >= new Date(m.created_at)) {
+                  return { ...m, delivery_status: "seen" as const };
+                }
+                return m;
+              })
+            );
+          }
+        }
+      )
       .subscribe();
 
     channelRef.current = channel;
@@ -606,50 +673,44 @@ export default function ChatPage() {
   }, [user?.id, conversationId, markAsRead]);
 
   // =====================================================
-  // POLLING FALLBACK: Check for read receipts every 5s
+  // POLLING FALLBACK: Check read status every 5s
   // =====================================================
   useEffect(() => {
     if (!user?.id || !conversationId) return;
 
-    const checkReadReceipts = async () => {
-      // Get current messages from state via ref-like approach
-      setMessages((prev) => {
-        const ownUnseenIds = prev
-          .filter((m) => m.sender_id === user.id && m.delivery_status === "sent")
-          .map((m) => m.id);
+    const checkReadStatus = async () => {
+      // Fetch other user's last_read_at
+      const { data: otherP } = await supabase
+        .from("conversation_participants")
+        .select("last_read_at, user_id")
+        .eq("conversation_id", conversationId)
+        .neq("user_id", user.id)
+        .single();
 
-        if (ownUnseenIds.length === 0) return prev;
-
-        // Fire async query outside of setState
-        supabase
-          .from("message_reads")
-          .select("message_id, read_at")
-          .in("message_id", ownUnseenIds)
-          .neq("user_id", user.id)
-          .then(({ data: reads }) => {
-            if (reads && reads.length > 0) {
-              const readSet = new Set(reads.map((r) => r.message_id));
-              const readAtMap: Record<string, string> = {};
-              reads.forEach((r) => { readAtMap[r.message_id] = r.read_at; });
-
-              setMessages((p) =>
-                p.map((m) =>
-                  readSet.has(m.id)
-                    ? { ...m, delivery_status: "seen" as const, read_at: readAtMap[m.id] }
-                    : m
-                )
-              );
-            }
-          });
-
-        return prev; // Don't modify state here
-      });
+      if (otherP?.last_read_at) {
+        const newLastRead = otherP.last_read_at;
+        setOtherLastReadAt((prev) => {
+          if (prev === newLastRead) return prev;
+          // Update message statuses based on new last_read_at
+          setMessages((msgs) =>
+            msgs.map((m) => {
+              if (m.sender_id !== user.id) return m;
+              if (m.delivery_status === "seen") return m;
+              if (new Date(newLastRead) >= new Date(m.created_at)) {
+                return { ...m, delivery_status: "seen" as const };
+              }
+              return m;
+            })
+          );
+          return newLastRead;
+        });
+      }
     };
 
-    // Check immediately once
-    setTimeout(checkReadReceipts, 1000);
+    // Check after a short delay (let markAsRead from other side propagate)
+    setTimeout(checkReadStatus, 2000);
 
-    const interval = setInterval(checkReadReceipts, 5000);
+    const interval = setInterval(checkReadStatus, 5000);
     return () => clearInterval(interval);
   }, [user?.id, conversationId]);
 

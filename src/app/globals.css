@@ -1706,7 +1706,7 @@ html.capacitor-native .cap-status-pad {
 }
 
 /* ============================================
-   ONLINE DOT PULSE
+   ONLINE DOT PULSE — PURPLE
    ============================================ */
 .online-dot-pulse {
   animation: online-pulse 2s ease-in-out infinite;
@@ -1714,10 +1714,10 @@ html.capacitor-native .cap-status-pad {
 
 @keyframes online-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5);
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.5);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0);
+    box-shadow: 0 0 0 4px rgba(168, 85, 247, 0);
   }
 }
 

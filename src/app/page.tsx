@@ -54,6 +54,8 @@ export default function Home() {
   const [trendingMode, setTrendingMode] = useState<TrendingMode>(initialUI.trendingMode ?? "recommended");
   const [showSeenTop, setShowSeenTop] = useState<boolean>(initialUI.showSeenTop ?? false);
   const [showSeenNearby, setShowSeenNearby] = useState(false);
+  const [authCheckDone, setAuthCheckDone] = useState(false);
+
 
   // --- COMPUTE KEY EARLY ---
   const feedKey = activeTab === "trending"
@@ -650,8 +652,6 @@ useEffect(() => {
   // Redirect to login if not authenticated
   // Use a delay to give auth system time to restore session from native storage
   // and refresh expired tokens before deciding the user is not logged in
-  const [authCheckDone, setAuthCheckDone] = useState(false);
-
   useEffect(() => {
     if (authLoading) return; // Still loading, wait
 
