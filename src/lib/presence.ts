@@ -159,12 +159,16 @@ class PresenceManager {
   private async updateLastSeen() {
     if (!this.userId) return;
     try {
-      await supabase
+      const { error } = await supabase
         .from("users")
         .update({ last_seen_at: new Date().toISOString() })
         .eq("id", this.userId);
+      
+      if (error) {
+        console.error("[Presence] Failed to update last_seen_at:", error.message);
+      }
     } catch (e) {
-      // Silent fail — non-critical
+      console.error("[Presence] updateLastSeen error:", e);
     }
   }
 
