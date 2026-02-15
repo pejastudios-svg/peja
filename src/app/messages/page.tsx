@@ -285,6 +285,45 @@ export default function MessagesPage() {
     }
   }, [user?.id, fetchConversations]);
 
+  // Optimistic unread clear: when returning from a chat, clear its badge immediately
+useEffect(() => {
+  const handleFocus = () => {
+    // Check if we just came back from a chat
+    const lastChat = sessionStorage.getItem("peja-last-chat-id");
+    if (lastChat) {
+      sessionStorage.removeItem("peja-last-chat-id");
+      // Optimistically clear the unread count for that conversation
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === lastChat ? { ...c, unread_count: 0 } : c
+        )
+      );
+      // Also update the cache
+      try {
+        const cached = sessionStorage.getItem(CONV_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const updated = parsed.map((c: any) =>
+            c.id === lastChat ? { ...c, unread_count: 0 } : c
+          );
+          sessionStorage.setItem(CONV_CACHE_KEY, JSON.stringify(updated));
+        }
+      } catch {}
+    }
+    // Still fetch fresh data in background
+    fetchConversations();
+  };
+
+  window.addEventListener("focus", handleFocus);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") handleFocus();
+  });
+
+  return () => {
+    window.removeEventListener("focus", handleFocus);
+  };
+}, [fetchConversations]);
+
   // =====================================================
   // REALTIME: Listen for new messages & conversation updates
   // =====================================================

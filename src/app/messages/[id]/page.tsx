@@ -33,7 +33,6 @@ import {
   CheckCheck,
   Bold,
   Italic,
-  Link2,
   List,
   ListOrdered,
   MoreVertical,
@@ -97,6 +96,7 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const toast = useToast();
+  const MSG_CACHE_KEY = `peja-chat-cache-${conversationId}`;
 
   // ------ Core State ------
   const [messages, setMessages] = useState<Message[]>([]);
@@ -126,12 +126,15 @@ export default function ChatPage() {
   // ------ Long Press / Context Menu ------
   const [contextMenuMsg, setContextMenuMsg] = useState<Message | null>(null);
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
+  const [reactionPickerTab, setReactionPickerTab] = useState("smileys");
 
   // ------ Edit Mode ------
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
 
   // ------ Reply Mode ------
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
 
   // ------ Lightbox ------
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
@@ -185,7 +188,17 @@ export default function ChatPage() {
     if (!user?.id || !conversationId) return;
 
     const fetchData = async () => {
-      setLoading(true);
+      // Restore cached messages immediately
+try {
+  const cached = sessionStorage.getItem(MSG_CACHE_KEY);
+  if (cached) {
+    const parsed = JSON.parse(cached);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      setMessages(parsed);
+      setLoading(false);
+    }
+  }
+} catch {}
       try {
         const { data: participants, error: pErr } = await supabase
           .from("conversation_participants")
@@ -225,6 +238,8 @@ export default function ChatPage() {
         // Pass otherReadAt directly — don't rely on state
         await fetchMessages(otherReadAt);
         await markAsRead();
+        // Store for optimistic unread clear when going back
+        try { sessionStorage.setItem("peja-last-chat-id", conversationId); } catch {}
       } catch (e: any) {
         console.error("Chat fetch error:", e?.message || e);
         router.replace("/messages");
@@ -390,6 +405,18 @@ export default function ChatPage() {
           };
         })
     );
+    // Cache messages
+try {
+  const cacheData = msgs
+    .filter((m) => !deletedForMe.has(m.id))
+    .map((m) => ({
+      ...m,
+      media: mediaMap[m.id] || [],
+      reactions: reactionsMap[m.id] || [],
+      reply_to: m.reply_to_id ? replyMap[m.reply_to_id] || null : null,
+    }));
+  sessionStorage.setItem(`peja-chat-cache-${conversationId}`, JSON.stringify(cacheData.slice(-100)));
+} catch {}
   }, [user?.id, conversationId]);
 
   // =====================================================
@@ -436,6 +463,18 @@ export default function ChatPage() {
       container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
     }
   }, []);
+
+  const scrollToMessage = useCallback((messageId: string) => {
+  const container = messagesContainerRef.current;
+  if (!container) return;
+
+  const el = container.querySelector(`[data-msg-id="${messageId}"]`);
+  if (el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedMsgId(messageId);
+    setTimeout(() => setHighlightedMsgId(null), 2000);
+  }
+}, []);
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -493,6 +532,22 @@ export default function ChatPage() {
       document.documentElement.style.setProperty("--keyboard-height", "0px");
     };
   }, [scrollToBottom]);
+
+  // Non-passive touch move to allow preventDefault during swipe
+useEffect(() => {
+  const container = messagesContainerRef.current;
+  if (!container) return;
+
+  const handler = (e: TouchEvent) => {
+    // Only prevent default if we're actively swiping
+    if (swipingMsgId && swipeX > 5) {
+      e.preventDefault();
+    }
+  };
+
+  container.addEventListener("touchmove", handler, { passive: false });
+  return () => container.removeEventListener("touchmove", handler);
+}, [swipingMsgId, swipeX]);
 
   // =====================================================
   // REALTIME: Messages + Read receipts + Reactions
@@ -1374,38 +1429,47 @@ export default function ChatPage() {
     setSwipingMsgId(msgId);
   };
 
-  const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
-    if (!swipeStartRef.current || msg.is_deleted) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - swipeStartRef.current.x;
-    const dy = touch.clientY - swipeStartRef.current.y;
+const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
+  if (!swipeStartRef.current || msg.is_deleted) return;
+  const touch = e.touches[0];
+  const dx = touch.clientX - swipeStartRef.current.x;
+  const dy = touch.clientY - swipeStartRef.current.y;
 
-    // Determine if horizontal or vertical swipe
-    if (!swipeStartRef.current.locked) {
-      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-        swipeStartRef.current.locked = true;
-        if (Math.abs(dy) > Math.abs(dx)) {
-          // Vertical scroll — cancel swipe
-          swipeStartRef.current = null;
-          setSwipingMsgId(null);
-          setSwipeX(0);
-          return;
-        }
-      } else {
+  // Determine if horizontal or vertical swipe
+  if (!swipeStartRef.current.locked) {
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      swipeStartRef.current.locked = true;
+      if (Math.abs(dy) > Math.abs(dx)) {
+        // Vertical scroll — cancel swipe
+        swipeStartRef.current = null;
+        setSwipingMsgId(null);
+        setSwipeX(0);
         return;
       }
+    } else {
+      return;
     }
+  }
 
-    // Only allow right swipe (positive dx), capped at 80px
-    const clamped = Math.max(0, Math.min(dx, 80));
-    setSwipeX(clamped);
+  const isMine = msg.sender_id === user?.id;
 
-    // Cancel long press if swiping
-    if (clamped > 10 && longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
+  // Own messages: swipe LEFT (negative dx → positive swipeX)
+  // Other messages: swipe RIGHT (positive dx → positive swipeX)
+  const raw = isMine ? -dx : dx;
+  const clamped = Math.max(0, Math.min(raw, 80));
+  setSwipeX(clamped);
+
+  // Prevent page scroll while swiping horizontally
+  if (clamped > 5) {
+    e.preventDefault();
+  }
+
+  // Cancel long press if swiping
+  if (clamped > 10 && longPressTimerRef.current) {
+    clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  }
+};
 
   const handleSwipeEnd = (msg: Message) => {
     if (swipeX > 60) {
@@ -1513,7 +1577,10 @@ export default function ChatPage() {
   if (!otherUser) return null;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#0a0812]">
+    <div
+  className="fixed left-0 right-0 top-0 flex flex-col bg-[#0a0812]"
+  style={{ bottom: "var(--keyboard-height, 0px)" }}
+>
       {/* =====================================================
           HEADER — with safe area inset
           ===================================================== */}
@@ -1621,8 +1688,8 @@ export default function ChatPage() {
               const showAvatar = !isMine && (!messages[idx + 1] || messages[idx + 1].sender_id !== msg.sender_id);
               const isSwipingThis = swipingMsgId === msg.id;
 
-                            return (
-                <div key={msg.id}>
+                return (
+                <div key={msg.id} data-msg-id={msg.id}>
                   {showDate && (
                     <div className="flex justify-center my-4">
                       <span className="text-[11px] text-dark-500 bg-dark-900/80 px-3 py-1 rounded-full border border-white/5">
@@ -1632,7 +1699,11 @@ export default function ChatPage() {
                   )}
 
                   <div
-                    className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} relative`}
+                   className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} relative transition-all duration-500 ${
+  highlightedMsgId === msg.id
+    ? "bg-primary-500/10 rounded-2xl ring-1 ring-primary-500/30 shadow-[0_0_24px_rgba(168,85,247,0.2)]"
+    : ""
+}`}
                     onTouchStart={(e) => {
                       handleTouchStart(msg, e);
                       handleSwipeStart(msg.id, e);
@@ -1665,18 +1736,18 @@ export default function ChatPage() {
                       </div>
                     )}
                     {isSwipingThis && swipeX > 10 && isMine && (
-                      <div
-                        className="absolute right-0 top-1/2 -translate-y-1/2 z-0"
-                        style={{
-                          opacity: Math.min(swipeX / 60, 1),
-                          transform: `translate(${swipeX}px, -50%)`,
-                        }}
-                      >
-                        <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
-                          <Reply className="w-4 h-4 text-primary-400" />
-                        </div>
-                      </div>
-                    )}
+  <div
+    className="absolute right-0 top-1/2 -translate-y-1/2 z-0"
+    style={{
+      opacity: Math.min(swipeX / 60, 1),
+      transform: `translate(-${swipeX}px, -50%)`,
+    }}
+  >
+    <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
+      <Reply className="w-4 h-4 text-primary-400" />
+    </div>
+  </div>
+)}
 
                     {/* Other user avatar */}
                     {!isMine && (
@@ -1699,13 +1770,21 @@ export default function ChatPage() {
                     )}
 
                     {/* Message bubble — THIS is what moves on swipe */}
-                    <div
-                      className="max-w-[75%] relative z-[1]"
-                      style={{
-                        transform: isSwipingThis ? `translateX(${swipeX}px)` : undefined,
-                        transition: isSwipingThis ? "none" : "transform 200ms ease-out",
-                      }}
-                    >
+                   <div
+  className={`max-w-[75%] relative z-[1] ${
+    contextMenuMsg?.id === msg.id
+      ? "scale-[1.03] ring-2 ring-primary-500/40 rounded-2xl shadow-[0_0_20px_rgba(168,85,247,0.15)]"
+      : ""
+  }`}
+  style={{
+    transform: isSwipingThis
+      ? `translateX(${isMine ? -swipeX : swipeX}px)`
+      : undefined,
+    transition: isSwipingThis
+      ? "none"
+      : "transform 200ms ease-out, box-shadow 200ms ease-out",
+  }}
+>
                       {msg.is_deleted ? (
                         <div
                           className={`px-4 py-2.5 rounded-2xl text-xs italic ${
@@ -1718,21 +1797,25 @@ export default function ChatPage() {
                         </div>
                       ) : (
                         <div>
-                          {/* Reply preview */}
-                          {msg.reply_to && (
-                            <div
-                              className={`px-3 py-1.5 mb-0.5 rounded-t-2xl border-l-2 border-primary-500 ${
-                                isMine ? "bg-primary-700/30" : "bg-white/5"
-                              }`}
-                            >
-                              <p className="text-[10px] text-primary-400 font-medium">
-                                {msg.reply_to.sender_id === user.id ? "You" : otherUser?.full_name || "Unknown"}
-                              </p>
-                              <p className="text-[11px] text-dark-400 truncate">
-                                {msg.reply_to.content?.slice(0, 60) || "Attachment"}
-                              </p>
-                            </div>
-                          )}
+                         {/* Reply preview */}
+{msg.reply_to && (
+  <button
+    onClick={(e) => {
+      e.stopPropagation();
+      if (msg.reply_to_id) scrollToMessage(msg.reply_to_id);
+    }}
+    className={`w-full text-left px-3 py-1.5 mb-0.5 rounded-t-2xl border-l-2 border-primary-500 active:scale-[0.98] transition-transform ${
+      isMine ? "bg-primary-700/30" : "bg-white/5"
+    }`}
+  >
+    <p className="text-[10px] text-primary-400 font-medium">
+      {msg.reply_to.sender_id === user.id ? "You" : otherUser?.full_name || "Unknown"}
+    </p>
+    <p className="text-[11px] text-dark-400 truncate">
+      {msg.reply_to.content?.slice(0, 60) || "Attachment"}
+    </p>
+  </button>
+)}
 
                           <div
                             className={`px-4 py-2.5 ${msg.reply_to ? "rounded-b-2xl" : "rounded-2xl"} ${
@@ -2023,7 +2106,6 @@ export default function ChatPage() {
         <div className="px-4 py-2 border-t border-white/5 bg-[#0d0a14] flex items-center justify-center gap-3">
           <button onClick={applyBold} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bold"><Bold className="w-4 h-4" /></button>
           <button onClick={applyItalic} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Italic"><Italic className="w-4 h-4" /></button>
-          <button onClick={openLinkInput} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Link"><Link2 className="w-4 h-4" /></button>
           <button onClick={applyBulletList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bullets"><List className="w-4 h-4" /></button>
           <button onClick={applyNumberedList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Numbers"><ListOrdered className="w-4 h-4" /></button>
         </div>
@@ -2058,75 +2140,67 @@ export default function ChatPage() {
       )}
 
       {/* =====================================================
-          EMOJI PICKER
-          ===================================================== */}
-      {showEmoji && !isBlocked && typeof document !== "undefined" &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[99999] flex flex-col justify-end"
-            onClick={(e) => { if (e.target === e.currentTarget) setShowEmoji(false); }}
-          >
-            <div className="bg-[#0d0a14] border-t border-white/10 rounded-t-3xl max-h-[50vh] flex flex-col animate-[slideUp_200ms_ease-out]">
-              <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 overflow-x-auto scrollbar-hide shrink-0">
-                {EMOJI_TABS.map((tab) => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setEmojiTab(tab.key)}
-                    className={`px-3 py-1.5 rounded-lg text-lg shrink-0 transition-colors ${
-                      emojiTab === tab.key ? "bg-primary-600/20" : "hover:bg-white/5"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                ))}
-                <button onClick={() => setShowEmoji(false)} className="ml-auto p-1.5 rounded-lg hover:bg-white/10 text-dark-400 shrink-0">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-                {(() => {
-                  const tab = EMOJI_TABS.find((t) => t.key === emojiTab);
-                  if (!tab) return null;
-                  const isKaomoji = tab.key === "kaomoji";
-                  return (
-                    <div className={isKaomoji ? "flex flex-wrap gap-1" : "grid grid-cols-9 gap-px"}>
-                      {tab.emojis.map((emoji, i) => (
-                        <button
-                          key={`${emoji}-${i}`}
-                          onClick={() => {
-                            if (editorRef.current) {
-                              editorRef.current.focus();
-                              document.execCommand("insertText", false, emoji);
-                            }
-                          }}
-                          className={
-                            isKaomoji
-                              ? "px-2 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 text-xs text-dark-200 border border-white/5 transition-all"
-                              : "w-full aspect-square flex items-center justify-center rounded-md hover:bg-white/10 active:scale-90 text-[22px] leading-none transition-all"
-                          }
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
+    EMOJI PICKER (inline, above input bar)
+    ===================================================== */}
+{showEmoji && !isBlocked && (
+  <div className="border-t border-white/10 bg-[#0d0a14] flex flex-col shrink-0" style={{ maxHeight: "40vh" }}>
+    <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 overflow-x-auto scrollbar-hide shrink-0">
+      {EMOJI_TABS.map((tab) => (
+        <button
+          key={tab.key}
+          onClick={() => setEmojiTab(tab.key)}
+          className={`px-3 py-1.5 rounded-lg text-lg shrink-0 transition-colors ${
+            emojiTab === tab.key ? "bg-primary-600/20" : "hover:bg-white/5"
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+      <button onClick={() => setShowEmoji(false)} className="ml-auto p-1.5 rounded-lg hover:bg-white/10 text-dark-400 shrink-0">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+    <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
+      {(() => {
+        const tab = EMOJI_TABS.find((t) => t.key === emojiTab);
+        if (!tab) return null;
+        const isKaomoji = tab.key === "kaomoji";
+        return (
+          <div className={isKaomoji ? "flex flex-wrap gap-1" : "grid grid-cols-9 gap-px"}>
+            {tab.emojis.map((emoji, i) => (
+              <button
+                key={`${emoji}-${i}`}
+                onClick={() => {
+                  if (editorRef.current) {
+                    editorRef.current.focus();
+                    document.execCommand("insertText", false, emoji);
+                  }
+                }}
+                className={
+                  isKaomoji
+                    ? "px-2 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 text-xs text-dark-200 border border-white/5 transition-all"
+                    : "w-full aspect-square flex items-center justify-center rounded-md hover:bg-white/10 active:scale-90 text-[22px] leading-none transition-all"
+                }
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
+    </div>
+  </div>
+)}
 
       {/* =====================================================
           INPUT BAR
           ===================================================== */}
       {!isBlocked && (
-        <div
-          className="px-3 py-2 border-t border-white/5 bg-[#0d0a14] shrink-0"
+  <div
+    className="px-3 py-2 border-t border-white/5 bg-[#0d0a14] shrink-0 relative"
           style={{
-            paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
-            marginBottom: "var(--keyboard-height, 0px)",
-          }}
+  paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
+}}
         >
           <div className="flex items-end gap-1.5">
             <div className="relative shrink-0">
@@ -2240,27 +2314,39 @@ export default function ChatPage() {
         createPortal(
           <div className="fixed inset-0 z-[99999]" onClick={() => setContextMenuMsg(null)}>
             <div
-              className="absolute glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 w-56 animate-in fade-in zoom-in-95 duration-150"
+              className="absolute glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 w-64 animate-in fade-in zoom-in-95 duration-150"
               style={{
-                left: Math.min(contextMenuPos.x, window.innerWidth - 240),
-                top: Math.min(contextMenuPos.y - 10, window.innerHeight - 400),
-              }}
+  left: Math.min(contextMenuPos.x, window.innerWidth - 272),
+  top: Math.min(contextMenuPos.y - 10, window.innerHeight - 400),
+}}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Quick Reactions row */}
-              {!contextMenuMsg.is_deleted && (
-                <div className="flex items-center justify-around px-3 py-2.5 border-b border-white/5">
-                  {QUICK_REACTIONS.map((emoji) => (
-                    <button
-                      key={emoji}
-                      onClick={() => toggleReaction(contextMenuMsg.id, emoji)}
-                      className="text-xl hover:scale-125 active:scale-90 transition-transform p-1"
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              )}
+{!contextMenuMsg.is_deleted && (
+  <div className="flex items-center justify-around px-3 py-2.5 border-b border-white/5">
+    {QUICK_REACTIONS.map((emoji) => (
+      <button
+        key={emoji}
+        onClick={() => toggleReaction(contextMenuMsg.id, emoji)}
+        className="text-xl hover:scale-125 active:scale-90 transition-transform p-1"
+      >
+        {emoji}
+      </button>
+    ))}
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        setReactionPickerMsgId(contextMenuMsg.id);
+        setReactionPickerTab("smileys");
+        setContextMenuMsg(null);
+        setContextMenuPos(null);
+      }}
+      className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 border border-white/10 hover:bg-white/10 active:scale-90 transition-all"
+    >
+      <Plus className="w-4 h-4 text-dark-300" />
+    </button>
+  </div>
+)}
 
               {/* Reply */}
               {!contextMenuMsg.is_deleted && (
@@ -2321,6 +2407,72 @@ export default function ChatPage() {
           document.body
         )}
 
+        {/* =====================================================
+    REACTION EMOJI PICKER (full picker from + button)
+    ===================================================== */}
+{reactionPickerMsgId && typeof document !== "undefined" &&
+  createPortal(
+    <div
+      className="fixed inset-0 z-[99999] flex flex-col justify-end"
+      onClick={() => setReactionPickerMsgId(null)}
+    >
+      <div
+        className="bg-[#0d0a14] border-t border-white/10 rounded-t-3xl max-h-[50vh] flex flex-col animate-[slideUp_200ms_ease-out]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 overflow-x-auto scrollbar-hide shrink-0">
+          {EMOJI_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setReactionPickerTab(tab.key)}
+              className={`px-3 py-1.5 rounded-lg text-lg shrink-0 transition-colors ${
+                reactionPickerTab === tab.key ? "bg-primary-600/20" : "hover:bg-white/5"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+          <button
+            onClick={() => setReactionPickerMsgId(null)}
+            className="ml-auto p-1.5 rounded-lg hover:bg-white/10 text-dark-400 shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
+          {(() => {
+            const tab = EMOJI_TABS.find((t) => t.key === reactionPickerTab);
+            if (!tab) return null;
+            const isKaomoji = tab.key === "kaomoji";
+            return (
+              <div className={isKaomoji ? "flex flex-wrap gap-1" : "grid grid-cols-9 gap-px"}>
+                {tab.emojis.map((emoji, i) => (
+                  <button
+                    key={`${emoji}-${i}`}
+                    onClick={() => {
+                      if (reactionPickerMsgId) {
+                        toggleReaction(reactionPickerMsgId, emoji);
+                        setReactionPickerMsgId(null);
+                      }
+                    }}
+                    className={
+                      isKaomoji
+                        ? "px-2 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 text-xs text-dark-200 border border-white/5 transition-all"
+                        : "w-full aspect-square flex items-center justify-center rounded-md hover:bg-white/10 active:scale-90 text-[22px] leading-none transition-all"
+                    }
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+    </div>,
+    document.body
+  )}
+
       {/* =====================================================
           AVATAR PREVIEW
           ===================================================== */}
@@ -2369,24 +2521,25 @@ export default function ChatPage() {
 
             <div className="flex-1 overflow-y-auto">
               <div className="flex flex-col items-center py-8 px-4">
-                <button
-                  onClick={() => {
-                    if (otherUser?.avatar_url) {
-                      setShowChatInfo(false);
-                      setAvatarPreview(otherUser.avatar_url);
-                    }
-                  }}
-                  className="relative w-24 h-24 rounded-full overflow-hidden bg-dark-800 border-2 border-white/10 mb-3"
-                >
-                  {otherUser?.avatar_url ? (
-                    <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <User className="w-12 h-12 text-dark-400 m-auto mt-5" />
-                  )}
-                  {otherUserOnline && (
-                    <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-purple-500 border-3 border-[#0a0812] online-dot-pulse" />
-                  )}
-                </button>
+                <div className="relative mb-3">
+  <button
+    onClick={() => {
+      if (otherUser?.avatar_url) {
+        setAvatarPreview(otherUser.avatar_url);
+      }
+    }}
+    className="w-24 h-24 rounded-full overflow-hidden bg-dark-800 border-2 border-white/10"
+  >
+    {otherUser?.avatar_url ? (
+      <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
+    ) : (
+      <User className="w-12 h-12 text-dark-400 m-auto mt-5" />
+    )}
+  </button>
+  {otherUserOnline && (
+    <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-purple-500 border-[3px] border-[#0a0812] online-dot-pulse" />
+  )}
+</div>
                 <h3 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
                   {otherUser?.full_name || "Unknown"}
                   {otherUser?.is_admin && <Crown className="w-4 h-4 text-yellow-400" />}
