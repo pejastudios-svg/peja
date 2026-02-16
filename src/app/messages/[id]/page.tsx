@@ -471,18 +471,22 @@ export default function ChatPage() {
     if (messages.length === 0) return;
 
     if (!initialScrollDone.current) {
-      // Use ResizeObserver to wait for content to actually render
       const container = messagesContainerRef.current;
       if (!container) return;
 
       const doScroll = () => {
-        container.scrollTop = container.scrollHeight;
+        if (container) {
+          container.scrollTop = container.scrollHeight + 9999;
+        }
       };
 
-      // Immediate
+      // Immediate — before paint
       doScroll();
 
-      // ResizeObserver catches images/media loading and changing container height
+      // Use queueMicrotask for earliest possible callback
+      queueMicrotask(doScroll);
+
+      // ResizeObserver catches images/media loading
       const ro = new ResizeObserver(() => {
         if (!initialScrollDone.current) {
           doScroll();
@@ -490,19 +494,20 @@ export default function ChatPage() {
       });
       ro.observe(container);
 
-      // Multiple fallback attempts
+      // Multiple fallback attempts with escalating delays
       requestAnimationFrame(doScroll);
-      setTimeout(doScroll, 100);
+      setTimeout(doScroll, 0);
+      setTimeout(doScroll, 50);
+      setTimeout(doScroll, 150);
       setTimeout(doScroll, 300);
       setTimeout(() => {
         doScroll();
         initialScrollDone.current = true;
         ro.disconnect();
-      }, 800);
+      }, 600);
 
       return () => ro.disconnect();
     } else {
-      // Auto-scroll only if user is near bottom
       const c = messagesContainerRef.current;
       if (c && c.scrollHeight - c.scrollTop - c.clientHeight < 150) {
         scrollToBottom(false);
@@ -1241,9 +1246,20 @@ export default function ChatPage() {
         stream.getTracks().forEach((t) => t.stop());
         const recordedMimeType = mimeType || "audio/webm";
         const blob = new Blob(audioChunksRef.current, { type: recordedMimeType });
+
+        if (blob.size < 100) {
+          console.warn("Voice note too small, ignoring");
+          if (recordingIntervalRef.current) {
+            clearInterval(recordingIntervalRef.current);
+            recordingIntervalRef.current = null;
+          }
+          setRecordingDuration(0);
+          return;
+        }
+
         const ext = recordedMimeType.includes("webm") ? "webm" : "m4a";
         const file = new File([blob], `voice-note-${Date.now()}.${ext}`, { type: recordedMimeType });
-        setPendingMedia((prev) => [...prev, { file, preview: "", type: recorder.mimeType }]);
+        setPendingMedia((prev) => [...prev, { file, preview: "", type: recordedMimeType }]);
 
         if (recordingIntervalRef.current) {
           clearInterval(recordingIntervalRef.current);
@@ -1808,7 +1824,7 @@ export default function ChatPage() {
           ===================================================== */}
       <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-0.5"
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5"
         onClick={() => {
           // Close emoji picker when tapping messages area
           if (showEmoji) setShowEmoji(false);
@@ -1844,7 +1860,11 @@ export default function ChatPage() {
                   )}
 
                   <div
-                    className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} relative`}
+                      className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} relative transition-all duration-500 ${
+                      highlightedMsgId === msg.id
+                        ? "scale-[1.02]"
+                        : ""
+                    }`}
                     onTouchStart={(e) => {
                       handleTouchStart(msg, e);
                       handleSwipeStart(msg.id, e);
@@ -1915,8 +1935,12 @@ export default function ChatPage() {
                     )}
 
                     {/* Message bubble */}
-                    <div
-                      className={`max-w-[75%] relative z-[1]`}
+                        <div
+                      className={`max-w-[75%] relative z-[1] ${
+                        highlightedMsgId === msg.id
+                          ? "ring-2 ring-purple-500/60 rounded-2xl shadow-[0_0_20px_rgba(168,85,247,0.3)]"
+                          : ""
+                      }`}
                       style={{
                         transform: isSwipingThis
                           ? `translateX(${isMine ? -swipeX : swipeX}px)`
@@ -2451,8 +2475,7 @@ export default function ChatPage() {
                 onInput={() => sendTyping()}
                 onKeyDown={handleEditorKeyDown}
                 onFocus={() => {
-                  // Close emoji/attach when focusing editor
-                  if (showEmoji) setShowEmoji(false);
+                  // Close attach menu when focusing editor, but NOT emoji picker
                   if (showAttach) { setShowAttach(false); setPlusRotated(false); }
                 }}
                 className="w-full bg-[#1a1525] border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-dark-100 focus:outline-none focus:border-primary-500/40 resize-none transition-colors overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-dark-500 empty:before:pointer-events-none [&_b]:font-bold [&_strong]:font-bold [&_i]:italic [&_em]:italic [&_a]:text-primary-400 [&_a]:underline [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4"

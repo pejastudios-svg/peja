@@ -22,11 +22,33 @@ export function CapacitorInit() {
     // Mark the document for CSS targeting
     document.documentElement.classList.add("capacitor-native");
 
-    // Set status bar height
-    document.documentElement.style.setProperty(
-      "--cap-status-bar-height",
-      "36px"
-    );
+    // Set status bar height dynamically
+    const setStatusBarHeight = async () => {
+      try {
+        const { StatusBar } = await import("@capacitor/status-bar");
+        const info = await (StatusBar as any).getInfo();
+        const height = info?.statusBarHeight || 0;
+        if (height > 0) {
+          document.documentElement.style.setProperty(
+            "--cap-status-bar-height",
+            `${height}px`
+          );
+          return;
+        }
+      } catch {}
+
+      // Fallback: use screen vs viewport difference heuristic
+      const screenH = window.screen.height;
+      const innerH = window.innerHeight;
+      // Most Android status bars are 24-48dp
+      const estimated = Math.min(Math.max(screenH - innerH - 48, 24), 48);
+      document.documentElement.style.setProperty(
+        "--cap-status-bar-height",
+        `${estimated}px`
+      );
+    };
+
+    setTimeout(setStatusBarHeight, 300);
 
     // Set bottom inset for Android gesture navigation
     // env(safe-area-inset-bottom) often returns 0 on Android WebViews,

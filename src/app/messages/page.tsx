@@ -358,10 +358,47 @@ export default function MessagesPage() {
         { event: "UPDATE", schema: "public", table: "conversations" },
         () => { fetchConversations(); }
       )
-      .on(
+           .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "conversation_participants" },
-        () => { fetchConversations(); }
+        (payload) => {
+          const updated = payload.new as any;
+          // If the OTHER user updated their last_read_at, update seen status immediately
+          if (updated.user_id !== user.id && updated.last_read_at) {
+            setConversations((prev) => {
+              const next = prev.map((c) => {
+                if (c.id !== updated.conversation_id) return c;
+                if (c.last_message_sender_id !== user.id) return c;
+                if (!c.last_message_at) return c;
+                const seen = new Date(updated.last_read_at) >= new Date(c.last_message_at);
+                if (seen === c.last_message_seen) return c;
+                return { ...c, last_message_seen: seen, unread_count: 0 };
+              });
+              feedCache.setPosts(FEED_CACHE_KEY, next as unknown as any[]);
+              return next;
+            });
+          } else {
+            fetchConversations();
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "message_reads" },
+        (payload) => {
+          const read = payload.new as any;
+          // Someone read our message — update seen status immediately
+          if (read.user_id !== user.id) {
+            setConversations((prev) => {
+              const next = prev.map((c) => {
+                if (c.last_message_sender_id !== user.id) return c;
+                return { ...c, last_message_seen: true };
+              });
+              feedCache.setPosts(FEED_CACHE_KEY, next as unknown as any[]);
+              return next;
+            });
+          }
+        }
       )
       .subscribe();
 

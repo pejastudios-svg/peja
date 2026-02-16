@@ -254,8 +254,17 @@ export default function NotificationsPage() {
         router.push("/become-guardian");
         break;
 
+      case "dm_message":
+      case "dm_reaction":
+        if (data.conversation_id) {
+          router.push(`/messages/${data.conversation_id}`, { scroll: false });
+        }
+        break;
+
       default:
-        if (data.post_id) {
+        if (data.conversation_id) {
+          router.push(`/messages/${data.conversation_id}`, { scroll: false });
+        } else if (data.post_id) {
           router.push(`/post/${data.post_id}`);
         }
         break;
