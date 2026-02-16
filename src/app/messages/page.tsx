@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { useFeedCache } from "@/context/FeedContext";
 import { presenceManager } from "@/lib/presence";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Modal } from "@/components/ui/Modal";
@@ -32,8 +33,25 @@ export default function MessagesPage() {
   const { user, loading: authLoading } = useAuth();
   const channelRef = useRef<any>(null);
 
-  const [conversations, setConversations] = useState<ConversationWithUser[]>([]);
-  const [loading, setLoading] = useState(true);
+  const feedCache = useFeedCache();
+  const FEED_CACHE_KEY = "messages:conversations";
+
+  const [conversations, setConversations] = useState<ConversationWithUser[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get(FEED_CACHE_KEY);
+      if (cached?.posts) return cached.posts as unknown as ConversationWithUser[];
+    }
+    return [];
+  });
+
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get(FEED_CACHE_KEY);
+      if (cached?.posts && (cached.posts as unknown as ConversationWithUser[]).length > 0) return false;
+    }
+    return true;
+  });
+
   const [search, setSearch] = useState("");
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
 
@@ -46,21 +64,17 @@ export default function MessagesPage() {
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [allVips, setAllVips] = useState<VIPUser[]>([]);
   const [allVipsLoading, setAllVipsLoading] = useState(false);
-  const CONV_CACHE_KEY = "peja-conversations-cache";
 
-  // Restore from sessionStorage on mount
+    // --- SAVE SCROLL ---
   useEffect(() => {
-    try {
-      const cached = sessionStorage.getItem(CONV_CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setConversations(parsed);
-          setLoading(false);
-        }
+    const save = () => {
+      if (window.scrollY > 0) {
+        feedCache.setScroll(FEED_CACHE_KEY, window.scrollY);
       }
-    } catch {}
-  }, []);
+    };
+    window.addEventListener("scroll", save, { passive: true });
+    return () => window.removeEventListener("scroll", save);
+  }, [feedCache]);
 
   // =====================================================
   // AUTH GUARD
@@ -162,8 +176,10 @@ export default function MessagesPage() {
   // =====================================================
   const fetchConversations = useCallback(async () => {
     if (!user?.id) return;
-    if (conversations.length === 0) setLoading(true);
-
+        const hasCached = feedCache.get(FEED_CACHE_KEY);
+    if (!hasCached?.posts || (hasCached.posts as unknown as ConversationWithUser[]).length === 0) {
+      setLoading(true);
+    }
     try {
       const { data: participantRows, error: pErr } = await supabase
         .from("conversation_participants")
@@ -273,13 +289,13 @@ export default function MessagesPage() {
         .filter(Boolean) as ConversationWithUser[];
 
       setConversations(merged);
-      try { sessionStorage.setItem(CONV_CACHE_KEY, JSON.stringify(merged)); } catch {}
+            feedCache.setPosts(FEED_CACHE_KEY, merged as unknown as any[]);
     } catch (e: any) {
       console.error("fetchConversations error:", e?.message || e);
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+    }, [user?.id, feedCache, FEED_CACHE_KEY]);
 
   useEffect(() => {
     if (user?.id && user.is_vip) {
@@ -288,43 +304,36 @@ export default function MessagesPage() {
   }, [user?.id, fetchConversations]);
 
   // Optimistic unread clear: when returning from a chat, clear its badge immediately
-useEffect(() => {
-  const handleFocus = () => {
-    // Check if we just came back from a chat
-    const lastChat = sessionStorage.getItem("peja-last-chat-id");
-    if (lastChat) {
-      sessionStorage.removeItem("peja-last-chat-id");
-      // Optimistically clear the unread count for that conversation
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === lastChat ? { ...c, unread_count: 0 } : c
-        )
-      );
-      // Also update the cache
-      try {
-        const cached = sessionStorage.getItem(CONV_CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          const updated = parsed.map((c: any) =>
+  useEffect(() => {
+    const handleFocus = () => {
+      // Check if we just came back from a chat
+      const lastChat = sessionStorage.getItem("peja-last-chat-id");
+      if (lastChat) {
+        sessionStorage.removeItem("peja-last-chat-id");
+        // Optimistically clear the unread count for that conversation
+        setConversations((prev) => {
+          const updated = prev.map((c) =>
             c.id === lastChat ? { ...c, unread_count: 0 } : c
           );
-          sessionStorage.setItem(CONV_CACHE_KEY, JSON.stringify(updated));
-        }
-      } catch {}
-    }
-    // Still fetch fresh data in background
-    fetchConversations();
-  };
+          feedCache.setPosts(FEED_CACHE_KEY, updated as unknown as any[]);
+          return updated;
+        });
+      }
+      // Still fetch fresh data in background
+      fetchConversations();
+    };
 
-  window.addEventListener("focus", handleFocus);
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") handleFocus();
-  });
+    window.addEventListener("focus", handleFocus);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") handleFocus();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
 
-  return () => {
-    window.removeEventListener("focus", handleFocus);
-  };
-}, [fetchConversations]);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [fetchConversations, feedCache, FEED_CACHE_KEY]);
 
   // =====================================================
   // REALTIME: Listen for new messages & conversation updates
@@ -463,7 +472,7 @@ useEffect(() => {
       if (error) throw error;
       if (!convId) throw new Error("No conversation ID returned");
       setNewChatOpen(false);
-      router.push(`/messages/${convId}`);
+      router.push(`/messages/${convId}`, { scroll: false });
     } catch (e: any) {
       console.error("startConversation error:", e?.message || e);
     } finally {
@@ -495,8 +504,8 @@ useEffect(() => {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-40 glass-header">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <button
-            onClick={() => router.push("/")}
+            <button
+            onClick={() => router.push("/", { scroll: false })}
             className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-5 h-5 text-dark-200" />
@@ -563,7 +572,7 @@ useEffect(() => {
                 return (
                   <button
                     key={conv.id}
-                    onClick={() => router.push(`/messages/${conv.id}`)}
+                    onClick={() => router.push(`/messages/${conv.id}`, { scroll: false })}
                     className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 transition-colors active:scale-[0.98] duration-150 text-left"
                   >
                     {/* Avatar with online indicator */}

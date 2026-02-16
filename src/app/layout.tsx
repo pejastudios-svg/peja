@@ -7,6 +7,8 @@ import { FeedProvider } from "@/context/FeedContext";
 import AnalyticsTracker from "@/components/analytics/AnalyticsTracker";
 import { ConfirmProvider } from "@/context/ConfirmContext";
 import { AudioProvider } from "@/context/AudioContext";
+import { VideoHandoffProvider } from "@/context/VideoHandoffContext";
+import { PageCacheProvider } from "@/context/PageCacheContext";
 import RoutePrefetcher from "@/components/navigation/RoutePrefetcher";
 import HistorySyncGuard from "@/components/navigation/HistorySyncGuard";
 import InAppNotificationToasts from "@/components/notifications/InAppNotificationToasts";
@@ -62,10 +64,12 @@ export default function RootLayout({
         />
       </head>
       <body className={`${poppins.variable} font-sans antialiased`}>
-        <ToastProvider>
+          <ToastProvider>
           <AuthProvider>
             <ConfirmProvider>
               <AudioProvider>
+                <VideoHandoffProvider>
+                  <PageCacheProvider>
                 <FeedProvider>
                   <AnalyticsTracker />
                   <RoutePrefetcher />
@@ -84,6 +88,8 @@ export default function RootLayout({
                   {overlay}
                   {modal}
                 </FeedProvider>
+                </PageCacheProvider>
+                </VideoHandoffProvider>
               </AudioProvider>
             </ConfirmProvider>
           </AuthProvider>

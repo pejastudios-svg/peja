@@ -37,22 +37,18 @@ export default function HistorySyncGuard() {
         syncingRef.current = true;
 
         // Force Next router to reconcile to the URL
+        // Do NOT call router.refresh() — it re-mounts components
+        // and destroys scroll positions
         try {
           router.replace(winUrl, { scroll: false });
-          router.refresh();
         } catch {
           // ignore
         }
 
-        // If still mismatched shortly after, hard reload to match URL
+        // Give Next.js time to reconcile, then release the lock
         window.setTimeout(() => {
-          const stillMismatch = appUrlRef.current !== winUrl;
-          if (stillMismatch) {
-            window.location.reload();
-          } else {
-            syncingRef.current = false;
-          }
-        }, 450);
+          syncingRef.current = false;
+        }, 600);
       }, 200);
     };
 

@@ -1700,8 +1700,8 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
         }}
       >
         <div className="flex items-center gap-3 min-w-0">
-          <button
-            onClick={() => router.push("/messages")}
+            <button
+            onClick={() => router.push("/messages", { scroll: false })}
             className="p-1.5 -ml-1 hover:bg-white/5 rounded-lg active:scale-95 transition-transform"
           >
             <ArrowLeft className="w-5 h-5 text-dark-200" />

@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Volume2, VolumeX, Play, Pause, Maximize2 } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
+import { useVideoHandoff } from "@/context/VideoHandoffContext";
 
 const PLAYING_EVENT = "peja-inline-video-playing";
 
@@ -29,6 +30,7 @@ export function InlineVideo({
   const instanceId = useId();
   const pathname = usePathname();
   const mountingPath = useRef(pathname);
+  const handoff = useVideoHandoff();
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -65,6 +67,40 @@ export function InlineVideo({
       blockedRef.current = false;
     }
   }, [pathname]);
+
+  // Check for return time from VideoLightbox when modal closes
+  useEffect(() => {
+    const handleModalClose = () => {
+      const returnTime = handoff.getReturnTime(src);
+      if (returnTime !== null) {
+        const v = videoRef.current;
+        if (v) {
+          v.currentTime = returnTime;
+          handoff.clearReturnTime(src);
+          // Resume playing
+          userPausedRef.current = false;
+          blockedRef.current = false;
+          setBlocked(false);
+          v.muted = true;
+          v.play()
+            .then(() => {
+              if (soundEnabledRef.current) {
+                v.muted = false;
+              }
+              window.dispatchEvent(
+                new CustomEvent(PLAYING_EVENT, { detail: { id: instanceId } })
+              );
+            })
+            .catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener("peja-modal-close", handleModalClose);
+    return () => {
+      window.removeEventListener("peja-modal-close", handleModalClose);
+    };
+  }, [src, instanceId, handoff]);
 
   const resetControlsTimer = () => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
@@ -157,6 +193,9 @@ export function InlineVideo({
           // CORS or other error, ignore
         }
       }
+
+      // Store handoff data for VideoLightbox
+      handoff.beginExpand(src, currentTime, posterDataUrl || null);
 
       doPause();
       onExpand(currentTime, posterDataUrl);
@@ -267,15 +306,10 @@ export function InlineVideo({
       const v = videoRef.current;
       if (v && !v.paused) v.pause();
     };
-    const onModalClose = () => {
-      setBlocked(false);
-      blockedRef.current = false;
-    };
+    // Note: peja-modal-close is handled in the return-time effect above
     window.addEventListener("peja-modal-open", onModalOpen);
-    window.addEventListener("peja-modal-close", onModalClose);
     return () => {
       window.removeEventListener("peja-modal-open", onModalOpen);
-      window.removeEventListener("peja-modal-close", onModalClose);
     };
   }, []);
 

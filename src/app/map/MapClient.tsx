@@ -11,9 +11,9 @@ import { Loader2, Navigation, List, Map as MapIcon, AlertTriangle, BarChart3, Co
 import { subHours } from "date-fns";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFeedCache } from "@/context/FeedContext";
+import { usePageCache } from "@/context/PageCacheContext";
 import DataAnalyticsPanel from "@/components/map/DataAnalyticsPanel";
 import { ChevronDown } from "lucide-react";
-
 
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
@@ -27,6 +27,10 @@ const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
 type SOSUserPublic = { full_name: string; avatar_url?: string };
 
 export default function MapClient() {
+  // ============================================================
+  // ALL HOOKS — no early returns above this section
+  // ============================================================
+
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -38,26 +42,46 @@ export default function MapClient() {
   const sosUserCacheRef = useRef<Record<string, SOSUserPublic>>({});
 
   const feedCache = useFeedCache();
+  const pageCache = usePageCache();
 
+  // --- INSTANT CACHE INITIALIZATION ---
   const [posts, setPosts] = useState<Post[]>(() => {
-    if (typeof window !== "undefined") return feedCache.get("map:posts")?.posts || [];
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get("map:posts");
+      if (cached?.posts?.length) return cached.posts;
+    }
     return [];
   });
 
   const [sosAlerts, setSOSAlerts] = useState<SOSAlert[]>(() => {
-    if (typeof window !== "undefined") return feedCache.get("map:sos")?.posts as unknown as SOSAlert[] || [];
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get("map:sos");
+      if (cached?.posts) return cached.posts as unknown as SOSAlert[];
+    }
     return [];
   });
 
-  const [loading, setLoading] = useState(() => posts.length === 0);
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get("map:posts");
+      if (cached?.posts?.length) return false;
+    }
+    return true;
+  });
 
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(() => {
+    if (typeof window !== "undefined") {
+      const cached = pageCache.get<{ lat: number; lng: number }>("map:userLocation");
+      if (cached) return cached;
+    }
+    return null;
+  });
+
   const [showList, setShowList] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [showLegend, setShowLegend] = useState(false);
-
 
   const [shouldCenterOnUser, setShouldCenterOnUser] = useState(false);
   const [centerOnSOS, setCenterOnSOS] = useState<{ lat: number; lng: number } | null>(null);
@@ -82,20 +106,19 @@ export default function MapClient() {
   }, []);
 
   // Listen for real-time location updates
-useEffect(() => {
-  const handleLocationUpdate = (e: CustomEvent) => {
-    setUserLocation({
-      lat: e.detail.lat,
-      lng: e.detail.lng
-    });
-  };
+  useEffect(() => {
+    const handleLocationUpdate = (e: CustomEvent) => {
+      const loc = { lat: e.detail.lat, lng: e.detail.lng };
+      setUserLocation(loc);
+      pageCache.set("map:userLocation", loc);
+    };
 
-  window.addEventListener('peja-user-location-update', handleLocationUpdate as EventListener);
-  
-  return () => {
-    window.removeEventListener('peja-user-location-update', handleLocationUpdate as EventListener);
-  };
-}, []);
+    window.addEventListener("peja-user-location-update", handleLocationUpdate as EventListener);
+
+    return () => {
+      window.removeEventListener("peja-user-location-update", handleLocationUpdate as EventListener);
+    };
+  }, [pageCache]);
 
   // Start watching location for real-time updates
   useEffect(() => {
@@ -107,6 +130,7 @@ useEffect(() => {
         lng: position.coords.longitude,
       };
       setUserLocation(newLocation);
+      pageCache.set("map:userLocation", newLocation);
     };
 
     const handleError = (error: GeolocationPositionError) => {
@@ -124,7 +148,7 @@ useEffect(() => {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
     };
-  }, []);
+  }, [pageCache]);
 
   const getUserLocation = useCallback(() => {
     setGettingLocation(true);
@@ -142,6 +166,7 @@ useEffect(() => {
         };
 
         setUserLocation(newLocation);
+        pageCache.set("map:userLocation", newLocation);
         setGettingLocation(false);
 
         const { data: { user } } = await supabase.auth.getUser();
@@ -162,7 +187,7 @@ useEffect(() => {
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 }
     );
-  }, []);
+  }, [pageCache]);
 
   const requestCompassPermission = async () => {
     try {
@@ -349,7 +374,7 @@ useEffect(() => {
         const newRow: any = payload.new;
         const oldRow: any = payload.old;
         if (myUserId && newRow?.user_id === myUserId) return;
-        
+
         if (payload.eventType === "INSERT") {
           if (newRow?.status === "active") {
             setSOSAlerts((prev) => {
@@ -438,6 +463,10 @@ useEffect(() => {
     };
   }, [fetchPosts, fetchSOSAlerts, getUserLocation, myUserId]);
 
+  // ============================================================
+  // ALL HOOKS ARE DONE
+  // ============================================================
+
   const handlePostClick = (postId: string) => router.push(`/post/${postId}`);
 
   const filteredPosts = selectedCategory ? posts.filter((p) => p.category === selectedCategory) : posts;
@@ -446,9 +475,9 @@ useEffect(() => {
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header variant="back" title="Map" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
 
-            <main className="pt-16 h-screen">
+      <main className="pt-16 h-screen">
         <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">
-          {loading || !mapReady ? (
+          {loading && !mapReady && posts.length === 0 ? (
             <div className="h-full bg-dark-800 flex items-center justify-center">
               <Skeleton className="h-[70vh] w-[92vw] max-w-5xl rounded-2xl" />
             </div>
@@ -502,8 +531,8 @@ useEffect(() => {
               }
             }}
             className={`absolute bottom-36 right-4 z-1000 p-3 rounded-full shadow-lg transition-all ${
-              compassEnabled 
-                ? "bg-primary-600 text-white" 
+              compassEnabled
+                ? "bg-primary-600 text-white"
                 : "glass-float text-primary-400 hover:bg-white/10"
             }`}
           >
@@ -608,42 +637,42 @@ useEffect(() => {
           </div>
 
           {/* Map Legend - Collapsible */}
-<div className="absolute top-32 right-4 z-1000">
-  <button
-    onClick={() => setShowLegend(prev => !prev)}
-    className="glass-float rounded-lg p-2 text-xs flex items-center gap-2"
-  >
-    <div className="flex gap-1">
-      <span className="w-2 h-2 bg-red-500 rounded-full" />
-      <span className="w-2 h-2 bg-orange-500 rounded-full" />
-      <span className="w-2 h-2 bg-primary-500 rounded-full" />
-    </div>
-    <ChevronDown className={`w-3 h-3 text-dark-300 transition-transform ${showLegend ? 'rotate-180' : ''}`} />
-  </button>
-  
-  {showLegend && (
-    <div className="glass-float rounded-lg p-3 text-xs space-y-2 mt-1">
-      <div className="flex items-center gap-2">
-        <span className="w-3 h-3 bg-red-500 rounded-full" />
-        <span className="text-dark-200">Danger</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="w-3 h-3 bg-orange-500 rounded-full" />
-        <span className="text-dark-200">Caution</span>
-      </div>
-      <div className="flex items-center gap-2 pt-1 border-t border-white/10">
-        <span className="w-3 h-3 bg-primary-500 rounded-full" />
-        <span className="text-dark-200">You</span>
-      </div>
-      {compassEnabled && (
-        <div className="flex items-center gap-2 pt-1 border-t border-white/10">
-          <Compass className="w-3 h-3 text-primary-400" />
-          <span className="text-primary-400">Direction Active</span>
-        </div>
-      )}
-    </div>
-  )}
-</div>
+          <div className="absolute top-32 right-4 z-1000">
+            <button
+              onClick={() => setShowLegend((prev) => !prev)}
+              className="glass-float rounded-lg p-2 text-xs flex items-center gap-2"
+            >
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-red-500 rounded-full" />
+                <span className="w-2 h-2 bg-orange-500 rounded-full" />
+                <span className="w-2 h-2 bg-primary-500 rounded-full" />
+              </div>
+              <ChevronDown className={`w-3 h-3 text-dark-300 transition-transform ${showLegend ? "rotate-180" : ""}`} />
+            </button>
+
+            {showLegend && (
+              <div className="glass-float rounded-lg p-3 text-xs space-y-2 mt-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 bg-red-500 rounded-full" />
+                  <span className="text-dark-200">Danger</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-3 h-3 bg-orange-500 rounded-full" />
+                  <span className="text-dark-200">Caution</span>
+                </div>
+                <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+                  <span className="w-3 h-3 bg-primary-500 rounded-full" />
+                  <span className="text-dark-200">You</span>
+                </div>
+                {compassEnabled && (
+                  <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+                    <Compass className="w-3 h-3 text-primary-400" />
+                    <span className="text-primary-400">Direction Active</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </main>
 

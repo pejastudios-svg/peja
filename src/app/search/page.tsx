@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense, useLayoutEffect } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES } from "@/lib/types";
@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 
 function SearchContent() {
+  // ============================================================
+  // ALL HOOKS — no early returns above this section
+  // ============================================================
+
   const confirm = useConfirm();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -32,215 +36,185 @@ function SearchContent() {
   const feedCache = useFeedCache();
   const feedKey = `search:q=${query}|cat=${selectedCategory ?? "all"}|range=${dateRange}`;
 
-// 1. INSTANT MEMORY INIT
-const [posts, setPosts] = useState<Post[]>(() => {
-  if (typeof window !== "undefined") {
-    const cached = feedCache.get(feedKey);
-    if (cached?.posts?.length) return cached.posts;
-  }
-  return [];
-});
-
-const [loading, setLoading] = useState(() => posts.length === 0 && !!query);
-
-// ✅ 2. RESTORE SCROLL FROM SESSION STORAGE
-useLayoutEffect(() => {
-  try {
-    const saved = sessionStorage.getItem("peja-scroll-restore");
-    if (!saved) return;
-    
-    const { key, scrollY, timestamp } = JSON.parse(saved);
-    
-    // Only restore if recent (within 30 seconds) and matches our feedKey
-    const isRecent = Date.now() - timestamp < 30000;
-    const matchesKey = key === feedKey;
-    
-    console.log("[Search] Checking scroll restore:", { key, scrollY, isRecent, matchesKey, feedKey });
-    
-    if (isRecent && matchesKey && scrollY > 0) {
-      console.log("[Search] Restoring scroll to:", scrollY);
-      
-      // Clear immediately so we don't restore twice
-      sessionStorage.removeItem("peja-scroll-restore");
-      
-      // Restore scroll
-      window.scrollTo(0, scrollY);
-      
-      // Also try after paint in case content isn't ready
-      requestAnimationFrame(() => {
-        window.scrollTo(0, scrollY);
-      });
+  // --- INSTANT CACHE INITIALIZATION ---
+  const [posts, setPosts] = useState<Post[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get(feedKey);
+      if (cached?.posts?.length) return cached.posts;
     }
-  } catch (e) {
-    console.error("[Search] Scroll restore error:", e);
-  }
-}, [feedKey]);
+    return [];
+  });
 
-// 3. SAVE SCROLL CONTINUOUSLY
-useEffect(() => {
-  const handleScroll = () => {
-    if (window.scrollY > 0) feedCache.setScroll(feedKey, window.scrollY);
-  };
-  window.addEventListener("scroll", handleScroll, { passive: true });
-  return () => window.removeEventListener("scroll", handleScroll);
-}, [feedKey, feedCache]);
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get(feedKey);
+      if (cached?.posts?.length) return false;
+    }
+    return posts.length === 0 && !!query;
+  });
+
+  // --- SAVE SCROLL ---
+  useEffect(() => {
+    const save = () => {
+      if (window.scrollY > 0) {
+        feedCache.setScroll(feedKey, window.scrollY);
+      }
+    };
+    window.addEventListener("scroll", save, { passive: true });
+    return () => window.removeEventListener("scroll", save);
+  }, [feedKey, feedCache]);
 
   const performSearch = useCallback(async () => {
-  setLoading(true);
+    // Only show loading skeleton if we have NO cached results
+    if (posts.length === 0) setLoading(true);
 
-  try {
-    // 1) Fetch posts WITHOUT embeds (more reliable)
-    let queryBuilder = supabase
-      .from("posts")
-      .select(
-        `
-        id, user_id, category, comment, address,
-        latitude, longitude,
-        is_anonymous, status, is_sensitive,
-        confirmations, views, comment_count, report_count, created_at
-        `
-      )
-      .in("status", ["live", "resolved"]) // keep archived hidden by default
-      .order("created_at", { ascending: false })
-      .limit(200);
+    try {
+      let queryBuilder = supabase
+        .from("posts")
+        .select(
+          `
+          id, user_id, category, comment, address,
+          latitude, longitude,
+          is_anonymous, status, is_sensitive,
+          confirmations, views, comment_count, report_count, created_at
+          `
+        )
+        .in("status", ["live", "resolved"])
+        .order("created_at", { ascending: false })
+        .limit(200);
 
-    // Category filter
-    if (selectedCategory) {
-      queryBuilder = queryBuilder.eq("category", selectedCategory);
-    }
-
-    // Date range filter
-    if (dateRange !== "all") {
-      const now = new Date();
-      let startDate: Date;
-
-      switch (dateRange) {
-        case "today":
-          startDate = new Date(now.setHours(0, 0, 0, 0));
-          break;
-        case "week":
-          startDate = new Date(now.setDate(now.getDate() - 7));
-          break;
-        case "month":
-          startDate = new Date(now.setMonth(now.getMonth() - 1));
-          break;
-        default:
-          startDate = new Date(0);
+      // Category filter
+      if (selectedCategory) {
+        queryBuilder = queryBuilder.eq("category", selectedCategory);
       }
 
-      queryBuilder = queryBuilder.gte("created_at", startDate.toISOString());
-    }
+      // Date range filter
+      if (dateRange !== "all") {
+        const now = new Date();
+        let startDate: Date;
 
-    const { data: postsData, error: postsErr } = await queryBuilder;
-    if (postsErr) throw postsErr;
+        switch (dateRange) {
+          case "today":
+            startDate = new Date(now.setHours(0, 0, 0, 0));
+            break;
+          case "week":
+            startDate = new Date(now.setDate(now.getDate() - 7));
+            break;
+          case "month":
+            startDate = new Date(now.setMonth(now.getMonth() - 1));
+            break;
+          default:
+            startDate = new Date(0);
+        }
 
-    const rows = postsData || [];
-    const postIds = rows.map((p: any) => p.id);
+        queryBuilder = queryBuilder.gte("created_at", startDate.toISOString());
+      }
 
-    // 2) Fetch media + tags in bulk
-    const [{ data: mediaData, error: mediaErr }, { data: tagsData, error: tagsErr }] =
-      await Promise.all([
-        postIds.length
-          ? supabase
-              .from("post_media")
-              .select("id,post_id,url,media_type,is_sensitive,thumbnail_url")
-              .in("post_id", postIds)
-          : Promise.resolve({ data: [], error: null } as any),
-        postIds.length
-          ? supabase.from("post_tags").select("post_id,tag").in("post_id", postIds)
-          : Promise.resolve({ data: [], error: null } as any),
-      ]);
+      const { data: postsData, error: postsErr } = await queryBuilder;
+      if (postsErr) throw postsErr;
 
-    if (mediaErr) console.error("Search media error:", mediaErr);
-    if (tagsErr) console.error("Search tags error:", tagsErr);
+      const rows = postsData || [];
+      const postIds = rows.map((p: any) => p.id);
 
-    const mediaMap: Record<string, any[]> = {};
-    (mediaData || []).forEach((m: any) => {
-      if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
-      mediaMap[m.post_id].push(m);
-    });
+      const [{ data: mediaData, error: mediaErr }, { data: tagsData, error: tagsErr }] =
+        await Promise.all([
+          postIds.length
+            ? supabase
+                .from("post_media")
+                .select("id,post_id,url,media_type,is_sensitive,thumbnail_url")
+                .in("post_id", postIds)
+            : Promise.resolve({ data: [], error: null } as any),
+          postIds.length
+            ? supabase.from("post_tags").select("post_id,tag").in("post_id", postIds)
+            : Promise.resolve({ data: [], error: null } as any),
+        ]);
 
-    const tagsMap: Record<string, string[]> = {};
-    (tagsData || []).forEach((t: any) => {
-      if (!tagsMap[t.post_id]) tagsMap[t.post_id] = [];
-      tagsMap[t.post_id].push(t.tag);
-    });
+      if (mediaErr) console.error("Search media error:", mediaErr);
+      if (tagsErr) console.error("Search tags error:", tagsErr);
 
-    // 3) Format posts
-    let formattedPosts: Post[] = rows.map((post: any) => ({
-      id: post.id,
-      user_id: post.user_id,
-      category: post.category,
-      comment: post.comment,
-      location: {
-        latitude: post.latitude ?? 0,
-        longitude: post.longitude ?? 0,
-      },
-      address: post.address,
-      is_anonymous: post.is_anonymous,
-      status: post.status,
-      is_sensitive: post.is_sensitive,
-      confirmations: post.confirmations || 0,
-      views: post.views || 0,
-      comment_count: post.comment_count || 0,
-      report_count: post.report_count || 0,
-      created_at: post.created_at,
-      media:
-        (mediaMap[post.id] || []).map((m: any) => ({
-          id: m.id,
-          post_id: m.post_id,
-          url: m.url,
-          media_type: m.media_type,
-          is_sensitive: m.is_sensitive,
-          thumbnail_url: m.thumbnail_url,
-        })) || [],
-      tags: tagsMap[post.id] || [],
-    }));
+      const mediaMap: Record<string, any[]> = {};
+      (mediaData || []).forEach((m: any) => {
+        if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
+        mediaMap[m.post_id].push(m);
+      });
 
-    // 4) Client-side filtering for search term
-    if (query.trim()) {
-      const searchTerm = query.toLowerCase().trim();
+      const tagsMap: Record<string, string[]> = {};
+      (tagsData || []).forEach((t: any) => {
+        if (!tagsMap[t.post_id]) tagsMap[t.post_id] = [];
+        tagsMap[t.post_id].push(t.tag);
+      });
 
-      if (searchTerm.startsWith("#")) {
-        const tagQuery = searchTerm.slice(1);
-        formattedPosts = formattedPosts.filter((p) =>
-          (p.tags || []).some((t) => (t || "").toLowerCase().includes(tagQuery))
-        );
-      } else {
-        formattedPosts = formattedPosts.filter((p) => {
-          const categoryName = CATEGORIES.find((c) => c.id === p.category)?.name || "";
-          const comment = (p.comment ?? "").toLowerCase();
-          const address = (p.address ?? "").toLowerCase();
-          const categoryId = (p.category ?? "").toLowerCase();
-          const categoryNameLower = categoryName.toLowerCase();
-          const tags = (p.tags ?? []).map((t) => (t ?? "").toLowerCase());
+      let formattedPosts: Post[] = rows.map((post: any) => ({
+        id: post.id,
+        user_id: post.user_id,
+        category: post.category,
+        comment: post.comment,
+        location: {
+          latitude: post.latitude ?? 0,
+          longitude: post.longitude ?? 0,
+        },
+        address: post.address,
+        is_anonymous: post.is_anonymous,
+        status: post.status,
+        is_sensitive: post.is_sensitive,
+        confirmations: post.confirmations || 0,
+        views: post.views || 0,
+        comment_count: post.comment_count || 0,
+        report_count: post.report_count || 0,
+        created_at: post.created_at,
+        media:
+          (mediaMap[post.id] || []).map((m: any) => ({
+            id: m.id,
+            post_id: m.post_id,
+            url: m.url,
+            media_type: m.media_type,
+            is_sensitive: m.is_sensitive,
+            thumbnail_url: m.thumbnail_url,
+          })) || [],
+        tags: tagsMap[post.id] || [],
+      }));
 
-          return (
-            comment.includes(searchTerm) ||
-            address.includes(searchTerm) ||
-            categoryNameLower.includes(searchTerm) ||
-            categoryId.includes(searchTerm) ||
-            tags.some((t) => t.includes(searchTerm))
+      // Client-side filtering for search term
+      if (query.trim()) {
+        const searchTerm = query.toLowerCase().trim();
+
+        if (searchTerm.startsWith("#")) {
+          const tagQuery = searchTerm.slice(1);
+          formattedPosts = formattedPosts.filter((p) =>
+            (p.tags || []).some((t) => (t || "").toLowerCase().includes(tagQuery))
           );
-        });
+        } else {
+          formattedPosts = formattedPosts.filter((p) => {
+            const categoryName = CATEGORIES.find((c) => c.id === p.category)?.name || "";
+            const comment = (p.comment ?? "").toLowerCase();
+            const address = (p.address ?? "").toLowerCase();
+            const categoryId = (p.category ?? "").toLowerCase();
+            const categoryNameLower = categoryName.toLowerCase();
+            const tags = (p.tags ?? []).map((t) => (t ?? "").toLowerCase());
+
+            return (
+              comment.includes(searchTerm) ||
+              address.includes(searchTerm) ||
+              categoryNameLower.includes(searchTerm) ||
+              categoryId.includes(searchTerm) ||
+              tags.some((t) => t.includes(searchTerm))
+            );
+          });
+        }
       }
-    }
 
-    setPosts(formattedPosts.slice(0, 50));
-    const top = formattedPosts.slice(0, 50);
-   confirm.hydrateCounts(top.map(p => ({ postId: p.id, confirmations: p.confirmations || 0 })));
-    confirm.loadConfirmedFor(top.map(p => p.id));
-setPosts(top);
-    feedCache.setPosts(feedKey, top); 
+      const top = formattedPosts.slice(0, 50);
+      confirm.hydrateCounts(top.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+      confirm.loadConfirmedFor(top.map((p) => p.id));
+      setPosts(top);
+      feedCache.setPosts(feedKey, top);
     } catch (error) {
-    console.error("Search error:", error);
-    setPosts([]);
-  } finally {
-    setLoading(false);
-  }
-}, [query, selectedCategory, dateRange]);
-
-  
+      console.error("Search error:", error);
+      if (posts.length === 0) setPosts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [query, selectedCategory, dateRange, feedKey, feedCache, confirm]);
 
   // Listen for post deleted/archived events
   useEffect(() => {
@@ -250,8 +224,8 @@ setPosts(top);
       console.log("[Search] Post deleted event received:", postId);
 
       if (postId) {
-        setPosts(prev => {
-          const next = prev.filter(p => p.id !== postId);
+        setPosts((prev) => {
+          const next = prev.filter((p) => p.id !== postId);
           feedCache.setPosts(feedKey, next);
           return next;
         });
@@ -264,8 +238,8 @@ setPosts(top);
       console.log("[Search] Post archived event received:", postId);
 
       if (postId) {
-        setPosts(prev => {
-          const next = prev.filter(p => p.id !== postId);
+        setPosts((prev) => {
+          const next = prev.filter((p) => p.id !== postId);
           feedCache.setPosts(feedKey, next);
           return next;
         });
@@ -281,7 +255,6 @@ setPosts(top);
     };
   }, [feedKey, feedCache]);
 
-
   useEffect(() => {
     const debounce = setTimeout(() => {
       performSearch();
@@ -289,6 +262,10 @@ setPosts(top);
 
     return () => clearTimeout(debounce);
   }, [performSearch]);
+
+  // ============================================================
+  // ALL HOOKS ARE DONE
+  // ============================================================
 
   const clearFilters = () => {
     setSelectedCategory(null);
@@ -311,7 +288,7 @@ setPosts(top);
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
-    <Header onCreateClick={() => router.push("/create")} />
+      <Header onCreateClick={() => router.push("/create")} />
 
       <main className="pt-16">
         <div className="max-w-2xl mx-auto px-4 py-4">
@@ -324,7 +301,7 @@ setPosts(top);
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search incidents, #tags, locations, categories..."
               className="w-full pl-12 pr-20 py-3 glass-input"
-              autoFocus={!(typeof window !== "undefined" && sessionStorage.getItem("search-has-scrolled") === "1")}
+              autoFocus={posts.length === 0 && !query}
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {query && (
@@ -464,35 +441,35 @@ setPosts(top);
           )}
 
           {/* Results */}
-         {loading && posts.length === 0 ? (
-  <div className="space-y-4">
-    {Array.from({ length: 5 }).map((_, i) => (
-      <PostCardSkeleton key={i} />
-    ))}
-  </div>
-) : posts.length === 0 ? (
-  <div className="text-center py-12">No posts yet.</div>
-) : (
-  <div className="space-y-4">
-    {loading && (
-      <div className="flex justify-center py-2">
-        <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
-      </div>
-    )}
-    <p className="text-sm text-dark-400">
-      {posts.length} result{posts.length !== 1 ? "s" : ""} {query && `for "${query}"`}
-    </p>
-    {posts.map((post) => (
-      <PostCard
-        key={post.id}
-        post={post}
-        onConfirm={() => {}}
-        onShare={handleSharePost}
-        sourceKey={feedKey}
-      />
-    ))}
-  </div>
-)}
+          {loading && posts.length === 0 ? (
+            <div className="space-y-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <PostCardSkeleton key={i} />
+              ))}
+            </div>
+          ) : posts.length === 0 ? (
+            <div className="text-center py-12">No posts yet.</div>
+          ) : (
+            <div className="space-y-4">
+              {loading && (
+                <div className="flex justify-center py-2">
+                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                </div>
+              )}
+              <p className="text-sm text-dark-400">
+                {posts.length} result{posts.length !== 1 ? "s" : ""} {query && `for "${query}"`}
+              </p>
+              {posts.map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  onConfirm={() => {}}
+                  onShare={handleSharePost}
+                  sourceKey={feedKey}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </main>
 

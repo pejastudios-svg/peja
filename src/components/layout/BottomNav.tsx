@@ -25,12 +25,14 @@ export function BottomNav() {
 
   const isVip = user?.is_vip === true;
 
-  // Don't show on post detail page or inside DM chat
-  if (pathname.startsWith("/post/")) return null;
-  if (pathname.match(/^\/messages\/[^/]+$/)) return null;
+  // Determine if we should hide the nav — but do NOT return early here
+  const isHidden =
+    pathname.startsWith("/post/") || !!pathname.match(/^\/messages\/[^/]+$/);
 
   // Close menu on outside click
   useEffect(() => {
+    if (isHidden) return;
+
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowProfileMenu(false);
@@ -40,10 +42,11 @@ export function BottomNav() {
       document.addEventListener("mousedown", handleClick);
       return () => document.removeEventListener("mousedown", handleClick);
     }
-  }, [showProfileMenu]);
+  }, [showProfileMenu, isHidden]);
 
   // Fetch DM unread count for VIPs
   useEffect(() => {
+    if (isHidden) return;
     if (!isVip || !user?.id) return;
 
     const fetchUnread = async () => {
@@ -89,7 +92,12 @@ export function BottomNav() {
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "conversation_participants", filter: `user_id=eq.${user.id}` },
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "conversation_participants",
+          filter: `user_id=eq.${user.id}`,
+        },
         () => fetchUnread()
       )
       .subscribe();
@@ -97,7 +105,10 @@ export function BottomNav() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isVip, user?.id]);
+  }, [isVip, user?.id, isHidden]);
+
+  // Now that all hooks have been called, we can return null
+  if (isHidden) return null;
 
   const handleProfileClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -133,8 +144,7 @@ export function BottomNav() {
                   if (pathname === "/") {
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   } else {
-                  router.push("/", { scroll: false });
-
+                    router.push("/", { scroll: false });
                   }
                 }}
                 className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
@@ -199,18 +209,24 @@ export function BottomNav() {
             }`}
           >
             <div className="relative">
-  {user?.avatar_url ? (
-    <div className={`w-6 h-6 rounded-full overflow-hidden border-2 ${
-      pathname === "/profile" || pathname === "/messages"
-        ? "border-primary-400"
-        : "border-transparent"
-    }`}>
-      <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
-    </div>
-  ) : (
-    <User className="w-5 h-5" />
-  )}
-  {isVip && dmUnread > 0 && (
+              {user?.avatar_url ? (
+                <div
+                  className={`w-6 h-6 rounded-full overflow-hidden border-2 ${
+                    pathname === "/profile" || pathname === "/messages"
+                      ? "border-primary-400"
+                      : "border-transparent"
+                  }`}
+                >
+                  <img
+                    src={user.avatar_url}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ) : (
+                <User className="w-5 h-5" />
+              )}
+              {isVip && dmUnread > 0 && (
                 <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] flex items-center justify-center bg-primary-600 text-white text-[10px] font-bold rounded-full px-1">
                   {dmUnread > 99 ? "99+" : dmUnread}
                 </span>
@@ -221,14 +237,16 @@ export function BottomNav() {
 
           {/* VIP Drop-up Menu */}
           {showProfileMenu && isVip && (
-                        <div className="profile-dropup fixed bottom-20 right-3 w-44 glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 z-50">
+            <div className="profile-dropup fixed bottom-20 right-3 w-44 glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 z-50">
               <button
                 onClick={() => {
                   setShowProfileMenu(false);
                   router.push("/profile", { scroll: false });
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-white/5 ${
-                  pathname === "/profile" ? "text-primary-400" : "text-dark-200"
+                  pathname === "/profile"
+                    ? "text-primary-400"
+                    : "text-dark-200"
                 }`}
               >
                 <User className="w-4 h-4" />
@@ -241,7 +259,9 @@ export function BottomNav() {
                   router.push("/messages", { scroll: false });
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-white/5 ${
-                  pathname === "/messages" ? "text-primary-400" : "text-dark-200"
+                  pathname === "/messages"
+                    ? "text-primary-400"
+                    : "text-dark-200"
                 }`}
               >
                 <MessageCircle className="w-4 h-4" />
