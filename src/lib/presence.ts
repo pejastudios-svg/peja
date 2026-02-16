@@ -157,20 +157,32 @@ class PresenceManager {
   }
 
   private async updateLastSeen() {
-    if (!this.userId) return;
-    try {
-      const { error } = await supabase
-        .from("users")
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq("id", this.userId);
-      
-      if (error) {
-        console.error("[Presence] Failed to update last_seen_at:", error.message);
+  if (!this.userId) return;
+  try {
+    const { error } = await supabase
+      .from("users")
+      .update({ last_seen_at: new Date().toISOString() })
+      .eq("id", this.userId);
+    
+    if (error) {
+      // Silently ignore network errors — they're expected when backgrounded
+      if (typeof error === 'object' && 'message' in error) {
+        const msg = (error as any).message || '';
+        if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('network')) {
+          return; // Silent — expected when offline/backgrounded
+        }
       }
-    } catch (e) {
-      console.error("[Presence] updateLastSeen error:", e);
+      console.warn("[Presence] last_seen_at update failed:", (error as any)?.message || error);
     }
+  } catch (e: any) {
+    // Silently ignore network/fetch errors
+    const msg = e?.message || String(e);
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('network') || msg.includes('AbortError')) {
+      return;
+    }
+    console.warn("[Presence] updateLastSeen error:", msg);
   }
+}
 
   private handleVisibility = () => {
     if (!this.userId || !this.globalChannel) return;
@@ -187,19 +199,31 @@ class PresenceManager {
   };
 
   private handleUnload = () => {
-    // Best-effort last_seen update via sendBeacon
-    if (!this.userId) return;
-    try {
-      const url = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/users?id=eq.${this.userId}`;
-      const body = JSON.stringify({ last_seen_at: new Date().toISOString() });
-      navigator.sendBeacon(
-        url,
-        new Blob([body], { type: "application/json" })
-      );
-    } catch {
-      // Silent fail
-    }
-  };
+  if (!this.userId) return;
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!supabaseUrl || !anonKey) return;
+
+    const url = `${supabaseUrl}/rest/v1/users?id=eq.${this.userId}`;
+    const body = JSON.stringify({ last_seen_at: new Date().toISOString() });
+    const headers = {
+      "Content-Type": "application/json",
+      apikey: anonKey,
+      Authorization: `Bearer ${anonKey}`,
+      Prefer: "return=minimal",
+    };
+    // sendBeacon doesn't support custom headers, so use fetch with keepalive
+    fetch(url, {
+      method: "PATCH",
+      headers,
+      body,
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // Silent fail
+  }
+};
 }
 
 export const presenceManager = new PresenceManager();

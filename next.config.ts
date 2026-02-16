@@ -3,17 +3,11 @@ const nextConfig = {
   generateBuildId: async () => {
     return `build-${Date.now()}`;
   },
-  
-  // Disable static generation for dynamic pages
-  experimental: {
-    scrollRestoration: true,
-    optimisticClientCache: true,
-  },
 
   eslint: {
-  ignoreDuringBuilds: true,
-},
-  
+    ignoreDuringBuilds: true,
+  },
+
   async headers() {
     return [
       {
@@ -44,7 +38,7 @@ const nextConfig = {
       },
     ];
   },
-  
+
   images: {
     remotePatterns: [
       {
@@ -52,9 +46,9 @@ const nextConfig = {
         hostname: '**.supabase.co',
       },
     ],
-    unoptimized: true, // Helps with cache issues
+    unoptimized: true,
   },
-  
+
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },

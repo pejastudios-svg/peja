@@ -17,6 +17,7 @@ import GlobalScrollManager from "@/components/navigation/GlobalScrollManager";
 import { CapacitorInit } from "@/components/navigation/CapacitorInit";
 import { CapacitorBackButton } from "@/components/navigation/CapacitorBackButton";
 import { CapacitorPushNotifications } from "@/components/notifications/CapacitorPushNotifications";
+import { ScrollRestorer } from "@/components/navigation/ScrollRestorer";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -78,6 +79,7 @@ export default function RootLayout({
                   <CapacitorInit />
                   <CapacitorBackButton />
                   <CapacitorPushNotifications />
+                  <ScrollRestorer />
                   {children}
                   {overlay}
                   {modal}

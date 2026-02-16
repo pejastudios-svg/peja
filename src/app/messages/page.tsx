@@ -44,6 +44,8 @@ export default function MessagesPage() {
   const [vipSearchLoading, setVipSearchLoading] = useState(false);
   const [creating, setCreating] = useState<string | null>(null);
   const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [allVips, setAllVips] = useState<VIPUser[]>([]);
+  const [allVipsLoading, setAllVipsLoading] = useState(false);
   const CONV_CACHE_KEY = "peja-conversations-cache";
 
   // Restore from sessionStorage on mount
@@ -408,6 +410,46 @@ useEffect(() => {
     }, 300);
   };
 
+  // Load all VIPs when modal opens
+useEffect(() => {
+  if (!newChatOpen || !user?.id) return;
+
+  const loadAllVips = async () => {
+    setAllVipsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status")
+        .eq("is_vip", true)
+        .eq("status", "active")
+        .neq("id", user.id)
+        .order("full_name", { ascending: true })
+        .limit(100);
+
+      if (error) throw error;
+
+      const { data: blocks } = await supabase
+        .from("dm_blocks")
+        .select("blocked_id, blocker_id")
+        .or(`blocker_id.eq.${user.id},blocked_id.eq.${user.id}`);
+
+      const blockedIds = new Set<string>();
+      (blocks || []).forEach((b: any) => {
+        if (b.blocker_id === user.id) blockedIds.add(b.blocked_id);
+        if (b.blocked_id === user.id) blockedIds.add(b.blocker_id);
+      });
+
+      setAllVips((data || []).filter((u: any) => !blockedIds.has(u.id)) as VIPUser[]);
+    } catch {
+      setAllVips([]);
+    } finally {
+      setAllVipsLoading(false);
+    }
+  };
+
+  loadAllVips();
+}, [newChatOpen, user?.id]);
+
   // =====================================================
   // CREATE OR OPEN CONVERSATION
   // =====================================================
@@ -624,7 +666,52 @@ useEffect(() => {
                 <span className="ml-2 text-sm text-dark-400">Searching...</span>
               </div>
             ) : vipSearch.trim().length < 2 ? (
-              <PejaAdminEntry userId={user.id} onSelect={startConversation} creating={creating} />
+  <>
+    <PejaAdminEntry userId={user.id} onSelect={startConversation} creating={creating} />
+    {allVipsLoading ? (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+        <span className="ml-2 text-sm text-dark-400">Loading VIP members...</span>
+      </div>
+    ) : allVips.length > 0 ? (
+      allVips.map((v) => {
+        const vOnline = onlineUsers.has(v.id);
+        return (
+          <button
+            key={v.id}
+            onClick={() => startConversation(v.id)}
+            disabled={creating !== null}
+            className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors disabled:opacity-50 text-left"
+          >
+            <div className="relative shrink-0">
+              <div className="w-11 h-11 rounded-full overflow-hidden bg-dark-800 border border-white/10 flex items-center justify-center">
+                {v.avatar_url ? (
+                  <img src={v.avatar_url} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-5 h-5 text-dark-400" />
+                )}
+              </div>
+              {vOnline && (
+                <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-purple-500 border-2 border-[#1e1033] online-dot-pulse" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-medium text-dark-100 truncate">{v.full_name || "Unknown"}</span>
+                {v.is_admin && <Crown className="w-3.5 h-3.5 text-yellow-400" />}
+              </div>
+              <p className="text-xs text-dark-500 truncate">{v.email}</p>
+            </div>
+            {creating === v.id ? (
+              <Loader2 className="w-4 h-4 text-primary-400 animate-spin shrink-0" />
+            ) : (
+              <MessageCircle className="w-4 h-4 text-dark-500 shrink-0" />
+            )}
+          </button>
+        );
+      })
+    ) : null}
+  </>
             ) : vipResults.length === 0 ? (
               <div className="text-center py-8">
                 <User className="w-8 h-8 text-dark-600 mx-auto mb-2" />
@@ -733,7 +820,6 @@ function PejaAdminEntry({ userId, onSelect, creating }: { userId: string; onSele
       </button>
       <div className="border-b border-white/5 mt-3" />
       <p className="text-[11px] text-dark-500 uppercase tracking-wider font-bold px-1 mt-3 mb-2">VIP Members</p>
-      <p className="text-xs text-dark-500 px-1">Type at least 2 characters to search</p>
     </div>
   );
 }

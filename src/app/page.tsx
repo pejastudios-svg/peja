@@ -14,7 +14,6 @@ import { TrendingUp, MapPin, Loader2, Search, RefreshCw, Eye } from "lucide-reac
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
-import { useLayoutEffect } from "react"
 import { apiUrl } from "@/lib/api";
 import { PejaLoadingScreen } from "@/components/ui/PejaLoadingScreen";
 
@@ -550,92 +549,12 @@ useEffect(() => {
     fetchPosts(true);
   };
 
-// ✅ CRITICAL: Restore scroll from sessionStorage on mount
-useLayoutEffect(() => {
-  try {
-    const saved = sessionStorage.getItem("peja-scroll-restore");
-    if (!saved) return;
-    
-    const { key, scrollY, timestamp } = JSON.parse(saved);
-    
-    // Only restore if it's recent (within 30 seconds) and matches our feedKey
-    const isRecent = Date.now() - timestamp < 30000;
-    const matchesKey = key === feedKey;
-    
-    console.log("[Home] Checking scroll restore:", { key, scrollY, isRecent, matchesKey, feedKey });
-    
-    if (isRecent && matchesKey && scrollY > 0) {
-      console.log("[Home] Restoring scroll to:", scrollY);
-      
-      // Clear immediately so we don't restore twice
-      sessionStorage.removeItem("peja-scroll-restore");
-      
-      // Restore scroll
-      window.scrollTo(0, scrollY);
-      
-      // Also try after paint in case content isn't ready
-      requestAnimationFrame(() => {
-        window.scrollTo(0, scrollY);
-      });
-    }
-  } catch (e) {
-    console.error("[Home] Scroll restore error:", e);
-  }
-}, [feedKey]);
-
 // Keep existing scroll save effect
 useEffect(() => {
   const save = () => feedCache.setScroll(feedKey, window.scrollY);
   window.addEventListener("scroll", save, { passive: true });
   return () => window.removeEventListener("scroll", save);
 }, [feedKey]);
-
-// ✅ ADD THIS NEW EFFECT - Restore scroll when returning from watch
-useEffect(() => {
-  console.log("[Home] Restore effect running, feedKey:", feedKey);
-  
-  const checkAndRestore = () => {
-    const flag = sessionStorage.getItem("peja-returning-from-watch");
-    console.log("[Home] Flag value:", flag);
-    
-    if (!flag) {
-      console.log("[Home] No flag, skipping restore");
-      return;
-    }
-    
-    sessionStorage.removeItem("peja-returning-from-watch");
-    
-    const cached = feedCache.get(feedKey);
-    console.log("[Home] Cached data:", { scrollY: cached?.scrollY, postsCount: cached?.posts?.length });
-    
-    if (cached && cached.scrollY > 0) {
-      console.log("[Home] Attempting to restore scroll to:", cached.scrollY);
-      
-      const restore = () => {
-        window.scrollTo(0, cached.scrollY);
-        console.log("[Home] After scrollTo, actual scroll:", window.scrollY);
-      };
-      
-      restore();
-      requestAnimationFrame(restore);
-      setTimeout(restore, 50);
-      setTimeout(restore, 150);
-    }
-  };
-
-  checkAndRestore();
-
-  const handlePopState = () => {
-    console.log("[Home] popstate event fired");
-    setTimeout(checkAndRestore, 10);
-  };
-  
-  window.addEventListener("popstate", handlePopState);
-  
-  return () => {
-    window.removeEventListener("popstate", handlePopState);
-  };
-}, [feedKey, feedCache]);
 
   const handleSharePost = async (post: Post) => {
     const shareUrl = `${window.location.origin}/post/${post.id}`;
@@ -648,6 +567,12 @@ useEffect(() => {
       alert("Link copied!");
     }
   };
+
+  // Placeholder to preserve hook count (scroll handled by ScrollRestorer)
+useEffect(() => {}, [feedKey]);
+
+// Placeholder to preserve hook count
+useEffect(() => {}, [feedKey, feedCache]);
 
   // Redirect to login if not authenticated
   // Use a delay to give auth system time to restore session from native storage
@@ -702,7 +627,7 @@ useEffect(() => {
     <div className="min-h-screen pb-20 lg:pb-0">
     <Header onCreateClick={() => router.push("/create")} />
 
-            <main className="pt-16">
+            <main className="pt-14">
         {user && !user.occupation && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
             <div className="glass-card p-4 flex items-center justify-between">

@@ -9,10 +9,9 @@ export type NotificationType =
   | "guardian_approved"
   | "guardian_rejected"
   | "system"
-  | "post_comment"
   | "comment_reply"
-  | "comment_liked"
-  | "dm_message";       
+  | "dm_message"
+  | "dm_blocked";    
 
 
 interface CreateNotificationParams {
@@ -652,5 +651,21 @@ export async function notifyDMMessage(
     title: `📩 ${senderName}`,
     body: preview || "Sent you a message",
     data: { conversation_id: conversationId, sender_name: senderName },
+  });
+}
+
+// ============================================
+// DM BLOCK NOTIFICATION
+// ============================================
+export async function notifyDMBlocked(
+  blockedUserId: string,
+  blockerName: string,
+): Promise<boolean> {
+  return createNotification({
+    userId: blockedUserId,
+    type: "dm_blocked",
+    title: "🚫 You have been blocked",
+    body: `${blockerName} has blocked you from messaging them`,
+    data: {},
   });
 }

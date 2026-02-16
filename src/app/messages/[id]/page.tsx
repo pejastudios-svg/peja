@@ -50,6 +50,7 @@ import {
   ChevronRight,
   Clock,
   Reply,
+  AlertTriangle,
 } from "lucide-react";
 import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns";
 import type { Message, VIPUser, MessageMediaItem } from "@/lib/types";
@@ -103,6 +104,7 @@ export default function ChatPage() {
   const [otherUser, setOtherUser] = useState<VIPUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [uploadingMsgIds, setUploadingMsgIds] = useState<Map<string, number>>(new Map());
 
   // ------ Input State ------
   const [showEmoji, setShowEmoji] = useState(false);
@@ -927,173 +929,264 @@ useEffect(() => {
   // SEND MESSAGE
   // =====================================================
   const handleSend = useCallback(async () => {
-    const textContent = getEditorContent();
-    if ((!textContent && pendingMedia.length === 0) || sending || !user?.id) return;
+  const textContent = getEditorContent();
+  if ((!textContent && pendingMedia.length === 0) || sending || !user?.id) return;
 
-    // Check if blocked by the other user
-    if (otherUser?.id) {
-      const { data: blocked } = await supabase
-        .from("dm_blocks")
-        .select("id")
-        .eq("blocker_id", otherUser.id)
-        .eq("blocked_id", user.id)
-        .maybeSingle();
-      if (blocked) {
-        toast.warning("You have been blocked by this user");
-        return;
+  // Check if blocked by the other user
+  if (otherUser?.id) {
+    const { data: blocked } = await supabase
+      .from("dm_blocks")
+      .select("id")
+      .eq("blocker_id", otherUser.id)
+      .eq("blocked_id", user.id)
+      .maybeSingle();
+    if (blocked) {
+      toast.warning("You have been blocked by this user");
+      return;
+    }
+  }
+
+  // If editing, handle separately
+  if (editingMessage) {
+    setSending(true);
+    try {
+      const editorHTML = getEditorHTML();
+      const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
+      const { error: editErr } = await supabase
+        .from("messages")
+        .update({
+          content: markdownContent,
+          edited_at: new Date().toISOString(),
+        })
+        .eq("id", editingMessage.id)
+        .eq("sender_id", user.id);
+      if (editErr) throw editErr;
+      setEditingMessage(null);
+      clearEditor();
+    } catch (e: any) {
+      console.error("Edit error:", e?.message || e);
+      toast.danger("Failed to edit message");
+    } finally {
+      setSending(false);
+    }
+    return;
+  }
+
+  // Capture current state before clearing
+  const mediaToSend = [...pendingMedia];
+  const editorHTML = getEditorHTML();
+  const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
+  const currentReplyingTo = replyingTo;
+
+  // Generate a temp ID for optimistic message
+  const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  // Determine content type
+  let contentType = "text";
+  if (mediaToSend.length > 0) {
+    contentType = mediaToSend.some(
+      (m) => m.type.startsWith("image/") || m.type.startsWith("video/")
+    )
+      ? "media"
+      : "document";
+    if (mediaToSend.every((m) => m.type.startsWith("audio/"))) {
+      contentType = "media";
+    }
+  }
+
+  // Create optimistic local media from previews
+  const optimisticMedia: MessageMediaItem[] = mediaToSend.map((m, i) => ({
+    id: `temp-media-${i}-${Date.now()}`,
+    message_id: tempId,
+    url: m.preview || "",
+    media_type: (m.type.startsWith("image/")
+      ? "image"
+      : m.type.startsWith("video/")
+      ? "video"
+      : m.type.startsWith("audio/")
+      ? "audio"
+      : "document") as "image" | "video" | "document" | "audio",
+    file_name: m.file.name,
+    file_size: m.file.size,
+    mime_type: null,
+    thumbnail_url: null,
+    created_at: new Date().toISOString(),
+  }));
+
+  // Optimistically add message IMMEDIATELY
+  const optimisticMsg: Message = {
+    id: tempId,
+    conversation_id: conversationId,
+    sender_id: user.id,
+    content: markdownContent || null,
+    content_type: contentType as "text" | "media" | "document" | "post_share" | "system",
+    created_at: new Date().toISOString(),
+    is_deleted: false,
+    edited_at: null,
+    reply_to_id: currentReplyingTo?.id || null,
+    metadata: {},
+    media: optimisticMedia,
+    delivery_status: "sending" as any,
+    read_at: null,
+    hidden_for_me: false,
+    reactions: [],
+    reply_to: currentReplyingTo || null,
+  };
+
+  setMessages((prev) => [...prev, optimisticMsg]);
+
+  // Clear input immediately
+  clearEditor();
+  setPendingMedia([]);
+  setReplyingTo(null);
+
+  // Track upload progress if there's media
+  if (mediaToSend.length > 0) {
+    setUploadingMsgIds((prev) => new Map(prev).set(tempId, 0));
+  }
+
+  // Now do the actual send in background
+  try {
+    let mediaItems: { url: string; media_type: string; file_name: string; file_size: number }[] = [];
+
+    if (mediaToSend.length > 0) {
+      for (let i = 0; i < mediaToSend.length; i++) {
+        const media = mediaToSend[i];
+        const ext = media.file.name.split(".").pop() || "file";
+        const path = `messages/${conversationId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("message-media")
+          .upload(path, media.file);
+        if (uploadError) { console.error("Upload error:", uploadError); continue; }
+
+        const { data: urlData } = supabase.storage
+          .from("message-media")
+          .getPublicUrl(path);
+
+        let mediaType = "document";
+        if (media.type.startsWith("image/")) mediaType = "image";
+        else if (media.type.startsWith("video/")) mediaType = "video";
+        else if (media.type.startsWith("audio/")) mediaType = "audio";
+
+        mediaItems.push({
+          url: urlData.publicUrl,
+          media_type: mediaType,
+          file_name: media.file.name,
+          file_size: media.file.size,
+        });
+
+        // Update progress
+        const progress = Math.round(((i + 1) / mediaToSend.length) * 100);
+        setUploadingMsgIds((prev) => new Map(prev).set(tempId, progress));
       }
     }
 
-    setSending(true);
-    try {
-      let contentType = "text";
-      let mediaItems: { url: string; media_type: string; file_name: string; file_size: number }[] = [];
+    const messageData: any = {
+      conversation_id: conversationId,
+      sender_id: user.id,
+      content: markdownContent || null,
+      content_type: contentType,
+      reply_to_id: currentReplyingTo?.id || null,
+    };
 
-      if (pendingMedia.length > 0) {
-        contentType = pendingMedia.some(
-          (m) => m.type.startsWith("image/") || m.type.startsWith("video/")
-        )
-          ? "media"
-          : "document";
+    const { data: newMsg, error: msgError } = await supabase
+      .from("messages")
+      .insert(messageData)
+      .select()
+      .single();
+    if (msgError) throw msgError;
 
-        // Check if any are audio — if ALL are audio, use media type
-        if (pendingMedia.every((m) => m.type.startsWith("audio/"))) {
-          contentType = "media";
-        }
+    if (mediaItems.length > 0 && newMsg) {
+      await supabase.from("message_media").insert(
+        mediaItems.map((m) => ({ message_id: newMsg.id, ...m }))
+      );
+    }
 
-        for (const media of pendingMedia) {
-          const ext = media.file.name.split(".").pop() || "file";
-          const path = `messages/${conversationId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    // Replace temp message with real one
+    const realMedia: MessageMediaItem[] = mediaItems.map((m, i) => ({
+      id: `real-${i}-${Date.now()}`,
+      message_id: newMsg.id,
+      url: m.url,
+      media_type: m.media_type as "image" | "video" | "document" | "audio",
+      file_name: m.file_name,
+      file_size: m.file_size,
+      mime_type: null,
+      thumbnail_url: null,
+      created_at: new Date().toISOString(),
+    }));
 
-          const { error: uploadError } = await supabase.storage
-            .from("message-media")
-            .upload(path, media.file);
-          if (uploadError) { console.error("Upload error:", uploadError); continue; }
-
-          const { data: urlData } = supabase.storage
-            .from("message-media")
-            .getPublicUrl(path);
-
-          let mediaType = "document";
-          if (media.type.startsWith("image/")) mediaType = "image";
-          else if (media.type.startsWith("video/")) mediaType = "video";
-          else if (media.type.startsWith("audio/")) mediaType = "audio";
-
-          mediaItems.push({
-            url: urlData.publicUrl,
-            media_type: mediaType,
-            file_name: media.file.name,
-            file_size: media.file.size,
-          });
-        }
-      }
-
-      const editorHTML = getEditorHTML();
-      const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
-
-      const messageData: any = {
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: markdownContent || null,
-        content_type: contentType,
-        reply_to_id: replyingTo?.id || null,
-      };
-
-      // If editing, update instead
-      if (editingMessage) {
-        const { error: editErr } = await supabase
-          .from("messages")
-          .update({
-            content: markdownContent,
-            edited_at: new Date().toISOString(),
-          })
-          .eq("id", editingMessage.id)
-          .eq("sender_id", user.id);
-
-        if (editErr) throw editErr;
-
-        setEditingMessage(null);
-        clearEditor();
-        setSending(false);
-        return;
-      }
-
-      const { data: newMsg, error: msgError } = await supabase
-        .from("messages")
-        .insert(messageData)
-        .select()
-        .single();
-      if (msgError) throw msgError;
-
-      if (mediaItems.length > 0 && newMsg) {
-        await supabase.from("message_media").insert(
-          mediaItems.map((m) => ({ message_id: newMsg.id, ...m }))
-        );
-      }
-
-      // Optimistically add message
-      if (newMsg) {
-        const localMedia: MessageMediaItem[] = mediaItems.map((m, i) => ({
-          id: `temp-${i}-${Date.now()}`,
-          message_id: newMsg.id,
-          url: m.url,
-          media_type: m.media_type as "image" | "video" | "document" | "audio",
-          file_name: m.file_name,
-          file_size: m.file_size,
-          mime_type: null,
-          thumbnail_url: null,
-          created_at: new Date().toISOString(),
-        }));
-
-        setMessages((prev) => {
-          if (prev.some((msg) => msg.id === newMsg.id)) return prev;
-          return [
-            ...prev,
-            {
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === tempId
+          ? {
               ...newMsg,
-              media: localMedia,
+              media: realMedia,
               delivery_status: "sent" as const,
               read_at: null,
               hidden_for_me: false,
               reactions: [],
-              reply_to: replyingTo || null,
-            },
-          ];
-        });
-      }
+              reply_to: currentReplyingTo || null,
+            }
+          : msg.id === newMsg.id
+          ? prev.find((m) => m.id === tempId) ? msg : msg // skip duplicate from realtime
+          : msg
+      ).filter((msg, idx, arr) => {
+        // Remove duplicates (realtime might have added the same message)
+        return arr.findIndex((m) => m.id === msg.id) === idx;
+      })
+    );
 
-      await supabase
-        .from("conversations")
-        .update({
-          last_message_at: new Date().toISOString(),
-          last_message_text: markdownContent?.slice(0, 100) || (mediaItems.length > 0 ? "Sent an attachment" : null),
-          last_message_sender_id: user.id,
-        })
-        .eq("id", conversationId);
+    // Remove upload progress
+    setUploadingMsgIds((prev) => {
+      const next = new Map(prev);
+      next.delete(tempId);
+      return next;
+    });
 
-      if (otherUser) {
-        notifyDMMessage(
-          otherUser.id,
-          user.full_name || "Someone",
-          markdownContent || "Sent an attachment",
-          conversationId
-        );
-      }
+    await supabase
+      .from("conversations")
+      .update({
+        last_message_at: new Date().toISOString(),
+        last_message_text: markdownContent?.slice(0, 100) || (mediaItems.length > 0 ? "Sent an attachment" : null),
+        last_message_sender_id: user.id,
+      })
+      .eq("id", conversationId);
 
-      clearEditor();
-      setPendingMedia([]);
-      setReplyingTo(null);
-    } catch (e: any) {
-      console.error("Send error:", e?.message || e);
-      toast.danger("Failed to send message");
-    } finally {
-      setSending(false);
+    if (otherUser) {
+      notifyDMMessage(
+        otherUser.id,
+        user.full_name || "Someone",
+        markdownContent || "Sent an attachment",
+        conversationId
+      );
     }
-  }, [
-    getEditorContent, getEditorHTML, htmlToMarkdown, pendingMedia,
-    sending, user, conversationId, otherUser, editingMessage, replyingTo,
-    clearEditor, toast, markAsRead,
-  ]);
+  } catch (e: any) {
+    console.error("Send error:", e?.message || e);
+
+    // Mark message as failed
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === tempId
+          ? { ...msg, delivery_status: "failed" as any }
+          : msg
+      )
+    );
+
+    // Remove upload progress
+    setUploadingMsgIds((prev) => {
+      const next = new Map(prev);
+      next.delete(tempId);
+      return next;
+    });
+
+    toast.danger("Failed to send message");
+  }
+}, [
+  getEditorContent, getEditorHTML, htmlToMarkdown, pendingMedia,
+  sending, user, conversationId, otherUser, editingMessage, replyingTo,
+  clearEditor, toast, markAsRead,
+]);
 
   // =====================================================
   // FORMAT COMMANDS
@@ -1361,15 +1454,19 @@ useEffect(() => {
       setIsBlocked(false);
       toast.info("User unblocked");
     } else {
-      await supabase.from("dm_blocks").insert({
-        blocker_id: user.id, blocked_id: otherUser.id,
-      });
-      await supabase.from("conversation_participants")
-        .update({ is_blocked: true })
-        .eq("conversation_id", conversationId).eq("user_id", user.id);
-      setIsBlocked(true);
-      toast.warning("User blocked");
-    }
+  await supabase.from("dm_blocks").insert({
+    blocker_id: user.id, blocked_id: otherUser.id,
+  });
+  await supabase.from("conversation_participants")
+    .update({ is_blocked: true })
+    .eq("conversation_id", conversationId).eq("user_id", user.id);
+  setIsBlocked(true);
+  toast.warning("User blocked");
+
+  // Notify the blocked user
+  const { notifyDMBlocked } = await import("@/lib/notifications");
+  notifyDMBlocked(otherUser.id, user.full_name || "Someone");
+}
   };
 
   const deleteChat = async () => {
@@ -1494,17 +1591,28 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
   // =====================================================
   // DELIVERY STATUS DISPLAY
   // =====================================================
-  const DeliveryLabel = ({ status }: { status?: "sent" | "seen" }) => {
-    if (!status) return null;
-    if (status === "seen") {
-      return (
-        <span className="text-[10px] text-purple-400 font-medium drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]">
-          Seen
-        </span>
-      );
-    }
-    return <span className="text-[10px] text-white/40">Sent</span>;
-  };
+ const DeliveryLabel = ({ status }: { status?: "sent" | "seen" | "sending" | "failed" }) => {
+  if (!status) return null;
+  if (status === "seen") {
+    return (
+      <span className="text-[10px] text-purple-400 font-medium drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]">
+        Seen
+      </span>
+    );
+  }
+  if (status === "sending") {
+    return <Loader2 className="w-3 h-3 text-white/30 animate-spin" />;
+  }
+  if (status === "failed") {
+    return (
+      <span className="text-[10px] text-red-400 font-medium flex items-center gap-1">
+        <AlertTriangle className="w-3 h-3" />
+        Failed
+      </span>
+    );
+  }
+  return <span className="text-[10px] text-white/40">Sent</span>;
+};
 
   // =====================================================
   // CHAT INFO PANEL: files sent
@@ -1855,30 +1963,37 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                                       </div>
                                     )}
                                     {m.media_type === "audio" && (
-                                      <div
-                                        className={`p-3 rounded-xl border ${
-                                          isMine
-                                            ? "border-white/20 bg-white/10"
-                                            : "border-white/10 bg-white/5"
-                                        }`}
-                                      >
-                                        <div className="flex items-center gap-2 mb-2">
-                                          <Mic className="w-4 h-4 text-primary-400 shrink-0" />
-                                          <span className="text-xs font-medium">
-                                            {m.file_name || "Voice note"}
-                                          </span>
-                                        </div>
-                                        <audio
-                                          controls
-                                          preload="metadata"
-                                          className="w-full h-8 [&::-webkit-media-controls-panel]:bg-transparent"
-                                          style={{ maxWidth: "100%" }}
-                                        >
-                                          <source src={m.url} />
-                                          Your browser does not support audio.
-                                        </audio>
-                                      </div>
-                                    )}
+  <div
+    className={`p-3 rounded-xl border ${
+      isMine
+        ? "border-white/20 bg-white/10"
+        : "border-white/10 bg-white/5"
+    }`}
+  >
+    <div className="flex items-center gap-2 mb-2">
+      <Mic className="w-4 h-4 text-primary-400 shrink-0" />
+      <span className="text-xs font-medium">
+        {m.file_name || "Voice note"}
+      </span>
+    </div>
+    {m.url ? (
+      <audio
+        controls
+        preload="metadata"
+        className="w-full h-8 [&::-webkit-media-controls-panel]:bg-transparent"
+        style={{ maxWidth: "100%" }}
+      >
+        <source src={m.url} />
+        Your browser does not support audio.
+      </audio>
+    ) : (
+      <div className="flex items-center gap-2 text-xs text-white/40">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        <span>Uploading...</span>
+      </div>
+    )}
+  </div>
+)}
                                     {m.media_type === "document" && (
                                       <a
                                         href={m.url}
@@ -1928,6 +2043,21 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
 
                             {/* Text content */}
                             {msg.content && renderContent(msg.content)}
+
+                            {/* Upload progress */}
+{isMine && uploadingMsgIds.has(msg.id) && (
+  <div className="flex items-center gap-2 mt-1.5">
+    <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+      <div
+        className="h-full bg-primary-400 rounded-full transition-all duration-300"
+        style={{ width: `${uploadingMsgIds.get(msg.id) || 0}%` }}
+      />
+    </div>
+    <span className="text-[10px] text-white/40 shrink-0">
+      {uploadingMsgIds.get(msg.id) || 0}%
+    </span>
+  </div>
+)}
 
                             {/* Timestamp + delivery status */}
                             <div className={`flex items-center gap-1.5 mt-1.5 ${isMine ? "justify-end" : "justify-start"}`}>
@@ -2284,12 +2414,11 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
               )
             ) : (
               <button
-                onClick={handleSend}
-                disabled={sending}
-                className="w-10 h-10 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 text-white active:scale-90 transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-              >
-                {sending ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
-              </button>
+  onClick={handleSend}
+  className="w-10 h-10 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 text-white active:scale-90 transition-all shrink-0"
+>
+  <Send className="w-5 h-5" />
+</button>
             )}
           </div>
 

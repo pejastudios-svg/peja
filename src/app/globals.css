@@ -1629,19 +1629,18 @@ html.capacitor-native {
   --cap-status-bar-height: 36px;
   --cap-bottom-inset: env(safe-area-inset-bottom, 0px);
 }
-html.capacitor-native .fixed.top-0,
+html.capacitor-native .fixed.top-0:not(header),
 html.capacitor-native header.fixed {
-  top: var(--cap-status-bar-height) !important;
+  top: 0 !important;
 }
-/* Post detail page uses absolute header, not fixed */
 html.capacitor-native header.absolute.top-0 {
-  top: var(--cap-status-bar-height) !important;
+  top: 0 !important;
 }
 html.capacitor-native main.pt-16 {
-  padding-top: calc(4rem + var(--cap-status-bar-height)) !important;
+  padding-top: calc(3rem + var(--cap-status-bar-height)) !important;
 }
 html.capacitor-native main.pt-14 {
-  padding-top: calc(3.5rem + var(--cap-status-bar-height)) !important;
+  padding-top: calc(3rem + var(--cap-status-bar-height)) !important;
 }
 /* Post detail full-screen layout: push scrollable area down */
 html.capacitor-native .fixed.inset-0 > main.pt-14 {

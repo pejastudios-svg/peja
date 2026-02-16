@@ -199,8 +199,18 @@ export function BottomNav() {
             }`}
           >
             <div className="relative">
-              <User className="w-5 h-5" />
-              {isVip && dmUnread > 0 && (
+  {user?.avatar_url ? (
+    <div className={`w-6 h-6 rounded-full overflow-hidden border-2 ${
+      pathname === "/profile" || pathname === "/messages"
+        ? "border-primary-400"
+        : "border-transparent"
+    }`}>
+      <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+    </div>
+  ) : (
+    <User className="w-5 h-5" />
+  )}
+  {isVip && dmUnread > 0 && (
                 <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] flex items-center justify-center bg-primary-600 text-white text-[10px] font-bold rounded-full px-1">
                   {dmUnread > 99 ? "99+" : dmUnread}
                 </span>
