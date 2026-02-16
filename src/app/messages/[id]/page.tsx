@@ -87,7 +87,6 @@ function getDocIcon(fileName: string | null): string {
   };
   return map[ext] || "📄";
 }
-
 // =====================================================
 // MAIN COMPONENT
 // =====================================================
@@ -152,6 +151,9 @@ export default function ChatPage() {
   const [swipeX, setSwipeX] = useState(0);
   const swipeStartRef = useRef<{ x: number; y: number; locked: boolean } | null>(null);
 
+  // ------ Plus button animation ------
+  const [plusRotated, setPlusRotated] = useState(false);
+
   // ------ Refs ------
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -191,16 +193,17 @@ export default function ChatPage() {
 
     const fetchData = async () => {
       // Restore cached messages immediately
-try {
-  const cached = sessionStorage.getItem(MSG_CACHE_KEY);
-  if (cached) {
-    const parsed = JSON.parse(cached);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      setMessages(parsed);
-      setLoading(false);
-    }
-  }
-} catch {}
+      try {
+        const cached = sessionStorage.getItem(MSG_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMessages(parsed);
+            setLoading(false);
+          }
+        }
+      } catch {}
+
       try {
         const { data: participants, error: pErr } = await supabase
           .from("conversation_participants")
@@ -215,7 +218,6 @@ try {
         setIsMuted(myP?.is_muted || false);
         setIsBlocked(myP?.is_blocked || false);
 
-        // Store other user's last_read_at for seen status
         const otherReadAt = otherP.last_read_at || null;
         setOtherLastReadAt(otherReadAt);
 
@@ -237,10 +239,8 @@ try {
           .eq("user_id", user.id);
         myDeletionsRef.current = new Set((myDeletions || []).map((d: any) => d.message_id));
 
-        // Pass otherReadAt directly — don't rely on state
         await fetchMessages(otherReadAt);
         await markAsRead();
-        // Store for optimistic unread clear when going back
         try { sessionStorage.setItem("peja-last-chat-id", conversationId); } catch {}
       } catch (e: any) {
         console.error("Chat fetch error:", e?.message || e);
@@ -273,7 +273,6 @@ try {
     setOtherUserOnline(online);
     otherUserOnlineRef.current = online;
 
-    // Subscribe to real-time presence changes
     const unsub = presenceManager.onStatusChange((userId, isOnline) => {
       if (userId === otherUser.id) {
         setOtherUserOnline(isOnline);
@@ -281,7 +280,6 @@ try {
       }
     });
 
-    // Poll last_seen_at from DB every 30s as fallback
     const pollLastSeen = async () => {
       const { data } = await supabase
         .from("users")
@@ -309,7 +307,7 @@ try {
   // =====================================================
   // FETCH MESSAGES
   // =====================================================
-   const fetchMessages = useCallback(async (otherReadAt?: string | null) => {
+  const fetchMessages = useCallback(async (otherReadAt?: string | null) => {
     if (!user?.id) return;
 
     const { data, error } = await supabase
@@ -323,7 +321,6 @@ try {
 
     const msgs = (data || []) as Message[];
 
-    // Fetch media for media/document messages
     const mediaIds = msgs
       .filter((m) => m.content_type === "media" || m.content_type === "document")
       .map((m) => m.id);
@@ -339,7 +336,6 @@ try {
       });
     }
 
-    // Fetch read receipts for own messages
     const ownIds = msgs.filter((m) => m.sender_id === user.id).map((m) => m.id);
     let readMap: Record<string, string | null> = {};
     if (ownIds.length > 0) {
@@ -353,7 +349,6 @@ try {
       });
     }
 
-    // Fetch reactions
     const allIds = msgs.map((m) => m.id);
     let reactionsMap: Record<string, any[]> = {};
     if (allIds.length > 0) {
@@ -367,7 +362,6 @@ try {
       });
     }
 
-    // Fetch reply-to messages
     const replyIds = msgs.filter((m) => m.reply_to_id).map((m) => m.reply_to_id!);
     let replyMap: Record<string, Message> = {};
     if (replyIds.length > 0) {
@@ -382,43 +376,37 @@ try {
 
     const deletedForMe = myDeletionsRef.current;
 
-    setMessages(
-      msgs
-        .filter((m) => !deletedForMe.has(m.id))
-        .map((m) => {
-          let deliveryStatus: "sent" | "seen" | undefined;
-          if (m.sender_id === user.id) {
-            if (readMap[m.id]) {
-              deliveryStatus = "seen";
-            } else if (otherReadAt && new Date(otherReadAt) >= new Date(m.created_at)) {
-              deliveryStatus = "seen";
-            } else {
-              deliveryStatus = "sent";
-            }
+    const finalMessages = msgs
+      .filter((m) => !deletedForMe.has(m.id))
+      .map((m) => {
+        let deliveryStatus: "sent" | "seen" | undefined;
+        if (m.sender_id === user.id) {
+          if (readMap[m.id]) {
+            deliveryStatus = "seen";
+          } else if (otherReadAt && new Date(otherReadAt) >= new Date(m.created_at)) {
+            deliveryStatus = "seen";
+          } else {
+            deliveryStatus = "sent";
           }
-          return {
-            ...m,
-            media: mediaMap[m.id] || [],
-            delivery_status: deliveryStatus,
-            read_at: m.sender_id === user.id ? readMap[m.id] || null : null,
-            hidden_for_me: false,
-            reactions: reactionsMap[m.id] || [],
-            reply_to: m.reply_to_id ? replyMap[m.reply_to_id] || null : null,
-          };
-        })
-    );
+        }
+        return {
+          ...m,
+          media: mediaMap[m.id] || [],
+          delivery_status: deliveryStatus,
+          read_at: m.sender_id === user.id ? readMap[m.id] || null : null,
+          hidden_for_me: false,
+          reactions: reactionsMap[m.id] || [],
+          reply_to: m.reply_to_id ? replyMap[m.reply_to_id] || null : null,
+        };
+      });
+
+    setMessages(finalMessages);
+
     // Cache messages
-try {
-  const cacheData = msgs
-    .filter((m) => !deletedForMe.has(m.id))
-    .map((m) => ({
-      ...m,
-      media: mediaMap[m.id] || [],
-      reactions: reactionsMap[m.id] || [],
-      reply_to: m.reply_to_id ? replyMap[m.reply_to_id] || null : null,
-    }));
-  sessionStorage.setItem(`peja-chat-cache-${conversationId}`, JSON.stringify(cacheData.slice(-100)));
-} catch {}
+    try {
+      const cacheData = finalMessages.slice(-100);
+      sessionStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
+    } catch {}
   }, [user?.id, conversationId]);
 
   // =====================================================
@@ -454,7 +442,7 @@ try {
   }, [user?.id, conversationId]);
 
   // =====================================================
-  // SCROLL TO BOTTOM
+  // SCROLL TO BOTTOM — reliable with ResizeObserver
   // =====================================================
   const scrollToBottom = useCallback((instant = true) => {
     const container = messagesContainerRef.current;
@@ -467,28 +455,52 @@ try {
   }, []);
 
   const scrollToMessage = useCallback((messageId: string) => {
-  const container = messagesContainerRef.current;
-  if (!container) return;
+    const container = messagesContainerRef.current;
+    if (!container) return;
 
-  const el = container.querySelector(`[data-msg-id="${messageId}"]`);
-  if (el) {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    setHighlightedMsgId(messageId);
-    setTimeout(() => setHighlightedMsgId(null), 2000);
-  }
-}, []);
+    const el = container.querySelector(`[data-msg-id="${messageId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightedMsgId(messageId);
+      setTimeout(() => setHighlightedMsgId(null), 2000);
+    }
+  }, []);
 
+  // Scroll to bottom when messages load or change
   useEffect(() => {
     if (messages.length === 0) return;
 
     if (!initialScrollDone.current) {
-      // Multiple attempts for async image/media loading
-      scrollToBottom(true);
-      requestAnimationFrame(() => scrollToBottom(true));
-      setTimeout(() => scrollToBottom(true), 100);
-      setTimeout(() => scrollToBottom(true), 300);
-      setTimeout(() => scrollToBottom(true), 600);
-      initialScrollDone.current = true;
+      // Use ResizeObserver to wait for content to actually render
+      const container = messagesContainerRef.current;
+      if (!container) return;
+
+      const doScroll = () => {
+        container.scrollTop = container.scrollHeight;
+      };
+
+      // Immediate
+      doScroll();
+
+      // ResizeObserver catches images/media loading and changing container height
+      const ro = new ResizeObserver(() => {
+        if (!initialScrollDone.current) {
+          doScroll();
+        }
+      });
+      ro.observe(container);
+
+      // Multiple fallback attempts
+      requestAnimationFrame(doScroll);
+      setTimeout(doScroll, 100);
+      setTimeout(doScroll, 300);
+      setTimeout(() => {
+        doScroll();
+        initialScrollDone.current = true;
+        ro.disconnect();
+      }, 800);
+
+      return () => ro.disconnect();
     } else {
       // Auto-scroll only if user is near bottom
       const c = messagesContainerRef.current;
@@ -506,7 +518,7 @@ try {
   }, [loading, scrollToBottom]);
 
   // =====================================================
-  // ANDROID KEYBOARD: adjust layout when keyboard opens
+  // KEYBOARD HANDLING — works across all Android devices
   // =====================================================
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -514,44 +526,50 @@ try {
     const vv = window.visualViewport;
     if (!vv) return;
 
+    let lastHeight = vv.height;
+
     const onResize = () => {
+      // Calculate keyboard height from viewport difference
       const keyboardHeight = window.innerHeight - vv.height;
       const offset = Math.max(keyboardHeight, 0);
-      document.documentElement.style.setProperty("--keyboard-height", `${offset}px`);
 
-      // Scroll to bottom when keyboard opens
-      if (offset > 100) {
-        setTimeout(() => scrollToBottom(false), 150);
+      // Only apply if keyboard is actually showing (threshold to avoid small fluctuations)
+      if (offset > 50) {
+        document.documentElement.style.setProperty("--keyboard-height", `${offset}px`);
+        // Scroll to bottom when keyboard opens
+        if (Math.abs(vv.height - lastHeight) > 50) {
+          setTimeout(() => scrollToBottom(false), 100);
+        }
+      } else {
+        document.documentElement.style.setProperty("--keyboard-height", "0px");
       }
+
+      lastHeight = vv.height;
     };
 
     vv.addEventListener("resize", onResize);
-    vv.addEventListener("scroll", onResize);
 
     return () => {
       vv.removeEventListener("resize", onResize);
-      vv.removeEventListener("scroll", onResize);
       document.documentElement.style.setProperty("--keyboard-height", "0px");
     };
   }, [scrollToBottom]);
 
-  // Non-passive touch move to allow preventDefault during swipe
-useEffect(() => {
-  const container = messagesContainerRef.current;
-  if (!container) return;
+  // Non-passive touch move for swipe
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
 
-  const handler = (e: TouchEvent) => {
-    // Only prevent default if we're actively swiping
-    if (swipingMsgId && swipeX > 5) {
-      e.preventDefault();
-    }
-  };
+    const handler = (e: TouchEvent) => {
+      if (swipingMsgId && swipeX > 5) {
+        e.preventDefault();
+      }
+    };
 
-  container.addEventListener("touchmove", handler, { passive: false });
-  return () => container.removeEventListener("touchmove", handler);
-}, [swipingMsgId, swipeX]);
-
-  // =====================================================
+    container.addEventListener("touchmove", handler, { passive: false });
+    return () => container.removeEventListener("touchmove", handler);
+  }, [swipingMsgId, swipeX]);
+    // =====================================================
   // REALTIME: Messages + Read receipts + Reactions
   // =====================================================
   useEffect(() => {
@@ -564,7 +582,6 @@ useEffect(() => {
 
     const channel = supabase
       .channel(`chat-rt-${conversationId}-${Date.now()}`)
-      // New messages
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
@@ -582,7 +599,6 @@ useEffect(() => {
             media = (data || []) as MessageMediaItem[];
           }
 
-          // Fetch reply_to if present
           let replyTo: Message | null = null;
           if (newMsg.reply_to_id) {
             const { data: replyData } = await supabase
@@ -614,12 +630,9 @@ useEffect(() => {
             ];
           });
 
-          // If we received a message from the other user, mark as read
-          // This also triggers a message_reads INSERT which the sender will pick up
           if (newMsg.sender_id !== user.id) markAsRead();
         }
       )
-      // Message updates (edits, deletions)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
@@ -640,18 +653,14 @@ useEffect(() => {
           );
         }
       )
-      // Read receipts — listen to ALL inserts on message_reads
-      // and filter client-side for this conversation's messages
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "message_reads" },
         (payload) => {
           const read = payload.new as any;
-          // Only care about reads from the OTHER user (meaning they read OUR messages)
           if (read.user_id === user.id) return;
 
           setMessages((prev) => {
-            // Check if this read receipt is for a message in our conversation
             const msgExists = prev.some((m) => m.id === read.message_id);
             if (!msgExists) return prev;
 
@@ -663,45 +672,32 @@ useEffect(() => {
           });
         }
       )
-      // Reactions
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "message_reactions" },
         async (payload) => {
-          // Quick check: is this reaction for a message in our view?
           const reactionData = (payload.new || payload.old) as any;
           if (!reactionData?.message_id) return;
 
-          setMessages((prev) => {
-            const msgExists = prev.some((m) => m.id === reactionData.message_id);
-            if (!msgExists) return prev;
+          const { data: reactions } = await supabase
+            .from("message_reactions")
+            .select("*")
+            .eq("message_id", reactionData.message_id);
 
-            // Refetch reactions for this specific message
-            supabase
-              .from("message_reactions")
-              .select("*")
-              .eq("message_id", reactionData.message_id)
-              .then(({ data: reactions }) => {
-                setMessages((p) =>
-                  p.map((m) =>
-                    m.id === reactionData.message_id
-                      ? { ...m, reactions: reactions || [] }
-                      : m
-                  )
-                );
-              });
-
-            return prev;
-          });
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === reactionData.message_id
+                ? { ...m, reactions: reactions || [] }
+                : m
+            )
+          );
         }
       )
-      // Listen for participant updates (last_read_at changes = seen status)
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "conversation_participants", filter: `conversation_id=eq.${conversationId}` },
         (payload) => {
           const updated = payload.new as any;
-          // If the OTHER user updated their last_read_at, update seen statuses
           if (updated.user_id !== user.id && updated.last_read_at) {
             setOtherLastReadAt(updated.last_read_at);
             setMessages((prev) =>
@@ -736,7 +732,6 @@ useEffect(() => {
     if (!user?.id || !conversationId) return;
 
     const checkReadStatus = async () => {
-      // Fetch other user's last_read_at
       const { data: otherP } = await supabase
         .from("conversation_participants")
         .select("last_read_at, user_id")
@@ -748,7 +743,6 @@ useEffect(() => {
         const newLastRead = otherP.last_read_at;
         setOtherLastReadAt((prev) => {
           if (prev === newLastRead) return prev;
-          // Update message statuses based on new last_read_at
           setMessages((msgs) =>
             msgs.map((m) => {
               if (m.sender_id !== user.id) return m;
@@ -764,9 +758,7 @@ useEffect(() => {
       }
     };
 
-    // Check after a short delay (let markAsRead from other side propagate)
     setTimeout(checkReadStatus, 2000);
-
     const interval = setInterval(checkReadStatus, 5000);
     return () => clearInterval(interval);
   }, [user?.id, conversationId]);
@@ -847,7 +839,7 @@ useEffect(() => {
   }, []);
 
   // =====================================================
-  // RENDER MESSAGE CONTENT
+  // RENDER MESSAGE CONTENT (with clickable links)
   // =====================================================
   const renderContent = useCallback((content: string | null) => {
     if (!content) return null;
@@ -857,15 +849,17 @@ useEffect(() => {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
 
+    // Links FIRST (before other formatting so we don't break URLs)
+    html = html.replace(
+      /(?<!href=["'])(?<!>)(https?:\/\/[^\s<)]+)/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline hover:text-primary-300 break-all">$1</a>'
+    );
+
     html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
     html = html.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
     html = html.replace(
       /`(.*?)`/g,
       '<code class="px-1 py-0.5 rounded bg-white/10 text-xs font-mono">$1</code>'
-    );
-    html = html.replace(
-      /(?<!href=["'])(?<!>)(https?:\/\/[^\s<)]+)/g,
-      '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline hover:text-primary-300 break-all">$1</a>'
     );
     html = html.replace(
       /^[-•]\s+(.+)$/gm,
@@ -880,6 +874,13 @@ useEffect(() => {
       <div
         className="text-sm whitespace-pre-wrap break-words leading-relaxed [&_a]:text-primary-400 [&_a]:underline [&_strong]:font-bold [&_em]:italic"
         dangerouslySetInnerHTML={{ __html: html }}
+        onClick={(e) => {
+          // Allow link clicks to propagate without triggering parent handlers
+          const target = e.target as HTMLElement;
+          if (target.tagName === "A") {
+            e.stopPropagation();
+          }
+        }}
       />
     );
   }, []);
@@ -926,267 +927,234 @@ useEffect(() => {
   }, []);
 
   // =====================================================
-  // SEND MESSAGE
+  // REACTIONS — OPTIMISTIC (instant)
   // =====================================================
-  const handleSend = useCallback(async () => {
-  const textContent = getEditorContent();
-  if ((!textContent && pendingMedia.length === 0) || sending || !user?.id) return;
+  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
+    if (!user?.id) return;
 
-  // Check if blocked by the other user
-  if (otherUser?.id) {
-    const { data: blocked } = await supabase
-      .from("dm_blocks")
-      .select("id")
-      .eq("blocker_id", otherUser.id)
-      .eq("blocked_id", user.id)
-      .maybeSingle();
-    if (blocked) {
-      toast.warning("You have been blocked by this user");
-      return;
+    // Check if reaction already exists locally
+    const msg = messages.find((m) => m.id === messageId);
+    const existing = msg?.reactions?.find(
+      (r) => r.user_id === user.id && r.emoji === emoji
+    );
+
+    if (existing) {
+      // Optimistically remove
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, reactions: (m.reactions || []).filter((r) => r.id !== existing.id) }
+            : m
+        )
+      );
+
+      // Background DB call
+      supabase.from("message_reactions").delete().eq("id", existing.id).then(({ error }) => {
+        if (error) {
+          // Revert on failure
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, reactions: [...(m.reactions || []), existing] }
+                : m
+            )
+          );
+        }
+      });
+    } else {
+      // Optimistically add with temp ID
+      const tempReaction = {
+        id: `temp-${Date.now()}`,
+        message_id: messageId,
+        user_id: user.id,
+        emoji,
+        created_at: new Date().toISOString(),
+      };
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, reactions: [...(m.reactions || []), tempReaction] }
+            : m
+        )
+      );
+
+      // Background DB call
+      supabase
+        .from("message_reactions")
+        .insert({ message_id: messageId, user_id: user.id, emoji })
+        .select()
+        .single()
+        .then(({ data: newReaction, error }) => {
+          if (error) {
+            // Revert on failure
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === messageId
+                  ? { ...m, reactions: (m.reactions || []).filter((r) => r.id !== tempReaction.id) }
+                  : m
+              )
+            );
+          } else if (newReaction) {
+            // Replace temp with real
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === messageId
+                  ? {
+                      ...m,
+                      reactions: (m.reactions || []).map((r) =>
+                        r.id === tempReaction.id ? newReaction : r
+                      ),
+                    }
+                  : m
+              )
+            );
+          }
+        });
     }
-  }
 
-  // If editing, handle separately
-  if (editingMessage) {
-    setSending(true);
+    setContextMenuMsg(null);
+    setContextMenuPos(null);
+  }, [user?.id, messages]);
+
+  // =====================================================
+  // DELETE / EDIT / COPY / REPLY
+  // =====================================================
+  const handleDeleteForEveryone = async (messageId: string) => {
     try {
-      const editorHTML = getEditorHTML();
-      const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
-      const { error: editErr } = await supabase
+      await supabase
         .from("messages")
-        .update({
-          content: markdownContent,
-          edited_at: new Date().toISOString(),
-        })
-        .eq("id", editingMessage.id)
-        .eq("sender_id", user.id);
-      if (editErr) throw editErr;
-      setEditingMessage(null);
-      clearEditor();
-    } catch (e: any) {
-      console.error("Edit error:", e?.message || e);
-      toast.danger("Failed to edit message");
-    } finally {
-      setSending(false);
+        .update({ is_deleted: true, content: null })
+        .eq("id", messageId)
+        .eq("sender_id", user?.id || "");
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId ? { ...m, is_deleted: true, content: null } : m
+        )
+      );
+    } catch {
+      toast.danger("Failed to delete message");
     }
-    return;
-  }
-
-  // Capture current state before clearing
-  const mediaToSend = [...pendingMedia];
-  const editorHTML = getEditorHTML();
-  const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
-  const currentReplyingTo = replyingTo;
-
-  // Generate a temp ID for optimistic message
-  const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-  // Determine content type
-  let contentType = "text";
-  if (mediaToSend.length > 0) {
-    contentType = mediaToSend.some(
-      (m) => m.type.startsWith("image/") || m.type.startsWith("video/")
-    )
-      ? "media"
-      : "document";
-    if (mediaToSend.every((m) => m.type.startsWith("audio/"))) {
-      contentType = "media";
-    }
-  }
-
-  // Create optimistic local media from previews
-  const optimisticMedia: MessageMediaItem[] = mediaToSend.map((m, i) => ({
-    id: `temp-media-${i}-${Date.now()}`,
-    message_id: tempId,
-    url: m.preview || "",
-    media_type: (m.type.startsWith("image/")
-      ? "image"
-      : m.type.startsWith("video/")
-      ? "video"
-      : m.type.startsWith("audio/")
-      ? "audio"
-      : "document") as "image" | "video" | "document" | "audio",
-    file_name: m.file.name,
-    file_size: m.file.size,
-    mime_type: null,
-    thumbnail_url: null,
-    created_at: new Date().toISOString(),
-  }));
-
-  // Optimistically add message IMMEDIATELY
-  const optimisticMsg: Message = {
-    id: tempId,
-    conversation_id: conversationId,
-    sender_id: user.id,
-    content: markdownContent || null,
-    content_type: contentType as "text" | "media" | "document" | "post_share" | "system",
-    created_at: new Date().toISOString(),
-    is_deleted: false,
-    edited_at: null,
-    reply_to_id: currentReplyingTo?.id || null,
-    metadata: {},
-    media: optimisticMedia,
-    delivery_status: "sending" as any,
-    read_at: null,
-    hidden_for_me: false,
-    reactions: [],
-    reply_to: currentReplyingTo || null,
+    setContextMenuMsg(null);
+    setContextMenuPos(null);
   };
 
-  setMessages((prev) => [...prev, optimisticMsg]);
+  const handleDeleteForMe = async (messageId: string) => {
+    try {
+      await supabase.from("message_deletions").insert({
+        message_id: messageId,
+        user_id: user?.id,
+      });
+      myDeletionsRef.current.add(messageId);
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    } catch {
+      toast.danger("Failed to delete message");
+    }
+    setContextMenuMsg(null);
+    setContextMenuPos(null);
+  };
 
-  // Clear input immediately
-  clearEditor();
-  setPendingMedia([]);
-  setReplyingTo(null);
+  const handleCopy = (content: string | null) => {
+    if (!content) return;
+    const clean = content
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/\*(.*?)\*/g, "$1")
+      .replace(/`(.*?)`/g, "$1");
+    navigator.clipboard.writeText(clean).then(() => {
+      toast.info("Copied to clipboard");
+    });
+    setContextMenuMsg(null);
+    setContextMenuPos(null);
+  };
 
-  // Track upload progress if there's media
-  if (mediaToSend.length > 0) {
-    setUploadingMsgIds((prev) => new Map(prev).set(tempId, 0));
-  }
-
-  // Now do the actual send in background
-  try {
-    let mediaItems: { url: string; media_type: string; file_name: string; file_size: number }[] = [];
-
-    if (mediaToSend.length > 0) {
-      for (let i = 0; i < mediaToSend.length; i++) {
-        const media = mediaToSend[i];
-        const ext = media.file.name.split(".").pop() || "file";
-        const path = `messages/${conversationId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("message-media")
-          .upload(path, media.file);
-        if (uploadError) { console.error("Upload error:", uploadError); continue; }
-
-        const { data: urlData } = supabase.storage
-          .from("message-media")
-          .getPublicUrl(path);
-
-        let mediaType = "document";
-        if (media.type.startsWith("image/")) mediaType = "image";
-        else if (media.type.startsWith("video/")) mediaType = "video";
-        else if (media.type.startsWith("audio/")) mediaType = "audio";
-
-        mediaItems.push({
-          url: urlData.publicUrl,
-          media_type: mediaType,
-          file_name: media.file.name,
-          file_size: media.file.size,
-        });
-
-        // Update progress
-        const progress = Math.round(((i + 1) / mediaToSend.length) * 100);
-        setUploadingMsgIds((prev) => new Map(prev).set(tempId, progress));
+  const handleEdit = (msg: Message) => {
+    setEditingMessage(msg);
+    setTimeout(() => {
+      if (editorRef.current && msg.content) {
+        editorRef.current.innerText = msg.content
+          .replace(/\*\*(.*?)\*\*/g, "$1")
+          .replace(/\*(.*?)\*/g, "$1");
+        editorRef.current.focus();
       }
-    }
+    }, 50);
+    setContextMenuMsg(null);
+    setContextMenuPos(null);
+  };
 
-    const messageData: any = {
-      conversation_id: conversationId,
-      sender_id: user.id,
-      content: markdownContent || null,
-      content_type: contentType,
-      reply_to_id: currentReplyingTo?.id || null,
-    };
+  const handleReply = (msg: Message) => {
+    setReplyingTo(msg);
+    setContextMenuMsg(null);
+    setContextMenuPos(null);
+    setTimeout(() => editorRef.current?.focus(), 100);
+  };
 
-    const { data: newMsg, error: msgError } = await supabase
-      .from("messages")
-      .insert(messageData)
-      .select()
-      .single();
-    if (msgError) throw msgError;
-
-    if (mediaItems.length > 0 && newMsg) {
-      await supabase.from("message_media").insert(
-        mediaItems.map((m) => ({ message_id: newMsg.id, ...m }))
-      );
-    }
-
-    // Replace temp message with real one
-    const realMedia: MessageMediaItem[] = mediaItems.map((m, i) => ({
-      id: `real-${i}-${Date.now()}`,
-      message_id: newMsg.id,
-      url: m.url,
-      media_type: m.media_type as "image" | "video" | "document" | "audio",
-      file_name: m.file_name,
-      file_size: m.file_size,
-      mime_type: null,
-      thumbnail_url: null,
-      created_at: new Date().toISOString(),
-    }));
-
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === tempId
-          ? {
-              ...newMsg,
-              media: realMedia,
-              delivery_status: "sent" as const,
-              read_at: null,
-              hidden_for_me: false,
-              reactions: [],
-              reply_to: currentReplyingTo || null,
-            }
-          : msg.id === newMsg.id
-          ? prev.find((m) => m.id === tempId) ? msg : msg // skip duplicate from realtime
-          : msg
-      ).filter((msg, idx, arr) => {
-        // Remove duplicates (realtime might have added the same message)
-        return arr.findIndex((m) => m.id === msg.id) === idx;
-      })
-    );
-
-    // Remove upload progress
-    setUploadingMsgIds((prev) => {
-      const next = new Map(prev);
-      next.delete(tempId);
-      return next;
-    });
-
+  // =====================================================
+  // MUTE / BLOCK
+  // =====================================================
+  const toggleMute = async () => {
+    const newVal = !isMuted;
+    setIsMuted(newVal);
+    setShowMenu(false);
     await supabase
-      .from("conversations")
-      .update({
-        last_message_at: new Date().toISOString(),
-        last_message_text: markdownContent?.slice(0, 100) || (mediaItems.length > 0 ? "Sent an attachment" : null),
-        last_message_sender_id: user.id,
-      })
-      .eq("id", conversationId);
+      .from("conversation_participants")
+      .update({ is_muted: newVal })
+      .eq("conversation_id", conversationId)
+      .eq("user_id", user?.id || "");
+    toast.info(newVal ? "Conversation muted" : "Conversation unmuted");
+  };
 
-    if (otherUser) {
-      notifyDMMessage(
-        otherUser.id,
-        user.full_name || "Someone",
-        markdownContent || "Sent an attachment",
-        conversationId
-      );
+  const toggleBlock = async () => {
+    if (!otherUser?.id || !user?.id) return;
+    setShowMenu(false);
+
+    if (isBlocked) {
+      await supabase.from("dm_blocks").delete()
+        .eq("blocker_id", user.id).eq("blocked_id", otherUser.id);
+      await supabase.from("conversation_participants")
+        .update({ is_blocked: false })
+        .eq("conversation_id", conversationId).eq("user_id", user.id);
+      setIsBlocked(false);
+      toast.info("User unblocked");
+    } else {
+      await supabase.from("dm_blocks").insert({
+        blocker_id: user.id, blocked_id: otherUser.id,
+      });
+      await supabase.from("conversation_participants")
+        .update({ is_blocked: true })
+        .eq("conversation_id", conversationId).eq("user_id", user.id);
+      setIsBlocked(true);
+      toast.warning("User blocked");
+
+      const { notifyDMBlocked } = await import("@/lib/notifications");
+      notifyDMBlocked(otherUser.id, user.full_name || "Someone");
     }
-  } catch (e: any) {
-    console.error("Send error:", e?.message || e);
+  };
 
-    // Mark message as failed
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === tempId
-          ? { ...msg, delivery_status: "failed" as any }
-          : msg
-      )
-    );
+  const deleteChat = async () => {
+    if (!user?.id) return;
+    try {
+      const { data: allMsgs } = await supabase
+        .from("messages")
+        .select("id")
+        .eq("conversation_id", conversationId);
 
-    // Remove upload progress
-    setUploadingMsgIds((prev) => {
-      const next = new Map(prev);
-      next.delete(tempId);
-      return next;
-    });
+      if (allMsgs && allMsgs.length > 0) {
+        const deletions = allMsgs.map((m) => ({
+          message_id: m.id,
+          user_id: user.id,
+        }));
+        await supabase.from("message_deletions").upsert(deletions, {
+          onConflict: "message_id,user_id",
+        });
+      }
 
-    toast.danger("Failed to send message");
-  }
-}, [
-  getEditorContent, getEditorHTML, htmlToMarkdown, pendingMedia,
-  sending, user, conversationId, otherUser, editingMessage, replyingTo,
-  clearEditor, toast, markAsRead,
-]);
+      toast.info("Chat cleared");
+      setMessages([]);
+      setShowChatInfo(false);
+    } catch {
+      toast.danger("Failed to clear chat");
+    }
+  };
 
   // =====================================================
   // FORMAT COMMANDS
@@ -1238,6 +1206,7 @@ useEffect(() => {
 
     setPendingMedia((prev) => [...prev, ...newMedia].slice(0, 5));
     setShowAttach(false);
+    setPlusRotated(false);
     e.target.value = "";
   };
 
@@ -1311,192 +1280,7 @@ useEffect(() => {
   };
 
   // =====================================================
-  // REACTIONS
-  // =====================================================
-  const toggleReaction = async (messageId: string, emoji: string) => {
-    if (!user?.id) return;
-
-    try {
-      // Check if reaction already exists
-      const { data: existing } = await supabase
-        .from("message_reactions")
-        .select("id")
-        .eq("message_id", messageId)
-        .eq("user_id", user.id)
-        .eq("emoji", emoji)
-        .maybeSingle();
-
-      if (existing) {
-        // Remove reaction
-        await supabase.from("message_reactions").delete().eq("id", existing.id);
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId
-              ? { ...m, reactions: (m.reactions || []).filter((r) => r.id !== existing.id) }
-              : m
-          )
-        );
-      } else {
-        // Add reaction
-        const { data: newReaction } = await supabase
-          .from("message_reactions")
-          .insert({ message_id: messageId, user_id: user.id, emoji })
-          .select()
-          .single();
-
-        if (newReaction) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === messageId
-                ? { ...m, reactions: [...(m.reactions || []), newReaction] }
-                : m
-            )
-          );
-        }
-      }
-    } catch {
-      toast.danger("Failed to react");
-    }
-    setContextMenuMsg(null);
-  };
-
-  // =====================================================
-  // DELETE / EDIT / COPY / REPLY
-  // =====================================================
-  const handleDeleteForEveryone = async (messageId: string) => {
-    try {
-      await supabase
-        .from("messages")
-        .update({ is_deleted: true, content: null })
-        .eq("id", messageId)
-        .eq("sender_id", user?.id || "");
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId ? { ...m, is_deleted: true, content: null } : m
-        )
-      );
-    } catch {
-      toast.danger("Failed to delete message");
-    }
-    setContextMenuMsg(null);
-  };
-
-  const handleDeleteForMe = async (messageId: string) => {
-    try {
-      await supabase.from("message_deletions").insert({
-        message_id: messageId,
-        user_id: user?.id,
-      });
-      myDeletionsRef.current.add(messageId);
-      setMessages((prev) => prev.filter((m) => m.id !== messageId));
-    } catch {
-      toast.danger("Failed to delete message");
-    }
-    setContextMenuMsg(null);
-  };
-
-  const handleCopy = (content: string | null) => {
-    if (!content) return;
-    const clean = content
-      .replace(/\*\*(.*?)\*\*/g, "$1")
-      .replace(/\*(.*?)\*/g, "$1")
-      .replace(/`(.*?)`/g, "$1");
-    navigator.clipboard.writeText(clean).then(() => {
-      toast.info("Copied to clipboard");
-    });
-    setContextMenuMsg(null);
-  };
-
-  const handleEdit = (msg: Message) => {
-    setEditingMessage(msg);
-    setTimeout(() => {
-      if (editorRef.current && msg.content) {
-        editorRef.current.innerText = msg.content
-          .replace(/\*\*(.*?)\*\*/g, "$1")
-          .replace(/\*(.*?)\*/g, "$1");
-        editorRef.current.focus();
-      }
-    }, 50);
-    setContextMenuMsg(null);
-  };
-
-  const handleReply = (msg: Message) => {
-    setReplyingTo(msg);
-    setContextMenuMsg(null);
-    setTimeout(() => editorRef.current?.focus(), 100);
-  };
-
-  // =====================================================
-  // MUTE / BLOCK
-  // =====================================================
-  const toggleMute = async () => {
-    const newVal = !isMuted;
-    setIsMuted(newVal);
-    setShowMenu(false);
-    await supabase
-      .from("conversation_participants")
-      .update({ is_muted: newVal })
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user?.id || "");
-    toast.info(newVal ? "Conversation muted" : "Conversation unmuted");
-  };
-
-  const toggleBlock = async () => {
-    if (!otherUser?.id || !user?.id) return;
-    setShowMenu(false);
-
-    if (isBlocked) {
-      await supabase.from("dm_blocks").delete()
-        .eq("blocker_id", user.id).eq("blocked_id", otherUser.id);
-      await supabase.from("conversation_participants")
-        .update({ is_blocked: false })
-        .eq("conversation_id", conversationId).eq("user_id", user.id);
-      setIsBlocked(false);
-      toast.info("User unblocked");
-    } else {
-  await supabase.from("dm_blocks").insert({
-    blocker_id: user.id, blocked_id: otherUser.id,
-  });
-  await supabase.from("conversation_participants")
-    .update({ is_blocked: true })
-    .eq("conversation_id", conversationId).eq("user_id", user.id);
-  setIsBlocked(true);
-  toast.warning("User blocked");
-
-  // Notify the blocked user
-  const { notifyDMBlocked } = await import("@/lib/notifications");
-  notifyDMBlocked(otherUser.id, user.full_name || "Someone");
-}
-  };
-
-  const deleteChat = async () => {
-    if (!user?.id) return;
-    try {
-      const { data: allMsgs } = await supabase
-        .from("messages")
-        .select("id")
-        .eq("conversation_id", conversationId);
-
-      if (allMsgs && allMsgs.length > 0) {
-        const deletions = allMsgs.map((m) => ({
-          message_id: m.id,
-          user_id: user.id,
-        }));
-        await supabase.from("message_deletions").upsert(deletions, {
-          onConflict: "message_id,user_id",
-        });
-      }
-
-      toast.info("Chat cleared");
-      setMessages([]);
-      setShowChatInfo(false);
-    } catch {
-      toast.danger("Failed to clear chat");
-    }
-  };
-
-  // =====================================================
-  // LONG PRESS HANDLER
+  // LONG PRESS HANDLER — with haptic-style feedback
   // =====================================================
   const handleTouchStart = (msg: Message, e: React.TouchEvent | React.MouseEvent) => {
     if (msg.is_deleted) return;
@@ -1505,9 +1289,11 @@ useEffect(() => {
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
     longPressTimerRef.current = setTimeout(() => {
+      // Vibrate if available (haptic feedback)
+      if (navigator.vibrate) navigator.vibrate(30);
       setContextMenuMsg(msg);
       setContextMenuPos({ x: clientX, y: clientY });
-    }, 500);
+    }, 400);
   };
 
   const handleTouchEnd = () => {
@@ -1526,51 +1312,44 @@ useEffect(() => {
     setSwipingMsgId(msgId);
   };
 
-const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
-  if (!swipeStartRef.current || msg.is_deleted) return;
-  const touch = e.touches[0];
-  const dx = touch.clientX - swipeStartRef.current.x;
-  const dy = touch.clientY - swipeStartRef.current.y;
+  const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
+    if (!swipeStartRef.current || msg.is_deleted) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - swipeStartRef.current.x;
+    const dy = touch.clientY - swipeStartRef.current.y;
 
-  // Determine if horizontal or vertical swipe
-  if (!swipeStartRef.current.locked) {
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-      swipeStartRef.current.locked = true;
-      if (Math.abs(dy) > Math.abs(dx)) {
-        // Vertical scroll — cancel swipe
-        swipeStartRef.current = null;
-        setSwipingMsgId(null);
-        setSwipeX(0);
+    if (!swipeStartRef.current.locked) {
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        swipeStartRef.current.locked = true;
+        if (Math.abs(dy) > Math.abs(dx)) {
+          swipeStartRef.current = null;
+          setSwipingMsgId(null);
+          setSwipeX(0);
+          return;
+        }
+      } else {
         return;
       }
-    } else {
-      return;
     }
-  }
 
-  const isMine = msg.sender_id === user?.id;
+    const isMine = msg.sender_id === user?.id;
+    const raw = isMine ? -dx : dx;
+    const clamped = Math.max(0, Math.min(raw, 80));
+    setSwipeX(clamped);
 
-  // Own messages: swipe LEFT (negative dx → positive swipeX)
-  // Other messages: swipe RIGHT (positive dx → positive swipeX)
-  const raw = isMine ? -dx : dx;
-  const clamped = Math.max(0, Math.min(raw, 80));
-  setSwipeX(clamped);
+    if (clamped > 5) {
+      e.preventDefault();
+    }
 
-  // Prevent page scroll while swiping horizontally
-  if (clamped > 5) {
-    e.preventDefault();
-  }
-
-  // Cancel long press if swiping
-  if (clamped > 10 && longPressTimerRef.current) {
-    clearTimeout(longPressTimerRef.current);
-    longPressTimerRef.current = null;
-  }
-};
+    if (clamped > 10 && longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   const handleSwipeEnd = (msg: Message) => {
     if (swipeX > 60) {
-      // Trigger reply
+      if (navigator.vibrate) navigator.vibrate(20);
       handleReply(msg);
     }
     setSwipeX(0);
@@ -1591,31 +1370,31 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
   // =====================================================
   // DELIVERY STATUS DISPLAY
   // =====================================================
- const DeliveryLabel = ({ status }: { status?: "sent" | "seen" | "sending" | "failed" }) => {
-  if (!status) return null;
-  if (status === "seen") {
-    return (
-      <span className="text-[10px] text-purple-400 font-medium drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]">
-        Seen
-      </span>
-    );
-  }
-  if (status === "sending") {
-    return <Loader2 className="w-3 h-3 text-white/30 animate-spin" />;
-  }
-  if (status === "failed") {
-    return (
-      <span className="text-[10px] text-red-400 font-medium flex items-center gap-1">
-        <AlertTriangle className="w-3 h-3" />
-        Failed
-      </span>
-    );
-  }
-  return <span className="text-[10px] text-white/40">Sent</span>;
-};
+  const DeliveryLabel = ({ status }: { status?: "sent" | "seen" | "sending" | "failed" }) => {
+    if (!status) return null;
+    if (status === "seen") {
+      return (
+        <span className="text-[10px] text-purple-400 font-medium drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]">
+          Seen
+        </span>
+      );
+    }
+    if (status === "sending") {
+      return <Loader2 className="w-3 h-3 text-white/30 animate-spin" />;
+    }
+    if (status === "failed") {
+      return (
+        <span className="text-[10px] text-red-400 font-medium flex items-center gap-1">
+          <AlertTriangle className="w-3 h-3" />
+          Failed
+        </span>
+      );
+    }
+    return <span className="text-[10px] text-white/40">Sent</span>;
+  };
 
   // =====================================================
-  // CHAT INFO PANEL: files sent
+  // CHAT INFO: files sent
   // =====================================================
   const chatMediaFiles = useMemo(() => {
     return messages
@@ -1645,6 +1424,257 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "b") { e.preventDefault(); applyBold(); }
     if ((e.ctrlKey || e.metaKey) && e.key === "i") { e.preventDefault(); applyItalic(); }
   };
+    // =====================================================
+  // SEND MESSAGE
+  // =====================================================
+  const handleSend = useCallback(async () => {
+    const textContent = getEditorContent();
+    if ((!textContent && pendingMedia.length === 0) || sending || !user?.id) return;
+
+    // Check if blocked by the other user
+    if (otherUser?.id) {
+      const { data: blocked } = await supabase
+        .from("dm_blocks")
+        .select("id")
+        .eq("blocker_id", otherUser.id)
+        .eq("blocked_id", user.id)
+        .maybeSingle();
+      if (blocked) {
+        toast.warning("You have been blocked by this user");
+        return;
+      }
+    }
+
+    // If editing, handle separately
+    if (editingMessage) {
+      setSending(true);
+      try {
+        const editorHTML = getEditorHTML();
+        const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
+        const { error: editErr } = await supabase
+          .from("messages")
+          .update({
+            content: markdownContent,
+            edited_at: new Date().toISOString(),
+          })
+          .eq("id", editingMessage.id)
+          .eq("sender_id", user.id);
+        if (editErr) throw editErr;
+        setEditingMessage(null);
+        clearEditor();
+      } catch (e: any) {
+        console.error("Edit error:", e?.message || e);
+        toast.danger("Failed to edit message");
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    // Capture current state before clearing
+    const mediaToSend = [...pendingMedia];
+    const editorHTML = getEditorHTML();
+    const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
+    const currentReplyingTo = replyingTo;
+
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    let contentType = "text";
+    if (mediaToSend.length > 0) {
+      contentType = mediaToSend.some(
+        (m) => m.type.startsWith("image/") || m.type.startsWith("video/")
+      )
+        ? "media"
+        : "document";
+      if (mediaToSend.every((m) => m.type.startsWith("audio/"))) {
+        contentType = "media";
+      }
+    }
+
+    const optimisticMedia: MessageMediaItem[] = mediaToSend.map((m, i) => ({
+      id: `temp-media-${i}-${Date.now()}`,
+      message_id: tempId,
+      url: m.preview || "",
+      media_type: (m.type.startsWith("image/")
+        ? "image"
+        : m.type.startsWith("video/")
+        ? "video"
+        : m.type.startsWith("audio/")
+        ? "audio"
+        : "document") as "image" | "video" | "document" | "audio",
+      file_name: m.file.name,
+      file_size: m.file.size,
+      mime_type: null,
+      thumbnail_url: null,
+      created_at: new Date().toISOString(),
+    }));
+
+    const optimisticMsg: Message = {
+      id: tempId,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      content: markdownContent || null,
+      content_type: contentType as "text" | "media" | "document" | "post_share" | "system",
+      created_at: new Date().toISOString(),
+      is_deleted: false,
+      edited_at: null,
+      reply_to_id: currentReplyingTo?.id || null,
+      metadata: {},
+      media: optimisticMedia,
+      delivery_status: "sending" as any,
+      read_at: null,
+      hidden_for_me: false,
+      reactions: [],
+      reply_to: currentReplyingTo || null,
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+
+    // Clear input immediately
+    clearEditor();
+    setPendingMedia([]);
+    setReplyingTo(null);
+
+    if (mediaToSend.length > 0) {
+      setUploadingMsgIds((prev) => new Map(prev).set(tempId, 0));
+    }
+
+    // Background send
+    try {
+      let mediaItems: { url: string; media_type: string; file_name: string; file_size: number }[] = [];
+
+      if (mediaToSend.length > 0) {
+        for (let i = 0; i < mediaToSend.length; i++) {
+          const media = mediaToSend[i];
+          const ext = media.file.name.split(".").pop() || "file";
+          const path = `messages/${conversationId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from("message-media")
+            .upload(path, media.file);
+          if (uploadError) { console.error("Upload error:", uploadError); continue; }
+
+          const { data: urlData } = supabase.storage
+            .from("message-media")
+            .getPublicUrl(path);
+
+          let mediaType = "document";
+          if (media.type.startsWith("image/")) mediaType = "image";
+          else if (media.type.startsWith("video/")) mediaType = "video";
+          else if (media.type.startsWith("audio/")) mediaType = "audio";
+
+          mediaItems.push({
+            url: urlData.publicUrl,
+            media_type: mediaType,
+            file_name: media.file.name,
+            file_size: media.file.size,
+          });
+
+          const progress = Math.round(((i + 1) / mediaToSend.length) * 100);
+          setUploadingMsgIds((prev) => new Map(prev).set(tempId, progress));
+        }
+      }
+
+      const messageData: any = {
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: markdownContent || null,
+        content_type: contentType,
+        reply_to_id: currentReplyingTo?.id || null,
+      };
+
+      const { data: newMsg, error: msgError } = await supabase
+        .from("messages")
+        .insert(messageData)
+        .select()
+        .single();
+      if (msgError) throw msgError;
+
+      if (mediaItems.length > 0 && newMsg) {
+        await supabase.from("message_media").insert(
+          mediaItems.map((m) => ({ message_id: newMsg.id, ...m }))
+        );
+      }
+
+      const realMedia: MessageMediaItem[] = mediaItems.map((m, i) => ({
+        id: `real-${i}-${Date.now()}`,
+        message_id: newMsg.id,
+        url: m.url,
+        media_type: m.media_type as "image" | "video" | "document" | "audio",
+        file_name: m.file_name,
+        file_size: m.file_size,
+        mime_type: null,
+        thumbnail_url: null,
+        created_at: new Date().toISOString(),
+      }));
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempId
+            ? {
+                ...newMsg,
+                media: realMedia,
+                delivery_status: "sent" as const,
+                read_at: null,
+                hidden_for_me: false,
+                reactions: [],
+                reply_to: currentReplyingTo || null,
+              }
+            : msg.id === newMsg.id
+            ? prev.find((m) => m.id === tempId) ? msg : msg
+            : msg
+        ).filter((msg, idx, arr) => {
+          return arr.findIndex((m) => m.id === msg.id) === idx;
+        })
+      );
+
+      setUploadingMsgIds((prev) => {
+        const next = new Map(prev);
+        next.delete(tempId);
+        return next;
+      });
+
+      await supabase
+        .from("conversations")
+        .update({
+          last_message_at: new Date().toISOString(),
+          last_message_text: markdownContent?.slice(0, 100) || (mediaItems.length > 0 ? "Sent an attachment" : null),
+          last_message_sender_id: user.id,
+        })
+        .eq("id", conversationId);
+
+      if (otherUser) {
+        notifyDMMessage(
+          otherUser.id,
+          user.full_name || "Someone",
+          markdownContent || "Sent an attachment",
+          conversationId
+        );
+      }
+    } catch (e: any) {
+      console.error("Send error:", e?.message || e);
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempId
+            ? { ...msg, delivery_status: "failed" as any }
+            : msg
+        )
+      );
+
+      setUploadingMsgIds((prev) => {
+        const next = new Map(prev);
+        next.delete(tempId);
+        return next;
+      });
+
+      toast.danger("Failed to send message");
+    }
+  }, [
+    getEditorContent, getEditorHTML, htmlToMarkdown, pendingMedia,
+    sending, user, conversationId, otherUser, editingMessage, replyingTo,
+    clearEditor, toast, markAsRead,
+  ]);
 
   // =====================================================
   // LOADING / AUTH GUARDS
@@ -1654,15 +1684,15 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
 
   if (loading) {
     return (
-          <div
-      className="fixed flex flex-col bg-[#0a0812]"
-      style={{
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: "var(--keyboard-height, 0px)",
-      }}
-    >
+      <div
+        className="fixed flex flex-col bg-[#0a0812]"
+        style={{
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: "var(--keyboard-height, 0px)",
+        }}
+      >
         <div className="glass-header flex items-center gap-3 px-4 shrink-0" style={{ height: "calc(3.5rem + env(safe-area-inset-top, 0px))", paddingTop: "env(safe-area-inset-top, 0px)" }}>
           <Skeleton className="w-5 h-5 rounded" />
           <Skeleton className="w-10 h-10 rounded-full" />
@@ -1683,14 +1713,13 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
   }
 
   if (!otherUser) return null;
-
-  return (
+    return (
     <div
-  className="fixed left-0 right-0 top-0 flex flex-col bg-[#0a0812]"
-  style={{ bottom: "var(--keyboard-height, 0px)" }}
->
+      className="fixed left-0 right-0 top-0 flex flex-col bg-[#0a0812]"
+      style={{ bottom: "var(--keyboard-height, 0px)" }}
+    >
       {/* =====================================================
-          HEADER — with safe area inset
+          HEADER
           ===================================================== */}
       <header
         className="glass-header flex items-center justify-between px-4 shrink-0 z-10"
@@ -1700,7 +1729,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
         }}
       >
         <div className="flex items-center gap-3 min-w-0">
-            <button
+          <button
             onClick={() => router.push("/messages", { scroll: false })}
             className="p-1.5 -ml-1 hover:bg-white/5 rounded-lg active:scale-95 transition-transform"
           >
@@ -1775,9 +1804,17 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
       </header>
 
       {/* =====================================================
-          MESSAGES
+          MESSAGES LIST
           ===================================================== */}
-      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-0.5">
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-0.5"
+        onClick={() => {
+          // Close emoji picker when tapping messages area
+          if (showEmoji) setShowEmoji(false);
+          if (showAttach) { setShowAttach(false); setPlusRotated(false); }
+        }}
+      >
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -1796,7 +1833,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
               const showAvatar = !isMine && (!messages[idx + 1] || messages[idx + 1].sender_id !== msg.sender_id);
               const isSwipingThis = swipingMsgId === msg.id;
 
-                return (
+              return (
                 <div key={msg.id} data-msg-id={msg.id}>
                   {showDate && (
                     <div className="flex justify-center my-4">
@@ -1807,11 +1844,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                   )}
 
                   <div
-                   className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} relative transition-all duration-500 ${
-  highlightedMsgId === msg.id
-    ? "bg-primary-500/10 rounded-2xl ring-1 ring-primary-500/30 shadow-[0_0_24px_rgba(168,85,247,0.2)]"
-    : ""
-}`}
+                    className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} relative`}
                     onTouchStart={(e) => {
                       handleTouchStart(msg, e);
                       handleSwipeStart(msg.id, e);
@@ -1827,35 +1860,39 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                     onContextMenu={(e) => {
                       e.preventDefault();
                       if (!msg.is_deleted) {
+                        if (navigator.vibrate) navigator.vibrate(30);
                         setContextMenuMsg(msg);
                         setContextMenuPos({ x: e.clientX, y: e.clientY });
                       }
                     }}
                   >
-                    {/* Swipe reply indicator — positioned behind the bubble */}
+                    {/* Swipe reply indicator — OUTSIDE the bubble, at the edge */}
                     {isSwipingThis && swipeX > 10 && !isMine && (
                       <div
-                        className="absolute left-0 top-1/2 -translate-y-1/2 z-0"
-                        style={{ opacity: Math.min(swipeX / 60, 1) }}
+                        className="absolute left-0 top-1/2 -translate-y-1/2 z-0 transition-opacity"
+                        style={{
+                          opacity: Math.min(swipeX / 60, 1),
+                          transform: `translateY(-50%) translateX(${Math.min(swipeX - 20, 10)}px)`,
+                        }}
                       >
-                        <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
-                          <Reply className="w-4 h-4 text-primary-400" />
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${swipeX > 60 ? "bg-primary-600/40" : "bg-primary-600/20"}`}>
+                          <Reply className={`w-4 h-4 transition-colors ${swipeX > 60 ? "text-primary-300" : "text-primary-400"}`} />
                         </div>
                       </div>
                     )}
                     {isSwipingThis && swipeX > 10 && isMine && (
-  <div
-    className="absolute right-0 top-1/2 -translate-y-1/2 z-0"
-    style={{
-      opacity: Math.min(swipeX / 60, 1),
-      transform: `translate(-${swipeX}px, -50%)`,
-    }}
-  >
-    <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
-      <Reply className="w-4 h-4 text-primary-400" />
-    </div>
-  </div>
-)}
+                      <div
+                        className="absolute right-0 top-1/2 -translate-y-1/2 z-0 transition-opacity"
+                        style={{
+                          opacity: Math.min(swipeX / 60, 1),
+                          transform: `translateY(-50%) translateX(-${Math.min(swipeX - 20, 10)}px)`,
+                        }}
+                      >
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${swipeX > 60 ? "bg-primary-600/40" : "bg-primary-600/20"}`}>
+                          <Reply className={`w-4 h-4 transition-colors ${swipeX > 60 ? "text-primary-300" : "text-primary-400"}`} />
+                        </div>
+                      </div>
+                    )}
 
                     {/* Other user avatar */}
                     {!isMine && (
@@ -1877,22 +1914,18 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                       </div>
                     )}
 
-                    {/* Message bubble — THIS is what moves on swipe */}
-                   <div
-  className={`max-w-[75%] relative z-[1] ${
-    contextMenuMsg?.id === msg.id
-      ? "scale-[1.03] ring-2 ring-primary-500/40 rounded-2xl shadow-[0_0_20px_rgba(168,85,247,0.15)]"
-      : ""
-  }`}
-  style={{
-    transform: isSwipingThis
-      ? `translateX(${isMine ? -swipeX : swipeX}px)`
-      : undefined,
-    transition: isSwipingThis
-      ? "none"
-      : "transform 200ms ease-out, box-shadow 200ms ease-out",
-  }}
->
+                    {/* Message bubble */}
+                    <div
+                      className={`max-w-[75%] relative z-[1]`}
+                      style={{
+                        transform: isSwipingThis
+                          ? `translateX(${isMine ? -swipeX : swipeX}px)`
+                          : undefined,
+                        transition: isSwipingThis
+                          ? "none"
+                          : "transform 200ms ease-out",
+                      }}
+                    >
                       {msg.is_deleted ? (
                         <div
                           className={`px-4 py-2.5 rounded-2xl text-xs italic ${
@@ -1905,25 +1938,25 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                         </div>
                       ) : (
                         <div>
-                         {/* Reply preview */}
-{msg.reply_to && (
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      if (msg.reply_to_id) scrollToMessage(msg.reply_to_id);
-    }}
-    className={`w-full text-left px-3 py-1.5 mb-0.5 rounded-t-2xl border-l-2 border-primary-500 active:scale-[0.98] transition-transform ${
-      isMine ? "bg-primary-700/30" : "bg-white/5"
-    }`}
-  >
-    <p className="text-[10px] text-primary-400 font-medium">
-      {msg.reply_to.sender_id === user.id ? "You" : otherUser?.full_name || "Unknown"}
-    </p>
-    <p className="text-[11px] text-dark-400 truncate">
-      {msg.reply_to.content?.slice(0, 60) || "Attachment"}
-    </p>
-  </button>
-)}
+                          {/* Reply preview */}
+                          {msg.reply_to && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (msg.reply_to_id) scrollToMessage(msg.reply_to_id);
+                              }}
+                              className={`w-full text-left px-3 py-1.5 mb-0.5 rounded-t-2xl border-l-2 border-primary-500 active:scale-[0.98] transition-transform ${
+                                isMine ? "bg-primary-700/30" : "bg-white/5"
+                              }`}
+                            >
+                              <p className="text-[10px] text-primary-400 font-medium">
+                                {msg.reply_to.sender_id === user.id ? "You" : otherUser?.full_name || "Unknown"}
+                              </p>
+                              <p className="text-[11px] text-dark-400 truncate">
+                                {msg.reply_to.content?.slice(0, 60) || "Attachment"}
+                              </p>
+                            </button>
+                          )}
 
                           <div
                             className={`px-4 py-2.5 ${msg.reply_to ? "rounded-b-2xl" : "rounded-2xl"} ${
@@ -1932,7 +1965,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                                 : `bg-[#1a1525] border border-white/5 text-dark-100 ${msg.reply_to ? "rounded-bl-md" : "rounded-bl-md"}`
                             }`}
                           >
-                            {/* Media */}
+                            {/* Media — single tap to open */}
                             {msg.media && msg.media.length > 0 && (
                               <div className="mb-2 space-y-2">
                                 {msg.media.map((m) => (
@@ -1942,13 +1975,32 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                                         src={m.url}
                                         alt=""
                                         className="rounded-xl max-w-full max-h-60 object-cover cursor-pointer active:scale-[0.98] transition-transform"
-                                        onClick={() => setLightboxImage(m.url)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setLightboxImage(m.url);
+                                        }}
+                                        onTouchEnd={(e) => {
+                                          // Prevent long press from also opening lightbox
+                                          if (longPressTimerRef.current) {
+                                            clearTimeout(longPressTimerRef.current);
+                                            longPressTimerRef.current = null;
+                                          }
+                                        }}
                                       />
                                     )}
                                     {m.media_type === "video" && (
                                       <div
                                         className="cursor-pointer active:scale-[0.98] transition-transform relative"
-                                        onClick={() => setLightboxVideo(m.url)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setLightboxVideo(m.url);
+                                        }}
+                                        onTouchEnd={(e) => {
+                                          if (longPressTimerRef.current) {
+                                            clearTimeout(longPressTimerRef.current);
+                                            longPressTimerRef.current = null;
+                                          }
+                                        }}
                                       >
                                         <video
                                           src={m.url}
@@ -1963,42 +2015,43 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                                       </div>
                                     )}
                                     {m.media_type === "audio" && (
-  <div
-    className={`p-3 rounded-xl border ${
-      isMine
-        ? "border-white/20 bg-white/10"
-        : "border-white/10 bg-white/5"
-    }`}
-  >
-    <div className="flex items-center gap-2 mb-2">
-      <Mic className="w-4 h-4 text-primary-400 shrink-0" />
-      <span className="text-xs font-medium">
-        {m.file_name || "Voice note"}
-      </span>
-    </div>
-    {m.url ? (
-      <audio
-        controls
-        preload="metadata"
-        className="w-full h-8 [&::-webkit-media-controls-panel]:bg-transparent"
-        style={{ maxWidth: "100%" }}
-      >
-        <source src={m.url} />
-        Your browser does not support audio.
-      </audio>
-    ) : (
-      <div className="flex items-center gap-2 text-xs text-white/40">
-        <Loader2 className="w-3 h-3 animate-spin" />
-        <span>Uploading...</span>
-      </div>
-    )}
-  </div>
-)}
+                                      <div
+                                        className={`p-3 rounded-xl border ${
+                                          isMine
+                                            ? "border-white/20 bg-white/10"
+                                            : "border-white/10 bg-white/5"
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <Mic className="w-4 h-4 text-primary-400 shrink-0" />
+                                          <span className="text-xs font-medium">
+                                            {m.file_name || "Voice note"}
+                                          </span>
+                                        </div>
+                                        {m.url ? (
+                                          <audio
+                                            controls
+                                            preload="metadata"
+                                            className="w-full h-8 [&::-webkit-media-controls-panel]:bg-transparent"
+                                            style={{ maxWidth: "100%" }}
+                                          >
+                                            <source src={m.url} />
+                                            Your browser does not support audio.
+                                          </audio>
+                                        ) : (
+                                          <div className="flex items-center gap-2 text-xs text-white/40">
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                            <span>Uploading...</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
                                     {m.media_type === "document" && (
                                       <a
                                         href={m.url}
                                         target="_blank"
                                         rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
                                         className={`flex items-center gap-3 p-3 rounded-xl border active:scale-[0.98] transition-transform ${
                                           isMine
                                             ? "border-white/20 bg-white/10"
@@ -2031,7 +2084,10 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                             {/* Post share */}
                             {msg.content_type === "post_share" && msg.metadata?.post_id && (
                               <button
-                                onClick={() => router.push(`/post/${msg.metadata.post_id}`)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  router.push(`/post/${msg.metadata.post_id}`);
+                                }}
                                 className={`mb-2 w-full p-3 rounded-xl border text-left active:scale-[0.98] transition-transform ${
                                   isMine ? "border-white/20 bg-white/10" : "border-white/10 bg-white/5"
                                 }`}
@@ -2045,19 +2101,19 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                             {msg.content && renderContent(msg.content)}
 
                             {/* Upload progress */}
-{isMine && uploadingMsgIds.has(msg.id) && (
-  <div className="flex items-center gap-2 mt-1.5">
-    <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
-      <div
-        className="h-full bg-primary-400 rounded-full transition-all duration-300"
-        style={{ width: `${uploadingMsgIds.get(msg.id) || 0}%` }}
-      />
-    </div>
-    <span className="text-[10px] text-white/40 shrink-0">
-      {uploadingMsgIds.get(msg.id) || 0}%
-    </span>
-  </div>
-)}
+                            {isMine && uploadingMsgIds.has(msg.id) && (
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-primary-400 rounded-full transition-all duration-300"
+                                    style={{ width: `${uploadingMsgIds.get(msg.id) || 0}%` }}
+                                  />
+                                </div>
+                                <span className="text-[10px] text-white/40 shrink-0">
+                                  {uploadingMsgIds.get(msg.id) || 0}%
+                                </span>
+                              </div>
+                            )}
 
                             {/* Timestamp + delivery status */}
                             <div className={`flex items-center gap-1.5 mt-1.5 ${isMine ? "justify-end" : "justify-start"}`}>
@@ -2088,8 +2144,11 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                                 return (
                                   <button
                                     key={emoji}
-                                    onClick={() => toggleReaction(msg.id, emoji)}
-                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors ${
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleReaction(msg.id, emoji);
+                                    }}
+                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all active:scale-90 ${
                                       myReaction
                                         ? "border-primary-500/40 bg-primary-600/20"
                                         : "border-white/10 bg-white/5 hover:bg-white/10"
@@ -2155,7 +2214,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
           REPLY BANNER
           ===================================================== */}
       {replyingTo && !isBlocked && (
-        <div className="px-4 py-2 border-t border-primary-500/20 bg-primary-600/5 flex items-center justify-between">
+        <div className="px-4 py-2 border-t border-primary-500/20 bg-primary-600/5 flex items-center justify-between animate-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center gap-2 min-w-0">
             <Reply className="w-4 h-4 text-primary-400 shrink-0" />
             <div className="min-w-0">
@@ -2167,7 +2226,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
           </div>
           <button
             onClick={() => setReplyingTo(null)}
-            className="p-1 rounded-lg hover:bg-white/10"
+            className="p-1 rounded-lg hover:bg-white/10 active:scale-90 transition-transform"
           >
             <X className="w-4 h-4 text-dark-400" />
           </button>
@@ -2178,7 +2237,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
           EDITING BANNER
           ===================================================== */}
       {editingMessage && !isBlocked && (
-        <div className="px-4 py-2 border-t border-primary-500/20 bg-primary-600/5 flex items-center justify-between">
+        <div className="px-4 py-2 border-t border-primary-500/20 bg-primary-600/5 flex items-center justify-between animate-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center gap-2 min-w-0">
             <Pencil className="w-4 h-4 text-primary-400 shrink-0" />
             <div className="min-w-0">
@@ -2188,7 +2247,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
           </div>
           <button
             onClick={() => { setEditingMessage(null); clearEditor(); }}
-            className="p-1 rounded-lg hover:bg-white/10"
+            className="p-1 rounded-lg hover:bg-white/10 active:scale-90 transition-transform"
           >
             <X className="w-4 h-4 text-dark-400" />
           </button>
@@ -2199,7 +2258,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
           PENDING MEDIA PREVIEW
           ===================================================== */}
       {pendingMedia.length > 0 && (
-        <div className="px-4 py-2 border-t border-white/5 bg-[#0d0a14]">
+        <div className="px-4 py-2 border-t border-white/5 bg-[#0d0a14] animate-in slide-in-from-bottom-2 duration-150">
           <div className="flex gap-2 overflow-x-auto pb-1">
             {pendingMedia.map((m, i) => (
               <div key={i} className="relative shrink-0">
@@ -2233,7 +2292,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
           FORMAT BAR
           ===================================================== */}
       {showFormatBar && !isBlocked && (
-        <div className="px-4 py-2 border-t border-white/5 bg-[#0d0a14] flex items-center justify-center gap-3">
+        <div className="px-4 py-2 border-t border-white/5 bg-[#0d0a14] flex items-center justify-center gap-3 animate-in slide-in-from-bottom-2 duration-100">
           <button onClick={applyBold} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bold"><Bold className="w-4 h-4" /></button>
           <button onClick={applyItalic} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Italic"><Italic className="w-4 h-4" /></button>
           <button onClick={applyBulletList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bullets"><List className="w-4 h-4" /></button>
@@ -2245,10 +2304,10 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
           LINK INPUT
           ===================================================== */}
       {showLinkInput && !isBlocked && (
-        <div className="px-4 py-3 border-t border-white/5 bg-[#0d0a14] space-y-2">
+        <div className="px-4 py-3 border-t border-white/5 bg-[#0d0a14] space-y-2 animate-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center justify-between">
             <p className="text-xs text-dark-400 font-medium">Insert Link</p>
-            <button onClick={() => { setShowLinkInput(false); setLinkUrl(""); setLinkText(""); }} className="p-1 rounded-lg hover:bg-white/10 text-dark-400">
+            <button onClick={() => { setShowLinkInput(false); setLinkUrl(""); setLinkText(""); }} className="p-1 rounded-lg hover:bg-white/10 text-dark-400 active:scale-90 transition-transform">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -2268,94 +2327,113 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
           </div>
         </div>
       )}
-
-      {/* =====================================================
-    EMOJI PICKER (inline, above input bar)
-    ===================================================== */}
-{showEmoji && !isBlocked && (
-  <div className="border-t border-white/10 bg-[#0d0a14] flex flex-col shrink-0" style={{ maxHeight: "40vh" }}>
-    <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 overflow-x-auto scrollbar-hide shrink-0">
-      {EMOJI_TABS.map((tab) => (
-        <button
-          key={tab.key}
-          onClick={() => setEmojiTab(tab.key)}
-          className={`px-3 py-1.5 rounded-lg text-lg shrink-0 transition-colors ${
-            emojiTab === tab.key ? "bg-primary-600/20" : "hover:bg-white/5"
-          }`}
-        >
-          {tab.label}
-        </button>
-      ))}
-      <button onClick={() => setShowEmoji(false)} className="ml-auto p-1.5 rounded-lg hover:bg-white/10 text-dark-400 shrink-0">
-        <X className="w-4 h-4" />
-      </button>
-    </div>
-    <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-      {(() => {
-        const tab = EMOJI_TABS.find((t) => t.key === emojiTab);
-        if (!tab) return null;
-        const isKaomoji = tab.key === "kaomoji";
-        return (
-          <div className={isKaomoji ? "flex flex-wrap gap-1" : "grid grid-cols-9 gap-px"}>
-            {tab.emojis.map((emoji, i) => (
-              <button
-                key={`${emoji}-${i}`}
-                onClick={() => {
-                  if (editorRef.current) {
-                    editorRef.current.focus();
-                    document.execCommand("insertText", false, emoji);
-                  }
-                }}
-                className={
-                  isKaomoji
-                    ? "px-2 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 text-xs text-dark-200 border border-white/5 transition-all"
-                    : "w-full aspect-square flex items-center justify-center rounded-md hover:bg-white/10 active:scale-90 text-[22px] leading-none transition-all"
-                }
-              >
-                {emoji}
-              </button>
-            ))}
+            {/* =====================================================
+          EMOJI PICKER — with fixed X button
+          ===================================================== */}
+      {showEmoji && !isBlocked && (
+        <div className="border-t border-white/10 bg-[#0d0a14] flex flex-col shrink-0 animate-in slide-in-from-bottom-3 duration-200" style={{ maxHeight: "40vh" }}>
+          {/* Fixed header with tabs and X */}
+          <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 shrink-0">
+            <div className="flex-1 flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
+              {EMOJI_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setEmojiTab(tab.key)}
+                  className={`px-3 py-1.5 rounded-lg text-lg shrink-0 transition-colors ${
+                    emojiTab === tab.key ? "bg-primary-600/20" : "hover:bg-white/5"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowEmoji(false)}
+              className="p-2 rounded-lg hover:bg-white/10 text-dark-400 shrink-0 ml-1 active:scale-90 transition-transform"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-        );
-      })()}
-    </div>
-  </div>
-)}
+          <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
+            {(() => {
+              const tab = EMOJI_TABS.find((t) => t.key === emojiTab);
+              if (!tab) return null;
+              const isKaomoji = tab.key === "kaomoji";
+              return (
+                <div className={isKaomoji ? "flex flex-wrap gap-1" : "grid grid-cols-9 gap-px"}>
+                  {tab.emojis.map((emoji, i) => (
+                    <button
+                      key={`${emoji}-${i}`}
+                      onClick={() => {
+                        if (editorRef.current) {
+                          editorRef.current.focus();
+                          document.execCommand("insertText", false, emoji);
+                        }
+                      }}
+                      className={
+                        isKaomoji
+                          ? "px-2 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 text-xs text-dark-200 border border-white/5 transition-all"
+                          : "w-full aspect-square flex items-center justify-center rounded-md hover:bg-white/10 active:scale-90 text-[22px] leading-none transition-all"
+                      }
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* =====================================================
           INPUT BAR
           ===================================================== */}
       {!isBlocked && (
-  <div
-    className="px-3 py-2 border-t border-white/5 bg-[#0d0a14] shrink-0 relative"
+        <div
+          className="px-3 py-2 border-t border-white/5 bg-[#0d0a14] shrink-0 relative"
           style={{
-  paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
-}}
+            paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
+          }}
         >
           <div className="flex items-end gap-1.5">
+            {/* Plus / Attach button with rotation animation */}
             <div className="relative shrink-0">
               <button
-                onClick={() => { setShowAttach(!showAttach); setShowEmoji(false); setShowLinkInput(false); }}
+                onClick={() => {
+                  const next = !showAttach;
+                  setShowAttach(next);
+                  setPlusRotated(next);
+                  setShowEmoji(false);
+                  setShowLinkInput(false);
+                }}
                 className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-dark-400 hover:text-white active:scale-90 transition-all"
               >
-                <Plus className="w-5 h-5" />
+                <Plus
+                  className="w-5 h-5 transition-transform duration-300"
+                  style={{ transform: plusRotated ? "rotate(135deg)" : "rotate(0deg)" }}
+                />
               </button>
               {showAttach && (
                 <>
-                  <div className="fixed inset-0 z-10" onClick={() => setShowAttach(false)} />
+                  <div className="fixed inset-0 z-10" onClick={() => { setShowAttach(false); setPlusRotated(false); }} />
                   <div className="absolute bottom-full left-0 mb-2 z-20 glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 w-48 animate-in fade-in slide-in-from-bottom-2 duration-150">
                     <button
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => { fileInputRef.current?.click(); }}
                       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
                     >
-                      <ImageIcon className="w-4 h-4 text-primary-400" />
+                      <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
+                        <ImageIcon className="w-4 h-4 text-primary-400" />
+                      </div>
                       <span className="text-sm text-dark-200">Photo / Video</span>
                     </button>
                     <button
-                      onClick={() => docInputRef.current?.click()}
+                      onClick={() => { docInputRef.current?.click(); }}
                       className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
                     >
-                      <FileText className="w-4 h-4 text-primary-400" />
+                      <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center">
+                        <FileText className="w-4 h-4 text-blue-400" />
+                      </div>
                       <span className="text-sm text-dark-200">Document</span>
                     </button>
                   </div>
@@ -2372,6 +2450,11 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
                 data-placeholder={editingMessage ? "Edit message..." : replyingTo ? "Reply..." : "Message..."}
                 onInput={() => sendTyping()}
                 onKeyDown={handleEditorKeyDown}
+                onFocus={() => {
+                  // Close emoji/attach when focusing editor
+                  if (showEmoji) setShowEmoji(false);
+                  if (showAttach) { setShowAttach(false); setPlusRotated(false); }
+                }}
                 className="w-full bg-[#1a1525] border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-dark-100 focus:outline-none focus:border-primary-500/40 resize-none transition-colors overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-dark-500 empty:before:pointer-events-none [&_b]:font-bold [&_strong]:font-bold [&_i]:italic [&_em]:italic [&_a]:text-primary-400 [&_a]:underline [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4"
                 style={{ minHeight: 40, maxHeight: 120 }}
                 suppressContentEditableWarning
@@ -2388,7 +2471,7 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
             </button>
 
             <button
-              onClick={() => { setShowEmoji(!showEmoji); setShowAttach(false); setShowFormatBar(false); setShowLinkInput(false); }}
+              onClick={() => { setShowEmoji(!showEmoji); setShowAttach(false); setPlusRotated(false); setShowFormatBar(false); setShowLinkInput(false); }}
               className={`w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 active:scale-90 transition-all shrink-0 ${
                 showEmoji ? "text-primary-400" : "text-dark-400 hover:text-white"
               }`}
@@ -2414,11 +2497,11 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
               )
             ) : (
               <button
-  onClick={handleSend}
-  className="w-10 h-10 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 text-white active:scale-90 transition-all shrink-0"
->
-  <Send className="w-5 h-5" />
-</button>
+                onClick={handleSend}
+                className="w-10 h-10 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 text-white active:scale-90 transition-all shrink-0"
+              >
+                <Send className="w-5 h-5" />
+              </button>
             )}
           </div>
 
@@ -2437,170 +2520,191 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
       <input ref={docInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.pptx,.ppt,.zip,.rar" multiple className="hidden" onChange={handleFileSelect} />
 
       {/* =====================================================
-          CONTEXT MENU (Long Press Menu) — with reactions + reply
+          CONTEXT MENU — Premium WhatsApp-style with blur backdrop
           ===================================================== */}
       {contextMenuMsg && contextMenuPos && typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[99999]" onClick={() => setContextMenuMsg(null)}>
+          <div
+            className="fixed inset-0 z-[99999] animate-in fade-in duration-150"
+            style={{ backdropFilter: "blur(8px)", backgroundColor: "rgba(0,0,0,0.5)" }}
+            onClick={() => { setContextMenuMsg(null); setContextMenuPos(null); }}
+          >
+            {/* Floating message preview */}
             <div
-              className="absolute glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 w-64 animate-in fade-in zoom-in-95 duration-150"
+              className="absolute animate-in zoom-in-95 fade-in duration-200"
               style={{
-  left: Math.min(contextMenuPos.x, window.innerWidth - 272),
-  top: Math.min(contextMenuPos.y - 10, window.innerHeight - 400),
-}}
+                left: contextMenuMsg.sender_id === user.id ? "auto" : 16,
+                right: contextMenuMsg.sender_id === user.id ? 16 : "auto",
+                top: Math.min(Math.max(contextMenuPos.y - 60, 60), window.innerHeight - 350),
+              }}
               onClick={(e) => e.stopPropagation()}
             >
               {/* Quick Reactions row */}
-{!contextMenuMsg.is_deleted && (
-  <div className="flex items-center justify-around px-3 py-2.5 border-b border-white/5">
-    {QUICK_REACTIONS.map((emoji) => (
-      <button
-        key={emoji}
-        onClick={() => toggleReaction(contextMenuMsg.id, emoji)}
-        className="text-xl hover:scale-125 active:scale-90 transition-transform p-1"
-      >
-        {emoji}
-      </button>
-    ))}
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        setReactionPickerMsgId(contextMenuMsg.id);
-        setReactionPickerTab("smileys");
-        setContextMenuMsg(null);
-        setContextMenuPos(null);
-      }}
-      className="w-8 h-8 flex items-center justify-center rounded-full bg-white/5 border border-white/10 hover:bg-white/10 active:scale-90 transition-all"
-    >
-      <Plus className="w-4 h-4 text-dark-300" />
-    </button>
-  </div>
-)}
-
-              {/* Reply */}
               {!contextMenuMsg.is_deleted && (
-                <button
-                  onClick={() => handleReply(contextMenuMsg)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                >
-                  <Reply className="w-4 h-4 text-dark-400" />
-                  <span className="text-sm text-dark-200">Reply</span>
-                </button>
-              )}
-
-              {/* Copy */}
-              {contextMenuMsg.content && (
-                <button
-                  onClick={() => handleCopy(contextMenuMsg.content)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                >
-                  <Copy className="w-4 h-4 text-dark-400" />
-                  <span className="text-sm text-dark-200">Copy</span>
-                </button>
-              )}
-
-              {/* Edit */}
-              {contextMenuMsg.sender_id === user.id &&
-                contextMenuMsg.content &&
-                !contextMenuMsg.is_deleted && (
+                <div className="flex items-center gap-1 mb-2 px-1">
+                  {QUICK_REACTIONS.map((emoji) => {
+                    const hasReacted = contextMenuMsg.reactions?.some(
+                      (r) => r.emoji === emoji && r.user_id === user.id
+                    );
+                    return (
+                      <button
+                        key={emoji}
+                        onClick={() => toggleReaction(contextMenuMsg.id, emoji)}
+                        className={`text-2xl hover:scale-125 active:scale-90 transition-all p-1.5 rounded-full ${
+                          hasReacted ? "bg-primary-600/30 scale-110" : "hover:bg-white/10"
+                        }`}
+                      >
+                        {emoji}
+                      </button>
+                    );
+                  })}
                   <button
-                    onClick={() => handleEdit(contextMenuMsg)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReactionPickerMsgId(contextMenuMsg.id);
+                      setReactionPickerTab("smileys");
+                      setContextMenuMsg(null);
+                      setContextMenuPos(null);
+                    }}
+                    className="w-9 h-9 flex items-center justify-center rounded-full bg-white/5 border border-white/10 hover:bg-white/10 active:scale-90 transition-all ml-1"
+                  >
+                    <Plus className="w-4 h-4 text-dark-300" />
+                  </button>
+                </div>
+              )}
+
+              {/* Action menu */}
+              <div className="glass-strong rounded-2xl overflow-hidden shadow-2xl border border-white/10 w-56 animate-in slide-in-from-bottom-2 duration-200">
+                {/* Reply */}
+                {!contextMenuMsg.is_deleted && (
+                  <button
+                    onClick={() => handleReply(contextMenuMsg)}
                     className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
                   >
-                    <Pencil className="w-4 h-4 text-dark-400" />
-                    <span className="text-sm text-dark-200">Edit</span>
+                    <Reply className="w-4 h-4 text-dark-400" />
+                    <span className="text-sm text-dark-200">Reply</span>
                   </button>
                 )}
 
-              {/* Delete for me */}
-              <button
-                onClick={() => handleDeleteForMe(contextMenuMsg.id)}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-              >
-                <Trash2 className="w-4 h-4 text-dark-400" />
-                <span className="text-sm text-dark-200">Delete for me</span>
-              </button>
+                {/* Copy */}
+                {contextMenuMsg.content && (
+                  <button
+                    onClick={() => handleCopy(contextMenuMsg.content)}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
+                  >
+                    <Copy className="w-4 h-4 text-dark-400" />
+                    <span className="text-sm text-dark-200">Copy</span>
+                  </button>
+                )}
 
-              {/* Delete for everyone */}
-              {contextMenuMsg.sender_id === user.id && !contextMenuMsg.is_deleted && (
+                {/* Edit */}
+                {contextMenuMsg.sender_id === user.id &&
+                  contextMenuMsg.content &&
+                  !contextMenuMsg.is_deleted && (
+                    <button
+                      onClick={() => handleEdit(contextMenuMsg)}
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
+                    >
+                      <Pencil className="w-4 h-4 text-dark-400" />
+                      <span className="text-sm text-dark-200">Edit</span>
+                    </button>
+                  )}
+
+                <div className="h-px bg-white/5" />
+
+                {/* Delete for me */}
                 <button
-                  onClick={() => handleDeleteForEveryone(contextMenuMsg.id)}
+                  onClick={() => handleDeleteForMe(contextMenuMsg.id)}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
                 >
-                  <Trash2 className="w-4 h-4 text-red-400" />
-                  <span className="text-sm text-red-400">Delete for everyone</span>
+                  <Trash2 className="w-4 h-4 text-dark-400" />
+                  <span className="text-sm text-dark-200">Delete for me</span>
                 </button>
-              )}
+
+                {/* Delete for everyone */}
+                {contextMenuMsg.sender_id === user.id && !contextMenuMsg.is_deleted && (
+                  <button
+                    onClick={() => handleDeleteForEveryone(contextMenuMsg.id)}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-400" />
+                    <span className="text-sm text-red-400">Delete for everyone</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>,
           document.body
         )}
 
-        {/* =====================================================
-    REACTION EMOJI PICKER (full picker from + button)
-    ===================================================== */}
-{reactionPickerMsgId && typeof document !== "undefined" &&
-  createPortal(
-    <div
-      className="fixed inset-0 z-[99999] flex flex-col justify-end"
-      onClick={() => setReactionPickerMsgId(null)}
-    >
-      <div
-        className="bg-[#0d0a14] border-t border-white/10 rounded-t-3xl max-h-[50vh] flex flex-col animate-[slideUp_200ms_ease-out]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 overflow-x-auto scrollbar-hide shrink-0">
-          {EMOJI_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setReactionPickerTab(tab.key)}
-              className={`px-3 py-1.5 rounded-lg text-lg shrink-0 transition-colors ${
-                reactionPickerTab === tab.key ? "bg-primary-600/20" : "hover:bg-white/5"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-          <button
+      {/* =====================================================
+          REACTION EMOJI PICKER (full picker from + button)
+          ===================================================== */}
+      {reactionPickerMsgId && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[99999] flex flex-col justify-end animate-in fade-in duration-150"
+            style={{ backdropFilter: "blur(4px)", backgroundColor: "rgba(0,0,0,0.4)" }}
             onClick={() => setReactionPickerMsgId(null)}
-            className="ml-auto p-1.5 rounded-lg hover:bg-white/10 text-dark-400 shrink-0"
           >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-          {(() => {
-            const tab = EMOJI_TABS.find((t) => t.key === reactionPickerTab);
-            if (!tab) return null;
-            const isKaomoji = tab.key === "kaomoji";
-            return (
-              <div className={isKaomoji ? "flex flex-wrap gap-1" : "grid grid-cols-9 gap-px"}>
-                {tab.emojis.map((emoji, i) => (
-                  <button
-                    key={`${emoji}-${i}`}
-                    onClick={() => {
-                      if (reactionPickerMsgId) {
-                        toggleReaction(reactionPickerMsgId, emoji);
-                        setReactionPickerMsgId(null);
-                      }
-                    }}
-                    className={
-                      isKaomoji
-                        ? "px-2 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 text-xs text-dark-200 border border-white/5 transition-all"
-                        : "w-full aspect-square flex items-center justify-center rounded-md hover:bg-white/10 active:scale-90 text-[22px] leading-none transition-all"
-                    }
-                  >
-                    {emoji}
-                  </button>
-                ))}
+            <div
+              className="bg-[#0d0a14] border-t border-white/10 rounded-t-3xl max-h-[50vh] flex flex-col animate-in slide-in-from-bottom-4 duration-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 shrink-0">
+                <div className="flex-1 flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
+                  {EMOJI_TABS.map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setReactionPickerTab(tab.key)}
+                      className={`px-3 py-1.5 rounded-lg text-lg shrink-0 transition-colors ${
+                        reactionPickerTab === tab.key ? "bg-primary-600/20" : "hover:bg-white/5"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setReactionPickerMsgId(null)}
+                  className="p-2 rounded-lg hover:bg-white/10 text-dark-400 shrink-0 ml-1 active:scale-90 transition-transform"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-            );
-          })()}
-        </div>
-      </div>
-    </div>,
-    document.body
-  )}
+              <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
+                {(() => {
+                  const tab = EMOJI_TABS.find((t) => t.key === reactionPickerTab);
+                  if (!tab) return null;
+                  const isKaomoji = tab.key === "kaomoji";
+                  return (
+                    <div className={isKaomoji ? "flex flex-wrap gap-1" : "grid grid-cols-9 gap-px"}>
+                      {tab.emojis.map((emoji, i) => (
+                        <button
+                          key={`${emoji}-${i}`}
+                          onClick={() => {
+                            if (reactionPickerMsgId) {
+                              toggleReaction(reactionPickerMsgId, emoji);
+                              setReactionPickerMsgId(null);
+                            }
+                          }}
+                          className={
+                            isKaomoji
+                              ? "px-2 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 text-xs text-dark-200 border border-white/5 transition-all"
+                              : "w-full aspect-square flex items-center justify-center rounded-md hover:bg-white/10 active:scale-90 text-[22px] leading-none transition-all"
+                          }
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* =====================================================
           AVATAR PREVIEW
@@ -2608,13 +2712,14 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
       {avatarPreview && typeof document !== "undefined" &&
         createPortal(
           <div
-            className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 z-[99999] flex items-center justify-center animate-in fade-in duration-200"
+            style={{ backdropFilter: "blur(12px)", backgroundColor: "rgba(0,0,0,0.7)" }}
             onClick={(e) => {
               e.stopPropagation();
               setAvatarPreview(null);
             }}
           >
-            <div className="animate-in fade-in zoom-in-90 duration-200" onClick={(e) => e.stopPropagation()}>
+            <div className="animate-in zoom-in-90 duration-300" onClick={(e) => e.stopPropagation()}>
               <div className="w-72 h-72 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl">
                 <img src={avatarPreview} alt="" className="w-full h-full object-cover" />
               </div>
@@ -2651,24 +2756,24 @@ const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
             <div className="flex-1 overflow-y-auto">
               <div className="flex flex-col items-center py-8 px-4">
                 <div className="relative mb-3">
-  <button
-    onClick={() => {
-      if (otherUser?.avatar_url) {
-        setAvatarPreview(otherUser.avatar_url);
-      }
-    }}
-    className="w-24 h-24 rounded-full overflow-hidden bg-dark-800 border-2 border-white/10"
-  >
-    {otherUser?.avatar_url ? (
-      <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-    ) : (
-      <User className="w-12 h-12 text-dark-400 m-auto mt-5" />
-    )}
-  </button>
-  {otherUserOnline && (
-    <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-purple-500 border-[3px] border-[#0a0812] online-dot-pulse" />
-  )}
-</div>
+                  <button
+                    onClick={() => {
+                      if (otherUser?.avatar_url) {
+                        setAvatarPreview(otherUser.avatar_url);
+                      }
+                    }}
+                    className="w-24 h-24 rounded-full overflow-hidden bg-dark-800 border-2 border-white/10"
+                  >
+                    {otherUser?.avatar_url ? (
+                      <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-12 h-12 text-dark-400 m-auto mt-5" />
+                    )}
+                  </button>
+                  {otherUserOnline && (
+                    <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-purple-500 border-[3px] border-[#0a0812] online-dot-pulse" />
+                  )}
+                </div>
                 <h3 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
                   {otherUser?.full_name || "Unknown"}
                   {otherUser?.is_admin && <Crown className="w-4 h-4 text-yellow-400" />}
