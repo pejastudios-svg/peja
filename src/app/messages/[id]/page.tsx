@@ -1723,10 +1723,9 @@ useEffect(() => {
 
   if (!otherUser) return null;
     return (
-    <div
-      className="fixed left-0 right-0 top-0 flex flex-col bg-[#0a0812]"
-      style={{ bottom: "var(--keyboard-height, 0px)" }}
-    >
+  <div
+    className="fixed inset-0 flex flex-col bg-[#0a0812]"
+  >
       {/* =====================================================
           HEADER
           ===================================================== */}

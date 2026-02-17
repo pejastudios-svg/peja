@@ -2025,13 +2025,10 @@ input, textarea, [contenteditable] {
    KEYBOARD OPEN STATE - FOR ALL ANDROID DEVICES
    ===================================================== */
 
-/* Post detail page: input bar moves up with keyboard */
-body.keyboard-open .post-comment-input {
-  transform: translateY(calc(-1 * var(--keyboard-height, 0px)));
-  transition: transform 0.15s ease-out;
+/* When keyboard is open, ensure content is scrollable */
+body.keyboard-open .post-detail-messages {
+  padding-bottom: 8rem;
 }
 
-/* Post detail page: add bottom padding to scroll area so content isn't hidden */
-body.keyboard-open .post-detail-messages {
-  padding-bottom: calc(7rem + var(--keyboard-height, 0px));
-}
+/* Ensure inputs stay visible - handled by Android adjustResize */
+/* No transform needed since adjustResize already shrinks the viewport */
