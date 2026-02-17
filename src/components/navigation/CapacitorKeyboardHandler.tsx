@@ -30,7 +30,7 @@ export function CapacitorKeyboardHandler() {
             // Subtract gesture nav bar height (typically 48-60px on Android)
             // This prevents the input from being pushed too high
             const rawHeight = info.keyboardHeight || 0;
-            const adjustedHeight = Math.max(0, rawHeight - 48);
+            const adjustedHeight = Math.max(0, rawHeight - 72);
             
             document.documentElement.style.setProperty(
               "--keyboard-height",
