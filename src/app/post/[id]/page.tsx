@@ -1667,7 +1667,11 @@ if (error || !post) {
       </main>
 
       {/* Comment Input - Absolute Bottom */}
-        <div className="absolute bottom-0 inset-x-0 z-50 bg-dark-950/95 backdrop-blur-lg border-t border-white/10" style={{ paddingBottom: "var(--cap-bottom-inset, env(safe-area-inset-bottom, 0px))" }}>
+<div 
+  className="absolute bottom-0 inset-x-0 z-50 bg-dark-950/95 backdrop-blur-lg border-t border-white/10 post-comment-input" 
+  data-keyboard-aware="true"
+  style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+>
         <div className="max-w-2xl mx-auto p-3 w-full">
           {replyingTo && (
             <div className="flex items-center justify-between mb-2 px-1">

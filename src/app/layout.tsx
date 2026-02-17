@@ -20,6 +20,7 @@ import { CapacitorInit } from "@/components/navigation/CapacitorInit";
 import { CapacitorBackButton } from "@/components/navigation/CapacitorBackButton";
 import { CapacitorPushNotifications } from "@/components/notifications/CapacitorPushNotifications";
 import { ScrollRestorer } from "@/components/navigation/ScrollRestorer";
+import { CapacitorKeyboardHandler } from "@/components/navigation/CapacitorKeyboardHandler";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -84,6 +85,7 @@ export default function RootLayout({
                   <CapacitorBackButton />
                   <CapacitorPushNotifications />
                   <ScrollRestorer />
+                  <CapacitorKeyboardHandler />
                   {children}
                   {overlay}
                   {modal}

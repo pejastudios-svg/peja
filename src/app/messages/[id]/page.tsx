@@ -525,43 +525,31 @@ export default function ChatPage() {
   // =====================================================
   // KEYBOARD HANDLING — works across all Android devices
   // =====================================================
-  useEffect(() => {
-  if (typeof window === "undefined") return;
-
-  const vv = window.visualViewport;
-  if (!vv) return;
-
-  let lastHeight = vv.height;
-
-  const onResize = () => {
-    // Calculate keyboard height from viewport difference
-    const keyboardHeight = window.innerHeight - vv.height;
-    const offset = Math.max(keyboardHeight, 0);
-
-    // Apply keyboard height with smaller threshold to catch all cases
-    if (offset > 20) {
-      document.documentElement.style.setProperty("--keyboard-height", `${offset}px`);
-      // Scroll to bottom when keyboard opens (with longer delay for Android)
-      if (Math.abs(vv.height - lastHeight) > 20) {
-        setTimeout(() => scrollToBottom(false), 200);
-      }
-    } else {
-      document.documentElement.style.setProperty("--keyboard-height", "0px");
-    }
-
-    lastHeight = vv.height;
+// Keyboard handling is now done globally by CapacitorKeyboardHandler
+// Just scroll to bottom when keyboard opens
+useEffect(() => {
+  const onKeyboardOpen = () => {
+    setTimeout(() => scrollToBottom(false), 150);
   };
 
-  // Run once immediately in case keyboard is already open
-  onResize();
-
-  vv.addEventListener("resize", onResize);
-  vv.addEventListener("scroll", onResize); // Some Android devices fire scroll instead of resize
+  document.body.addEventListener("keyboard-open", onKeyboardOpen);
+  
+  // Also listen for class changes as a backup
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.attributeName === "class") {
+        if (document.body.classList.contains("keyboard-open")) {
+          setTimeout(() => scrollToBottom(false), 150);
+        }
+      }
+    });
+  });
+  
+  observer.observe(document.body, { attributes: true });
 
   return () => {
-    vv.removeEventListener("resize", onResize);
-    vv.removeEventListener("scroll", onResize);
-    document.documentElement.style.setProperty("--keyboard-height", "0px");
+    document.body.removeEventListener("keyboard-open", onKeyboardOpen);
+    observer.disconnect();
   };
 }, [scrollToBottom]);
 
