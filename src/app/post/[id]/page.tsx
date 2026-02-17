@@ -1439,9 +1439,9 @@ if (error || !post) {
 
       {/* Main Content - Scrollable Area */}
                <main
-        className="flex-1 overflow-y-auto w-full pb-24 overscroll-contain"
-        style={{ paddingTop: "calc(3.5rem + var(--cap-status-bar-height, 0px))" }}
-      >
+  className="flex-1 overflow-y-auto w-full overscroll-contain post-detail-messages"
+  style={{ paddingTop: "calc(3.5rem + var(--cap-status-bar-height, 0px))" }}
+>
         <div className="max-w-2xl mx-auto">
          {/* Media Carousel */}
 {post.media && post.media.length > 0 && (

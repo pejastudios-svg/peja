@@ -526,39 +526,44 @@ export default function ChatPage() {
   // KEYBOARD HANDLING — works across all Android devices
   // =====================================================
   useEffect(() => {
-    if (typeof window === "undefined") return;
+  if (typeof window === "undefined") return;
 
-    const vv = window.visualViewport;
-    if (!vv) return;
+  const vv = window.visualViewport;
+  if (!vv) return;
 
-    let lastHeight = vv.height;
+  let lastHeight = vv.height;
 
-    const onResize = () => {
-      // Calculate keyboard height from viewport difference
-      const keyboardHeight = window.innerHeight - vv.height;
-      const offset = Math.max(keyboardHeight, 0);
+  const onResize = () => {
+    // Calculate keyboard height from viewport difference
+    const keyboardHeight = window.innerHeight - vv.height;
+    const offset = Math.max(keyboardHeight, 0);
 
-      // Only apply if keyboard is actually showing (threshold to avoid small fluctuations)
-      if (offset > 50) {
-        document.documentElement.style.setProperty("--keyboard-height", `${offset}px`);
-        // Scroll to bottom when keyboard opens
-        if (Math.abs(vv.height - lastHeight) > 50) {
-          setTimeout(() => scrollToBottom(false), 100);
-        }
-      } else {
-        document.documentElement.style.setProperty("--keyboard-height", "0px");
+    // Apply keyboard height with smaller threshold to catch all cases
+    if (offset > 20) {
+      document.documentElement.style.setProperty("--keyboard-height", `${offset}px`);
+      // Scroll to bottom when keyboard opens (with longer delay for Android)
+      if (Math.abs(vv.height - lastHeight) > 20) {
+        setTimeout(() => scrollToBottom(false), 200);
       }
-
-      lastHeight = vv.height;
-    };
-
-    vv.addEventListener("resize", onResize);
-
-    return () => {
-      vv.removeEventListener("resize", onResize);
+    } else {
       document.documentElement.style.setProperty("--keyboard-height", "0px");
-    };
-  }, [scrollToBottom]);
+    }
+
+    lastHeight = vv.height;
+  };
+
+  // Run once immediately in case keyboard is already open
+  onResize();
+
+  vv.addEventListener("resize", onResize);
+  vv.addEventListener("scroll", onResize); // Some Android devices fire scroll instead of resize
+
+  return () => {
+    vv.removeEventListener("resize", onResize);
+    vv.removeEventListener("scroll", onResize);
+    document.documentElement.style.setProperty("--keyboard-height", "0px");
+  };
+}, [scrollToBottom]);
 
   // Non-passive touch move for swipe
   useEffect(() => {

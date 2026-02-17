@@ -23,12 +23,17 @@ const config: CapacitorConfig = {
     StatusBar: {
       style: "DARK",
       backgroundColor: "#0c0818",
+      overlaysWebView: false,
     },
     CapacitorCookies: {
       enabled: true,
     },
     CapacitorHttp: {
       enabled: true,
+    },
+    Keyboard: {
+      resize: "native",
+      resizeOnFullScreen: true,
     },
   },
 };

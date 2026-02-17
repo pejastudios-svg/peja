@@ -1620,15 +1620,6 @@ body.modal-open {
   50% { opacity: 0.3; }
 }
 
-/* Capacitor native app - status bar spacing */
-:root {
-  --cap-status-bar-height: 0px;
-  --cap-bottom-inset: 0px;
-}
-html.capacitor-native {
-  --cap-status-bar-height: 36px;
-  --cap-bottom-inset: env(safe-area-inset-bottom, 0px);
-}
 html.capacitor-native .fixed.top-0:not(header),
 html.capacitor-native header.fixed {
   top: 0 !important;
@@ -1998,4 +1989,34 @@ input, textarea, [contenteditable] {
    ===================================================== */
 :root {
   --keyboard-height: 0px;
+}
+
+/* =====================================================
+   CAPACITOR SAFE AREA & KEYBOARD FIX
+   ===================================================== */
+:root {
+  --cap-status-bar-height: env(safe-area-inset-top, 0px);
+  --cap-bottom-inset: env(safe-area-inset-bottom, 0px);
+  --keyboard-height: 0px;
+}
+
+/* Android-specific overrides */
+@supports (-webkit-touch-callout: none) {
+  /* iOS detection - do nothing extra */
+}
+
+/* Ensure keyboard doesn't cover inputs on ALL Android devices */
+.keyboard-aware-container {
+  padding-bottom: max(
+    var(--keyboard-height, 0px),
+    env(safe-area-inset-bottom, 0px)
+  );
+}
+
+/* Post detail page: dynamic bottom padding */
+.post-detail-messages {
+  padding-bottom: max(
+    7rem,
+    calc(7rem + var(--keyboard-height, 0px))
+  );
 }
