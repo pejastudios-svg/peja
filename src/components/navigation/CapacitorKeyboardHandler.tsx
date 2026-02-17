@@ -6,7 +6,6 @@ export function CapacitorKeyboardHandler() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    let Keyboard: any = null;
     let cleanup: (() => void) | null = null;
 
     const init = async () => {
@@ -23,39 +22,26 @@ export function CapacitorKeyboardHandler() {
 
       try {
         const { Keyboard: CapKeyboard } = await import("@capacitor/keyboard");
-        Keyboard = CapKeyboard;
 
         // Listen to keyboard show
-        const showListener = await Keyboard.addListener(
+        const showListener = await CapKeyboard.addListener(
           "keyboardWillShow",
           (info: { keyboardHeight: number }) => {
-            const height = info.keyboardHeight || 0;
+            // Subtract gesture nav bar height (typically 48-60px on Android)
+            // This prevents the input from being pushed too high
+            const rawHeight = info.keyboardHeight || 0;
+            const adjustedHeight = Math.max(0, rawHeight - 48);
+            
             document.documentElement.style.setProperty(
               "--keyboard-height",
-              `${height}px`
+              `${adjustedHeight}px`
             );
             document.body.classList.add("keyboard-open");
-
-            // Scroll active element into view
-            setTimeout(() => {
-              const active = document.activeElement as HTMLElement;
-              if (
-                active &&
-                (active.tagName === "INPUT" ||
-                  active.tagName === "TEXTAREA" ||
-                  active.isContentEditable)
-              ) {
-                active.scrollIntoView({
-                  behavior: "smooth",
-                  block: "center",
-                });
-              }
-            }, 100);
           }
         );
 
         // Listen to keyboard hide
-        const hideListener = await Keyboard.addListener(
+        const hideListener = await CapKeyboard.addListener(
           "keyboardWillHide",
           () => {
             document.documentElement.style.setProperty("--keyboard-height", "0px");
@@ -77,40 +63,24 @@ export function CapacitorKeyboardHandler() {
       const vv = window.visualViewport;
       if (!vv) return;
 
-      let initialHeight = vv.height;
-
       const onResize = () => {
         const currentHeight = vv.height;
-        const keyboardHeight = window.innerHeight - currentHeight;
+        const windowHeight = window.innerHeight;
+        const keyboardHeight = windowHeight - currentHeight;
 
-        if (keyboardHeight > 50) {
+        // Only apply if significant keyboard height detected
+        // Subtract 48px to account for gesture nav bar
+        if (keyboardHeight > 100) {
+          const adjustedHeight = Math.max(0, keyboardHeight - 48);
           document.documentElement.style.setProperty(
             "--keyboard-height",
-            `${keyboardHeight}px`
+            `${adjustedHeight}px`
           );
           document.body.classList.add("keyboard-open");
-
-          // Scroll active element into view
-          setTimeout(() => {
-            const active = document.activeElement as HTMLElement;
-            if (
-              active &&
-              (active.tagName === "INPUT" ||
-                active.tagName === "TEXTAREA" ||
-                active.isContentEditable)
-            ) {
-              active.scrollIntoView({
-                behavior: "smooth",
-                block: "center",
-              });
-            }
-          }, 100);
         } else {
           document.documentElement.style.setProperty("--keyboard-height", "0px");
           document.body.classList.remove("keyboard-open");
         }
-
-        initialHeight = currentHeight;
       };
 
       vv.addEventListener("resize", onResize);

@@ -2024,26 +2024,14 @@ input, textarea, [contenteditable] {
 /* =====================================================
    KEYBOARD OPEN STATE - FOR ALL ANDROID DEVICES
    ===================================================== */
-body.keyboard-open {
-  /* Prevent body scroll when keyboard is open */
-  overflow: hidden;
-  position: fixed;
-  width: 100%;
-}
 
-/* Ensure fixed bottom elements respect keyboard */
-body.keyboard-open .fixed-bottom-input,
-body.keyboard-open [data-keyboard-aware="true"] {
-  bottom: var(--keyboard-height, 0px) !important;
-  transition: bottom 0.15s ease-out;
-}
-
-/* Post detail input bar */
+/* Post detail page: input bar moves up with keyboard */
 body.keyboard-open .post-comment-input {
-  position: fixed;
-  bottom: var(--keyboard-height, 0px);
-  left: 0;
-  right: 0;
-  z-index: 50;
-  transition: bottom 0.15s ease-out;
+  transform: translateY(calc(-1 * var(--keyboard-height, 0px)));
+  transition: transform 0.15s ease-out;
+}
+
+/* Post detail page: add bottom padding to scroll area so content isn't hidden */
+body.keyboard-open .post-detail-messages {
+  padding-bottom: calc(7rem + var(--keyboard-height, 0px));
 }

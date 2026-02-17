@@ -122,14 +122,13 @@ export function BottomNav() {
   };
 
   return (
-    <nav
-      className="fixed bottom-0 left-0 right-0 z-50 glass-footer safe-bottom"
-      style={{
-        paddingBottom:
-          "var(--cap-bottom-inset, env(safe-area-inset-bottom, 0px))",
-      }}
-    >
-      <div className="flex items-center justify-around h-16 px-2">
+  <nav
+    className="fixed bottom-0 left-0 right-0 z-50 glass-footer"
+    style={{
+      paddingBottom: "env(safe-area-inset-bottom, 0px)",
+    }}
+  >
+    <div className="flex items-center justify-around h-14 px-2">
         {/* Home & Map */}
         {navItems.slice(0, 2).map((item) => {
           const isActive = pathname === item.href;
