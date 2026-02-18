@@ -321,181 +321,250 @@ export default function CreatePostPage() {
   };
 
   const handleSubmit = async () => {
-    setError("");
+  setError("");
 
-    if (user?.status === "suspended") {
-      setError("Your account is suspended. You can still receive alerts, but you cannot post.");
-      return;
-    }
-    if (user?.status === "banned") {
-      setError("Your account is banned.");
-      return;
-    }
+  if (user?.status === "suspended") {
+    setError("Your account is suspended. You can still receive alerts, but you cannot post.");
+    return;
+  }
+  if (user?.status === "banned") {
+    setError("Your account is banned.");
+    return;
+  }
 
-    if (media.length === 0) {
-      setError("Please add at least one photo or video");
-      return;
-    }
+  if (media.length === 0) {
+    setError("Please add at least one photo or video");
+    return;
+  }
 
-    if (!category) {
-      setError("Please select a category");
-      return;
-    }
+  if (!category) {
+    setError("Please select a category");
+    return;
+  }
 
-    if (!location) {
-      setError("Location is required");
-      return;
-    }
+  if (!location) {
+    setError("Location is required");
+    return;
+  }
 
-    const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+  const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
-    if (authError || !authUser) {
-      setError("Please sign in to post");
-      router.push("/login");
-      return;
-    }
+  if (authError || !authUser) {
+    setError("Please sign in to post");
+    router.push("/login");
+    return;
+  }
 
-    setIsLoading(true);
-    setUploadProgress(0);
+  setIsLoading(true);
+  setUploadProgress(0);
 
-    try {
-      const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
-      const totalFiles = media.length;
+  try {
+    const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
+    const totalFiles = media.length;
 
-      let done = 0;
-      let cursor = 0;
-      const concurrency = 3;
+    let done = 0;
 
-      const uploadOne = async (file: File) => {
-        let fileToUpload = file;
+    // Import compression utilities
+    const { compressImage, compressVideo } = await import("@/lib/mediaCompression");
 
-        if (file.type.startsWith("image/")) {
-          try {
-            fileToUpload = await compressImage(file, 1920, 0.85);
-            console.log(`Compressed ${file.name}: ${(file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`);
-          } catch (e) {
-            console.warn("Compression failed, using original:", e);
+    for (let i = 0; i < totalFiles; i++) {
+      const file = media[i];
+      const isVideo = file.type.startsWith("video/");
+      const isImage = file.type.startsWith("image/");
+
+      let fileToUpload: File | null = null;
+      let uploadToCloudinary = false;
+      let cloudinaryUrl = "";
+
+      try {
+        // COMPRESS IMAGES
+        if (isImage) {
+          setToast("Processing image...");
+          
+          fileToUpload = await compressImage(file, (progress) => {
+            const overallProgress = Math.round(
+              ((i + progress / 100) / totalFiles) * 80
+            );
+            setUploadProgress(overallProgress);
+          });
+
+          console.log(`[Upload] Image compressed: ${(file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`);
+        }
+
+        // COMPRESS VIDEOS
+        if (isVideo) {
+          const sizeMB = file.size / 1024 / 1024;
+
+          if (sizeMB > 16) {
+            setToast("Analyzing video...");
+
+            try {
+              const result = await compressVideo(file, (progress) => {
+                const overallProgress = Math.round(
+                  ((i + progress / 100) / totalFiles) * 80
+                );
+                setUploadProgress(overallProgress);
+              });
+
+              uploadToCloudinary = true;
+              cloudinaryUrl = result.url;
+
+              console.log("[Upload] Video compressed via Cloudinary:", {
+                original: `${sizeMB.toFixed(2)}MB`,
+                compressed: `${(result.size / 1024 / 1024).toFixed(2)}MB`,
+                reduction: `${(((file.size - result.size) / file.size) * 100).toFixed(1)}%`,
+              });
+            } catch (error: any) {
+              if (error.message !== "SKIP_COMPRESSION") {
+                throw error;
+              }
+              // Video under 16MB, upload normally
+              fileToUpload = file;
+            }
+          } else {
+            // Video under 16MB, upload directly
+            fileToUpload = file;
           }
         }
 
-        const isVideo = file.type.startsWith("video/");
-        const fileExt = isVideo ? (file.name.split(".").pop()?.toLowerCase() || "mp4") : "jpg";
-        const fileName = `posts/${authUser.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+        // UPLOAD TO STORAGE
+        let mediaUrl = "";
 
-        const { error: uploadError } = await supabase.storage
-          .from("media")
-          .upload(fileName, fileToUpload, { cacheControl: "3600", upsert: false });
+        if (uploadToCloudinary) {
+          // Already uploaded to Cloudinary
+          mediaUrl = cloudinaryUrl;
+        } else if (fileToUpload) {
+          // Upload to Supabase Storage
+          const ext = fileToUpload.name.split(".").pop()?.toLowerCase() || (isVideo ? "mp4" : "jpg");
+          const fileName = `posts/${authUser.id}/${Date.now()}-${Math.random()
+            .toString(36)
+            .substring(7)}.${ext}`;
 
-        if (uploadError) throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
+          setToast(isVideo ? "Uploading video..." : "Uploading image...");
 
-        const { data: publicUrl } = supabase.storage.from("media").getPublicUrl(fileName);
+          const { error: uploadError } = await supabase.storage
+            .from("media")
+            .upload(fileName, fileToUpload, { cacheControl: "3600", upsert: false });
+
+          if (uploadError) {
+            throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);
+          }
+
+          const { data: publicUrl } = supabase.storage.from("media").getPublicUrl(fileName);
+          mediaUrl = publicUrl.publicUrl;
+        }
 
         mediaUrls.push({
-          url: publicUrl.publicUrl,
+          url: mediaUrl,
           type: isVideo ? "video" : "photo",
         });
 
         done++;
         setUploadProgress(Math.round((done / totalFiles) * 80));
-      };
+        setToast(null);
 
-      const worker = async () => {
-        while (cursor < media.length) {
-          const i = cursor++;
-          await uploadOne(media[i]);
-        }
-      };
-
-      await Promise.all(Array.from({ length: Math.min(concurrency, media.length) }, worker));
-
-      const { data: post, error: postError } = await supabase
-        .from("posts")
-        .insert({
-          user_id: authUser.id,
-          category,
-          comment: comment.trim() || null,
-          latitude: location.latitude,
-          longitude: location.longitude,
-          address: location.address || null,
-          is_anonymous: false,
-          is_sensitive: isSensitive,
-          status: "live",
-          confirmations: 0,
-          views: 0,
-          comment_count: 0,
-          report_count: 0,
-        })
-        .select()
-        .single();
-
-      if (postError) {
-        throw new Error(postError.message);
+      } catch (error: any) {
+        console.error("[Upload] Media processing error:", error);
+        setError(error.message || "Failed to process media");
+        setIsLoading(false);
+        setUploadProgress(0);
+        setToast(null);
+        return;
       }
-
-      setUploadProgress(85);
-
-      for (const mediaItem of mediaUrls) {
-        await supabase.from("post_media").insert({
-          post_id: post.id,
-          url: mediaItem.url,
-          media_type: mediaItem.type,
-          is_sensitive: isSensitive,
-        });
-      }
-
-      for (const tag of tags) {
-        await supabase.from("post_tags").insert({
-          post_id: post.id,
-          tag,
-        });
-      }
-
-      setUploadProgress(90);
-
-      await supabase
-        .from("users")
-        .update({
-          last_latitude: location.latitude,
-          last_longitude: location.longitude,
-          last_location_updated_at: new Date().toISOString(),
-        })
-        .eq("id", authUser.id);
-
-      setUploadProgress(95);
-
-      notifyUsersAboutIncident(
-        post.id,
-        authUser.id,
-        category,
-        location.address || null,
-        location.latitude,
-        location.longitude
-      ).then(count => {
-        console.log(`Notified ${count} users about new post`);
-      }).catch(err => {
-        console.error("Error notifying users:", err);
-      });
-
-      setUploadProgress(100);
-      setToast("Post uploaded ✓");
-
-      window.dispatchEvent(new Event("peja-post-created"));
-      sessionStorage.setItem("peja-feed-refresh", "true");
-
-      setTimeout(() => {
-        const inOverlay = typeof window !== "undefined" && (window as any).__pejaOverlayOpen;
-        if (inOverlay) router.back();
-        else router.push("/");
-      }, 650);
-
-    } catch (err: any) {
-      console.error("Submit error:", err);
-      setError(err.message || "Something went wrong");
-    } finally {
-      setIsLoading(false);
-      setUploadProgress(0);
     }
-  };
+
+    // REST OF THE FUNCTION STAYS THE SAME...
+    setToast("Creating post...");
+
+    const { data: post, error: postError } = await supabase
+      .from("posts")
+      .insert({
+        user_id: authUser.id,
+        category,
+        comment: comment.trim() || null,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        address: location.address || null,
+        is_anonymous: false,
+        is_sensitive: isSensitive,
+        status: "live",
+        confirmations: 0,
+        views: 0,
+        comment_count: 0,
+        report_count: 0,
+      })
+      .select()
+      .single();
+
+    if (postError) {
+      throw new Error(postError.message);
+    }
+
+    setUploadProgress(85);
+
+    for (const mediaItem of mediaUrls) {
+      await supabase.from("post_media").insert({
+        post_id: post.id,
+        url: mediaItem.url,
+        media_type: mediaItem.type,
+        is_sensitive: isSensitive,
+      });
+    }
+
+    for (const tag of tags) {
+      await supabase.from("post_tags").insert({
+        post_id: post.id,
+        tag,
+      });
+    }
+
+    setUploadProgress(90);
+
+    await supabase
+      .from("users")
+      .update({
+        last_latitude: location.latitude,
+        last_longitude: location.longitude,
+        last_location_updated_at: new Date().toISOString(),
+      })
+      .eq("id", authUser.id);
+
+    setUploadProgress(95);
+
+    notifyUsersAboutIncident(
+      post.id,
+      authUser.id,
+      category,
+      location.address || null,
+      location.latitude,
+      location.longitude
+    ).then(count => {
+      console.log(`Notified ${count} users about new post`);
+    }).catch(err => {
+      console.error("Error notifying users:", err);
+    });
+
+    setUploadProgress(100);
+    setToast("Post uploaded ✓");
+
+    window.dispatchEvent(new Event("peja-post-created"));
+    sessionStorage.setItem("peja-feed-refresh", "true");
+
+    setTimeout(() => {
+      const inOverlay = typeof window !== "undefined" && (window as any).__pejaOverlayOpen;
+      if (inOverlay) router.back();
+      else router.push("/");
+    }, 650);
+
+  } catch (err: any) {
+    console.error("Submit error:", err);
+    setError(err.message || "Something went wrong");
+  } finally {
+    setIsLoading(false);
+    setUploadProgress(0);
+    setToast(null);
+  }
+};
 
   const photoCount = media.filter(m => m.type.startsWith("image/")).length;
   const videoCount = media.filter(m => m.type.startsWith("video/")).length;

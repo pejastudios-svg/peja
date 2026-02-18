@@ -36,8 +36,6 @@ export function InlineVideo({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Stable refs for use inside IntersectionObserver callback
-  // so the observer never needs to be re-created
   const blockedRef = useRef(false);
   const userPausedRef = useRef(false);
   const soundEnabledRef = useRef(false);
@@ -50,12 +48,10 @@ export function InlineVideo({
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
 
-  // Keep soundEnabledRef in sync
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
 
-  // Pathname change — block autoplay on other pages
   useEffect(() => {
     if (pathname !== mountingPath.current) {
       setBlocked(true);
@@ -68,7 +64,6 @@ export function InlineVideo({
     }
   }, [pathname]);
 
-  // Check for return time from VideoLightbox when modal closes
   useEffect(() => {
     const handleModalClose = () => {
       const returnTime = handoff.getReturnTime(src);
@@ -77,7 +72,6 @@ export function InlineVideo({
         if (v) {
           v.currentTime = returnTime;
           handoff.clearReturnTime(src);
-          // Resume playing
           userPausedRef.current = false;
           blockedRef.current = false;
           setBlocked(false);
@@ -126,18 +120,12 @@ export function InlineVideo({
     }
   };
 
-  // =========================================================
-  // doPlay: starts muted, then unmutes if soundEnabled
-  // This is called by user actions (tap play, toggle)
-  // =========================================================
   const doPlay = async () => {
     const v = videoRef.current;
     if (!v) return;
     try {
-      // Always start muted for mobile autoplay compatibility
       v.muted = true;
       await v.play();
-      // Unmute after successful play if sound is on
       if (soundEnabledRef.current) {
         v.muted = false;
       }
@@ -145,9 +133,7 @@ export function InlineVideo({
         new CustomEvent(PLAYING_EVENT, { detail: { id: instanceId } })
       );
       resetControlsTimer();
-    } catch {
-      // Autoplay blocked, ignore
-    }
+    } catch {}
   };
 
   const doPause = () => {
@@ -177,7 +163,6 @@ export function InlineVideo({
       const v = videoRef.current;
       const currentTime = v?.currentTime || 0;
 
-      // Capture current frame as poster for instant lightbox display
       let posterDataUrl: string | undefined;
       if (v && v.videoWidth > 0 && v.videoHeight > 0) {
         try {
@@ -189,14 +174,10 @@ export function InlineVideo({
             ctx.drawImage(v, 0, 0);
             posterDataUrl = canvas.toDataURL("image/jpeg", 0.7);
           }
-        } catch {
-          // CORS or other error, ignore
-        }
+        } catch {}
       }
 
-      // Store handoff data for VideoLightbox
       handoff.beginExpand(src, currentTime, posterDataUrl || null);
-
       doPause();
       onExpand(currentTime, posterDataUrl);
     }
@@ -219,11 +200,6 @@ export function InlineVideo({
     resetControlsTimer();
   };
 
-  // =========================================================
-  // Mute/unmute: ONLY when user clicks the mute button
-  // We do NOT have a useEffect that syncs v.muted = !soundEnabled
-  // because that caused autoplay rejection on mobile
-  // =========================================================
   const handleMuteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     const newVal = !soundEnabled;
@@ -232,7 +208,6 @@ export function InlineVideo({
     if (v) v.muted = !newVal;
   };
 
-  // Stop other videos when this one plays
   useEffect(() => {
     const handler = (e: any) => {
       if (e?.detail?.id === instanceId) return;
@@ -243,12 +218,6 @@ export function InlineVideo({
     return () => window.removeEventListener(PLAYING_EVENT, handler);
   }, [instanceId]);
 
-  // =========================================================
-  // SINGLE IntersectionObserver — the ONLY one
-  // Pause at < 0.5 (half off screen)
-  // Play at >= 0.9 (90% visible)
-  // Between 0.5 and 0.9: do nothing (dead zone)
-  // =========================================================
   useEffect(() => {
     if (!autoPlay) return;
 
@@ -260,22 +229,17 @@ export function InlineVideo({
         const ratio = entries[0].intersectionRatio;
 
         if (ratio < 0.5) {
-          // Half off screen → pause
-          // Also reset userPaused so when they scroll back, it auto-plays again
           userPausedRef.current = false;
           const v = videoRef.current;
           if (v && !v.paused) v.pause();
         } else if (ratio >= 0.9) {
-          // 90% visible → auto play
           if (blockedRef.current) return;
           if (userPausedRef.current) return;
           const v = videoRef.current;
           if (v && v.paused) {
-            // Always start muted for autoplay reliability
             v.muted = true;
             v.play()
               .then(() => {
-                // Unmute after successful play if sound is enabled
                 if (soundEnabledRef.current) {
                   v.muted = false;
                 }
@@ -283,22 +247,16 @@ export function InlineVideo({
                   new CustomEvent(PLAYING_EVENT, { detail: { id: instanceId } })
                 );
               })
-              .catch(() => {
-                // Autoplay blocked even muted — very rare, ignore
-              });
+              .catch(() => {});
           }
         }
-        // Between 0.5 and 0.9: do nothing — prevents rapid toggling
       },
       { threshold: [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0] }
     );
     obs.observe(el);
     return () => obs.disconnect();
   }, [autoPlay, instanceId]);
-  // Dependencies: only autoPlay and instanceId (both stable)
-  // Everything else is accessed via refs
 
-  // Modal open/close
   useEffect(() => {
     const onModalOpen = () => {
       setBlocked(true);
@@ -306,14 +264,12 @@ export function InlineVideo({
       const v = videoRef.current;
       if (v && !v.paused) v.pause();
     };
-    // Note: peja-modal-close is handled in the return-time effect above
     window.addEventListener("peja-modal-open", onModalOpen);
     return () => {
       window.removeEventListener("peja-modal-open", onModalOpen);
     };
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       const v = videoRef.current;
@@ -338,7 +294,7 @@ export function InlineVideo({
         poster={poster}
         className={className}
         playsInline
-        preload="metadata"
+        preload="auto"
         muted
         loop
         onTimeUpdate={handleTimeUpdate}
@@ -351,7 +307,6 @@ export function InlineVideo({
         onError={() => onError?.()}
       />
 
-      {/* Play button overlay when paused (for non-autoplay mode) */}
       {!isPlaying && !autoPlay && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-5">
           <button
@@ -364,7 +319,7 @@ export function InlineVideo({
       )}
 
       <div
-        className={`absolute inset-x-0 bottom-0 p-3 bg-linear-to-t from-black/80 to-transparent transition-opacity duration-300 ${
+        className={`absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 ${
           showControls || !isPlaying ? "opacity-100" : "opacity-0"
         }`}
         onClick={(e) => e.stopPropagation()}

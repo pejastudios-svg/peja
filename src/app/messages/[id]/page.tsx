@@ -1225,25 +1225,33 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
   // =====================================================
   // FILE HANDLING
   // =====================================================
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
+ const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = e.target.files;
+  if (!files) return;
 
-    const newMedia: { file: File; preview: string; type: string }[] = [];
-    Array.from(files).forEach((file) => {
-      if (file.size > 50 * 1024 * 1024) {
-        toast.warning("File too large. Max 50MB.");
-        return;
-      }
-      const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
-      newMedia.push({ file, preview, type: file.type });
-    });
+  const { validateMediaFile } = await import("@/lib/mediaCompression");
 
-    setPendingMedia((prev) => [...prev, ...newMedia].slice(0, 5));
-    setShowAttach(false);
-    setPlusRotated(false);
-    e.target.value = "";
-  };
+  const newMedia: { file: File; preview: string; type: string }[] = [];
+
+  for (const file of Array.from(files)) {
+    // Validate file
+    const validation = validateMediaFile(file);
+    if (!validation.valid) {
+      toast.warning(validation.error || "Invalid file");
+      continue;
+    }
+
+    const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
+    newMedia.push({ file, preview, type: file.type });
+  }
+
+  if (newMedia.length === 0) return;
+
+  setPendingMedia((prev) => [...prev, ...newMedia].slice(0, 5));
+  setShowAttach(false);
+  setPlusRotated(false);
+  e.target.value = "";
+};
 
   const removePendingMedia = (index: number) => {
     setPendingMedia((prev) => {
@@ -1767,36 +1775,108 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
       let mediaItems: { url: string; media_type: string; file_name: string; file_size: number }[] = [];
 
       if (mediaToSend.length > 0) {
-        for (let i = 0; i < mediaToSend.length; i++) {
-          const media = mediaToSend[i];
-          const ext = media.file.name.split(".").pop() || "file";
-          const path = `messages/${conversationId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const { compressImage, compressVideo } = await import("@/lib/mediaCompression");
 
-          const { error: uploadError } = await supabase.storage
-            .from("message-media")
-            .upload(path, media.file);
-          if (uploadError) { console.error("Upload error:", uploadError); continue; }
+  for (let i = 0; i < mediaToSend.length; i++) {
+    const media = mediaToSend[i];
+    let fileToUpload = media.file;
+    let uploadToCloudinary = false;
+    let cloudinaryUrl = "";
 
-          const { data: urlData } = supabase.storage
-            .from("message-media")
-            .getPublicUrl(path);
+    try {
+      // Compress images client-side
+      if (media.type.startsWith("image/")) {
+        toast.info("Processing image...", 2000);
+        
+        fileToUpload = await compressImage(media.file, (progress) => {
+          const overallProgress = Math.round(
+            ((i + progress / 100) / mediaToSend.length) * 100
+          );
+          setUploadingMsgIds((prev) => new Map(prev).set(tempId, overallProgress));
+        });
+      }
 
-          let mediaType = "document";
-          if (media.type.startsWith("image/")) mediaType = "image";
-          else if (media.type.startsWith("video/")) mediaType = "video";
-          else if (media.type.startsWith("audio/")) mediaType = "audio";
+      // Compress videos via Cloudinary
+      if (media.type.startsWith("video/")) {
+        const sizeMB = media.file.size / 1024 / 1024;
+        
+        if (sizeMB > 16) {
+         toast.info("Processing video...", 3000);
+          
+          try {
+            const result = await compressVideo(media.file, (progress) => {
+              const overallProgress = Math.round(
+                ((i + progress / 100) / mediaToSend.length) * 100
+              );
+              setUploadingMsgIds((prev) => new Map(prev).set(tempId, overallProgress));
+            });
 
-          mediaItems.push({
-            url: urlData.publicUrl,
-            media_type: mediaType,
-            file_name: media.file.name,
-            file_size: media.file.size,
-          });
-
-          const progress = Math.round(((i + 1) / mediaToSend.length) * 100);
-          setUploadingMsgIds((prev) => new Map(prev).set(tempId, progress));
+            uploadToCloudinary = true;
+            cloudinaryUrl = result.url;
+            
+            console.log("[Upload] Video compressed via Cloudinary:", {
+              original: `${sizeMB.toFixed(2)}MB`,
+              compressed: `${(result.size / 1024 / 1024).toFixed(2)}MB`,
+            });
+          } catch (error: any) {
+            if (error.message !== "SKIP_COMPRESSION") {
+              throw error;
+            }
+            // Video under limit, upload normally
+          }
         }
       }
+
+      let mediaUrl = "";
+      let finalFileSize = fileToUpload.size;
+
+      // Upload to Cloudinary or Supabase Storage
+      if (uploadToCloudinary) {
+        mediaUrl = cloudinaryUrl;
+      } else {
+        const ext = fileToUpload.name.split(".").pop() || "file";
+        const path = `messages/${conversationId}/${Date.now()}_${Math.random()
+          .toString(36)
+          .slice(2)}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("message-media")
+          .upload(path, fileToUpload);
+
+        if (uploadError) {
+          console.error("Upload error:", uploadError);
+          continue;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from("message-media")
+          .getPublicUrl(path);
+
+        mediaUrl = urlData.publicUrl;
+      }
+
+      let mediaType = "document";
+      if (media.type.startsWith("image/")) mediaType = "image";
+      else if (media.type.startsWith("video/")) mediaType = "video";
+      else if (media.type.startsWith("audio/")) mediaType = "audio";
+
+      mediaItems.push({
+        url: mediaUrl,
+        media_type: mediaType,
+        file_name: fileToUpload.name,
+        file_size: finalFileSize,
+      });
+
+      const progress = Math.round(((i + 1) / mediaToSend.length) * 100);
+      setUploadingMsgIds((prev) => new Map(prev).set(tempId, progress));
+
+    } catch (error: any) {
+      console.error("[Upload] Media processing error:", error);
+      toast.danger(error.message || "Failed to process media");
+      continue;
+    }
+  }
+}
 
       const messageData: any = {
         conversation_id: conversationId,
@@ -2232,49 +2312,84 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
                                 {msg.media.map((m) => (
                                   <div key={m.id}>
                                     {m.media_type === "image" && (
-                                      <img
-                                        src={m.url}
-                                        alt=""
-                                        className="rounded-xl max-w-full max-h-60 object-cover cursor-pointer active:scale-[0.98] transition-transform"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setLightboxImage(m.url);
-                                        }}
-                                        onTouchEnd={(e) => {
-                                          // Prevent long press from also opening lightbox
-                                          if (longPressTimerRef.current) {
-                                            clearTimeout(longPressTimerRef.current);
-                                            longPressTimerRef.current = null;
-                                          }
-                                        }}
-                                      />
-                                    )}
+  <>
+    {m.url ? (
+      <img
+        src={m.url}
+        alt=""
+        className="rounded-xl max-w-full max-h-60 object-cover cursor-pointer active:scale-[0.98] transition-transform"
+        onClick={(e) => {
+          e.stopPropagation();
+          setLightboxImage(m.url);
+        }}
+        onTouchEnd={(e) => {
+          if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+          }
+        }}
+      />
+    ) : (
+      <div
+        className={`flex items-center gap-3 p-4 rounded-xl ${
+          isMine ? "bg-white/10" : "bg-white/5"
+        }`}
+      >
+        <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
+          <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-white/60">Uploading image...</p>
+          <p className="text-[10px] text-white/40 truncate">{m.file_name}</p>
+        </div>
+      </div>
+    )}
+  </>
+)}
                                     {m.media_type === "video" && (
-                                      <div
-                                        className="cursor-pointer active:scale-[0.98] transition-transform relative"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setLightboxVideo(m.url);
-                                        }}
-                                        onTouchEnd={(e) => {
-                                          if (longPressTimerRef.current) {
-                                            clearTimeout(longPressTimerRef.current);
-                                            longPressTimerRef.current = null;
-                                          }
-                                        }}
-                                      >
-                                        <video
-                                          src={m.url}
-                                          className="rounded-xl max-w-full max-h-60"
-                                          preload="metadata"
-                                        />
-                                        <div className="absolute inset-0 flex items-center justify-center">
-                                          <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
-                                            <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-14 border-l-white ml-1" />
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
+  <>
+    {m.url ? (
+      <div
+        className="cursor-pointer active:scale-[0.98] transition-transform relative"
+        onClick={(e) => {
+          e.stopPropagation();
+          setLightboxVideo(m.url);
+        }}
+        onTouchEnd={(e) => {
+          if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+          }
+        }}
+      >
+        <video
+          src={m.url}
+          className="rounded-xl max-w-full max-h-60"
+          preload="metadata"
+        />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
+            <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-14 border-l-white ml-1" />
+          </div>
+        </div>
+      </div>
+    ) : (
+      <div
+        className={`flex items-center gap-3 p-4 rounded-xl ${
+          isMine ? "bg-white/10" : "bg-white/5"
+        }`}
+      >
+        <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
+          <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-white/60">Uploading video...</p>
+          <p className="text-[10px] text-white/40 truncate">{m.file_name}</p>
+        </div>
+      </div>
+    )}
+  </>
+)}
                                     {m.media_type === "audio" && (
   <>
     {m.url ? (
