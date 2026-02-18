@@ -502,16 +502,49 @@ export default function ChatPage() {
   }, []);
 
   const scrollToMessage = useCallback((messageId: string) => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
+  const container = messagesContainerRef.current;
+  if (!container) return;
 
-    const el = container.querySelector(`[data-msg-id="${messageId}"]`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+  const el = container.querySelector(`[data-msg-id="${messageId}"]`) as HTMLElement | null;
+  if (!el) return;
+
+  const containerRect = container.getBoundingClientRect();
+  const elRect = el.getBoundingClientRect();
+
+  // Calculate distance from current view
+  const distanceFromTop = elRect.top - containerRect.top;
+  const distanceFromBottom = containerRect.bottom - elRect.bottom;
+  const isInView = distanceFromTop >= 0 && distanceFromBottom >= 0;
+
+  // If already in view, just highlight
+  if (isInView) {
+    setHighlightedMsgId(messageId);
+    setTimeout(() => setHighlightedMsgId(null), 2000);
+    return;
+  }
+
+  // Calculate absolute distance
+  const absoluteDistance = Math.abs(distanceFromTop);
+
+  // If close (within 2 viewport heights), smooth scroll
+  if (absoluteDistance < containerRect.height * 2) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setHighlightedMsgId(messageId);
+    setTimeout(() => setHighlightedMsgId(null), 2000);
+  } else {
+    // If far, jump to near the message first, then smooth scroll
+    // This is the WhatsApp behavior for very old messages
+    
+    // First, instant scroll to roughly where the message is
+    el.scrollIntoView({ behavior: "instant", block: "center" });
+    
+    // Then apply highlight after a tiny delay
+    requestAnimationFrame(() => {
       setHighlightedMsgId(messageId);
       setTimeout(() => setHighlightedMsgId(null), 2000);
-    }
-  }, []);
+    });
+  }
+}, []);
 
   // =====================================================
   // AUTO-SCROLL ONLY FOR OWN MESSAGES
@@ -1297,26 +1330,51 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
   // =====================================================
   // LONG PRESS HANDLER — with haptic-style feedback
   // =====================================================
-  const handleTouchStart = (msg: Message, e: React.TouchEvent | React.MouseEvent) => {
-    if (msg.is_deleted) return;
+  // Track long press start position for movement detection
+const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
 
-    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+const handleTouchStart = (msg: Message, e: React.TouchEvent | React.MouseEvent) => {
+  if (msg.is_deleted) return;
 
-    longPressTimerRef.current = setTimeout(() => {
-      // Vibrate if available (haptic feedback)
-      if (navigator.vibrate) navigator.vibrate(30);
-      setContextMenuMsg(msg);
-      setContextMenuPos({ x: clientX, y: clientY });
-    }, 400);
-  };
+  const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+  const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
-  const handleTouchEnd = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
+  // Store start position for movement detection
+  longPressStartRef.current = { x: clientX, y: clientY };
+
+  longPressTimerRef.current = setTimeout(() => {
+    // Vibrate if available (haptic feedback)
+    if (navigator.vibrate) navigator.vibrate(30);
+    setContextMenuMsg(msg);
+    setContextMenuPos({ x: clientX, y: clientY });
+    longPressStartRef.current = null;
+  }, 400);
+};
+
+const handleTouchMove = (e: React.TouchEvent) => {
+  if (!longPressStartRef.current || !longPressTimerRef.current) return;
+
+  const clientX = e.touches[0].clientX;
+  const clientY = e.touches[0].clientY;
+
+  const dx = Math.abs(clientX - longPressStartRef.current.x);
+  const dy = Math.abs(clientY - longPressStartRef.current.y);
+
+  // Cancel long press if finger moved more than 10px
+  if (dx > 10 || dy > 10) {
+    clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+    longPressStartRef.current = null;
+  }
+};
+
+const handleTouchEnd = () => {
+  if (longPressTimerRef.current) {
+    clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+  }
+  longPressStartRef.current = null;
+};
 
   // =====================================================
   // SWIPE TO REPLY
@@ -2026,11 +2084,22 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
       >
         <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={() => router.push("/messages", { scroll: false })}
-            className="p-1.5 -ml-1 hover:bg-white/5 rounded-lg active:scale-95 transition-transform"
-          >
-            <ArrowLeft className="w-5 h-5 text-dark-200" />
-          </button>
+  onClick={() => {
+    // Trigger exit animation then navigate
+    const layout = document.querySelector('[data-chat-layout]');
+    if (layout) {
+      layout.classList.add('translate-x-full');
+      setTimeout(() => {
+        router.push("/messages", { scroll: false });
+      }, 250);
+    } else {
+      router.push("/messages", { scroll: false });
+    }
+  }}
+  className="p-1.5 -ml-1 hover:bg-white/5 rounded-lg active:scale-95 transition-transform"
+>
+  <ArrowLeft className="w-5 h-5 text-dark-200" />
+</button>
 
           <button
             onClick={() => {
@@ -2183,14 +2252,17 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
                         : ""
                     }`}
                     onTouchStart={(e) => {
-                      handleTouchStart(msg, e);
-                      handleSwipeStart(msg.id, e);
-                    }}
-                    onTouchMove={(e) => handleSwipeMove(msg, e)}
-                    onTouchEnd={() => {
-                      handleTouchEnd();
-                      handleSwipeEnd(msg);
-                    }}
+  handleTouchStart(msg, e);
+  handleSwipeStart(msg.id, e);
+}}
+onTouchMove={(e) => {
+  handleTouchMove(e); // Add this for long press cancellation
+  handleSwipeMove(msg, e);
+}}
+onTouchEnd={() => {
+  handleTouchEnd();
+  handleSwipeEnd(msg);
+}}
                     onMouseDown={(e) => handleTouchStart(msg, e)}
                     onMouseUp={handleTouchEnd}
                     onMouseLeave={handleTouchEnd}

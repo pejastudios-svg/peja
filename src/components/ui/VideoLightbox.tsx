@@ -28,6 +28,19 @@ export function VideoLightbox({
   const hasAppliedHandoffRef = useRef(false);
   const closingRef = useRef(false);
 
+  const [showControls, setShowControls] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [showPoster, setShowPoster] = useState(true);
+
+  const { soundEnabled, setSoundEnabled } = useAudio();
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const fadeTimeout = useRef<NodeJS.Timeout | null>(null);
+
   const incrementView = async (id: string) => {
     if (viewedRef.current.has(id)) return;
     viewedRef.current.add(id);
@@ -50,20 +63,7 @@ export function VideoLightbox({
     }
   };
 
-  const [showControls, setShowControls] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [videoReady, setVideoReady] = useState(false);
-
-  const { soundEnabled, setSoundEnabled } = useAudio();
-
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
-
-  const fadeTimeout = useRef<NodeJS.Timeout | null>(null);
-
-  // Determine the best poster and start time using handoff data
+  // Get effective start data from handoff
   const getEffectiveStartData = () => {
     const handoffData = handoff.getHandoff();
     if (handoffData && videoUrl && handoffData.src === videoUrl) {
@@ -84,7 +84,7 @@ export function VideoLightbox({
 
   useEffect(() => {
     if (isOpen) {
-      setVideoReady(false);
+      setShowPoster(true);
       setShowControls(true);
       setIsPlaying(true);
       closingRef.current = false;
@@ -116,14 +116,12 @@ export function VideoLightbox({
     } else {
       document.body.style.overflow = "";
       setDragOffset({ x: 0, y: 0 });
+      setShowPoster(true);
 
       if (videoRef.current) {
         videoRef.current.pause();
         videoRef.current.currentTime = 0;
       }
-
-      // Only dispatch modal-close if we're not already in the process of closing
-      // (the handleClose function handles this)
     }
     return () => {
       document.body.style.overflow = "";
@@ -150,14 +148,12 @@ export function VideoLightbox({
     if (closingRef.current) return;
     closingRef.current = true;
 
-    // Return current time to InlineVideo via handoff context
     const v = videoRef.current;
     if (v && videoUrl) {
       handoff.returnTime(videoUrl, v.currentTime);
       v.pause();
     }
 
-    // Dispatch modal-close so InlineVideo can resume
     window.dispatchEvent(new Event("peja-modal-close"));
     onClose();
   };
@@ -231,6 +227,14 @@ export function VideoLightbox({
     resetFadeTimer();
   };
 
+  // Hide poster once video has actual frames to show
+  const handleVideoCanPlay = () => {
+    // Small delay to ensure frame is rendered
+    setTimeout(() => {
+      setShowPoster(false);
+    }, 50);
+  };
+
   if (!isOpen || !videoUrl) return null;
 
   return createPortal(
@@ -258,7 +262,9 @@ export function VideoLightbox({
       />
 
       <div
-        className={`absolute left-4 z-10 transition-opacity duration-300 opacity-0 group-hover:opacity-100 ${showControls ? "opacity-100!" : "pointer-events-none"}`}
+        className={`absolute left-4 z-10 transition-opacity duration-300 ${
+          showControls ? "opacity-100" : "opacity-0 pointer-events-none"
+        }`}
         style={{ top: "calc(1rem + var(--cap-status-bar-height, 0px))" }}
       >
         <button
@@ -275,24 +281,24 @@ export function VideoLightbox({
       <div className="absolute inset-0 z-5" onClick={handleScreenTap} />
 
       <div
-        className="relative z-1 w-full h-full flex items-center justify-center transition-transform duration-200 ease-out"
+        className="relative z-1 w-full h-full flex items-center justify-center"
         style={{
           transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${1 - dragDistance / 1000})`,
           transition: isDragging ? "none" : "transform 0.3s ease-out",
         }}
       >
-        {/* Poster image shown until video is actually playing — provides instant visual */}
-        {effectivePoster && !videoReady && (
+        {/* Poster overlay - shows instantly, hides when video has frames */}
+        {effectivePoster && showPoster && (
           <img
             src={effectivePoster}
             alt=""
-            className="absolute inset-0 w-full h-full object-contain pointer-events-none z-[1]"
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none z-[2]"
           />
         )}
+
         <video
           ref={videoRef}
           src={videoUrl}
-          poster={effectivePoster || undefined}
           className="max-w-full max-h-full w-full h-full object-contain pointer-events-none"
           playsInline
           autoPlay
@@ -300,9 +306,10 @@ export function VideoLightbox({
           loop
           muted={!soundEnabled}
           onTimeUpdate={handleTimeUpdate}
-          onPlaying={() => setVideoReady(true)}
+          onCanPlay={handleVideoCanPlay}
+          onPlaying={handleVideoCanPlay}
           onEnded={() => setIsPlaying(false)}
-          onCanPlay={() => {
+          onLoadedData={() => {
             const v = videoRef.current;
             if (v && !hasAppliedHandoffRef.current && effectiveStartTime > 0) {
               if (Math.abs(v.currentTime - effectiveStartTime) > 0.5) {
@@ -315,7 +322,9 @@ export function VideoLightbox({
       </div>
 
       <div
-        className={`absolute bottom-0 inset-x-0 p-6 bg-linear-to-t from-black/90 via-black/50 to-transparent z-10 transition-all duration-300 opacity-0 group-hover:opacity-100 ${showControls && !isDragging ? "opacity-100! pointer-events-auto" : "pointer-events-none opacity-0!"}`}
+        className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-10 transition-all duration-300 ${
+          showControls && !isDragging ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0"
+        }`}
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >
