@@ -233,70 +233,102 @@ export default function ChatPage() {
   // =====================================================
   // FETCH CONVERSATION DATA
   // =====================================================
-  useEffect(() => {
-    if (!user?.id || !conversationId) return;
+useEffect(() => {
+  if (!user?.id || !conversationId) return;
 
-    const fetchData = async () => {
-      // Restore cached messages immediately
-      try {
-        const cached = sessionStorage.getItem(MSG_CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMessages(parsed);
+  const fetchData = async () => {
+    // STEP 1: Restore cached messages IMMEDIATELY for instant display
+    let hasCachedMessages = false;
+    try {
+      const cached = sessionStorage.getItem(MSG_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+          hasCachedMessages = true;
+          // Don't set loading to false yet - we still need other user data
+        }
+      }
+    } catch (e) {
+      console.error("[Cache] Failed to restore:", e);
+    }
+
+    // STEP 2: Try to restore cached other user data
+    try {
+      const cachedUser = sessionStorage.getItem(`peja-chat-user-${conversationId}`);
+      if (cachedUser) {
+        const parsed = JSON.parse(cachedUser);
+        if (parsed?.id) {
+          setOtherUser(parsed);
+          setOtherUserOnline(presenceManager.isOnline(parsed.id));
+          
+          // If we have both cached messages and cached user, show content immediately
+          if (hasCachedMessages) {
             setLoading(false);
           }
         }
+      }
+    } catch (e) {
+      console.error("[Cache] Failed to restore user:", e);
+    }
+
+    // STEP 3: Fetch fresh data in background
+    try {
+      const { data: participants, error: pErr } = await supabase
+        .from("conversation_participants")
+        .select("user_id, is_muted, is_blocked, last_read_at")
+        .eq("conversation_id", conversationId);
+      if (pErr) throw pErr;
+
+      const myP = participants?.find((p) => p.user_id === user.id);
+      const otherP = participants?.find((p) => p.user_id !== user.id);
+      if (!otherP) { router.replace("/messages"); return; }
+
+      setIsMuted(myP?.is_muted || false);
+      setIsBlocked(myP?.is_blocked || false);
+
+      const otherReadAt = otherP.last_read_at || null;
+      setOtherLastReadAt(otherReadAt);
+
+      const { data: otherUserData, error: uErr } = await supabase
+        .from("users")
+        .select("id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status")
+        .eq("id", otherP.user_id)
+        .single();
+      if (uErr) throw uErr;
+
+      const otherVIP = otherUserData as VIPUser;
+      otherVIP.is_online = presenceManager.isOnline(otherVIP.id);
+      setOtherUser(otherVIP);
+      setOtherUserOnline(presenceManager.isOnline(otherVIP.id));
+
+      // Cache the user data for instant restore next time
+      try {
+        sessionStorage.setItem(`peja-chat-user-${conversationId}`, JSON.stringify(otherVIP));
       } catch {}
 
-      try {
-        const { data: participants, error: pErr } = await supabase
-          .from("conversation_participants")
-          .select("user_id, is_muted, is_blocked, last_read_at")
-          .eq("conversation_id", conversationId);
-        if (pErr) throw pErr;
+      const { data: myDeletions } = await supabase
+        .from("message_deletions")
+        .select("message_id")
+        .eq("user_id", user.id);
+      myDeletionsRef.current = new Set((myDeletions || []).map((d: any) => d.message_id));
 
-        const myP = participants?.find((p) => p.user_id === user.id);
-        const otherP = participants?.find((p) => p.user_id !== user.id);
-        if (!otherP) { router.replace("/messages"); return; }
-
-        setIsMuted(myP?.is_muted || false);
-        setIsBlocked(myP?.is_blocked || false);
-
-        const otherReadAt = otherP.last_read_at || null;
-        setOtherLastReadAt(otherReadAt);
-
-        const { data: otherUserData, error: uErr } = await supabase
-          .from("users")
-          .select("id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status")
-          .eq("id", otherP.user_id)
-          .single();
-        if (uErr) throw uErr;
-
-        const otherVIP = otherUserData as VIPUser;
-        otherVIP.is_online = presenceManager.isOnline(otherVIP.id);
-        setOtherUser(otherVIP);
-        setOtherUserOnline(presenceManager.isOnline(otherVIP.id));
-
-        const { data: myDeletions } = await supabase
-          .from("message_deletions")
-          .select("message_id")
-          .eq("user_id", user.id);
-        myDeletionsRef.current = new Set((myDeletions || []).map((d: any) => d.message_id));
-
-        await fetchMessages(otherReadAt);
-        await markAsRead();
-        try { sessionStorage.setItem("peja-last-chat-id", conversationId); } catch {}
-      } catch (e: any) {
-        console.error("Chat fetch error:", e?.message || e);
+      await fetchMessages(otherReadAt);
+      await markAsRead();
+      try { sessionStorage.setItem("peja-last-chat-id", conversationId); } catch {}
+    } catch (e: any) {
+      console.error("Chat fetch error:", e?.message || e);
+      // Only redirect if we don't have cached data to show
+      if (!hasCachedMessages) {
         router.replace("/messages");
-      } finally {
-        setLoading(false);
       }
-    };
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    fetchData();
-  }, [user?.id, conversationId]);
+  fetchData();
+}, [user?.id, conversationId]);
 
   // =====================================================
   // PRESENCE: Watch other user's online status
@@ -2044,34 +2076,102 @@ const handleTouchEnd = () => {
   if (user.is_vip === false) return null;
 
   if (loading && messages.length === 0) {
-    return (
-      <div
-        className="fixed inset-0 flex flex-col bg-[#0a0812]"
+  return (
+    <div className="flex flex-col h-full bg-[#0a0812]">
+      {/* Header skeleton */}
+      <header
+        className="glass-header flex items-center justify-between px-4 shrink-0 z-10"
+        style={{
+          height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
+          paddingTop: "env(safe-area-inset-top, 0px)",
+        }}
       >
-        <div className="glass-header flex items-center gap-3 px-4 shrink-0" style={{ height: "calc(3.5rem + env(safe-area-inset-top, 0px))", paddingTop: "env(safe-area-inset-top, 0px)" }}>
+        <div className="flex items-center gap-3">
           <Skeleton className="w-5 h-5 rounded" />
-          <Skeleton className="w-10 h-10 rounded-full" />
+          <Skeleton className="w-9 h-9 rounded-full" />
           <div>
             <Skeleton className="w-28 h-4 mb-1" />
             <Skeleton className="w-16 h-3" />
           </div>
         </div>
-        <div className="flex-1 p-4 space-y-4 flex flex-col justify-end">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className={`flex ${i % 2 === 0 ? "justify-start" : "justify-end"}`}>
-              <Skeleton className={`h-12 rounded-2xl ${i % 2 === 0 ? "w-48" : "w-36"}`} />
-            </div>
-          ))}
+        <Skeleton className="w-5 h-5 rounded" />
+      </header>
+
+      {/* Messages skeleton - using flex-col-reverse like real messages */}
+      <div className="flex-1 overflow-hidden px-4 py-4 flex flex-col-reverse">
+        <div className="space-y-2">
+          {/* Recent messages at bottom */}
+          <div className="flex justify-end">
+            <Skeleton className="h-10 w-32 rounded-2xl rounded-br-md" />
+          </div>
+          <div className="flex justify-start items-end gap-2">
+            <Skeleton className="w-7 h-7 rounded-full shrink-0" />
+            <Skeleton className="h-14 w-48 rounded-2xl rounded-bl-md" />
+          </div>
+          <div className="flex justify-end">
+            <Skeleton className="h-10 w-40 rounded-2xl rounded-br-md" />
+          </div>
+          <div className="flex justify-start items-end gap-2">
+            <Skeleton className="w-7 h-7 rounded-full shrink-0" />
+            <Skeleton className="h-10 w-36 rounded-2xl rounded-bl-md" />
+          </div>
+          <div className="flex justify-end">
+            <Skeleton className="h-16 w-44 rounded-2xl rounded-br-md" />
+          </div>
+          <div className="flex justify-start items-end gap-2">
+            <Skeleton className="w-7 h-7 rounded-full shrink-0" />
+            <Skeleton className="h-10 w-52 rounded-2xl rounded-bl-md" />
+          </div>
         </div>
       </div>
-    );
-  }
 
-  if (!otherUser) return null;
-    return (
-  <div
-    className="fixed inset-0 flex flex-col bg-[#0a0812]"
-  >
+      {/* Input skeleton */}
+      <div
+        className="px-3 py-2 border-t border-white/5 bg-[#0d0a14] shrink-0"
+        style={{
+          paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
+        }}
+      >
+        <div className="flex items-end gap-1.5">
+          <Skeleton className="w-10 h-10 rounded-xl" />
+          <Skeleton className="flex-1 h-10 rounded-2xl" />
+          <Skeleton className="w-10 h-10 rounded-xl" />
+          <Skeleton className="w-10 h-10 rounded-xl" />
+          <Skeleton className="w-10 h-10 rounded-xl" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+  if (!otherUser) {
+  // Show skeleton while loading user
+  return (
+    <div className="flex flex-col h-full bg-[#0a0812]">
+      <header
+        className="glass-header flex items-center justify-between px-4 shrink-0 z-10"
+        style={{
+          height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
+          paddingTop: "env(safe-area-inset-top, 0px)",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <Skeleton className="w-5 h-5 rounded" />
+          <Skeleton className="w-9 h-9 rounded-full" />
+          <div>
+            <Skeleton className="w-28 h-4 mb-1" />
+            <Skeleton className="w-16 h-3" />
+          </div>
+        </div>
+        <Skeleton className="w-5 h-5 rounded" />
+      </header>
+      <div className="flex-1" />
+    </div>
+  );
+}
+
+return (
+  <div className="flex flex-col h-full bg-[#0a0812]">
       {/* =====================================================
           HEADER
           ===================================================== */}
@@ -2179,12 +2279,13 @@ const handleTouchEnd = () => {
       {/* =====================================================
           MESSAGES LIST
           ===================================================== */}
-                 <div
-        ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5 flex flex-col-reverse"
-        style={{ 
-          overscrollBehavior: 'contain'
-        }}
+      <div
+  ref={messagesContainerRef}
+  className="flex-1 overflow-y-auto px-4 py-4 flex flex-col-reverse"
+  style={{ 
+    overscrollBehavior: 'contain',
+    minHeight: 0, // Important for flex children
+  }}
         onClick={() => {
           // Close emoji picker when tapping messages area
           if (showEmoji) setShowEmoji(false);
@@ -2236,7 +2337,7 @@ const handleTouchEnd = () => {
               const isSwipingThis = swipingMsgId === msg.id;
 
               return (
-                <div key={msg.id} data-msg-id={msg.id}>
+                <div key={msg.id} data-msg-id={msg.id} className="mb-1.5">
                   {showDate && (
                     <div className="flex justify-center my-4">
                       <span className="text-[11px] text-dark-500 bg-dark-900/80 px-3 py-1 rounded-full border border-white/5">

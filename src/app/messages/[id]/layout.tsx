@@ -1,50 +1,46 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useEffect, useState, useRef } from "react";
 
-export default function MessagesLayout({
+export default function ChatLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [isVisible, setIsVisible] = useState(false);
-  const [isExiting, setIsExiting] = useState(false);
-  const pathname = usePathname();
-  const prevPathRef = useRef(pathname);
+  const [ready, setReady] = useState(false);
+  const [animateIn, setAnimateIn] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Trigger enter animation on mount
-    requestAnimationFrame(() => {
-      setIsVisible(true);
-    });
-  }, []);
+    // Wait a frame for children to render their initial state
+    timeoutRef.current = setTimeout(() => {
+      setReady(true);
+      // Then animate in
+      requestAnimationFrame(() => {
+        setAnimateIn(true);
+      });
+    }, 50); // Small delay to let content mount
 
-  // Handle back navigation with exit animation
-  useEffect(() => {
-    const handlePopState = () => {
-      setIsExiting(true);
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   return (
     <div
-  data-chat-layout
-  className={`fixed inset-0 z-50 bg-[#0a0812] transition-transform duration-300 ease-out ${
-    isVisible && !isExiting
-      ? "translate-x-0"
-      : isExiting
-      ? "translate-x-full"
-      : "translate-x-full"
-  }`}
-  style={{
-    willChange: "transform",
-  }}
->
-  {children}
-</div>
+      data-chat-layout
+      className={`fixed inset-0 z-50 bg-[#0a0812] transition-transform duration-300 ease-out ${
+        ready
+          ? animateIn
+            ? "translate-x-0"
+            : "translate-x-full"
+          : "translate-x-full"
+      }`}
+      style={{
+        visibility: ready ? "visible" : "hidden",
+      }}
+    >
+      {children}
+    </div>
   );
 }
