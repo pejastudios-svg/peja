@@ -125,6 +125,7 @@ export default function ChatPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [recordingUsers, setRecordingUsers] = useState<string[]>([]);
   const [otherUserOnline, setOtherUserOnline] = useState(false);
   const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null);
   const [pendingMedia, setPendingMedia] = useState<{ file: File; preview: string; type: string }[]>([]);
@@ -600,14 +601,23 @@ useEffect(() => {
           if (myDeletionsRef.current.has(newMsg.id)) return;
 
           let media: MessageMediaItem[] = [];
-          if (newMsg.content_type === "media" || newMsg.content_type === "document") {
-            await new Promise((r) => setTimeout(r, 500));
-            const { data } = await supabase
-              .from("message_media")
-              .select("*")
-              .eq("message_id", newMsg.id);
-            media = (data || []) as MessageMediaItem[];
-          }
+if (newMsg.content_type === "media" || newMsg.content_type === "document") {
+  // Wait for media to be inserted, with retry
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await new Promise((r) => setTimeout(r, 800));
+    const { data } = await supabase
+      .from("message_media")
+      .select("*")
+      .eq("message_id", newMsg.id);
+    
+    if (data && data.length > 0) {
+      media = data as MessageMediaItem[];
+      break;
+    }
+    
+    console.log(`[Realtime] Media fetch attempt ${attempt + 1} - no media found yet`);
+  }
+}
 
           let replyTo: Message | null = null;
           if (newMsg.reply_to_id) {
@@ -789,18 +799,28 @@ useEffect(() => {
     });
 
     channel
-      .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState();
-        setTypingUsers(
-          Object.keys(state).filter((id) => {
-            if (id === user.id) return false;
-            return (state[id] as any[]).some((p) => p.typing);
-          })
-        );
+  .on("presence", { event: "sync" }, () => {
+    const state = channel.presenceState();
+    
+    // Detect typing users
+    setTypingUsers(
+      Object.keys(state).filter((id) => {
+        if (id === user.id) return false;
+        return (state[id] as any[]).some((p) => p.typing);
       })
-      .subscribe(async (status) => {
-        if (status === "SUBSCRIBED") await channel.track({ typing: false });
-      });
+    );
+    
+    // Detect recording users
+    setRecordingUsers(
+      Object.keys(state).filter((id) => {
+        if (id === user.id) return false;
+        return (state[id] as any[]).some((p) => p.recording);
+      })
+    );
+  })
+  .subscribe(async (status) => {
+    if (status === "SUBSCRIBED") await channel.track({ typing: false, recording: false });
+  });
 
     presenceChannelRef.current = channel;
 
@@ -820,6 +840,11 @@ useEffect(() => {
       presenceChannelRef.current?.track({ typing: false });
     }, 2000);
   }, []);
+
+  const sendRecordingState = useCallback((isRecording: boolean) => {
+  if (!presenceChannelRef.current) return;
+  presenceChannelRef.current.track({ typing: false, recording: isRecording });
+}, []);
 
   // =====================================================
   // EDITOR HELPERS
@@ -1234,13 +1259,14 @@ useEffect(() => {
   // =====================================================
   // Voice recording handlers - delegated to VoiceNoteRecorder component
   const handleRecordingStart = useCallback(() => {
-    setIsRecording(true);
-    setShowVoiceRecorder(true);
-    setShowEmoji(false);
-    setShowAttach(false);
-    setPlusRotated(false);
-    setShowFormatBar(false);
-  }, []);
+  setIsRecording(true);
+  setShowVoiceRecorder(true);
+  setShowEmoji(false);
+  setShowAttach(false);
+  setPlusRotated(false);
+  setShowFormatBar(false);
+  sendRecordingState(true);
+}, [sendRecordingState]);
 
   const handleRecordingEnd = useCallback((blob: Blob, duration: number) => {
     console.log("[VoiceNote] Recording ended, blob size:", blob.size, "duration:", duration);
@@ -1249,9 +1275,10 @@ useEffect(() => {
   }, []);
 
   const handleRecordingCancel = useCallback(() => {
-    setIsRecording(false);
-    setShowVoiceRecorder(false);
-  }, []);
+  setIsRecording(false);
+  setShowVoiceRecorder(false);
+  sendRecordingState(false);
+}, [sendRecordingState]);
 
   const formatDuration = (seconds: number): string => {
     const m = Math.floor(seconds / 60);
@@ -1409,187 +1436,217 @@ useEffect(() => {
   // SEND VOICE NOTE
   // =====================================================
   const handleSendVoiceNote = useCallback(async (file: File, duration: number) => {
-    if (!user?.id || !conversationId) return;
+  if (!user?.id || !conversationId) return;
 
-    setVoiceNoteUploading(true);
-    setShowVoiceRecorder(false);
-    setIsRecording(false);
+  // Validate file has content
+  if (!file || file.size === 0) {
+    console.error("[VoiceNote] File is empty or invalid");
+    toast.danger("Recording failed - no audio data");
+    return;
+  }
 
-    const tempId = `temp-voice-${Date.now()}`;
+  console.log("[VoiceNote] Starting upload:", {
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type,
+    duration,
+  });
 
-    // Create optimistic message
-    const optimisticMsg: Message = {
-      id: tempId,
-      conversation_id: conversationId,
-      sender_id: user.id,
-      content: null,
-      content_type: "media",
+  setVoiceNoteUploading(true);
+  setShowVoiceRecorder(false);
+  setIsRecording(false);
+  sendRecordingState(false);
+
+  const tempId = `temp-voice-${Date.now()}`;
+  const currentReplyingTo = replyingTo;
+
+  // Create optimistic message with loading state
+  const optimisticMsg: Message = {
+    id: tempId,
+    conversation_id: conversationId,
+    sender_id: user.id,
+    content: null,
+    content_type: "media",
+    created_at: new Date().toISOString(),
+    is_deleted: false,
+    edited_at: null,
+    reply_to_id: currentReplyingTo?.id || null,
+    metadata: { duration, uploading: true },
+    media: [{
+      id: `temp-media-${Date.now()}`,
+      message_id: tempId,
+      url: "",
+      media_type: "audio",
+      file_name: file.name,
+      file_size: file.size,
+      mime_type: file.type,
+      thumbnail_url: null,
       created_at: new Date().toISOString(),
-      is_deleted: false,
-      edited_at: null,
-      reply_to_id: replyingTo?.id || null,
-      metadata: { duration },
-      media: [{
-        id: `temp-media-${Date.now()}`,
-        message_id: tempId,
-        url: "",
+    }],
+    delivery_status: "sending" as any,
+    read_at: null,
+    hidden_for_me: false,
+    reactions: [],
+    reply_to: currentReplyingTo || null,
+  };
+
+  setMessages((prev) => [...prev, optimisticMsg]);
+  setReplyingTo(null);
+
+  // Scroll to bottom
+  setTimeout(() => scrollToBottom(false), 100);
+
+  try {
+    // Determine file extension
+    let ext = file.name.split(".").pop()?.toLowerCase() || "m4a";
+    if (ext === "aac" || ext === "mp4") ext = "m4a";
+    else if (ext === "opus") ext = "webm";
+    
+    const path = `messages/${conversationId}/${Date.now()}_voice.${ext}`;
+
+    // Determine content type
+    let contentType = file.type;
+    if (!contentType || contentType === "application/octet-stream") {
+      if (ext === "m4a" || ext === "aac") contentType = "audio/mp4";
+      else if (ext === "webm") contentType = "audio/webm";
+      else if (ext === "mp3") contentType = "audio/mpeg";
+      else if (ext === "ogg") contentType = "audio/ogg";
+      else contentType = "audio/mp4";
+    }
+
+    console.log("[VoiceNote] Uploading to path:", path, "contentType:", contentType);
+
+    // Upload to storage
+    const { error: uploadError } = await supabase.storage
+      .from("message-media")
+      .upload(path, file, {
+        contentType,
+        cacheControl: "3600",
+      });
+
+    if (uploadError) {
+      console.error("[VoiceNote] Upload error:", uploadError);
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
+
+    console.log("[VoiceNote] Upload successful, getting public URL...");
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from("message-media")
+      .getPublicUrl(path);
+
+    if (!urlData?.publicUrl) {
+      throw new Error("Failed to get public URL after upload");
+    }
+
+    console.log("[VoiceNote] Public URL:", urlData.publicUrl);
+
+    // Insert message into database
+    const { data: newMsg, error: msgError } = await supabase
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: null,
+        content_type: "media",
+        reply_to_id: currentReplyingTo?.id || null,
+        metadata: { duration },
+      })
+      .select()
+      .single();
+
+    if (msgError) {
+      console.error("[VoiceNote] Message insert error:", msgError);
+      throw new Error(`Message insert failed: ${msgError.message}`);
+    }
+
+    console.log("[VoiceNote] Message created with ID:", newMsg.id);
+
+    // Insert media record - THIS IS CRITICAL
+    const { data: mediaData, error: mediaError } = await supabase
+      .from("message_media")
+      .insert({
+        message_id: newMsg.id,
+        url: urlData.publicUrl,
         media_type: "audio",
         file_name: file.name,
         file_size: file.size,
-        mime_type: file.type,
-        thumbnail_url: null,
-        created_at: new Date().toISOString(),
-      }],
-      delivery_status: undefined, // Will show as "sending" via isPending check
-      read_at: null,
-      hidden_for_me: false,
-      reactions: [],
-      reply_to: replyingTo || null,
-      isPending: true, // Custom flag for sending state
-    } as Message & { isPending?: boolean };
+        mime_type: contentType,
+      })
+      .select()
+      .single();
 
-    setMessages((prev) => [...prev, optimisticMsg]);
-    setReplyingTo(null);
-
-    // Scroll to bottom
-    setTimeout(() => scrollToBottom(false), 100);
-
-    try {
-      // Upload audio file - handle various formats from native/web
-      let ext = file.name.split(".").pop() || "m4a";
-      // Normalize extension
-      if (ext === "aac" || ext === "m4a" || ext === "mp4") ext = "m4a";
-      else if (ext === "webm" || ext === "opus") ext = "webm";
-      else if (ext === "mp3" || ext === "mpeg") ext = "mp3";
-      
-      const path = `messages/${conversationId}/${Date.now()}_voice.${ext}`;
-
-      // Determine content type
-      let contentType = file.type;
-      if (!contentType || contentType === "application/octet-stream") {
-        // Fallback based on extension
-        if (ext === "m4a") contentType = "audio/mp4";
-        else if (ext === "webm") contentType = "audio/webm";
-        else if (ext === "mp3") contentType = "audio/mpeg";
-        else if (ext === "aac") contentType = "audio/aac";
-        else contentType = "audio/mp4"; // Default to mp4
-      }
-
-      const { error: uploadError } = await supabase.storage
-        .from("message-media")
-        .upload(path, file, {
-          contentType,
-          cacheControl: "3600",
-        });
-
-      if (uploadError) {
-        console.error("[VoiceNote] Upload error:", uploadError);
-        throw uploadError;
-      }
-
-      const { data: urlData } = supabase.storage
-        .from("message-media")
-        .getPublicUrl(path);
-
-      if (!urlData?.publicUrl) {
-        throw new Error("Failed to get public URL");
-      }
-
-      // Insert message
-      const { data: newMsg, error: msgError } = await supabase
-        .from("messages")
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          content: null,
-          content_type: "media",
-          reply_to_id: replyingTo?.id || null,
-          metadata: { duration },
-        })
-        .select()
-        .single();
-
-      if (msgError) throw msgError;
-
-      // Insert media record
-      const { error: mediaError } = await supabase
-        .from("message_media")
-        .insert({
-          message_id: newMsg.id,
-          url: urlData.publicUrl,
-          media_type: "audio",
-          file_name: file.name,
-          file_size: file.size,
-        });
-
-      if (mediaError) {
-        console.error("[VoiceNote] Media record error:", mediaError);
-      }
-
-      // Update optimistic message with real data
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === tempId
-            ? {
-                ...newMsg,
-                media: [{
-                  id: `media-${Date.now()}`,
-                  message_id: newMsg.id,
-                  url: urlData.publicUrl,
-                  media_type: "audio" as const,
-                  file_name: file.name,
-                  file_size: file.size,
-                  mime_type: file.type,
-                  thumbnail_url: null,
-                  created_at: new Date().toISOString(),
-                }],
-                delivery_status: "sent",
-                read_at: null,
-                hidden_for_me: false,
-                reactions: [],
-                reply_to: replyingTo || null,
-              }
-            : msg
-        )
-      );
-
-      // Update conversation
-      await supabase
-        .from("conversations")
-        .update({
-          last_message_at: new Date().toISOString(),
-          last_message_text: "🎤 Voice message",
-          last_message_sender_id: user.id,
-        })
-        .eq("id", conversationId);
-
-      // Notify other user
-      if (otherUser) {
-        notifyDMMessage(
-          otherUser.id,
-          user.full_name || "Someone",
-          "🎤 Voice message",
-          conversationId
-        );
-      }
-
-    } catch (e: any) {
-      console.error("[VoiceNote] Send error:", e);
-
-      // Mark as failed - remove the message or show error state
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === tempId
-            ? { ...msg, delivery_status: undefined, is_deleted: true }
-            : msg
-        )
-      );
-
-      toast.danger("Failed to send voice note");
-    } finally {
-      setVoiceNoteUploading(false);
+    if (mediaError) {
+      console.error("[VoiceNote] Media record insert error:", mediaError);
+      // Delete the orphaned message since media failed
+      await supabase.from("messages").delete().eq("id", newMsg.id);
+      throw new Error(`Media record failed: ${mediaError.message}`);
     }
-  }, [user, conversationId, replyingTo, otherUser, scrollToBottom, toast]);
+
+    console.log("[VoiceNote] Media record created:", mediaData);
+
+    // Update optimistic message with real data
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === tempId
+          ? {
+              ...newMsg,
+              media: [{
+                id: mediaData.id,
+                message_id: newMsg.id,
+                url: urlData.publicUrl,
+                media_type: "audio" as const,
+                file_name: file.name,
+                file_size: file.size,
+                mime_type: contentType,
+                thumbnail_url: null,
+                created_at: mediaData.created_at || new Date().toISOString(),
+              }],
+              delivery_status: "sent" as const,
+              read_at: null,
+              hidden_for_me: false,
+              reactions: [],
+              reply_to: currentReplyingTo || null,
+              metadata: { duration },
+            }
+          : msg
+      )
+    );
+
+    // Update conversation last message
+    await supabase
+      .from("conversations")
+      .update({
+        last_message_at: new Date().toISOString(),
+        last_message_text: "🎤 Voice message",
+        last_message_sender_id: user.id,
+      })
+      .eq("id", conversationId);
+
+    // Notify other user
+    if (otherUser) {
+      notifyDMMessage(
+        otherUser.id,
+        user.full_name || "Someone",
+        "🎤 Voice message",
+        conversationId
+      );
+    }
+
+    console.log("[VoiceNote] Send complete!");
+
+  } catch (e: any) {
+    console.error("[VoiceNote] Send failed:", e);
+
+    // Remove the failed optimistic message
+    setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+
+    toast.danger(e.message || "Failed to send voice note");
+  } finally {
+    setVoiceNoteUploading(false);
+  }
+}, [user, conversationId, replyingTo, otherUser, scrollToBottom, toast, sendRecordingState]);
     // =====================================================
   // SEND MESSAGE
   // =====================================================
@@ -1920,16 +1977,21 @@ useEffect(() => {
               </span>
               {otherUser.is_admin && <Crown className="w-3.5 h-3.5 text-yellow-400 shrink-0" />}
             </div>
-            <p className="text-[11px] text-dark-500 truncate">
-              {typingUsers.length > 0 ? (
-                <span className="text-primary-400 flex items-center gap-1">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" />
-                  typing...
-                </span>
-              ) : (
-                <span className={otherUserOnline ? "text-purple-400" : ""}>{lastSeenText}</span>
-              )}
-            </p>
+          <p className="text-[11px] text-dark-500 truncate">
+  {recordingUsers.length > 0 ? (
+    <span className="text-red-400 flex items-center gap-1">
+      <Mic className="w-3 h-3 animate-pulse" />
+      Recording...
+    </span>
+  ) : typingUsers.length > 0 ? (
+    <span className="text-primary-400 flex items-center gap-1">
+      <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" />
+      typing...
+    </span>
+  ) : (
+    <span className={otherUserOnline ? "text-purple-400" : ""}>{lastSeenText}</span>
+  )}
+</p>
           </button>
         </div>
 
@@ -2214,37 +2276,30 @@ useEffect(() => {
                                       </div>
                                     )}
                                     {m.media_type === "audio" && (
-                                      <div
-                                        className={`p-3 rounded-xl border ${
-                                          isMine
-                                            ? "border-white/20 bg-white/10"
-                                            : "border-white/10 bg-white/5"
-                                        }`}
-                                      >
-                                        <div className="flex items-center gap-2 mb-2">
-                                          <Mic className="w-4 h-4 text-primary-400 shrink-0" />
-                                          <span className="text-xs font-medium">
-                                            {m.file_name || "Voice note"}
-                                          </span>
-                                        </div>
-                                        {m.url ? (
-                                          <audio
-                                            controls
-                                            preload="metadata"
-                                            className="w-full h-8 [&::-webkit-media-controls-panel]:bg-transparent"
-                                            style={{ maxWidth: "100%" }}
-                                          >
-                                            <source src={m.url} />
-                                            Your browser does not support audio.
-                                          </audio>
-                                        ) : (
-                                          <div className="flex items-center gap-2 text-xs text-white/40">
-                                            <Loader2 className="w-3 h-3 animate-spin" />
-                                            <span>Uploading...</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
+  <>
+    {m.url ? (
+      <VoiceNotePlayer
+        src={m.url}
+        duration={msg.metadata?.duration}
+        isMine={isMine}
+        fileName={m.file_name || undefined}
+      />
+    ) : (
+      <div
+        className={`flex items-center gap-3 p-3 rounded-2xl min-w-[200px] ${
+          isMine ? "bg-white/10" : "bg-white/5"
+        }`}
+      >
+        <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
+          <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs text-white/60">Uploading voice note...</p>
+        </div>
+      </div>
+    )}
+  </>
+)}
                                     {m.media_type === "document" && (
                                       <a
                                         href={m.url}
