@@ -4,8 +4,8 @@ import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
-import { useFeedCache } from "@/context/FeedContext";
 import { presenceManager } from "@/lib/presence";
+import { useMessageCache } from "@/context/MessageCacheContext";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -18,6 +18,7 @@ import {
   User,
   Crown,
   Loader2,
+  Mic,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { Conversation, VIPUser } from "@/lib/types";
@@ -31,26 +32,18 @@ type ConversationWithUser = Conversation & {
 export default function MessagesPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const channelRef = useRef<any>(null);
+  const {
+    conversations,
+    conversationsLoading,
+    setConversations,
+    fetchConversations,
+    recordingConversationId,
+    clearUnread,
+    markConversationRead,
+  } = useMessageCache();
 
-  const feedCache = useFeedCache();
-  const FEED_CACHE_KEY = "messages:conversations";
-
-  const [conversations, setConversations] = useState<ConversationWithUser[]>(() => {
-    if (typeof window !== "undefined") {
-      const cached = feedCache.get(FEED_CACHE_KEY);
-      if (cached?.posts) return cached.posts as unknown as ConversationWithUser[];
-    }
-    return [];
-  });
-
-  const [loading, setLoading] = useState(() => {
-    if (typeof window !== "undefined") {
-      const cached = feedCache.get(FEED_CACHE_KEY);
-      if (cached?.posts && (cached.posts as unknown as ConversationWithUser[]).length > 0) return false;
-    }
-    return true;
-  });
+  // Use context loading state
+  const loading = conversationsLoading;
 
   const [search, setSearch] = useState("");
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
@@ -65,16 +58,6 @@ export default function MessagesPage() {
   const [allVips, setAllVips] = useState<VIPUser[]>([]);
   const [allVipsLoading, setAllVipsLoading] = useState(false);
 
-    // --- SAVE SCROLL ---
-  useEffect(() => {
-    const save = () => {
-      if (window.scrollY > 0) {
-        feedCache.setScroll(FEED_CACHE_KEY, window.scrollY);
-      }
-    };
-    window.addEventListener("scroll", save, { passive: true });
-    return () => window.removeEventListener("scroll", save);
-  }, [feedCache]);
 
   // =====================================================
   // AUTH GUARD
@@ -171,131 +154,6 @@ export default function MessagesPage() {
     };
   }, [conversations]);
 
-  // =====================================================
-  // FETCH CONVERSATIONS
-  // =====================================================
-  const fetchConversations = useCallback(async () => {
-    if (!user?.id) return;
-        const hasCached = feedCache.get(FEED_CACHE_KEY);
-    if (!hasCached?.posts || (hasCached.posts as unknown as ConversationWithUser[]).length === 0) {
-      setLoading(true);
-    }
-    try {
-      const { data: participantRows, error: pErr } = await supabase
-        .from("conversation_participants")
-        .select("conversation_id, last_read_at, is_blocked, is_muted")
-        .eq("user_id", user.id);
-
-      if (pErr) throw pErr;
-
-      if (!participantRows || participantRows.length === 0) {
-        setConversations([]);
-        setLoading(false);
-        return;
-      }
-
-      const convIds = participantRows.map((p) => p.conversation_id);
-      const participantMap: Record<string, { last_read_at: string; is_blocked: boolean; is_muted: boolean }> = {};
-      participantRows.forEach((p) => {
-        participantMap[p.conversation_id] = {
-          last_read_at: p.last_read_at,
-          is_blocked: p.is_blocked,
-          is_muted: p.is_muted,
-        };
-      });
-
-      const { data: convData, error: cErr } = await supabase
-        .from("conversations")
-        .select("*")
-        .in("id", convIds)
-        .order("updated_at", { ascending: false });
-
-      if (cErr) throw cErr;
-
-      const { data: allParticipants, error: apErr } = await supabase
-        .from("conversation_participants")
-        .select("conversation_id, user_id, last_read_at")
-        .in("conversation_id", convIds)
-        .neq("user_id", user.id);
-
-      if (apErr) throw apErr;
-
-      const otherUserMap: Record<string, string> = {};
-      const otherLastReadMap: Record<string, string> = {};
-      (allParticipants || []).forEach((p) => {
-        otherUserMap[p.conversation_id] = p.user_id;
-        otherLastReadMap[p.conversation_id] = p.last_read_at;
-      });
-
-      const otherUserIds = Array.from(new Set(Object.values(otherUserMap)));
-
-      let usersData: any[] = [];
-      if (otherUserIds.length > 0) {
-        const { data, error: uErr } = await supabase
-          .from("users")
-          .select("id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status")
-          .in("id", otherUserIds);
-        if (uErr) throw uErr;
-        usersData = data || [];
-      }
-
-      const usersMap: Record<string, VIPUser> = {};
-      usersData.forEach((u: any) => { usersMap[u.id] = u; });
-
-      // Count unread messages per conversation
-      const unreadCounts: Record<string, number> = {};
-      for (const convId of convIds) {
-        const lastRead = participantMap[convId]?.last_read_at;
-        if (!lastRead) { unreadCounts[convId] = 0; continue; }
-
-        try {
-          const { count, error: countErr } = await supabase
-            .from("messages")
-            .select("*", { count: "exact", head: true })
-            .eq("conversation_id", convId)
-            .neq("sender_id", user.id)
-            .gt("created_at", lastRead)
-            .eq("is_deleted", false);
-
-          unreadCounts[convId] = countErr ? 0 : (count || 0);
-        } catch {
-          unreadCounts[convId] = 0;
-        }
-      }
-
-      // Check if the last message (sent by me) has been seen by the other user
-      const merged: ConversationWithUser[] = (convData || [])
-        .map((conv: any) => {
-          const otherUserId = otherUserMap[conv.id];
-          const otherUser = otherUserId ? usersMap[otherUserId] : null;
-          if (!otherUser) return null;
-
-          // Determine if last message was seen
-          let lastMessageSeen = false;
-          if (conv.last_message_sender_id === user.id && conv.last_message_at) {
-            const otherLastRead = otherLastReadMap[conv.id];
-            if (otherLastRead && new Date(otherLastRead) >= new Date(conv.last_message_at)) {
-              lastMessageSeen = true;
-            }
-          }
-
-          return {
-            ...conv,
-            other_user: otherUser,
-            unread_count: unreadCounts[conv.id] || 0,
-            last_message_seen: lastMessageSeen,
-          };
-        })
-        .filter(Boolean) as ConversationWithUser[];
-
-      setConversations(merged);
-            feedCache.setPosts(FEED_CACHE_KEY, merged as unknown as any[]);
-    } catch (e: any) {
-      console.error("fetchConversations error:", e?.message || e);
-    } finally {
-      setLoading(false);
-    }
-    }, [user?.id, feedCache, FEED_CACHE_KEY]);
 
   useEffect(() => {
     if (user?.id && user.is_vip) {
@@ -303,24 +161,11 @@ export default function MessagesPage() {
     }
   }, [user?.id, fetchConversations]);
 
-  // Optimistic unread clear: when returning from a chat, clear its badge immediately
+  // Refresh on focus - context handles optimistic updates
   useEffect(() => {
     const handleFocus = () => {
-      // Check if we just came back from a chat
-      const lastChat = sessionStorage.getItem("peja-last-chat-id");
-      if (lastChat) {
-        sessionStorage.removeItem("peja-last-chat-id");
-        // Optimistically clear the unread count for that conversation
-        setConversations((prev) => {
-          const updated = prev.map((c) =>
-            c.id === lastChat ? { ...c, unread_count: 0 } : c
-          );
-          feedCache.setPosts(FEED_CACHE_KEY, updated as unknown as any[]);
-          return updated;
-        });
-      }
-      // Still fetch fresh data in background
-      fetchConversations();
+      // Delay fetch slightly to not override optimistic updates
+      setTimeout(() => fetchConversations(), 300);
     };
 
     window.addEventListener("focus", handleFocus);
@@ -333,84 +178,7 @@ export default function MessagesPage() {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [fetchConversations, feedCache, FEED_CACHE_KEY]);
-
-  // =====================================================
-  // REALTIME: Listen for new messages & conversation updates
-  // =====================================================
-  useEffect(() => {
-    if (!user?.id) return;
-
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
-
-    const channel = supabase
-      .channel(`messages-list-${user.id}-${Date.now()}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => { fetchConversations(); }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "conversations" },
-        () => { fetchConversations(); }
-      )
-           .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "conversation_participants" },
-        (payload) => {
-          const updated = payload.new as any;
-          // If the OTHER user updated their last_read_at, update seen status immediately
-          if (updated.user_id !== user.id && updated.last_read_at) {
-            setConversations((prev) => {
-              const next = prev.map((c) => {
-                if (c.id !== updated.conversation_id) return c;
-                if (c.last_message_sender_id !== user.id) return c;
-                if (!c.last_message_at) return c;
-                const seen = new Date(updated.last_read_at) >= new Date(c.last_message_at);
-                if (seen === c.last_message_seen) return c;
-                return { ...c, last_message_seen: seen, unread_count: 0 };
-              });
-              feedCache.setPosts(FEED_CACHE_KEY, next as unknown as any[]);
-              return next;
-            });
-          } else {
-            fetchConversations();
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "message_reads" },
-        (payload) => {
-          const read = payload.new as any;
-          // Someone read our message — update seen status immediately
-          if (read.user_id !== user.id) {
-            setConversations((prev) => {
-              const next = prev.map((c) => {
-                if (c.last_message_sender_id !== user.id) return c;
-                return { ...c, last_message_seen: true };
-              });
-              feedCache.setPosts(FEED_CACHE_KEY, next as unknown as any[]);
-              return next;
-            });
-          }
-        }
-      )
-      .subscribe();
-
-    channelRef.current = channel;
-
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
-    };
-  }, [user?.id, fetchConversations]);
+  }, [fetchConversations]);
 
   // =====================================================
   // SEARCH VIPs
@@ -609,7 +377,18 @@ useEffect(() => {
                 return (
                   <button
                     key={conv.id}
-                    onClick={() => router.push(`/messages/${conv.id}`, { scroll: false })}
+                                       onClick={() => {
+  // Clear unread INSTANTLY via context
+  if (conv.unread_count > 0) {
+    clearUnread(conv.id);
+  }
+  
+  // Mark as read in database (background)
+  markConversationRead(conv.id);
+  
+  // Navigate
+  router.push(`/messages/${conv.id}`, { scroll: false });
+}}
                     className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/5 transition-colors active:scale-[0.98] duration-150 text-left"
                   >
                     {/* Avatar with online indicator */}
@@ -649,26 +428,33 @@ useEffect(() => {
                       </div>
 
                       <div className="flex items-center justify-between gap-2 mt-0.5">
-                        <p className="text-xs text-dark-400 truncate flex-1">
-                          {isMySend && (
-                            <span className="text-dark-500 mr-1">You:</span>
-                          )}
-                          {conv.last_message_text || "No messages yet"}
-                        </p>
+  {recordingConversationId === conv.id ? (
+    <div className="flex items-center gap-1.5 flex-1">
+      <Mic className="w-3.5 h-3.5 text-red-400 animate-pulse" />
+      <span className="text-xs text-red-400 font-medium">Recording voice note...</span>
+    </div>
+  ) : (
+    <p className="text-xs text-dark-400 truncate flex-1">
+      {isMySend && (
+        <span className="text-dark-500 mr-1">You:</span>
+      )}
+      {conv.last_message_text || "No messages yet"}
+    </p>
+  )}
 
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {/* Sent/Seen indicator for own messages */}
-                          {isMySend && (
-                            <span
-                              className={`text-[10px] font-medium ${
-                                conv.last_message_seen
-                                  ? "text-purple-400 drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]"
-                                  : "text-dark-500"
-                              }`}
-                            >
-                              {conv.last_message_seen ? "Seen" : "Sent"}
-                            </span>
-                          )}
+  <div className="flex items-center gap-1.5 shrink-0">
+  {/* Sent/Seen indicator for own messages */}
+  {isMySend && recordingConversationId !== conv.id && (
+    <span
+      className={`text-[10px] font-medium ${
+        conv.last_message_seen
+          ? "text-purple-400 drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]"
+          : "text-dark-500"
+      }`}
+    >
+      {conv.last_message_seen ? "Seen" : "Sent"}
+    </span>
+  )}
 
                           {/* Unread badge */}
                           {conv.unread_count > 0 && (

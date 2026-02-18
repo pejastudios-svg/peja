@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useLayoutEffect,
   useState,
   useRef,
   useCallback,
@@ -18,6 +19,9 @@ import { notifyDMMessage } from "@/lib/notifications";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
+import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
+import { VoiceNoteRecorder } from "@/components/messages/VoiceNoteRecorder";
+import { useMessageCache } from "@/context/MessageCacheContext";
 import {
   ArrowLeft,
   Send,
@@ -96,6 +100,7 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const toast = useToast();
+  const { setRecordingConversationId, clearUnread, markConversationRead } = useMessageCache();
   const MSG_CACHE_KEY = `peja-chat-cache-${conversationId}`;
 
   // ------ Core State ------
@@ -145,6 +150,8 @@ export default function ChatPage() {
   // ------ Voice Note ------
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
+  const [voiceNoteUploading, setVoiceNoteUploading] = useState(false);
 
   // ------ Swipe to Reply ------
   const [swipingMsgId, setSwipingMsgId] = useState<string | null>(null);
@@ -155,7 +162,6 @@ export default function ChatPage() {
   const [plusRotated, setPlusRotated] = useState(false);
 
   // ------ Refs ------
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<any>(null);
@@ -165,15 +171,19 @@ export default function ChatPage() {
   const docInputRef = useRef<HTMLInputElement>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   const initialScrollDone = useRef(false);
+  const hasRenderedOnce = useRef(false);
+  const messagesLengthRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const myDeletionsRef = useRef<Set<string>>(new Set());
   const otherUserOnlineRef = useRef(false);
 
-  // Reset scroll flag when conversation changes
+  // Reset scroll flags when conversation changes
   useEffect(() => {
     initialScrollDone.current = false;
+    hasRenderedOnce.current = false;
+    messagesLengthRef.current = 0;
   }, [conversationId]);
 
   // =====================================================
@@ -184,6 +194,40 @@ export default function ChatPage() {
     if (!user) { router.replace("/login"); return; }
     if (user.is_vip === false) { router.replace("/"); return; }
   }, [user, authLoading, router]);
+
+  
+  // =====================================================
+  // CLEAR UNREAD IMMEDIATELY ON MOUNT
+  // =====================================================
+  useEffect(() => {
+    if (conversationId && user?.id) {
+      // Clear unread badge INSTANTLY via context (optimistic)
+      clearUnread(conversationId);
+      
+      // Mark as read in database (background, non-blocking)
+      markConversationRead(conversationId);
+      
+      // Store for reference
+      try {
+        sessionStorage.setItem("peja-last-chat-id", conversationId);
+      } catch {}
+    }
+  }, [conversationId, user?.id, clearUnread, markConversationRead]);
+
+    // =====================================================
+  // BROADCAST RECORDING STATE
+  // =====================================================
+  useEffect(() => {
+    if (isRecording) {
+      setRecordingConversationId(conversationId);
+    } else {
+      setRecordingConversationId(null);
+    }
+    
+    return () => {
+      setRecordingConversationId(null);
+    };
+  }, [isRecording, conversationId, setRecordingConversationId]);
 
   // =====================================================
   // FETCH CONVERSATION DATA
@@ -442,15 +486,17 @@ export default function ChatPage() {
   }, [user?.id, conversationId]);
 
   // =====================================================
-  // SCROLL TO BOTTOM — reliable with ResizeObserver
+  // SCROLL HELPERS - Column-reverse means scroll 0 = bottom
   // =====================================================
   const scrollToBottom = useCallback((instant = true) => {
     const container = messagesContainerRef.current;
     if (!container) return;
+    
+    // With column-reverse, scrollTop 0 is the BOTTOM
     if (instant) {
-      container.scrollTop = container.scrollHeight;
+      container.scrollTop = 0;
     } else {
-      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+      container.scrollTo({ top: 0, behavior: "smooth" });
     }
   }, []);
 
@@ -466,70 +512,36 @@ export default function ChatPage() {
     }
   }, []);
 
-  // Scroll to bottom when messages load or change
+  // =====================================================
+  // AUTO-SCROLL ONLY FOR OWN MESSAGES
+  // With column-reverse, we're always "at bottom" by default
+  // =====================================================
   useEffect(() => {
     if (messages.length === 0) return;
-
-    if (!initialScrollDone.current) {
-      const container = messagesContainerRef.current;
-      if (!container) return;
-
-      const doScroll = () => {
-        if (container) {
-          container.scrollTop = container.scrollHeight + 9999;
-        }
-      };
-
-      // Immediate — before paint
-      doScroll();
-
-      // Use queueMicrotask for earliest possible callback
-      queueMicrotask(doScroll);
-
-      // ResizeObserver catches images/media loading
-      const ro = new ResizeObserver(() => {
-        if (!initialScrollDone.current) {
-          doScroll();
-        }
-      });
-      ro.observe(container);
-
-      // Multiple fallback attempts with escalating delays
-      requestAnimationFrame(doScroll);
-      setTimeout(doScroll, 0);
-      setTimeout(doScroll, 50);
-      setTimeout(doScroll, 150);
-      setTimeout(doScroll, 300);
-      setTimeout(() => {
-        doScroll();
-        initialScrollDone.current = true;
-        ro.disconnect();
-      }, 600);
-
-      return () => ro.disconnect();
-    } else {
-      const c = messagesContainerRef.current;
-      if (c && c.scrollHeight - c.scrollTop - c.clientHeight < 150) {
-        scrollToBottom(false);
-      }
+    
+    const lastMessage = messages[messages.length - 1];
+    const isMyMessage = lastMessage?.sender_id === user?.id;
+    
+    // Only auto-scroll for messages I send
+    if (isMyMessage && messagesLengthRef.current > 0 && messages.length > messagesLengthRef.current) {
+      scrollToBottom(true);
     }
-  }, [messages, scrollToBottom]);
+    
+    messagesLengthRef.current = messages.length;
+  }, [messages, user?.id, scrollToBottom]);
 
-  // Scroll when loading finishes
-  useEffect(() => {
-    if (!loading && messages.length > 0) {
-      setTimeout(() => scrollToBottom(true), 50);
-    }
-  }, [loading, scrollToBottom]);
-
-  // =====================================================
-  // KEYBOARD HANDLING — works across all Android devices
-  // =====================================================
-// Keyboard handling is now done globally by CapacitorKeyboardHandler
-// Just scroll to bottom when keyboard opens
+// =====================================================
+// Keyboard handling - scroll to bottom when keyboard opens
+// =====================================================
 useEffect(() => {
   const onKeyboardOpen = () => {
-    setTimeout(() => scrollToBottom(false), 150);
+    // With column-reverse, scrollTop 0 = bottom
+    setTimeout(() => {
+      const container = messagesContainerRef.current;
+      if (container) {
+        container.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }, 150);
   };
 
   document.body.addEventListener("keyboard-open", onKeyboardOpen);
@@ -539,7 +551,7 @@ useEffect(() => {
     mutations.forEach((mutation) => {
       if (mutation.attributeName === "class") {
         if (document.body.classList.contains("keyboard-open")) {
-          setTimeout(() => scrollToBottom(false), 150);
+          onKeyboardOpen();
         }
       }
     });
@@ -551,7 +563,7 @@ useEffect(() => {
     document.body.removeEventListener("keyboard-open", onKeyboardOpen);
     observer.disconnect();
   };
-}, [scrollToBottom]);
+}, []);
 
   // Non-passive touch move for swipe
   useEffect(() => {
@@ -1220,67 +1232,26 @@ useEffect(() => {
   // =====================================================
   // VOICE NOTE
   // =====================================================
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType =
-        typeof MediaRecorder !== "undefined" &&
-        MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : "audio/mp4";
+  // Voice recording handlers - delegated to VoiceNoteRecorder component
+  const handleRecordingStart = useCallback(() => {
+    setIsRecording(true);
+    setShowVoiceRecorder(true);
+    setShowEmoji(false);
+    setShowAttach(false);
+    setPlusRotated(false);
+    setShowFormatBar(false);
+  }, []);
 
-      const recorder = new MediaRecorder(stream, { mimeType });
-      audioChunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
+  const handleRecordingEnd = useCallback((blob: Blob, duration: number) => {
+    console.log("[VoiceNote] Recording ended, blob size:", blob.size, "duration:", duration);
+    // Recording ended but not cancelled - blob is ready
+    // The VoiceNoteRecorder will show the preview and send button
+  }, []);
 
-      recorder.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const recordedMimeType = mimeType || "audio/webm";
-        const blob = new Blob(audioChunksRef.current, { type: recordedMimeType });
-
-        if (blob.size < 100) {
-          console.warn("Voice note too small, ignoring");
-          if (recordingIntervalRef.current) {
-            clearInterval(recordingIntervalRef.current);
-            recordingIntervalRef.current = null;
-          }
-          setRecordingDuration(0);
-          return;
-        }
-
-        const ext = recordedMimeType.includes("webm") ? "webm" : "m4a";
-        const file = new File([blob], `voice-note-${Date.now()}.${ext}`, { type: recordedMimeType });
-        setPendingMedia((prev) => [...prev, { file, preview: "", type: recordedMimeType }]);
-
-        if (recordingIntervalRef.current) {
-          clearInterval(recordingIntervalRef.current);
-          recordingIntervalRef.current = null;
-        }
-        setRecordingDuration(0);
-      };
-
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setIsRecording(true);
-      setRecordingDuration(0);
-
-      recordingIntervalRef.current = setInterval(() => {
-        setRecordingDuration((d) => d + 1);
-      }, 1000);
-    } catch (e: any) {
-      console.error("Recording error:", e);
-      toast.danger("Could not access microphone");
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-    }
+  const handleRecordingCancel = useCallback(() => {
     setIsRecording(false);
-  };
+    setShowVoiceRecorder(false);
+  }, []);
 
   const formatDuration = (seconds: number): string => {
     const m = Math.floor(seconds / 60);
@@ -1433,6 +1404,192 @@ useEffect(() => {
     if ((e.ctrlKey || e.metaKey) && e.key === "b") { e.preventDefault(); applyBold(); }
     if ((e.ctrlKey || e.metaKey) && e.key === "i") { e.preventDefault(); applyItalic(); }
   };
+
+    // =====================================================
+  // SEND VOICE NOTE
+  // =====================================================
+  const handleSendVoiceNote = useCallback(async (file: File, duration: number) => {
+    if (!user?.id || !conversationId) return;
+
+    setVoiceNoteUploading(true);
+    setShowVoiceRecorder(false);
+    setIsRecording(false);
+
+    const tempId = `temp-voice-${Date.now()}`;
+
+    // Create optimistic message
+    const optimisticMsg: Message = {
+      id: tempId,
+      conversation_id: conversationId,
+      sender_id: user.id,
+      content: null,
+      content_type: "media",
+      created_at: new Date().toISOString(),
+      is_deleted: false,
+      edited_at: null,
+      reply_to_id: replyingTo?.id || null,
+      metadata: { duration },
+      media: [{
+        id: `temp-media-${Date.now()}`,
+        message_id: tempId,
+        url: "",
+        media_type: "audio",
+        file_name: file.name,
+        file_size: file.size,
+        mime_type: file.type,
+        thumbnail_url: null,
+        created_at: new Date().toISOString(),
+      }],
+      delivery_status: undefined, // Will show as "sending" via isPending check
+      read_at: null,
+      hidden_for_me: false,
+      reactions: [],
+      reply_to: replyingTo || null,
+      isPending: true, // Custom flag for sending state
+    } as Message & { isPending?: boolean };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setReplyingTo(null);
+
+    // Scroll to bottom
+    setTimeout(() => scrollToBottom(false), 100);
+
+    try {
+      // Upload audio file - handle various formats from native/web
+      let ext = file.name.split(".").pop() || "m4a";
+      // Normalize extension
+      if (ext === "aac" || ext === "m4a" || ext === "mp4") ext = "m4a";
+      else if (ext === "webm" || ext === "opus") ext = "webm";
+      else if (ext === "mp3" || ext === "mpeg") ext = "mp3";
+      
+      const path = `messages/${conversationId}/${Date.now()}_voice.${ext}`;
+
+      // Determine content type
+      let contentType = file.type;
+      if (!contentType || contentType === "application/octet-stream") {
+        // Fallback based on extension
+        if (ext === "m4a") contentType = "audio/mp4";
+        else if (ext === "webm") contentType = "audio/webm";
+        else if (ext === "mp3") contentType = "audio/mpeg";
+        else if (ext === "aac") contentType = "audio/aac";
+        else contentType = "audio/mp4"; // Default to mp4
+      }
+
+      const { error: uploadError } = await supabase.storage
+        .from("message-media")
+        .upload(path, file, {
+          contentType,
+          cacheControl: "3600",
+        });
+
+      if (uploadError) {
+        console.error("[VoiceNote] Upload error:", uploadError);
+        throw uploadError;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("message-media")
+        .getPublicUrl(path);
+
+      if (!urlData?.publicUrl) {
+        throw new Error("Failed to get public URL");
+      }
+
+      // Insert message
+      const { data: newMsg, error: msgError } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: conversationId,
+          sender_id: user.id,
+          content: null,
+          content_type: "media",
+          reply_to_id: replyingTo?.id || null,
+          metadata: { duration },
+        })
+        .select()
+        .single();
+
+      if (msgError) throw msgError;
+
+      // Insert media record
+      const { error: mediaError } = await supabase
+        .from("message_media")
+        .insert({
+          message_id: newMsg.id,
+          url: urlData.publicUrl,
+          media_type: "audio",
+          file_name: file.name,
+          file_size: file.size,
+        });
+
+      if (mediaError) {
+        console.error("[VoiceNote] Media record error:", mediaError);
+      }
+
+      // Update optimistic message with real data
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempId
+            ? {
+                ...newMsg,
+                media: [{
+                  id: `media-${Date.now()}`,
+                  message_id: newMsg.id,
+                  url: urlData.publicUrl,
+                  media_type: "audio" as const,
+                  file_name: file.name,
+                  file_size: file.size,
+                  mime_type: file.type,
+                  thumbnail_url: null,
+                  created_at: new Date().toISOString(),
+                }],
+                delivery_status: "sent",
+                read_at: null,
+                hidden_for_me: false,
+                reactions: [],
+                reply_to: replyingTo || null,
+              }
+            : msg
+        )
+      );
+
+      // Update conversation
+      await supabase
+        .from("conversations")
+        .update({
+          last_message_at: new Date().toISOString(),
+          last_message_text: "🎤 Voice message",
+          last_message_sender_id: user.id,
+        })
+        .eq("id", conversationId);
+
+      // Notify other user
+      if (otherUser) {
+        notifyDMMessage(
+          otherUser.id,
+          user.full_name || "Someone",
+          "🎤 Voice message",
+          conversationId
+        );
+      }
+
+    } catch (e: any) {
+      console.error("[VoiceNote] Send error:", e);
+
+      // Mark as failed - remove the message or show error state
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempId
+            ? { ...msg, delivery_status: undefined, is_deleted: true }
+            : msg
+        )
+      );
+
+      toast.danger("Failed to send voice note");
+    } finally {
+      setVoiceNoteUploading(false);
+    }
+  }, [user, conversationId, replyingTo, otherUser, scrollToBottom, toast]);
     // =====================================================
   // SEND MESSAGE
   // =====================================================
@@ -1691,16 +1848,10 @@ useEffect(() => {
   if (authLoading || !user) return null;
   if (user.is_vip === false) return null;
 
-  if (loading) {
+  if (loading && messages.length === 0) {
     return (
       <div
-        className="fixed flex flex-col bg-[#0a0812]"
-        style={{
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: "var(--keyboard-height, 0px)",
-        }}
+        className="fixed inset-0 flex flex-col bg-[#0a0812]"
       >
         <div className="glass-header flex items-center gap-3 px-4 shrink-0" style={{ height: "calc(3.5rem + env(safe-area-inset-top, 0px))", paddingTop: "env(safe-area-inset-top, 0px)" }}>
           <Skeleton className="w-5 h-5 rounded" />
@@ -1710,8 +1861,8 @@ useEffect(() => {
             <Skeleton className="w-16 h-3" />
           </div>
         </div>
-        <div className="flex-1 p-4 space-y-4">
-          {Array.from({ length: 8 }).map((_, i) => (
+        <div className="flex-1 p-4 space-y-4 flex flex-col justify-end">
+          {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className={`flex ${i % 2 === 0 ? "justify-start" : "justify-end"}`}>
               <Skeleton className={`h-12 rounded-2xl ${i % 2 === 0 ? "w-48" : "w-36"}`} />
             </div>
@@ -1771,7 +1922,10 @@ useEffect(() => {
             </div>
             <p className="text-[11px] text-dark-500 truncate">
               {typingUsers.length > 0 ? (
-                <span className="text-primary-400">typing...</span>
+                <span className="text-primary-400 flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" />
+                  typing...
+                </span>
               ) : (
                 <span className={otherUserOnline ? "text-purple-400" : ""}>{lastSeenText}</span>
               )}
@@ -1814,15 +1968,20 @@ useEffect(() => {
       {/* =====================================================
           MESSAGES LIST
           ===================================================== */}
-      <div
+                 <div
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5"
+        className="flex-1 overflow-y-auto px-4 py-4 space-y-1.5 flex flex-col-reverse"
+        style={{ 
+          overscrollBehavior: 'contain'
+        }}
         onClick={() => {
           // Close emoji picker when tapping messages area
           if (showEmoji) setShowEmoji(false);
           if (showAttach) { setShowAttach(false); setPlusRotated(false); }
         }}
       >
+
+        
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -1833,12 +1992,36 @@ useEffect(() => {
             </div>
           </div>
         ) : (
-          <>
-            {messages.map((msg, idx) => {
+                             <>
+            {/* Typing indicator - appears at bottom (first in column-reverse) */}
+            {typingUsers.length > 0 && (
+              <div className="flex items-end gap-2 justify-start">
+                <div className="w-7 shrink-0">
+                  <div className="w-7 h-7 rounded-full overflow-hidden bg-dark-800 border border-white/10">
+                    {otherUser.avatar_url ? (
+                      <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <User className="w-3.5 h-3.5 text-dark-400 m-auto mt-1.5" />
+                    )}
+                  </div>
+                </div>
+                <div className="px-4 py-3 rounded-2xl rounded-bl-md bg-[#1a1525] border border-white/5">
+                  <div className="flex gap-1">
+                    <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {[...messages].reverse().map((msg, idx, reversedArr) => {
               const isMine = msg.sender_id === user.id;
-              const prev = idx > 0 ? messages[idx - 1] : null;
-              const showDate = !prev || getDateLabel(msg.created_at) !== getDateLabel(prev.created_at);
-              const showAvatar = !isMine && (!messages[idx + 1] || messages[idx + 1].sender_id !== msg.sender_id);
+              // In reversed array, "previous" visually is actually next in array
+              const visualPrev = idx < reversedArr.length - 1 ? reversedArr[idx + 1] : null;
+              const visualNext = idx > 0 ? reversedArr[idx - 1] : null;
+              const showDate = !visualPrev || getDateLabel(msg.created_at) !== getDateLabel(visualPrev.created_at);
+              const showAvatar = !isMine && (!visualNext || visualNext.sender_id !== msg.sender_id);
               const isSwipingThis = swipingMsgId === msg.id;
 
               return (
@@ -2187,29 +2370,6 @@ useEffect(() => {
               );
             })}
 
-            {/* Typing indicator */}
-            {typingUsers.length > 0 && (
-              <div className="flex items-end gap-2 justify-start">
-                <div className="w-7 shrink-0">
-                  <div className="w-7 h-7 rounded-full overflow-hidden bg-dark-800 border border-white/10">
-                    {otherUser.avatar_url ? (
-                      <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="w-3.5 h-3.5 text-dark-400 m-auto mt-1.5" />
-                    )}
-                  </div>
-                </div>
-                <div className="px-4 py-3 rounded-2xl rounded-bl-md bg-[#1a1525] border border-white/5">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "300ms" }} />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
           </>
         )}
       </div>
@@ -2412,7 +2572,7 @@ useEffect(() => {
             paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
           }}
         >
-          <div className="flex items-end gap-1.5">
+                    <div className={`flex items-end gap-1.5 ${showVoiceRecorder ? "hidden" : ""}`}>
             {/* Plus / Attach button with rotation animation */}
             <div className="relative shrink-0">
               <button
@@ -2494,37 +2654,39 @@ useEffect(() => {
               <Smile className="w-5 h-5" />
             </button>
 
-            {isEditorEmpty() && pendingMedia.length === 0 && !editingMessage ? (
-              isRecording ? (
-                <button
-                  onClick={stopRecording}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl bg-red-500 text-white active:scale-90 transition-all shrink-0 animate-pulse"
-                >
-                  <Square className="w-4 h-4 fill-current" />
-                </button>
-              ) : (
-                <button
-                  onClick={startRecording}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-dark-400 hover:text-white active:scale-90 transition-all shrink-0"
-                >
-                  <Mic className="w-5 h-5" />
-                </button>
-              )
-            ) : (
+            {isEditorEmpty() && pendingMedia.length === 0 && !editingMessage && !showVoiceRecorder ? (
+              <button
+                onClick={() => {
+                  setShowVoiceRecorder(true);
+                  setIsRecording(true);
+                  setShowEmoji(false);
+                  setShowAttach(false);
+                  setPlusRotated(false);
+                }}
+                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-dark-400 hover:text-white active:scale-90 transition-all shrink-0"
+              >
+                <Mic className="w-5 h-5" />
+              </button>
+            ) : !showVoiceRecorder ? (
               <button
                 onClick={handleSend}
                 className="w-10 h-10 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 text-white active:scale-90 transition-all shrink-0"
               >
                 <Send className="w-5 h-5" />
               </button>
-            )}
+            ) : null}
           </div>
 
-          {isRecording && (
-            <div className="flex items-center gap-2 mt-2 px-2">
-              <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-xs text-red-400 font-mono">{formatDuration(recordingDuration)}</span>
-              <span className="text-xs text-dark-500">Recording...</span>
+          {/* Voice Note Recorder */}
+          {showVoiceRecorder && (
+            <div className="mt-2">
+              <VoiceNoteRecorder
+                onRecordingStart={handleRecordingStart}
+                onRecordingEnd={handleRecordingEnd}
+                onCancel={handleRecordingCancel}
+                onSend={handleSendVoiceNote}
+                isUploading={voiceNoteUploading}
+              />
             </div>
           )}
         </div>

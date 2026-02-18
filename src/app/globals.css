@@ -2032,3 +2032,290 @@ body.keyboard-open .post-detail-messages {
 
 /* Ensure inputs stay visible - handled by Android adjustResize */
 /* No transform needed since adjustResize already shrinks the viewport */
+
+/* =====================================================
+   VOICE NOTE ANIMATIONS & STYLES
+   ===================================================== */
+
+/* Voice note waveform bar animation during playback */
+@keyframes waveform-pulse {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.15);
+  }
+}
+
+.waveform-bar-active {
+  animation: waveform-pulse 0.3s ease-in-out;
+}
+
+/* Recording pulse animation */
+@keyframes recording-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.1);
+  }
+}
+
+.recording-indicator {
+  animation: recording-pulse 1s ease-in-out infinite;
+}
+
+/* Live waveform bar animation */
+@keyframes waveform-live {
+  0%, 100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.waveform-bar-live {
+  animation: waveform-live 0.15s ease-in-out infinite;
+  animation-delay: calc(var(--bar-index, 0) * 0.02s);
+}
+
+/* Voice note container styles */
+.voice-note-container {
+  position: relative;
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.voice-note-container::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(139, 92, 246, 0.05) 0%,
+    transparent 50%
+  );
+  pointer-events: none;
+}
+
+/* Voice note play button glow */
+.voice-note-play-btn {
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.voice-note-play-btn::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(139, 92, 246, 0.3) 0%,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.voice-note-play-btn:hover::after {
+  opacity: 1;
+}
+
+.voice-note-play-btn:active {
+  transform: scale(0.95);
+}
+
+/* Recording waveform container */
+.recording-waveform {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+}
+
+.recording-waveform-bar {
+  width: 3px;
+  border-radius: 2px;
+  background: #ef4444;
+  transition: height 0.1s ease-out;
+  min-height: 4px;
+}
+
+/* =====================================================
+   MESSAGE BUBBLE ANIMATIONS
+   ===================================================== */
+
+/* Message send animation */
+@keyframes message-send {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.message-bubble-send {
+  animation: message-send 0.2s ease-out;
+}
+
+/* Message receive animation */
+@keyframes message-receive {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.message-bubble-receive {
+  animation: message-receive 0.2s ease-out;
+}
+
+/* Message highlight animation (for scrolling to replied message) */
+@keyframes message-highlight {
+  0% {
+    background-color: rgba(139, 92, 246, 0.3);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.message-highlighted {
+  animation: message-highlight 2s ease-out;
+  border-radius: 1rem;
+}
+
+/* =====================================================
+   RECORDING STATUS INDICATOR (Header)
+   ===================================================== */
+
+/* Recording status in chat header */
+.recording-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 999px;
+  animation: recording-status-pulse 2s ease-in-out infinite;
+}
+
+@keyframes recording-status-pulse {
+  0%, 100% {
+    border-color: rgba(239, 68, 68, 0.3);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+  50% {
+    border-color: rgba(239, 68, 68, 0.6);
+    box-shadow: 0 0 8px 0 rgba(239, 68, 68, 0.2);
+  }
+}
+
+.recording-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+  animation: recording-pulse 1s ease-in-out infinite;
+}
+
+.recording-status-text {
+  font-size: 11px;
+  font-weight: 500;
+  color: #f87171;
+}
+
+/* =====================================================
+   VOICE NOTE WAVEFORM STYLES
+   ===================================================== */
+
+/* Waveform progress track */
+.waveform-track {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.waveform-track:hover .waveform-bar {
+  opacity: 0.9;
+}
+
+/* Individual waveform bar */
+.waveform-bar {
+  width: 3px;
+  border-radius: 2px;
+  transition: all 0.1s ease;
+  min-height: 4px;
+}
+
+.waveform-bar-inactive {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.waveform-bar-active-mine {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.waveform-bar-active-theirs {
+  background: #a78bfa;
+}
+
+/* =====================================================
+   UPLOAD PROGRESS ANIMATION
+   ===================================================== */
+
+@keyframes upload-progress-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.upload-progress-bar {
+  position: relative;
+  overflow: hidden;
+  background: rgba(139, 92, 246, 0.3);
+}
+
+.upload-progress-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.2),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: upload-progress-shimmer 1.5s linear infinite;
+}
+
+/* =====================================================
+   MESSAGE INPUT VOICE MODE
+   ===================================================== */
+
+/* When in voice recording mode, input bar changes */
+.input-bar-recording {
+  border-color: rgba(239, 68, 68, 0.4) !important;
+  background: rgba(239, 68, 68, 0.05) !important;
+}
+
+/* Mic button recording state */

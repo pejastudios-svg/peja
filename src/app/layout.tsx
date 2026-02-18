@@ -21,6 +21,7 @@ import { CapacitorBackButton } from "@/components/navigation/CapacitorBackButton
 import { CapacitorPushNotifications } from "@/components/notifications/CapacitorPushNotifications";
 import { ScrollRestorer } from "@/components/navigation/ScrollRestorer";
 import { CapacitorKeyboardHandler } from "@/components/navigation/CapacitorKeyboardHandler";
+import { MessageCacheProvider } from "@/context/MessageCacheContext";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -67,11 +68,12 @@ export default function RootLayout({
       <body className={`${poppins.variable} font-sans antialiased`}>
           <ToastProvider>
           <AuthProvider>
-            <ConfirmProvider>
-              <AudioProvider>
-                <VideoHandoffProvider>
-                  <PageCacheProvider>
-                <FeedProvider>
+  <ConfirmProvider>
+    <AudioProvider>
+      <VideoHandoffProvider>
+        <PageCacheProvider>
+          <FeedProvider>
+            <MessageCacheProvider>
                   <AnalyticsTracker />
                   <RoutePrefetcher />
                   <GlobalScrollManager />
@@ -89,12 +91,13 @@ export default function RootLayout({
                   {children}
                   {overlay}
                   {modal}
-                </FeedProvider>
-                </PageCacheProvider>
-                </VideoHandoffProvider>
-              </AudioProvider>
-            </ConfirmProvider>
-          </AuthProvider>
+                </MessageCacheProvider>
+              </FeedProvider>
+            </PageCacheProvider>
+          </VideoHandoffProvider>
+        </AudioProvider>
+      </ConfirmProvider>
+    </AuthProvider>
         </ToastProvider>
       </body>
     </html>
