@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Home, Map, PlusCircle, User, MessageCircle } from "lucide-react";
 import { SOSButton } from "../sos/SOSButton";
 import { useAuth } from "@/context/AuthContext";
+import { useMessageCache } from "@/context/MessageCacheContext";
 import { supabase } from "@/lib/supabase";
 
 const navItems = [
@@ -19,20 +20,24 @@ export function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
+  const { conversations, setConversations, fetchConversations } = useMessageCache();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [dmUnread, setDmUnread] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const isVip = user?.is_vip === true;
 
-  // Determine if we should hide the nav — but do NOT return early here
   const isHidden =
     pathname.startsWith("/post/") || !!pathname.match(/^\/messages\/[^/]+$/);
+
+  // Badge count from context — single source of truth
+  const dmUnread = useMemo(() => {
+    if (!isVip) return 0;
+    return conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
+  }, [conversations, isVip]);
 
   // Close menu on outside click
   useEffect(() => {
     if (isHidden) return;
-
     const handleClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowProfileMenu(false);
@@ -44,51 +49,89 @@ export function BottomNav() {
     }
   }, [showProfileMenu, isHidden]);
 
-  // Fetch DM unread count for VIPs
+  // =====================================================
+  // REALTIME — always active, even when nav is hidden
+  // This is the proven working listener. It updates the
+  // context so both badge AND messages list update instantly.
+  // =====================================================
   useEffect(() => {
-    if (isHidden) return;
     if (!isVip || !user?.id) return;
 
-    const fetchUnread = async () => {
-      try {
-        // Get all conversations user is in
-        const { data: participations } = await supabase
-          .from("conversation_participants")
-          .select("conversation_id, last_read_at")
-          .eq("user_id", user.id);
-
-        if (!participations || participations.length === 0) {
-          setDmUnread(0);
-          return;
-        }
-
-        let total = 0;
-        for (const p of participations) {
-          const { count } = await supabase
-            .from("messages")
-            .select("*", { count: "exact", head: true })
-            .eq("conversation_id", p.conversation_id)
-            .neq("sender_id", user.id)
-            .gt("created_at", p.last_read_at || "1970-01-01");
-
-          total += count || 0;
-        }
-
-        setDmUnread(total);
-      } catch {
-        setDmUnread(0);
-      }
-    };
-
-    fetchUnread();
-
-    // Listen for new messages
     const channel = supabase
       .channel("dm-unread-nav")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
-        () => fetchUnread()
+        (payload) => {
+          const msg = payload.new as any;
+          if (!msg.conversation_id) return;
+
+          // Pre-cache the message so it's already there when chat opens
+          try {
+            const cacheKey = `peja-chat-cache-${msg.conversation_id}`;
+            const cached = sessionStorage.getItem(cacheKey);
+            if (cached) {
+              const messages = JSON.parse(cached);
+              if (Array.isArray(messages) && !messages.find((m: any) => m.id === msg.id)) {
+                messages.push({
+                  ...msg,
+                  media: [],
+                  delivery_status: msg.sender_id === user.id ? "sent" : undefined,
+                  read_at: null,
+                  hidden_for_me: false,
+                  reactions: [],
+                  reply_to: null,
+                });
+                sessionStorage.setItem(cacheKey, JSON.stringify(messages.slice(-100)));
+              }
+            }
+          } catch {}
+
+          // Update context conversations INSTANTLY (optimistic)
+          setConversations((prev) => {
+            const isViewing =
+              typeof window !== "undefined" &&
+              window.location.pathname.includes(msg.conversation_id);
+
+            const updated = prev.map((c) => {
+              if (c.id !== msg.conversation_id) return c;
+
+              // Dedup: skip if we already processed this message
+              if (
+                c.last_message_at &&
+                new Date(c.last_message_at).getTime() >= new Date(msg.created_at).getTime()
+              ) {
+                return c;
+              }
+
+              const isFromOther = msg.sender_id !== user.id;
+
+              return {
+                ...c,
+                last_message_text:
+                  msg.content?.slice(0, 100) ||
+                  (msg.content_type === "media" ? "Sent an attachment" : "New message"),
+                last_message_at: msg.created_at,
+                last_message_sender_id: msg.sender_id,
+                last_message_seen: false,
+                updated_at: msg.created_at,
+                unread_count:
+                  isFromOther && !isViewing
+                    ? (c.unread_count || 0) + 1
+                    : c.unread_count,
+              };
+            });
+
+            // Sort: most recent at top
+            updated.sort((a, b) => {
+              const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+              const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+              return bTime - aTime;
+            });
+
+            return updated;
+          });
+        }
       )
       .on(
         "postgres_changes",
@@ -98,14 +141,17 @@ export function BottomNav() {
           table: "conversation_participants",
           filter: `user_id=eq.${user.id}`,
         },
-        () => fetchUnread()
+        () => {
+          // Read receipt changed — refresh for seen status
+          setTimeout(() => fetchConversations(true), 500);
+        }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isVip, user?.id, isHidden]);
+  }, [isVip, user?.id, setConversations, fetchConversations]);
 
   // Now that all hooks have been called, we can return null
   if (isHidden) return null;
@@ -122,14 +168,13 @@ export function BottomNav() {
   };
 
   return (
-  <nav
-    className="fixed bottom-0 left-0 right-0 z-50 glass-footer"
-    style={{
-      paddingBottom: "env(safe-area-inset-bottom, 0px)",
-    }}
-  >
-    <div className="flex items-center justify-around h-14 px-2">
-        {/* Home & Map */}
+    <nav
+      className="fixed bottom-0 left-0 right-0 z-50 glass-footer"
+      style={{
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      }}
+    >
+      <div className="flex items-center justify-around h-14 px-2">
         {navItems.slice(0, 2).map((item) => {
           const isActive = pathname === item.href;
           const Icon = item.icon;
@@ -147,9 +192,7 @@ export function BottomNav() {
                   }
                 }}
                 className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
-                  isActive
-                    ? "text-primary-400"
-                    : "text-dark-400 hover:text-dark-200"
+                  isActive ? "text-primary-400" : "text-dark-400 hover:text-dark-200"
                 }`}
               >
                 <Icon className="w-5 h-5" />
@@ -165,9 +208,7 @@ export function BottomNav() {
               scroll={false}
               onClick={() => setShowProfileMenu(false)}
               className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
-                isActive
-                  ? "text-primary-400"
-                  : "text-dark-400 hover:text-dark-200"
+                isActive ? "text-primary-400" : "text-dark-400 hover:text-dark-200"
               }`}
             >
               <Icon className="w-5 h-5" />
@@ -176,28 +217,23 @@ export function BottomNav() {
           );
         })}
 
-        {/* SOS Button in center */}
         <div className="flex flex-col items-center justify-center -mt-8">
           <SOSButton />
           <span className="text-xs mt-1 text-red-400 font-medium">SOS</span>
         </div>
 
-        {/* Report */}
         <Link
           href="/create"
           scroll={false}
           onClick={() => setShowProfileMenu(false)}
           className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition-colors ${
-            pathname === "/create"
-              ? "text-primary-400"
-              : "text-dark-400 hover:text-dark-200"
+            pathname === "/create" ? "text-primary-400" : "text-dark-400 hover:text-dark-200"
           }`}
         >
           <PlusCircle className="w-5 h-5" />
           <span className="text-xs mt-1">Report</span>
         </Link>
 
-        {/* Profile (with drop-up for VIPs) */}
         <div className="relative" ref={menuRef}>
           <button
             onClick={handleProfileClick}
@@ -216,11 +252,7 @@ export function BottomNav() {
                       : "border-transparent"
                   }`}
                 >
-                  <img
-                    src={user.avatar_url}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
                 </div>
               ) : (
                 <User className="w-5 h-5" />
@@ -234,7 +266,6 @@ export function BottomNav() {
             <span className="text-xs mt-1">Profile</span>
           </button>
 
-          {/* VIP Drop-up Menu */}
           {showProfileMenu && isVip && (
             <div className="profile-dropup fixed bottom-20 right-3 w-44 glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 z-50">
               <button
@@ -243,9 +274,7 @@ export function BottomNav() {
                   router.push("/profile", { scroll: false });
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-white/5 ${
-                  pathname === "/profile"
-                    ? "text-primary-400"
-                    : "text-dark-200"
+                  pathname === "/profile" ? "text-primary-400" : "text-dark-200"
                 }`}
               >
                 <User className="w-4 h-4" />
@@ -258,9 +287,7 @@ export function BottomNav() {
                   router.push("/messages", { scroll: false });
                 }}
                 className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-white/5 ${
-                  pathname === "/messages"
-                    ? "text-primary-400"
-                    : "text-dark-200"
+                  pathname === "/messages" ? "text-primary-400" : "text-dark-200"
                 }`}
               >
                 <MessageCircle className="w-4 h-4" />

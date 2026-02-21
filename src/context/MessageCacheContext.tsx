@@ -314,32 +314,84 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
       fetchTimeout = setTimeout(() => fetchConversations(true), 500);
     };
 
-    const channel = supabase
+     const channel = supabase
       .channel(`dm-cache-${user.id}-${Date.now()}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
         const msg = payload.new as any;
-        
-        // If it's a message FROM someone else, show badge immediately
-        if (msg.sender_id !== user.id) {
-          setConversations((prev) =>
-            prev.map((c) => {
-              if (c.id !== msg.conversation_id) return c;
-              // Only increment if not currently in that conversation
-              const isViewing = typeof window !== "undefined" && 
-                window.location.pathname.includes(msg.conversation_id);
-              if (isViewing) return c;
-              return { ...c, unread_count: (c.unread_count || 0) + 1 };
-            })
-          );
-        }
-        
+
+        setConversations((prev) => {
+          const isViewing = typeof window !== "undefined" &&
+            window.location.pathname.includes(msg.conversation_id);
+
+          const updated = prev.map((c) => {
+            if (c.id !== msg.conversation_id) return c;
+
+            // Dedup: skip if BottomNav already processed this
+            if (
+              c.last_message_at &&
+              new Date(c.last_message_at).getTime() >= new Date(msg.created_at).getTime()
+            ) {
+              return c;
+            }
+
+            const isFromOther = msg.sender_id !== user.id;
+
+            return {
+              ...c,
+              last_message_text:
+                msg.content?.slice(0, 100) ||
+                (msg.content_type === "media" ? "Sent an attachment" : "New message"),
+              last_message_at: msg.created_at,
+              last_message_sender_id: msg.sender_id,
+              last_message_seen: false,
+              updated_at: msg.created_at,
+              unread_count:
+                isFromOther && !isViewing
+                  ? (c.unread_count || 0) + 1
+                  : c.unread_count,
+            };
+          });
+
+          updated.sort((a, b) => {
+            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+            return bTime - aTime;
+          });
+
+          saveToIDB(updated);
+          return updated;
+        });
+
         debouncedFetch();
       })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversations" }, debouncedFetch)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversations" }, (payload) => {
+        const updated = payload.new as any;
+
+        setConversations((prev) => {
+          const newList = prev.map((c) => {
+            if (c.id !== updated.id) return c;
+            return {
+              ...c,
+              last_message_text: updated.last_message_text ?? c.last_message_text,
+              last_message_at: updated.last_message_at ?? c.last_message_at,
+              last_message_sender_id: updated.last_message_sender_id ?? c.last_message_sender_id,
+              updated_at: updated.updated_at ?? c.updated_at,
+            };
+          });
+
+          newList.sort((a, b) => {
+            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+            return bTime - aTime;
+          });
+
+          saveToIDB(newList);
+          return newList;
+        });
+      })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversation_participants" }, (payload) => {
         const updated = payload.new as any;
         if (updated.user_id !== user.id && updated.last_read_at) {
-          // Other user read message - update seen status immediately
           setConversations((prev) =>
             prev.map((c) => {
               if (c.id !== updated.conversation_id) return c;
@@ -436,25 +488,29 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
     }
   }, [user?.id, clearUnread]);
 
-  const updateLastMessage = useCallback((conversationId: string, text: string, senderId: string) => {
+   const updateLastMessage = useCallback((conversationId: string, text: string, senderId: string) => {
     setConversations((prev) => {
+      const now = new Date().toISOString();
       const updated = prev.map((c) =>
         c.id === conversationId
           ? {
               ...c,
               last_message_text: text,
-              last_message_at: new Date().toISOString(),
+              last_message_at: now,
               last_message_sender_id: senderId,
               last_message_seen: false,
+              updated_at: now,
             }
           : c
       );
-      // Move to top
-      const convIndex = updated.findIndex((c) => c.id === conversationId);
-      if (convIndex > 0) {
-        const [conv] = updated.splice(convIndex, 1);
-        updated.unshift(conv);
-      }
+
+      // Sort by most recent
+      updated.sort((a, b) => {
+        const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        return bTime - aTime;
+      });
+
       saveToIDB(updated);
       return updated;
     });

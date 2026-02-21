@@ -100,7 +100,7 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const toast = useToast();
-  const { setRecordingConversationId, clearUnread, markConversationRead } = useMessageCache();
+  const { setRecordingConversationId, clearUnread, markConversationRead, updateLastMessage } = useMessageCache();
   const MSG_CACHE_KEY = `peja-chat-cache-${conversationId}`;
 
   // ------ Core State ------
@@ -1711,10 +1711,13 @@ const handleTouchEnd = () => {
       )
     );
 
-    // Update conversation last message
-    await supabase
-      .from("conversations")
-      .update({
+      // Update messages list INSTANTLY (optimistic)
+      updateLastMessage(conversationId, "🎤 Voice message", user.id);
+
+      // Update conversation last message
+      await supabase
+        .from("conversations")
+        .update({
         last_message_at: new Date().toISOString(),
         last_message_text: "🎤 Voice message",
         last_message_sender_id: user.id,
@@ -2025,6 +2028,13 @@ const handleTouchEnd = () => {
         next.delete(tempId);
         return next;
       });
+
+      // Update messages list INSTANTLY (optimistic)
+      updateLastMessage(
+        conversationId,
+        markdownContent?.slice(0, 100) || (mediaItems.length > 0 ? "Sent an attachment" : "New message"),
+        user.id
+      );
 
       await supabase
         .from("conversations")

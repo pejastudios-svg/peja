@@ -58,28 +58,6 @@ export default function MessagesPage() {
   const [allVips, setAllVips] = useState<VIPUser[]>([]);
   const [allVipsLoading, setAllVipsLoading] = useState(false);
 
-// Restore cached conversations instantly on mount
-useEffect(() => {
-  try {
-    const cached = sessionStorage.getItem("peja-conversations-cache");
-    if (cached && conversations.length === 0) {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setConversations(parsed);
-      }
-    }
-  } catch {}
-}, []);
-
-// Cache conversations when they change
-useEffect(() => {
-  if (conversations.length > 0) {
-    try {
-      sessionStorage.setItem("peja-conversations-cache", JSON.stringify(conversations.slice(0, 50)));
-    } catch {}
-  }
-}, [conversations]);
-
   // =====================================================
   // AUTH GUARD
   // =====================================================
