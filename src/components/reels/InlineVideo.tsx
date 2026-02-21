@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Volume2, VolumeX, Play, Pause, Maximize2 } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
-import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
+import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk } from "@/lib/videoThumbnail";
 
 const PLAYING_EVENT = "peja-inline-video-playing";
 
@@ -51,6 +51,7 @@ export function InlineVideo({
   const [videoReady, setVideoReady] = useState(false);
 
   const effectivePoster = poster || getVideoThumbnailUrl(src) || undefined;
+  const optimizedSrc = getOptimizedVideoUrl(src);
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -236,7 +237,8 @@ export function InlineVideo({
           userPausedRef.current = false;
           const v = videoRef.current;
           if (v && !v.paused) v.pause();
-        } else if (ratio >= 0.9) {
+          } else if (ratio >= 0.9) {
+          preloadVideoChunk(optimizedSrc);
           if (blockedRef.current) return;
           if (userPausedRef.current) return;
           const v = videoRef.current;
@@ -294,7 +296,7 @@ export function InlineVideo({
     >
         <video
         ref={videoRef}
-        src={src}
+        src={optimizedSrc}
         poster={effectivePoster}
         className={className}
         playsInline

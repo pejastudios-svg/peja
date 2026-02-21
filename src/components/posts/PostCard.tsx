@@ -9,7 +9,8 @@ import { useConfirm } from "@/context/ConfirmContext";
 import { useAuth } from "@/context/AuthContext";
 import { useFeedCache } from "@/context/FeedContext";
 import { useToast } from "@/context/ToastContext";
-import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
+import { getVideoThumbnailUrl, preloadVideoChunk } from "@/lib/videoThumbnail";
+
 import {
   MapPin,
   Clock,
@@ -72,6 +73,14 @@ const confirmations = optimisticCount ?? confirm.getCount(post.id, post.confirma
 
   useEffect(() => {
     confirm.hydrateCounts([{ postId: post.id, confirmations: post.confirmations || 0 }]);
+  }, [post.id]);
+
+  // Preload first video chunk when card mounts (for faster playback)
+  useEffect(() => {
+    const firstVideo = post.media?.find(m => m.media_type === "video");
+    if (firstVideo) {
+      preloadVideoChunk(firstVideo.url);
+    }
   }, [post.id]);
 
   const isExpired = differenceInHours(new Date(), new Date(post.created_at)) >= 24;

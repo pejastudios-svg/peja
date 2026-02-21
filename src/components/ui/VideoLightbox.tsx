@@ -6,7 +6,7 @@ import { ChevronLeft, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
 import { supabase } from "@/lib/supabase";
-import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
+import { getVideoThumbnailUrl, getOptimizedVideoUrl } from "@/lib/videoThumbnail";
 
 export function VideoLightbox({
   isOpen,
@@ -297,9 +297,9 @@ export function VideoLightbox({
           />
         )}
 
-        <video
+          <video
           ref={videoRef}
-          src={videoUrl}
+          src={videoUrl ? getOptimizedVideoUrl(videoUrl) : undefined}
           className="max-w-full max-h-full w-full h-full object-contain pointer-events-none"
           playsInline
           autoPlay
