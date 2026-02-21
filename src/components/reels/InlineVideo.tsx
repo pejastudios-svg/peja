@@ -6,6 +6,7 @@ import { Volume2, VolumeX, Play, Pause, Maximize2 } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
 import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk } from "@/lib/videoThumbnail";
+import { useHlsPlayer } from "@/hooks/useHlsPlayer";
 
 const PLAYING_EVENT = "peja-inline-video-playing";
 
@@ -31,6 +32,10 @@ export function InlineVideo({
   const instanceId = useId();
   const pathname = usePathname();
   const mountingPath = useRef(pathname);
+  const currentPathRef = useRef(pathname);
+  useEffect(() => {
+    currentPathRef.current = pathname;
+  }, [pathname]);
   const handoff = useVideoHandoff();
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -51,6 +56,7 @@ export function InlineVideo({
   const [videoReady, setVideoReady] = useState(false);
 
   const effectivePoster = poster || getVideoThumbnailUrl(src) || undefined;
+    useHlsPlayer(videoRef, src);
   const optimizedSrc = getOptimizedVideoUrl(src);
 
   useEffect(() => {
@@ -71,6 +77,9 @@ export function InlineVideo({
 
   useEffect(() => {
     const handleModalClose = () => {
+      // Don't resume if this video isn't on the current page
+      if (currentPathRef.current !== mountingPath.current) return;
+
       const returnTime = handoff.getReturnTime(src);
       if (returnTime !== null) {
         const v = videoRef.current;

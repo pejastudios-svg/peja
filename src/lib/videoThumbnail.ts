@@ -86,3 +86,37 @@ export function preloadVideoChunk(videoUrl: string): void {
     }).catch(() => {});
   } catch {}
 }
+
+/**
+ * Converts a Cloudinary MP4 URL to HLS (.m3u8) for streaming.
+ * Cloudinary generates HLS segments on-the-fly.
+ * Returns null for non-Cloudinary URLs.
+ */
+export function getHlsUrl(videoUrl: string): string | null {
+  if (
+    !videoUrl ||
+    !videoUrl.includes("res.cloudinary.com") ||
+    !videoUrl.includes("/video/upload/")
+  ) {
+    return null;
+  }
+
+  try {
+    const parts = videoUrl.split("/video/upload/");
+    if (parts.length !== 2) return null;
+
+    const base = parts[0];
+    const rest = parts[1];
+
+    const versionMatch = rest.match(/(v\d+\/.+)/);
+    if (!versionMatch) return null;
+
+    const pathWithVersion = versionMatch[1];
+    const m3u8Path = pathWithVersion.replace(/\.[^.]+$/, ".m3u8");
+
+    // Keep codec/quality, serve as HLS
+    return `${base}/video/upload/vc_h264,ac_aac,q_auto/${m3u8Path}`;
+  } catch {
+    return null;
+  }
+}

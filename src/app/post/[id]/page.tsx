@@ -21,6 +21,7 @@ import { PostDetailSkeleton } from "@/components/posts/PostDetailSkeleton";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/context/ToastContext";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
+import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { apiUrl } from "@/lib/api";
 import {
   ArrowLeft,
@@ -325,6 +326,8 @@ export default function PostDetailPage() {
   const [sortBy, setSortBy] = useState<"top" | "recent">("top");
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
+    const [videoStartTime, setVideoStartTime] = useState(0);
+  const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxCaption, setLightboxCaption] = useState<string | null>(null); 
   const [likeBusy, setLikeBusy] = useState<Set<string>>(new Set());
@@ -1336,6 +1339,15 @@ setTimeout(() => setToastMsg(null), 2500);
     setLightboxOpen(true);
   };
 
+    const handleExpandVideo = (index: number, currentTime?: number, capturedPoster?: string) => {
+    const media = post?.media?.[index];
+    if (!media) return;
+    setLightboxUrl(media.url);
+    setVideoStartTime(currentTime || 0);
+    setVideoThumbnail(capturedPoster || getVideoThumbnailUrl(media.url) || null);
+    setVideoLightboxOpen(true);
+  };
+
 const openSingleLightbox = (url: string, caption?: string | null) => {
   // IMPORTANT: clear previous post carousel items so it doesn't reopen videos
   setLightboxItems([]);
@@ -1493,7 +1505,7 @@ if (error || !post) {
                     src={mediaItem.url}
                     className="w-full h-full object-contain bg-black"
                     showExpand={true}
-                    onExpand={() => openPostLightboxAt(idx)}
+                    onExpand={(currentTime, posterDataUrl) => handleExpandVideo(idx, currentTime, posterDataUrl)}
                     onError={() => {
                       if (idx === currentMediaIndex) setVideoError(true);
                     }}
@@ -1818,6 +1830,15 @@ if (error || !post) {
         caption={lightboxCaption}
         items={lightboxItems}
         initialIndex={lightboxIndex}
+      />
+
+      <VideoLightbox
+        isOpen={videoLightboxOpen}
+        onClose={() => setVideoLightboxOpen(false)}
+        videoUrl={lightboxUrl}
+        startTime={videoStartTime}
+        postId={postId}
+        posterUrl={videoThumbnail}
       />
         {toastMsg && (
         <div

@@ -7,6 +7,7 @@ import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
 import { supabase } from "@/lib/supabase";
 import { getVideoThumbnailUrl, getOptimizedVideoUrl } from "@/lib/videoThumbnail";
+import { useHlsPlayer } from "@/hooks/useHlsPlayer";
 
 export function VideoLightbox({
   isOpen,
@@ -33,6 +34,7 @@ export function VideoLightbox({
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showPoster, setShowPoster] = useState(true);
+  useHlsPlayer(videoRef, videoUrl || "", isOpen);
 
   const { soundEnabled, setSoundEnabled } = useAudio();
 
@@ -215,7 +217,9 @@ export function VideoLightbox({
 
   const handleTimeUpdate = () => {
     const v = videoRef.current;
-    if (v) setProgress((v.currentTime / v.duration) * 100);
+    if (!v || !v.duration) return;
+    const p = (v.currentTime / v.duration) * 100;
+    setProgress(isNaN(p) ? 0 : p);
   };
 
   const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -340,7 +344,7 @@ export function VideoLightbox({
               min="0"
               max="100"
               step="0.1"
-              value={progress}
+              value={isNaN(progress) ? 0 : progress}
               onChange={handleScrub}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
             />

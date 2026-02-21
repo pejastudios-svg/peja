@@ -29,6 +29,7 @@
     "cloudinary": "^2.9.0",
     "date-fns": "^4.1.0",
     "firebase-admin": "^13.6.1",
+    "hls.js": "^1.6.15",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.468.0",
     "maplibre-gl": "^5.17.0",
