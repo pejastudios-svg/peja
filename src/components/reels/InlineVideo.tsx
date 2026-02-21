@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Volume2, VolumeX, Play, Pause, Maximize2 } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
+import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 
 const PLAYING_EVENT = "peja-inline-video-playing";
 
@@ -47,6 +48,9 @@ export function InlineVideo({
   const [duration, setDuration] = useState(0);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+
+  const effectivePoster = poster || getVideoThumbnailUrl(src) || undefined;
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -288,10 +292,10 @@ export function InlineVideo({
       onClick={handleContainerClick}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <video
+        <video
         ref={videoRef}
         src={src}
-        poster={poster}
+        poster={effectivePoster}
         className={className}
         playsInline
         preload="auto"
@@ -300,12 +304,27 @@ export function InlineVideo({
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
         onPlay={() => setIsPlaying(true)}
+        onPlaying={() => setVideoReady(true)}
         onPause={() => {
           setIsPlaying(false);
           setShowControls(true);
         }}
         onError={() => onError?.()}
       />
+
+            {/* Poster overlay — prevents black flash until first frame renders */}
+      {!videoReady && effectivePoster && (
+        <img
+          src={effectivePoster}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover z-[1] pointer-events-none"
+        />
+      )}
+
+      {/* Loading shimmer when no poster available */}
+      {!videoReady && !effectivePoster && (
+        <div className="absolute inset-0 z-[1] pointer-events-none bg-dark-800 animate-pulse" />
+      )}
 
       {!isPlaying && !autoPlay && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-5">

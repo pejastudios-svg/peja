@@ -9,6 +9,7 @@ import { useConfirm } from "@/context/ConfirmContext";
 import { useAuth } from "@/context/AuthContext";
 import { useFeedCache } from "@/context/FeedContext";
 import { useToast } from "@/context/ToastContext";
+import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import {
   MapPin,
   Clock,
@@ -140,13 +141,13 @@ const handleConfirmClick = async (e: React.MouseEvent) => {
   router.push(`/post/${post.id}${sk}`, { scroll: false });
 };
 
-  const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
+const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
   const media = post.media?.[currentMediaIndex];
   if (media && media.media_type === 'video') {
     setLightboxUrl(media.url);
     setVideoStartTime(currentTime || 0);
-    // Use captured frame, or media thumbnail_url, or null
-    setVideoThumbnail(capturedPoster || media.thumbnail_url || null);
+    // Use captured frame first (best quality), then Cloudinary thumbnail, then null
+    setVideoThumbnail(capturedPoster || getVideoThumbnailUrl(media.url) || null);
     setVideoLightboxOpen(true);
   }
 };

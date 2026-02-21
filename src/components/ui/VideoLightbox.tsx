@@ -6,6 +6,7 @@ import { ChevronLeft, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
 import { supabase } from "@/lib/supabase";
+import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 
 export function VideoLightbox({
   isOpen,
@@ -64,17 +65,17 @@ export function VideoLightbox({
   };
 
   // Get effective start data from handoff
-  const getEffectiveStartData = () => {
+ const getEffectiveStartData = () => {
     const handoffData = handoff.getHandoff();
     if (handoffData && videoUrl && handoffData.src === videoUrl) {
       return {
         effectiveStartTime: handoffData.currentTime,
-        effectivePoster: handoffData.posterDataUrl || posterUrl || null,
+        effectivePoster: handoffData.posterDataUrl || posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null),
       };
     }
     return {
       effectiveStartTime: startTime,
-      effectivePoster: posterUrl || null,
+      effectivePoster: posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null),
     };
   };
 
