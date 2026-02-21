@@ -272,12 +272,21 @@ useEffect(() => {
       console.error("[Cache] Failed to restore user:", e);
     }
 
-    // STEP 3: Fetch fresh data in background
+     // STEP 3: Fetch fresh data in background
     try {
-      const { data: participants, error: pErr } = await supabase
-        .from("conversation_participants")
-        .select("user_id, is_muted, is_blocked, last_read_at")
-        .eq("conversation_id", conversationId);
+      // Run participant data and deletions in parallel
+      const [participantsResult, deletionsResult] = await Promise.all([
+        supabase
+          .from("conversation_participants")
+          .select("user_id, is_muted, is_blocked, last_read_at")
+          .eq("conversation_id", conversationId),
+        supabase
+          .from("message_deletions")
+          .select("message_id")
+          .eq("user_id", user.id),
+      ]);
+
+      const { data: participants, error: pErr } = participantsResult;
       if (pErr) throw pErr;
 
       const myP = participants?.find((p) => p.user_id === user.id);
@@ -290,11 +299,20 @@ useEffect(() => {
       const otherReadAt = otherP.last_read_at || null;
       setOtherLastReadAt(otherReadAt);
 
-      const { data: otherUserData, error: uErr } = await supabase
-        .from("users")
-        .select("id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status")
-        .eq("id", otherP.user_id)
-        .single();
+      myDeletionsRef.current = new Set((deletionsResult.data || []).map((d: any) => d.message_id));
+
+      // Fetch user data, messages, and mark as read ALL in parallel
+      const [userResult] = await Promise.all([
+        supabase
+          .from("users")
+          .select("id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status")
+          .eq("id", otherP.user_id)
+          .single(),
+        fetchMessages(otherReadAt),
+        markAsRead(),
+      ]);
+
+      const { data: otherUserData, error: uErr } = userResult;
       if (uErr) throw uErr;
 
       const otherVIP = otherUserData as VIPUser;
@@ -302,23 +320,13 @@ useEffect(() => {
       setOtherUser(otherVIP);
       setOtherUserOnline(presenceManager.isOnline(otherVIP.id));
 
-      // Cache the user data for instant restore next time
       try {
         sessionStorage.setItem(`peja-chat-user-${conversationId}`, JSON.stringify(otherVIP));
       } catch {}
 
-      const { data: myDeletions } = await supabase
-        .from("message_deletions")
-        .select("message_id")
-        .eq("user_id", user.id);
-      myDeletionsRef.current = new Set((myDeletions || []).map((d: any) => d.message_id));
-
-      await fetchMessages(otherReadAt);
-      await markAsRead();
       try { sessionStorage.setItem("peja-last-chat-id", conversationId); } catch {}
     } catch (e: any) {
       console.error("Chat fetch error:", e?.message || e);
-      // Only redirect if we don't have cached data to show
       if (!hasCachedMessages) {
         router.replace("/messages");
       }
@@ -384,7 +392,7 @@ useEffect(() => {
   // =====================================================
   // FETCH MESSAGES
   // =====================================================
-  const fetchMessages = useCallback(async (otherReadAt?: string | null) => {
+   const fetchMessages = useCallback(async (otherReadAt?: string | null) => {
     if (!user?.id) return;
 
     const { data, error } = await supabase
@@ -397,89 +405,80 @@ useEffect(() => {
     if (error) { console.error("Messages fetch:", error.message); return; }
 
     const msgs = (data || []) as Message[];
-
-    const mediaIds = msgs
-      .filter((m) => m.content_type === "media" || m.content_type === "document")
-      .map((m) => m.id);
-    let mediaMap: Record<string, MessageMediaItem[]> = {};
-    if (mediaIds.length > 0) {
-      const { data: md } = await supabase
-        .from("message_media")
-        .select("*")
-        .in("message_id", mediaIds);
-      (md || []).forEach((m: any) => {
-        if (!mediaMap[m.message_id]) mediaMap[m.message_id] = [];
-        mediaMap[m.message_id].push(m);
-      });
-    }
-
-    const ownIds = msgs.filter((m) => m.sender_id === user.id).map((m) => m.id);
-    let readMap: Record<string, string | null> = {};
-    if (ownIds.length > 0) {
-      const { data: rd } = await supabase
-        .from("message_reads")
-        .select("message_id, read_at")
-        .in("message_id", ownIds)
-        .neq("user_id", user.id);
-      (rd || []).forEach((r: any) => {
-        readMap[r.message_id] = r.read_at;
-      });
-    }
-
-    const allIds = msgs.map((m) => m.id);
-    let reactionsMap: Record<string, any[]> = {};
-    if (allIds.length > 0) {
-      const { data: reactions } = await supabase
-        .from("message_reactions")
-        .select("*")
-        .in("message_id", allIds);
-      (reactions || []).forEach((r: any) => {
-        if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
-        reactionsMap[r.message_id].push(r);
-      });
-    }
-
-    const replyIds = msgs.filter((m) => m.reply_to_id).map((m) => m.reply_to_id!);
-    let replyMap: Record<string, Message> = {};
-    if (replyIds.length > 0) {
-      const { data: replies } = await supabase
-        .from("messages")
-        .select("*")
-        .in("id", replyIds);
-      (replies || []).forEach((r: any) => {
-        replyMap[r.id] = r;
-      });
-    }
+    if (msgs.length === 0) { setMessages([]); return; }
 
     const deletedForMe = myDeletionsRef.current;
+    const filteredMsgs = msgs.filter((m) => !deletedForMe.has(m.id));
 
-    const finalMessages = msgs
-      .filter((m) => !deletedForMe.has(m.id))
-      .map((m) => {
-        let deliveryStatus: "sent" | "seen" | undefined;
-        if (m.sender_id === user.id) {
-          if (readMap[m.id]) {
-            deliveryStatus = "seen";
-          } else if (otherReadAt && new Date(otherReadAt) >= new Date(m.created_at)) {
-            deliveryStatus = "seen";
-          } else {
-            deliveryStatus = "sent";
-          }
+    const allIds = filteredMsgs.map((m) => m.id);
+    const mediaIds = filteredMsgs
+      .filter((m) => m.content_type === "media" || m.content_type === "document")
+      .map((m) => m.id);
+    const ownIds = filteredMsgs.filter((m) => m.sender_id === user.id).map((m) => m.id);
+    const replyIds = filteredMsgs.filter((m) => m.reply_to_id).map((m) => m.reply_to_id!);
+
+    // Run ALL secondary queries in parallel instead of sequential
+    const [mediaResult, readResult, reactionsResult, repliesResult] = await Promise.all([
+      mediaIds.length > 0
+        ? supabase.from("message_media").select("*").in("message_id", mediaIds)
+        : Promise.resolve({ data: [] }),
+      ownIds.length > 0
+        ? supabase.from("message_reads").select("message_id, read_at").in("message_id", ownIds).neq("user_id", user.id)
+        : Promise.resolve({ data: [] }),
+      allIds.length > 0
+        ? supabase.from("message_reactions").select("*").in("message_id", allIds)
+        : Promise.resolve({ data: [] }),
+      replyIds.length > 0
+        ? supabase.from("messages").select("*").in("id", replyIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    const mediaMap: Record<string, MessageMediaItem[]> = {};
+    (mediaResult.data || []).forEach((m: any) => {
+      if (!mediaMap[m.message_id]) mediaMap[m.message_id] = [];
+      mediaMap[m.message_id].push(m);
+    });
+
+    const readMap: Record<string, string | null> = {};
+    (readResult.data || []).forEach((r: any) => {
+      readMap[r.message_id] = r.read_at;
+    });
+
+    const reactionsMap: Record<string, any[]> = {};
+    (reactionsResult.data || []).forEach((r: any) => {
+      if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
+      reactionsMap[r.message_id].push(r);
+    });
+
+    const replyMap: Record<string, Message> = {};
+    (repliesResult.data || []).forEach((r: any) => {
+      replyMap[r.id] = r;
+    });
+
+    const finalMessages = filteredMsgs.map((m) => {
+      let deliveryStatus: "sent" | "seen" | undefined;
+      if (m.sender_id === user.id) {
+        if (readMap[m.id]) {
+          deliveryStatus = "seen";
+        } else if (otherReadAt && new Date(otherReadAt) >= new Date(m.created_at)) {
+          deliveryStatus = "seen";
+        } else {
+          deliveryStatus = "sent";
         }
-        return {
-          ...m,
-          media: mediaMap[m.id] || [],
-          delivery_status: deliveryStatus,
-          read_at: m.sender_id === user.id ? readMap[m.id] || null : null,
-          hidden_for_me: false,
-          reactions: reactionsMap[m.id] || [],
-          reply_to: m.reply_to_id ? replyMap[m.reply_to_id] || null : null,
-        };
-      });
+      }
+      return {
+        ...m,
+        media: mediaMap[m.id] || [],
+        delivery_status: deliveryStatus,
+        read_at: m.sender_id === user.id ? readMap[m.id] || null : null,
+        hidden_for_me: false,
+        reactions: reactionsMap[m.id] || [],
+        reply_to: m.reply_to_id ? replyMap[m.reply_to_id] || null : null,
+      };
+    });
 
     setMessages(finalMessages);
 
-    // Cache messages
     try {
       const cacheData = finalMessages.slice(-100);
       sessionStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
