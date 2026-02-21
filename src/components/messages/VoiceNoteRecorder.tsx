@@ -11,10 +11,13 @@ interface VoiceNoteRecorderProps {
   isUploading?: boolean;
 }
 
-// Check if we're in Capacitor native environment
+// Check if we're in Capacitor native environment (Android only for voice recorder)
 function isCapacitorNative(): boolean {
   if (typeof window === "undefined") return false;
-  return (window as any).Capacitor !== undefined;
+  const ua = navigator.userAgent || "";
+  // Only use native recorder on Android — iOS will use web MediaRecorder
+  const isAndroid = /Android/.test(ua) && /wv/.test(ua);
+  return isAndroid && (window as any).Capacitor !== undefined;
 }
 
 export function VoiceNoteRecorder({

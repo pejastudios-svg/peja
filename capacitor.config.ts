@@ -2,17 +2,22 @@ import type { CapacitorConfig } from "@capacitor/cli";
 import { KeyboardResize } from "@capacitor/keyboard";
 
 const config: CapacitorConfig = {
-  appId: "com.peja.app",
+  appId: "com.jedidiah.peja2025",
   appName: "Peja",
   webDir: "out",
   server: {
     url: "https://peja.vercel.app",
-    cleartext: false,
+    cleartext: true,
   },
   android: {
     webContentsDebuggingEnabled: false,
     allowMixedContent: false,
     appendUserAgent: "CapacitorApp",
+  },
+  ios: {
+    contentInset: "automatic",
+    scrollEnabled: true,
+    backgroundColor: "#0c0818",
   },
   plugins: {
     SplashScreen: {
@@ -30,7 +35,7 @@ const config: CapacitorConfig = {
       enabled: true,
     },
     CapacitorHttp: {
-      enabled: true,
+      enabled: false,
     },
     Keyboard: {
       resize: KeyboardResize.Native,
