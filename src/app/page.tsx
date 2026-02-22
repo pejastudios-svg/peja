@@ -102,8 +102,6 @@ export default function Home() {
   const feedCache = useFeedCache();
   const pageCache = usePageCache();
 
-
-
   // Restore UI state from PageCache (instant, no flash)
   const cachedUI = pageCache.getMeta<HomeUIState>("home:ui");
   const initialUI = cachedUI || DEFAULT_UI;
@@ -136,6 +134,16 @@ export default function Home() {
   });
 
   const [refreshing, setRefreshing] = useState(false);
+
+  // ── Stable refs: prevent fetchPosts from being recreated on every
+  //    auth / confirm context update (the main cause of the blink loop) ──
+  const userRef = useRef(user);
+  const confirmRef = useRef(confirm);
+  useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => { confirmRef.current = confirm; }, [confirm]);
+
+  // Guard against concurrent fetches
+  const fetchingRef = useRef(false);
 
   // Track if this is a return visit (have cached data) vs first visit
   const isReturnVisit = useRef(false);
@@ -209,6 +217,10 @@ export default function Home() {
 
   const fetchPosts = useCallback(
     async (isRefresh = false) => {
+      // ── Deduplicate: skip if a fetch is already running (unless explicit refresh) ──
+      if (fetchingRef.current && !isRefresh) return;
+      fetchingRef.current = true;
+
       const cached = feedCache.get(feedKey);
       const hasCachedData = cached && cached.posts.length > 0;
 
@@ -221,6 +233,7 @@ export default function Home() {
         // Stale-while-revalidate: if cache is older than 60 seconds, silently refresh
         const cacheAge = Date.now() - (cached.updatedAt || 0);
         if (cacheAge < 60000) {
+          fetchingRef.current = false;
           return; // Cache is fresh enough, skip fetch
         }
         // Otherwise fall through to fetch in background (no loading indicator)
@@ -244,31 +257,39 @@ export default function Home() {
         let data: any[] | null = null;
         let error: any = null;
 
-        if (activeTab === "trending") {
-          const res = await supabase
-            .from("posts")
-            .select(baseSelect)
-            .in("status", ["live", "resolved"])
-            .order("created_at", { ascending: false })
-            .limit(200);
+        // ── Retry up to 3 times on network failure (iOS cold-start fix) ──
+        for (let attempt = 0; attempt < 3; attempt++) {
+          if (activeTab === "trending") {
+            const res = await supabase
+              .from("posts")
+              .select(baseSelect)
+              .in("status", ["live", "resolved"])
+              .order("created_at", { ascending: false })
+              .limit(200);
 
-          data = res.data;
-          error = res.error;
-        } else {
-          const res = await supabase
-            .from("posts")
-            .select(baseSelect)
-            .in("status", ["live", "resolved"])
-            .order("created_at", { ascending: false })
-            .limit(200);
+            data = res.data;
+            error = res.error;
+          } else {
+            const res = await supabase
+              .from("posts")
+              .select(baseSelect)
+              .in("status", ["live", "resolved"])
+              .order("created_at", { ascending: false })
+              .limit(200);
 
-          data = res.data;
-          error = res.error;
+            data = res.data;
+            error = res.error;
+          }
+
+          if (!error && data) break; // success → exit retry loop
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); // 1.5s, 3s
+          }
         }
 
-        if (error) {
-          console.error("Fetch error:", error);
-          if (!hasCachedData) setPosts([]);
+        if (error || !data) {
+          console.error("Fetch error after retries:", error);
+          // ── Never wipe posts the user can already see ──
           return;
         }
 
@@ -304,12 +325,15 @@ export default function Home() {
         const seenStore = readSeenStore();
         let finalPosts = formattedPosts;
 
+        // ── Read user location from ref (stable, no dep churn) ──
+        const currentUser = userRef.current;
+
         if (activeTab === "nearby") {
           const baseList = showSeenNearby
             ? formattedPosts
             : formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
-          const userLat = user?.last_latitude ?? null;
-          const userLng = user?.last_longitude ?? null;
+          const userLat = currentUser?.last_latitude ?? null;
+          const userLng = currentUser?.last_longitude ?? null;
 
           if (userLat != null && userLng != null) {
             finalPosts = [...baseList].sort((a, b) => {
@@ -365,29 +389,37 @@ export default function Home() {
             .slice(0, 30);
         }
 
-        confirm.hydrateCounts(
+        // ── Use confirmRef (stable, no dep churn) ──
+        confirmRef.current.hydrateCounts(
           finalPosts.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 }))
         );
-        confirm.loadConfirmedFor(finalPosts.map((p) => p.id));
+        confirmRef.current.loadConfirmedFor(finalPosts.map((p) => p.id));
 
         setPosts(finalPosts);
         feedCache.setPosts(feedKey, finalPosts);
       } catch (err) {
         console.error("Fetch error:", err);
-        if (!hasCachedData) setPosts([]);
+        // ── Never wipe posts the user can already see ──
       } finally {
+        fetchingRef.current = false;
         setLoading(false);
         setRefreshing(false);
       }
     },
-      [activeTab, feedKey, feedCache, trendingMode, showSeenTop, showSeenNearby, user, confirm]
+    // ── user and confirm REMOVED — accessed via stable refs instead ──
+    [activeTab, feedKey, feedCache, trendingMode, showSeenTop, showSeenNearby]
   );
+
+  // ── Keep a ref to the latest fetchPosts so the main effect never
+  //    re-fires just because the callback identity changed ──
+  const fetchPostsRef = useRef(fetchPosts);
+  useEffect(() => { fetchPostsRef.current = fetchPosts; }, [fetchPosts]);
 
   // Listen for new post created event
   useEffect(() => {
     const handleNewPost = () => {
       console.log("[Home] New post created, refreshing feed...");
-      fetchPosts(true);
+      fetchPostsRef.current(true);
     };
 
     window.addEventListener("peja-post-created", handleNewPost);
@@ -395,7 +427,7 @@ export default function Home() {
     return () => {
       window.removeEventListener("peja-post-created", handleNewPost);
     };
-  }, [fetchPosts]);
+  }, []);
 
   // Listen for post deleted/archived events
   useEffect(() => {
@@ -435,20 +467,23 @@ export default function Home() {
       window.removeEventListener("peja-post-archived", handlePostArchived);
     };
   }, [feedKey, feedCache]);
+  
 
-  // Initial fetch with stale-while-revalidate
+  // ── Initial fetch — deps are now stable: feedKey + authLoading ──
+  //    feedKey already encodes activeTab + showSeen*, so those are covered.
+  //    fetchPostsRef.current always points to the latest callback.
   useEffect(() => {
     if (!authLoading) {
       const needsRefresh = sessionStorage.getItem("peja-feed-refresh");
       if (needsRefresh) {
         sessionStorage.removeItem("peja-feed-refresh");
         feedCache.invalidateAll();
-        fetchPosts(true);
+        fetchPostsRef.current(true);
       } else {
-        fetchPosts();
+        fetchPostsRef.current();
       }
     }
-  }, [activeTab, authLoading, fetchPosts, feedCache]);
+  }, [feedKey, authLoading, feedCache]);
 
   // Expire job
   useEffect(() => {
@@ -472,8 +507,10 @@ export default function Home() {
               const merged = [formatted, ...prev];
 
               if (activeTab === "nearby") {
-                const userLat = user?.last_latitude ?? null;
-                const userLng = user?.last_longitude ?? null;
+                // ── Read user location from ref ──
+                const currentUser = userRef.current;
+                const userLat = currentUser?.last_latitude ?? null;
+                const userLng = currentUser?.last_longitude ?? null;
 
                 if (userLat != null && userLng != null) {
                   const sorted = merged.sort((a, b) => {
@@ -561,7 +598,8 @@ export default function Home() {
     );
 
     return () => unsubscribe();
-  }, [formatPost, feedKey, feedCache, activeTab, user]);
+    // ── removed `user` from deps — accessed via userRef inside callbacks ──
+  }, [formatPost, feedKey, feedCache, activeTab]);
 
   // Prefetch routes
   useEffect(() => {
@@ -583,33 +621,14 @@ export default function Home() {
   // Auth redirect
   useEffect(() => {
     if (authLoading) return;
-
     if (user) {
       setAuthCheckDone(true);
       return;
     }
-
-    const timer = setTimeout(async () => {
-      try {
-        const {
-          data: { session: freshSession },
-        } = await supabase.auth.getSession();
-
-        if (freshSession?.user) {
-          console.log("[Home] Session found on recheck, waiting for user state...");
-          setTimeout(() => {
-            setAuthCheckDone(true);
-          }, 1000);
-          return;
-        }
-
-        console.log("[Home] No session found, redirecting to login");
-        router.push("/login");
-      } catch {
-        router.push("/login");
-      }
-    }, 1500);
-
+    // Don't redirect, just wait
+    const timer = setTimeout(() => {
+      setAuthCheckDone(true);
+    }, 2000);
     return () => clearTimeout(timer);
   }, [authLoading, user, router]);
 
@@ -631,8 +650,8 @@ export default function Home() {
 
   // Refresh handler
   const handleRefresh = useCallback(() => {
-    fetchPosts(true);
-  }, [fetchPosts]);
+    fetchPostsRef.current(true);
+  }, []);
 
   // ============================================================
   // ALL HOOKS ARE DONE — early returns are now safe
