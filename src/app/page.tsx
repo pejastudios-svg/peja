@@ -225,6 +225,7 @@ export default function Home() {
         // Stale-while-revalidate: if cache is older than 60 seconds, silently refresh
         const cacheAge = Date.now() - (cached.updatedAt || 0);
         if (cacheAge < 60000) {
+          fetchInProgressRef.current = false;
           return; // Cache is fresh enough, skip fetch
         }
         // Otherwise fall through to fetch in background (no loading indicator)
