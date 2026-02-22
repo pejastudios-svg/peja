@@ -1413,7 +1413,7 @@ const handleTouchEnd = () => {
   const handleSwipeStart = (msgId: string, e: React.TouchEvent) => {
     const touch = e.touches[0];
     swipeStartRef.current = { x: touch.clientX, y: touch.clientY, locked: false };
-    setSwipingMsgId(msgId);
+    // Do NOT set state here — prevents unnecessary re-renders that swallow iOS clicks
   };
 
   const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
@@ -1426,11 +1426,12 @@ const handleTouchEnd = () => {
       if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
         swipeStartRef.current.locked = true;
         if (Math.abs(dy) > Math.abs(dx)) {
+          // Vertical movement — cancel swipe, no state updates
           swipeStartRef.current = null;
-          setSwipingMsgId(null);
-          setSwipeX(0);
           return;
         }
+        // Horizontal movement confirmed — NOW set swipe state
+        setSwipingMsgId(msg.id);
       } else {
         return;
       }
@@ -1452,6 +1453,12 @@ const handleTouchEnd = () => {
   };
 
   const handleSwipeEnd = (msg: Message) => {
+    // If no swipe was active (just a normal tap), don't update state
+    if (!swipingMsgId) {
+      swipeStartRef.current = null;
+      return;
+    }
+
     if (swipeX > 60) {
       if (navigator.vibrate) navigator.vibrate(20);
       handleReply(msg);

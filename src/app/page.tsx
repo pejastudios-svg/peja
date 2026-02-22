@@ -101,6 +101,9 @@ export default function Home() {
   const { user, loading: authLoading, session } = useAuth();
   const feedCache = useFeedCache();
   const pageCache = usePageCache();
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
+  const fetchInProgressRef = useRef(false);
 
   // Restore UI state from PageCache (instant, no flash)
   const cachedUI = pageCache.getMeta<HomeUIState>("home:ui");
@@ -207,6 +210,9 @@ export default function Home() {
 
   const fetchPosts = useCallback(
     async (isRefresh = false) => {
+      if (fetchInProgressRef.current && !isRefresh) return;
+      fetchInProgressRef.current = true;
+
       const cached = feedCache.get(feedKey);
       const hasCachedData = cached && cached.posts.length > 0;
 
@@ -306,8 +312,8 @@ export default function Home() {
           const baseList = showSeenNearby
             ? formattedPosts
             : formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
-          const userLat = user?.last_latitude ?? null;
-          const userLng = user?.last_longitude ?? null;
+          const userLat = userRef.current?.last_latitude ?? null;
+          const userLng = userRef.current?.last_longitude ?? null;
 
           if (userLat != null && userLng != null) {
             finalPosts = [...baseList].sort((a, b) => {
@@ -376,9 +382,10 @@ export default function Home() {
       } finally {
         setLoading(false);
         setRefreshing(false);
+        fetchInProgressRef.current = false;
       }
     },
-    [activeTab, feedKey, feedCache, trendingMode, showSeenTop, showSeenNearby, user, confirm]
+      [activeTab, feedKey, feedCache, trendingMode, showSeenTop, showSeenNearby, confirm]
   );
 
   // Listen for new post created event
@@ -470,8 +477,8 @@ export default function Home() {
               const merged = [formatted, ...prev];
 
               if (activeTab === "nearby") {
-                const userLat = user?.last_latitude ?? null;
-                const userLng = user?.last_longitude ?? null;
+                const userLat = userRef.current?.last_latitude ?? null;
+                const userLng = userRef.current?.last_longitude ?? null;
 
                 if (userLat != null && userLng != null) {
                   const sorted = merged.sort((a, b) => {
@@ -559,7 +566,7 @@ export default function Home() {
     );
 
     return () => unsubscribe();
-  }, [formatPost, feedKey, feedCache, activeTab, user]);
+  }, [formatPost, feedKey, feedCache, activeTab]);
 
   // Prefetch routes
   useEffect(() => {
@@ -636,11 +643,11 @@ export default function Home() {
   // ALL HOOKS ARE DONE — early returns are now safe
   // ============================================================
 
-  if (authLoading || (!user && !authCheckDone)) {
+  if (posts.length === 0 && (authLoading || (!user && !authCheckDone))) {
     return <PejaLoadingScreen />;
   }
 
-  if (!user) {
+  if (posts.length === 0 && !user) {
     return <PejaLoadingScreen />;
   }
 
