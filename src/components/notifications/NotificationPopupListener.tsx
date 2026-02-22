@@ -89,6 +89,24 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
 
           const row = payload.new as NotifRow;
 
+          // Suppress DM notifications if user is currently in that chat
+          if (
+            (row.type === "dm_message" || row.type === "dm_reaction") &&
+            row.data?.conversation_id
+          ) {
+            const currentPath = window.location.pathname;
+            if (currentPath === `/messages/${row.data.conversation_id}`) {
+              console.log(`[PopupListener:${table}] Suppressed — user is in this chat`);
+              supabase
+                .from(table)
+                .update({ is_read: true })
+                .eq("id", row.id)
+                .then(() => {});
+              onNotification?.();
+              return;
+            }
+          }
+
           setPopup(row);
           
           try {

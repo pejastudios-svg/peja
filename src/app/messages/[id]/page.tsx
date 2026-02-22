@@ -208,6 +208,19 @@ export default function ChatPage() {
       // Mark as read in database (background, non-blocking)
       markConversationRead(conversationId);
       
+      // Mark any DM notifications for this conversation as read
+      supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("user_id", user.id)
+        .eq("type", "dm_message")
+        .eq("data->>conversation_id", conversationId)
+        .then(({ error }) => {
+          if (!error) {
+            window.dispatchEvent(new Event("peja-notifications-changed"));
+          }
+        });
+      
       // Store for reference
       try {
         sessionStorage.setItem("peja-last-chat-id", conversationId);
