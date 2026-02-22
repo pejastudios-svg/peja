@@ -10,7 +10,7 @@ import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { realtimeManager } from "@/lib/realtime";
-import { TrendingUp, MapPin, Loader2, Search, RefreshCw, Eye } from "lucide-react";
+import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
@@ -24,46 +24,12 @@ type TrendingMode = "recommended" | "top";
 interface HomeUIState {
   activeTab: FeedTab;
   trendingMode: TrendingMode;
-  showSeenTop: boolean;
-  showSeenNearby: boolean;
 }
 
 const DEFAULT_UI: HomeUIState = {
   activeTab: "nearby",
   trendingMode: "recommended",
-  showSeenTop: false,
-  showSeenNearby: false,
 };
-
-const SEEN_KEY = "peja-seen-posts-v1";
-const SEEN_GRACE_MS = 30 * 60 * 1000;
-
-type SeenStore = Record<string, number>;
-
-function readSeenStore(): SeenStore {
-  try {
-    const raw = localStorage.getItem(SEEN_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-
-    if (Array.isArray(parsed)) {
-      const m: SeenStore = {};
-      for (const id of parsed) if (typeof id === "string") m[id] = 0;
-      return m;
-    }
-
-    if (parsed && typeof parsed === "object") return parsed as SeenStore;
-    return {};
-  } catch {
-    return {};
-  }
-}
-
-function isHideableSeen(store: SeenStore, postId: string) {
-  const t = store[postId];
-  if (typeof t !== "number") return false;
-  return Date.now() - t >= SEEN_GRACE_MS;
-}
 
 const PRIORITY_CATEGORIES = new Set(["crime", "fire", "kidnapping", "terrorist"]);
 
@@ -108,13 +74,9 @@ export default function Home() {
 
   const [activeTab, setActiveTab] = useState<FeedTab>(initialUI.activeTab);
   const [trendingMode, setTrendingMode] = useState<TrendingMode>(initialUI.trendingMode);
-  const [showSeenTop, setShowSeenTop] = useState<boolean>(initialUI.showSeenTop);
-  const [showSeenNearby, setShowSeenNearby] = useState<boolean>(initialUI.showSeenNearby);
   const [authCheckDone, setAuthCheckDone] = useState(false);
 
-  const feedKey = activeTab === "trending"
-    ? `home:trending:${showSeenTop ? "seen" : "unseen"}`
-    : `home:nearby:${showSeenNearby ? "seen" : "unseen"}`;
+  const feedKey = activeTab === "trending" ? "home:trending" : "home:nearby";
 
   // Initialize posts from feed cache — zero loading flash when returning
   const [posts, setPosts] = useState<Post[]>(() => {
@@ -136,7 +98,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
 
   // ── Stable refs: prevent fetchPosts from being recreated on every
-  //    auth / confirm context update (the main cause of the blink loop) ──
+  //    auth / confirm context update ──
   const userRef = useRef(user);
   const confirmRef = useRef(confirm);
   useEffect(() => { userRef.current = user; }, [user]);
@@ -170,10 +132,8 @@ export default function Home() {
     pageCache.setMeta<HomeUIState>("home:ui", {
       activeTab,
       trendingMode,
-      showSeenTop,
-      showSeenNearby,
     });
-  }, [activeTab, trendingMode, showSeenTop, showSeenNearby, pageCache]);
+  }, [activeTab, trendingMode, pageCache]);
 
   const formatPost = useCallback(async (postData: any): Promise<Post | null> => {
     try {
@@ -259,27 +219,15 @@ export default function Home() {
 
         // ── Retry up to 3 times on network failure (iOS cold-start fix) ──
         for (let attempt = 0; attempt < 3; attempt++) {
-          if (activeTab === "trending") {
-            const res = await supabase
-              .from("posts")
-              .select(baseSelect)
-              .in("status", ["live", "resolved"])
-              .order("created_at", { ascending: false })
-              .limit(200);
+          const res = await supabase
+            .from("posts")
+            .select(baseSelect)
+            .in("status", ["live", "resolved"])
+            .order("created_at", { ascending: false })
+            .limit(200);
 
-            data = res.data;
-            error = res.error;
-          } else {
-            const res = await supabase
-              .from("posts")
-              .select(baseSelect)
-              .in("status", ["live", "resolved"])
-              .order("created_at", { ascending: false })
-              .limit(200);
-
-            data = res.data;
-            error = res.error;
-          }
+          data = res.data;
+          error = res.error;
 
           if (!error && data) break; // success → exit retry loop
           if (attempt < 2) {
@@ -322,21 +270,17 @@ export default function Home() {
           tags: post.post_tags?.map((t: any) => t.tag) || [],
         }));
 
-        const seenStore = readSeenStore();
         let finalPosts = formattedPosts;
 
         // ── Read user location from ref (stable, no dep churn) ──
         const currentUser = userRef.current;
 
         if (activeTab === "nearby") {
-          const baseList = showSeenNearby
-            ? formattedPosts
-            : formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
           const userLat = currentUser?.last_latitude ?? null;
           const userLng = currentUser?.last_longitude ?? null;
 
           if (userLat != null && userLng != null) {
-            finalPosts = [...baseList].sort((a, b) => {
+            finalPosts = [...formattedPosts].sort((a, b) => {
               const pa = categoryPriority(a);
               const pb = categoryPriority(b);
               if (pa !== pb) return pa - pb;
@@ -365,7 +309,7 @@ export default function Home() {
 
             finalPosts = finalPosts.slice(0, 30);
           } else {
-            finalPosts = [...baseList]
+            finalPosts = [...formattedPosts]
               .sort((a, b) => {
                 const pa = categoryPriority(a);
                 const pb = categoryPriority(b);
@@ -375,11 +319,7 @@ export default function Home() {
               .slice(0, 30);
           }
         } else {
-          const base = showSeenTop
-            ? formattedPosts
-            : formattedPosts.filter((p) => !isHideableSeen(seenStore, p.id));
-
-          finalPosts = base
+          finalPosts = [...formattedPosts]
             .sort((a, b) => {
               const pa = categoryPriority(a);
               const pb = categoryPriority(b);
@@ -406,8 +346,7 @@ export default function Home() {
         setRefreshing(false);
       }
     },
-    // ── user and confirm REMOVED — accessed via stable refs instead ──
-    [activeTab, feedKey, feedCache, trendingMode, showSeenTop, showSeenNearby]
+    [activeTab, feedKey, feedCache, trendingMode]
   );
 
   // ── Keep a ref to the latest fetchPosts so the main effect never
@@ -470,8 +409,6 @@ export default function Home() {
   
 
   // ── Initial fetch — deps are now stable: feedKey + authLoading ──
-  //    feedKey already encodes activeTab + showSeen*, so those are covered.
-  //    fetchPostsRef.current always points to the latest callback.
   useEffect(() => {
     if (!authLoading) {
       const needsRefresh = sessionStorage.getItem("peja-feed-refresh");
@@ -507,13 +444,16 @@ export default function Home() {
               const merged = [formatted, ...prev];
 
               if (activeTab === "nearby") {
-                // ── Read user location from ref ──
                 const currentUser = userRef.current;
                 const userLat = currentUser?.last_latitude ?? null;
                 const userLng = currentUser?.last_longitude ?? null;
 
                 if (userLat != null && userLng != null) {
                   const sorted = merged.sort((a, b) => {
+                    const pa = categoryPriority(a);
+                    const pb = categoryPriority(b);
+                    if (pa !== pb) return pa - pb;
+
                     const aHas = !!a.location?.latitude && !!a.location?.longitude;
                     const bHas = !!b.location?.latitude && !!b.location?.longitude;
                     if (!aHas && bHas) return 1;
@@ -598,7 +538,6 @@ export default function Home() {
     );
 
     return () => unsubscribe();
-    // ── removed `user` from deps — accessed via userRef inside callbacks ──
   }, [formatPost, feedKey, feedCache, activeTab]);
 
   // Prefetch routes
@@ -609,7 +548,6 @@ export default function Home() {
   }, [router]);
 
   // Save scroll position to FeedContext
-  // (ScrollRestorer's global listener handles the position Map automatically)
   useEffect(() => {
     const save = () => {
       feedCache.setScroll(feedKey, window.scrollY);
@@ -698,9 +636,8 @@ export default function Home() {
               variant={activeTab === "nearby" ? "primary" : "secondary"}
               size="sm"
               onClick={() => {
-                const nextKey = `home:nearby:${showSeenNearby ? "seen" : "unseen"}`;
                 setActiveTab("nearby");
-                applyCachedFeed(nextKey);
+                applyCachedFeed("home:nearby");
               }}
               leftIcon={<MapPin className="w-4 h-4" />}
             >
@@ -710,9 +647,8 @@ export default function Home() {
               variant={activeTab === "trending" ? "primary" : "secondary"}
               size="sm"
               onClick={() => {
-                const nextKey = `home:trending:${trendingMode}:${showSeenTop ? "seen" : "unseen"}`;
                 setActiveTab("trending");
-                applyCachedFeed(nextKey);
+                applyCachedFeed("home:trending");
               }}
               leftIcon={<TrendingUp className="w-4 h-4" />}
             >
@@ -726,32 +662,6 @@ export default function Home() {
               <RefreshCw className={`w-4 h-4 text-dark-400 ${refreshing ? "animate-spin" : ""}`} />
             </button>
           </div>
-
-          {activeTab === "trending" && (
-            <div className="flex justify-end mb-3">
-              <button
-                type="button"
-                onClick={() => setShowSeenTop((v) => !v)}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs glass-sm rounded-xl text-dark-300 hover:bg-white/10 transition-colors"
-              >
-                <Eye className={`w-3.5 h-3.5 ${showSeenTop ? "text-primary-400" : "text-dark-400"}`} />
-                {showSeenTop ? "Hide seen" : "Show seen"}
-              </button>
-            </div>
-          )}
-
-          {activeTab === "nearby" && (
-            <div className="flex justify-end mb-3">
-              <button
-                type="button"
-                onClick={() => setShowSeenNearby((v) => !v)}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs glass-sm rounded-xl text-dark-300 hover:bg-white/10 transition-colors"
-              >
-                <Eye className={`w-3.5 h-3.5 ${showSeenNearby ? "text-primary-400" : "text-dark-400"}`} />
-                {showSeenNearby ? "Hide seen" : "Show seen"}
-              </button>
-            </div>
-          )}
 
           {loading && posts.length === 0 ? (
             <div className="space-y-4">
