@@ -302,15 +302,19 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
                       </div>
                     </div>
                   ) : (
-                    <InlineVideo
-                      src={currentMedia.url}
-                      poster={currentMedia.thumbnail_url}
-                      className="w-full h-full object-cover"
-                      showExpand={true}
-                      showMute={true}
-                      onExpand={handleExpandVideo}
-                      onError={() => setVideoError(true)}
-                    />
+                    <div
+                      className="w-full h-full bg-dark-800 flex items-center justify-center cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCardClick();
+                      }}
+                    >
+                      {currentMedia.thumbnail_url ? (
+                        <img src={currentMedia.thumbnail_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-dark-400 text-sm">▶ Video</div>
+                      )}
+                    </div>
                   )
                 ) : (
                   <img src={currentMedia?.url} alt="" className="w-full h-full object-cover" />
