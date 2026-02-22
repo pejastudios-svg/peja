@@ -198,6 +198,20 @@ export default function ChatPage() {
 
   
   // =====================================================
+  // SET ACTIVE CONVERSATION FOR NOTIFICATION SUPPRESSION
+  // =====================================================
+  useEffect(() => {
+    (window as any).__pejaActiveConversationId = conversationId;
+    return () => {
+      (window as any).__pejaActiveConversationId = null;
+    };
+  }, [conversationId]);
+
+    // Stable ref for clearUnread — avoids changing realtime effect dep array size
+  const clearUnreadRef = useRef(clearUnread);
+  useEffect(() => { clearUnreadRef.current = clearUnread; }, [clearUnread]);
+
+  // =====================================================
   // CLEAR UNREAD IMMEDIATELY ON MOUNT
   // =====================================================
   useEffect(() => {
@@ -208,18 +222,33 @@ export default function ChatPage() {
       // Mark as read in database (background, non-blocking)
       markConversationRead(conversationId);
       
-      // Mark any DM notifications for this conversation as read
-      supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("user_id", user.id)
-        .eq("type", "dm_message")
-        .eq("data->>conversation_id", conversationId)
-        .then(({ error }) => {
-          if (!error) {
-            window.dispatchEvent(new Event("peja-notifications-changed"));
+      // Mark DM notifications for this conversation as read on the notifications page
+      (async () => {
+        try {
+          const { data: unreadNotifs } = await supabase
+            .from("notifications")
+            .select("id, data")
+            .eq("user_id", user.id)
+            .in("type", ["dm_message", "dm_reaction"])
+            .eq("is_read", false);
+
+          if (unreadNotifs && unreadNotifs.length > 0) {
+            const idsToMark = unreadNotifs
+              .filter((n: any) => n.data?.conversation_id === conversationId)
+              .map((n: any) => n.id);
+
+            if (idsToMark.length > 0) {
+              await supabase
+                .from("notifications")
+                .update({ is_read: true })
+                .in("id", idsToMark);
+              window.dispatchEvent(new Event("peja-notifications-changed"));
+            }
           }
-        });
+        } catch (e) {
+          console.error("[Chat] Failed to mark DM notifications as read:", e);
+        }
+      })();
       
       // Store for reference
       try {
@@ -253,7 +282,7 @@ useEffect(() => {
     // STEP 1: Restore cached messages IMMEDIATELY for instant display
     let hasCachedMessages = false;
     try {
-      const cached = sessionStorage.getItem(MSG_CACHE_KEY);
+      const cached = localStorage.getItem(MSG_CACHE_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -268,7 +297,7 @@ useEffect(() => {
 
     // STEP 2: Try to restore cached other user data
     try {
-      const cachedUser = sessionStorage.getItem(`peja-chat-user-${conversationId}`);
+      const cachedUser = localStorage.getItem(`peja-chat-user-${conversationId}`);
       if (cachedUser) {
         const parsed = JSON.parse(cachedUser);
         if (parsed?.id) {
@@ -329,12 +358,17 @@ useEffect(() => {
       if (uErr) throw uErr;
 
       const otherVIP = otherUserData as VIPUser;
-      otherVIP.is_online = presenceManager.isOnline(otherVIP.id);
+      const globalOnline = (window as any).__pejaOnlineUsers;
+      const isOtherOnline =
+        presenceManager.isOnline(otherVIP.id) ||
+        (globalOnline instanceof Set && globalOnline.has(otherVIP.id));
+      otherVIP.is_online = isOtherOnline;
       setOtherUser(otherVIP);
-      setOtherUserOnline(presenceManager.isOnline(otherVIP.id));
+      setOtherUserOnline(isOtherOnline);
+      otherUserOnlineRef.current = isOtherOnline;
 
       try {
-        sessionStorage.setItem(`peja-chat-user-${conversationId}`, JSON.stringify(otherVIP));
+        localStorage.setItem(`peja-chat-user-${conversationId}`, JSON.stringify(otherVIP));
       } catch {}
 
       try { sessionStorage.setItem("peja-last-chat-id", conversationId); } catch {}
@@ -490,11 +524,69 @@ useEffect(() => {
       };
     });
 
-    setMessages(finalMessages);
+    setMessages((prev) => {
+      // First load: set directly
+      if (prev.length === 0) return finalMessages;
+
+      const prevMap = new Map(prev.map((m) => [m.id, m]));
+      const freshIds = new Set(finalMessages.map((m) => m.id));
+
+      // Find genuinely new messages not already displayed
+      const newMessages = finalMessages.filter((m) => !prevMap.has(m.id));
+
+      // Keep temp/optimistic messages not yet resolved
+      const keptTemp = prev.filter(
+        (m) => m.id.startsWith("temp-") && !freshIds.has(m.id)
+      );
+
+      if (newMessages.length === 0 && keptTemp.length === 0) {
+        // No new messages — silently update metadata without visual pop
+        const freshMap = new Map(finalMessages.map((m) => [m.id, m]));
+        let anyChanged = false;
+        const updated = prev.map((m) => {
+          if (m.id.startsWith("temp-")) return m;
+          const fresh = freshMap.get(m.id);
+          if (!fresh) return m;
+          // Only create new object if something meaningful changed
+          if (
+            m.delivery_status === fresh.delivery_status &&
+            m.is_deleted === fresh.is_deleted &&
+            m.content === fresh.content &&
+            m.edited_at === fresh.edited_at
+          ) {
+            return m; // Same reference — React skips re-render for this item
+          }
+          anyChanged = true;
+          return {
+            ...m,
+            delivery_status: fresh.delivery_status ?? m.delivery_status,
+            is_deleted: fresh.is_deleted,
+            content: fresh.content,
+            edited_at: fresh.edited_at,
+            media: fresh.media && fresh.media.length > 0 ? fresh.media : m.media,
+            reactions: fresh.reactions ?? m.reactions,
+            read_at: fresh.read_at ?? m.read_at,
+          };
+        });
+        return anyChanged ? updated : prev; // Return same array ref if nothing changed
+      }
+
+      // New messages exist — append without disturbing existing messages
+      const result = [
+        ...prev.filter((m) => !m.id.startsWith("temp-") || !freshIds.has(m.id)),
+        ...newMessages,
+        ...keptTemp,
+      ];
+      result.sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      return result;
+    });
 
     try {
       const cacheData = finalMessages.slice(-100);
-      sessionStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
+      localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
     } catch {}
   }, [user?.id, conversationId]);
 
@@ -727,7 +819,55 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
             ];
           });
 
-          if (newMsg.sender_id !== user.id) markAsRead();
+          if (newMsg.sender_id !== user.id) {
+            // Timing-safe: use max of client time and message server time + 1s buffer
+            // This handles clock skew between client and server
+            const readTime = new Date(
+              Math.max(Date.now(), new Date(newMsg.created_at).getTime()) + 1000
+            ).toISOString();
+
+            // Update last_read_at to guaranteed AFTER message creation
+            supabase.from("conversation_participants")
+              .update({ last_read_at: readTime })
+              .eq("conversation_id", conversationId)
+              .eq("user_id", user.id)
+              .then(() => {});
+
+            // Insert read receipt for this specific message explicitly
+            supabase.from("message_reads").upsert({
+              message_id: newMsg.id,
+              user_id: user.id,
+              read_at: readTime,
+            }, { onConflict: "message_id,user_id" }).then(() => {});
+
+            // Also run bulk markAsRead for any other pending unread messages
+            markAsRead();
+            clearUnreadRef.current(conversationId);
+
+            // Mark any DM notification for this chat as read
+            supabase
+              .from("notifications")
+              .select("id, data")
+              .eq("user_id", user.id)
+              .eq("type", "dm_message")
+              .eq("is_read", false)
+              .then(({ data: notifs }) => {
+                if (notifs && notifs.length > 0) {
+                  const ids = notifs
+                    .filter((n: any) => n.data?.conversation_id === conversationId)
+                    .map((n: any) => n.id);
+                  if (ids.length > 0) {
+                    supabase
+                      .from("notifications")
+                      .update({ is_read: true })
+                      .in("id", ids)
+                      .then(() => {
+                        window.dispatchEvent(new Event("peja-notifications-changed"));
+                      });
+                  }
+                }
+              });
+          }
         }
       )
       .on(
@@ -1541,7 +1681,14 @@ const handleTouchEnd = () => {
   // EDITOR KEYBOARD HANDLER
   // =====================================================
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Only send on Enter from physical keyboards (desktop).
+    // Mobile soft keyboards: Enter inserts newline, Send button sends.
+    // Detect mobile by checking if a coarse pointer (touch) is available.
+    const isMobile =
+      typeof window !== "undefined" &&
+      window.matchMedia("(pointer: coarse)").matches;
+
+    if (e.key === "Enter" && !e.shiftKey && !isMobile) {
       e.preventDefault();
       handleSend();
     }
@@ -1772,10 +1919,14 @@ const handleTouchEnd = () => {
   // =====================================================
   const handleSend = useCallback(async () => {
     const textContent = getEditorContent();
-    if ((!textContent && pendingMedia.length === 0) || sending || !user?.id) return;
+    if ((!textContent && pendingMedia.length === 0) || !user?.id) return;
 
-    // Check if blocked by the other user
-    if (otherUser?.id) {
+    // For media messages, block concurrent sends. For text-only, allow rapid fire.
+    const hasMedia = pendingMedia.length > 0;
+    if (hasMedia && sending) return;
+
+    // Check if blocked by the other user (only on first send or media sends to avoid latency)
+    if (otherUser?.id && hasMedia) {
       const { data: blocked } = await supabase
         .from("dm_blocks")
         .select("id")
@@ -1787,7 +1938,6 @@ const handleTouchEnd = () => {
         return;
       }
     }
-
     // If editing, handle separately
     if (editingMessage) {
       setSending(true);

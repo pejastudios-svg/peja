@@ -89,13 +89,13 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
 
           const row = payload.new as NotifRow;
 
-          // Suppress DM notifications if user is currently in that chat
+          // Suppress completely if user is currently in the chat this DM belongs to
           if (
             (row.type === "dm_message" || row.type === "dm_reaction") &&
             row.data?.conversation_id
           ) {
-            const currentPath = window.location.pathname;
-            if (currentPath === `/messages/${row.data.conversation_id}`) {
+            const activeConvo = (window as any).__pejaActiveConversationId;
+            if (activeConvo === row.data.conversation_id) {
               console.log(`[PopupListener:${table}] Suppressed — user is in this chat`);
               supabase
                 .from(table)

@@ -72,7 +72,9 @@ export default function MessagesPage() {
   // =====================================================
   useEffect(() => {
     const buildOnlineSet = () => {
-      const online = new Set<string>();
+      // Start with previously known online users from window global
+      const prevGlobal = (window as any).__pejaOnlineUsers;
+      const online = prevGlobal instanceof Set ? new Set<string>(prevGlobal) : new Set<string>();
       conversations.forEach((c) => {
         if (!c.other_user?.id) return;
         
@@ -153,6 +155,11 @@ export default function MessagesPage() {
     };
   }, [conversations]);
 
+    // Persist online users to window global for cross-page access
+  useEffect(() => {
+    (window as any).__pejaOnlineUsers = onlineUsers;
+  }, [onlineUsers]);
+
 
   useEffect(() => {
     if (user?.id && user.is_vip) {
@@ -163,8 +170,16 @@ export default function MessagesPage() {
   // Refresh on focus - context handles optimistic updates
   useEffect(() => {
     const handleFocus = () => {
-      // Delay fetch slightly to not override optimistic updates
-      setTimeout(() => fetchConversations(), 300);
+      setTimeout(() => {
+        fetchConversations();
+        // Re-clear unread for active conversation after fetch overwrites optimistic state
+        setTimeout(() => {
+          const activeConvo = (window as any).__pejaActiveConversationId;
+          if (activeConvo) {
+            clearUnread(activeConvo);
+          }
+        }, 200);
+      }, 300);
     };
 
     window.addEventListener("focus", handleFocus);

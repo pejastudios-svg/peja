@@ -20,7 +20,7 @@ export function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
-  const { conversations, setConversations, fetchConversations } = useMessageCache();
+  const { conversations, setConversations, fetchConversations, clearUnread } = useMessageCache();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -69,29 +69,32 @@ export function BottomNav() {
           // Pre-cache the message so it's already there when chat opens
           try {
             const cacheKey = `peja-chat-cache-${msg.conversation_id}`;
-            const cached = sessionStorage.getItem(cacheKey);
+            let messages: any[] = [];
+
+            const cached = localStorage.getItem(cacheKey);
             if (cached) {
-              const messages = JSON.parse(cached);
-              if (Array.isArray(messages) && !messages.find((m: any) => m.id === msg.id)) {
-                messages.push({
-                  ...msg,
-                  media: [],
-                  delivery_status: msg.sender_id === user.id ? "sent" : undefined,
-                  read_at: null,
-                  hidden_for_me: false,
-                  reactions: [],
-                  reply_to: null,
-                });
-                sessionStorage.setItem(cacheKey, JSON.stringify(messages.slice(-100)));
-              }
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed)) messages = parsed;
+            }
+
+            if (!messages.find((m: any) => m.id === msg.id)) {
+              messages.push({
+                ...msg,
+                media: [],
+                delivery_status: msg.sender_id === user.id ? "sent" : undefined,
+                read_at: null,
+                hidden_for_me: false,
+                reactions: [],
+                reply_to: null,
+              });
+              localStorage.setItem(cacheKey, JSON.stringify(messages.slice(-100)));
             }
           } catch {}
 
           // Update context conversations INSTANTLY (optimistic)
           setConversations((prev) => {
             const isViewing =
-              typeof window !== "undefined" &&
-              window.location.pathname.includes(msg.conversation_id);
+              (window as any).__pejaActiveConversationId === msg.conversation_id;
 
             const updated = prev.map((c) => {
               if (c.id !== msg.conversation_id) return c;
@@ -101,6 +104,10 @@ export function BottomNav() {
                 c.last_message_at &&
                 new Date(c.last_message_at).getTime() >= new Date(msg.created_at).getTime()
               ) {
+                // Even if deduped, force unread to 0 if user is viewing
+                if (isViewing && (c.unread_count || 0) > 0) {
+                  return { ...c, unread_count: 0, last_message_seen: true };
+                }
                 return c;
               }
 
@@ -113,12 +120,13 @@ export function BottomNav() {
                   (msg.content_type === "media" ? "Sent an attachment" : "New message"),
                 last_message_at: msg.created_at,
                 last_message_sender_id: msg.sender_id,
-                last_message_seen: false,
+                last_message_seen: isViewing,
                 updated_at: msg.created_at,
-                unread_count:
-                  isFromOther && !isViewing
-                    ? (c.unread_count || 0) + 1
-                    : c.unread_count,
+                unread_count: isViewing
+                  ? 0
+                  : isFromOther
+                  ? (c.unread_count || 0) + 1
+                  : c.unread_count,
               };
             });
 
@@ -128,6 +136,23 @@ export function BottomNav() {
               const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
               return bTime - aTime;
             });
+
+            // Protect optimistic data from being overwritten by fetchConversations
+            if (msg.sender_id !== user.id && (window as any).__pejaActiveConversationId !== msg.conversation_id) {
+              const tracker = (window as any).__pejaUnreadProtect || {};
+              const protConv = updated.find((c) => c.id === msg.conversation_id);
+              if (protConv && protConv.unread_count > 0) {
+                tracker[msg.conversation_id] = {
+                  time: Date.now(),
+                  unread: protConv.unread_count,
+                  text: protConv.last_message_text,
+                  messageAt: protConv.last_message_at,
+                  senderId: protConv.last_message_sender_id,
+                  seen: protConv.last_message_seen,
+                };
+                (window as any).__pejaUnreadProtect = tracker;
+              }
+            }
 
             return updated;
           });
@@ -142,8 +167,13 @@ export function BottomNav() {
           filter: `user_id=eq.${user.id}`,
         },
         () => {
-          // Read receipt changed — refresh for seen status
-          setTimeout(() => fetchConversations(true), 500);
+          const activeConvo = (window as any).__pejaActiveConversationId;
+          setTimeout(() => {
+            fetchConversations(true);
+            if (activeConvo) {
+              setTimeout(() => clearUnread(activeConvo), 200);
+            }
+          }, 500);
         }
       )
       .subscribe();
@@ -152,6 +182,62 @@ export function BottomNav() {
       supabase.removeChannel(channel);
     };
   }, [isVip, user?.id, setConversations, fetchConversations]);
+
+  // =====================================================
+  // ENFORCEMENT: Restore optimistic unreads after any
+  // fetchConversations overwrites them. Runs whenever
+  // conversations change from ANY source.
+  // =====================================================
+  useEffect(() => {
+    const tracker = (window as any).__pejaUnreadProtect;
+    if (!tracker || Object.keys(tracker).length === 0) return;
+
+    const now = Date.now();
+    let needsCorrection = false;
+
+    // Check if any protected conversations were wiped
+    for (const convId of Object.keys(tracker)) {
+      const prot = tracker[convId];
+      // Expire protection after 30 seconds
+      if (now - prot.time > 30000) {
+        delete tracker[convId];
+        continue;
+      }
+      // Don't protect active conversation
+      if ((window as any).__pejaActiveConversationId === convId) {
+        delete tracker[convId];
+        continue;
+      }
+      const conv = conversations.find((c) => c.id === convId);
+      if (conv && (conv.unread_count || 0) < prot.unread) {
+        needsCorrection = true;
+        break;
+      }
+    }
+
+    if (needsCorrection) {
+      setConversations((prev) => {
+        let changed = false;
+        const restored = prev.map((c) => {
+          const prot = tracker[c.id];
+          if (!prot) return c;
+          if ((c.unread_count || 0) < prot.unread) {
+            changed = true;
+            return {
+              ...c,
+              unread_count: prot.unread,
+              last_message_text: prot.text,
+              last_message_at: prot.messageAt,
+              last_message_sender_id: prot.senderId,
+              last_message_seen: prot.seen,
+            };
+          }
+          return c;
+        });
+        return changed ? restored : prev;
+      });
+    }
+  }, [conversations, setConversations]);
 
   // Now that all hooks have been called, we can return null
   if (isHidden) return null;

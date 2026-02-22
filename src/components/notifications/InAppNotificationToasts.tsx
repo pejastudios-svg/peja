@@ -101,23 +101,25 @@ export default function InAppNotificationToasts() {
 
           const n = payload.new as NotificationRow;
 
-          // Always play sound
-          try {
-            playNotificationSound();
-          } catch (e) {
-            console.error("[InAppToasts] Sound error:", e);
-          }
-
-          // Check if user is currently viewing the chat this DM is from
-          // If so, suppress the visual toast but still play sound
-          if (n.type === "dm_message" && n.data?.conversation_id) {
-            const currentPath = window.location.pathname;
-            if (currentPath === `/messages/${n.data.conversation_id}`) {
-              // User is in this chat — don't show toast, just mark as read
+          // Suppress completely if user is currently in the chat this DM belongs to
+          if (
+            (n.type === "dm_message" || n.type === "dm_reaction") &&
+            n.data?.conversation_id
+          ) {
+            const activeConvo = (window as any).__pejaActiveConversationId;
+            if (activeConvo === n.data.conversation_id) {
+              // User is in this chat — no sound, no toast, mark as read
               supabase.from("notifications").update({ is_read: true }).eq("id", n.id).then(() => {});
               window.dispatchEvent(new Event("peja-notifications-changed"));
               return;
             }
+          }
+
+          // Play sound for notifications that weren't suppressed
+          try {
+            playNotificationSound();
+          } catch (e) {
+            console.error("[InAppToasts] Sound error:", e);
           }
 
           // Add toast

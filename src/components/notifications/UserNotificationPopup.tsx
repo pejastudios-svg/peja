@@ -53,15 +53,14 @@ export function UserNotificationPopup() {
           const row = payload.new as NotifRow;
           console.log("[UserPopup] Received:", row.title);
 
-          // Suppress DM notifications if user is currently in that chat
+          // Suppress completely if user is currently in the chat this DM belongs to
           if (
             (row.type === "dm_message" || row.type === "dm_reaction") &&
             row.data?.conversation_id
           ) {
-            const currentPath = window.location.pathname;
-            if (currentPath === `/messages/${row.data.conversation_id}`) {
+            const activeConvo = (window as any).__pejaActiveConversationId;
+            if (activeConvo === row.data.conversation_id) {
               console.log("[UserPopup] Suppressed — user is in this chat");
-              // Still mark as read in background
               supabase
                 .from("notifications")
                 .update({ is_read: true })
