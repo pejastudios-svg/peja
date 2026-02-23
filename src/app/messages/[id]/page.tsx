@@ -58,6 +58,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns";
 import type { Message, VIPUser, MessageMediaItem } from "@/lib/types";
+import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 
 // =====================================================
 // EMOJI DATA
@@ -1503,7 +1504,18 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
       continue;
     }
 
-    const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
+    let preview = "";
+    if (file.type.startsWith("image/")) {
+      preview = URL.createObjectURL(file);
+    } else if (file.type.startsWith("video/")) {
+      try {
+        const { generateVideoThumbnail } = await import("@/lib/videoThumbnail");
+        preview = (await generateVideoThumbnail(file)) || "";
+      } catch (e) {
+        console.log("[FileSelect] Video thumbnail generation failed:", e);
+      }
+    }
+
     newMedia.push({ file, preview, type: file.type });
   }
 
@@ -2047,7 +2059,7 @@ const handleTouchEnd = () => {
     const optimisticMedia: MessageMediaItem[] = mediaToSend.map((m, i) => ({
       id: `temp-media-${i}-${Date.now()}`,
       message_id: tempId,
-      url: m.preview || "",
+      url: m.type.startsWith("video/") ? "" : (m.preview || ""),
       media_type: (m.type.startsWith("image/")
         ? "image"
         : m.type.startsWith("video/")
@@ -2058,7 +2070,7 @@ const handleTouchEnd = () => {
       file_name: m.file.name,
       file_size: m.file.size,
       mime_type: null,
-      thumbnail_url: null,
+      thumbnail_url: m.type.startsWith("video/") ? (m.preview || null) : null,
       created_at: new Date().toISOString(),
     }));
 
@@ -2095,7 +2107,7 @@ const handleTouchEnd = () => {
 
     // Background send
     try {
-      let mediaItems: { url: string; media_type: string; file_name: string; file_size: number }[] = [];
+      let mediaItems: { url: string; media_type: string; file_name: string; file_size: number; thumbnail_url?: string | null }[] = [];
 
       if (mediaToSend.length > 0) {
   const { compressImage, compressVideo } = await import("@/lib/mediaCompression");
@@ -2183,11 +2195,32 @@ const handleTouchEnd = () => {
       else if (media.type.startsWith("video/")) mediaType = "video";
       else if (media.type.startsWith("audio/")) mediaType = "audio";
 
+      // Upload thumbnail for videos
+      let thumbnailUrl: string | null = null;
+      if (mediaType === "video" && media.preview && media.preview.startsWith("data:")) {
+        try {
+          const thumbBlob = await fetch(media.preview).then((r) => r.blob());
+          const thumbPath = `messages/${conversationId}/${Date.now()}_thumb.jpg`;
+          const { error: thumbErr } = await supabase.storage
+            .from("message-media")
+            .upload(thumbPath, thumbBlob, { contentType: "image/jpeg" });
+          if (!thumbErr) {
+            const { data: thumbUrlData } = supabase.storage
+              .from("message-media")
+              .getPublicUrl(thumbPath);
+            thumbnailUrl = thumbUrlData.publicUrl;
+          }
+        } catch (thumbError) {
+          console.log("[Upload] Thumbnail upload failed:", thumbError);
+        }
+      }
+
       mediaItems.push({
         url: mediaUrl,
         media_type: mediaType,
         file_name: fileToUpload.name,
         file_size: finalFileSize,
+        thumbnail_url: thumbnailUrl,
       });
 
       const progress = Math.round(((i + 1) / mediaToSend.length) * 100);
@@ -2230,7 +2263,7 @@ const handleTouchEnd = () => {
         file_name: m.file_name,
         file_size: m.file_size,
         mime_type: null,
-        thumbnail_url: null,
+        thumbnail_url: m.thumbnail_url || null,
         created_at: new Date().toISOString(),
       }));
 
@@ -2770,7 +2803,7 @@ onTouchEnd={() => {
           setLightboxVideoRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
           setLightboxVideo(m.url);
         }}
-        onTouchEnd={(e) => {
+        onTouchEnd={() => {
           if (longPressTimerRef.current) {
             clearTimeout(longPressTimerRef.current);
             longPressTimerRef.current = null;
@@ -2779,6 +2812,7 @@ onTouchEnd={() => {
       >
         <video
           src={m.url}
+          poster={m.thumbnail_url || getVideoThumbnailUrl(m.url) || undefined}
           className="rounded-xl max-w-full max-h-60"
           preload="metadata"
         />
@@ -2786,6 +2820,22 @@ onTouchEnd={() => {
           <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
             <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-14 border-l-white ml-1" />
           </div>
+        </div>
+      </div>
+    ) : m.thumbnail_url ? (
+      <div className="relative rounded-xl overflow-hidden">
+        <img
+          src={m.thumbnail_url}
+          alt=""
+          className="rounded-xl max-w-full max-h-60 object-cover"
+        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+          <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
+            <Loader2 className="w-5 h-5 text-white animate-spin" />
+          </div>
+        </div>
+        <div className="absolute bottom-2 left-2 right-2">
+          <p className="text-[10px] text-white/70 truncate">{m.file_name}</p>
         </div>
       </div>
     ) : (
@@ -3024,7 +3074,16 @@ onTouchEnd={() => {
             {pendingMedia.map((m, i) => (
               <div key={i} className="relative shrink-0">
                 {m.preview ? (
-                  <img src={m.preview} alt="" className="w-16 h-16 rounded-xl object-cover" />
+                  <div className="relative">
+                    <img src={m.preview} alt="" className="w-16 h-16 rounded-xl object-cover" />
+                    {m.type.startsWith("video/") && (
+                      <div className="absolute inset-0 flex items-center justify-center rounded-xl">
+                        <div className="w-5 h-5 rounded-full bg-black/50 flex items-center justify-center">
+                          <div className="w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-l-[6px] border-l-white ml-0.5" />
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="w-16 h-16 rounded-xl bg-dark-800 border border-white/10 flex flex-col items-center justify-center gap-0.5">
                     {m.type.startsWith("audio/") ? (
@@ -3761,7 +3820,12 @@ onTouchEnd={() => {
                               }}
                               className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800 relative"
                             >
-                              <video src={m.url} className="w-full h-full object-cover" preload="metadata" />
+                            <video
+                              src={m.url}
+                              poster={m.thumbnail_url || getVideoThumbnailUrl(m.url) || undefined}
+                              className="w-full h-full object-cover"
+                              preload="metadata"
+                            />
                               <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                                 <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center">
                                   <div className="w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-l-[7px] border-l-black ml-0.5" />

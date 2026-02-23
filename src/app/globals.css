@@ -2393,3 +2393,26 @@ body.keyboard-open .post-detail-messages {
     opacity: 1;
   }
 }
+
+/* =====================================================
+   SUPPRESS NATIVE VIDEO CONTROLS (Android WebView)
+   ===================================================== */
+video::-webkit-media-controls {
+  display: none !important;
+}
+
+video::-webkit-media-controls-play-button {
+  display: none !important;
+}
+
+video::-webkit-media-controls-overlay-play-button {
+  display: none !important;
+}
+
+video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+}
+
+video::-webkit-media-controls-enclosure {
+  display: none !important;
+}

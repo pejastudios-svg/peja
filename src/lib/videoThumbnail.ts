@@ -120,3 +120,103 @@ export function getHlsUrl(videoUrl: string): string | null {
     return null;
   }
 }
+
+/**
+ * Generates a JPEG thumbnail from a video File or URL.
+ * Returns a data URL string, or null on failure.
+ * Seeks to 0.5s for a meaningful frame (not a black first frame).
+ */
+export async function generateVideoThumbnail(
+  source: File | string,
+  maxWidth = 480
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    // Timeout: if thumbnail generation takes too long, skip it
+    const timeout = setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, 8000);
+
+    const video = document.createElement("video");
+    video.preload = "auto";
+    video.muted = true;
+    video.playsInline = true;
+    video.crossOrigin = "anonymous";
+
+    let blobUrl: string | null = null;
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      video.removeAttribute("src");
+      video.load();
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+        blobUrl = null;
+      }
+    };
+
+    video.onloadeddata = () => {
+      // Seek to 0.5s or 10% of duration for a better frame
+      const seekTo = Math.min(0.5, video.duration * 0.1);
+      video.currentTime = seekTo;
+    };
+
+    video.onseeked = () => {
+      try {
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+
+        if (vw === 0 || vh === 0) {
+          cleanup();
+          resolve(null);
+          return;
+        }
+
+        const scale = Math.min(1, maxWidth / vw);
+        const cw = Math.round(vw * scale);
+        const ch = Math.round(vh * scale);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = cw;
+        canvas.height = ch;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          cleanup();
+          resolve(null);
+          return;
+        }
+
+        ctx.drawImage(video, 0, 0, cw, ch);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+
+        cleanup();
+
+        // Verify it's not a blank/empty image (very small data URL = blank)
+        if (dataUrl.length < 1000) {
+          resolve(null);
+          return;
+        }
+
+        resolve(dataUrl);
+      } catch (e) {
+        console.log("[generateVideoThumbnail] Canvas error:", e);
+        cleanup();
+        resolve(null);
+      }
+    };
+
+    video.onerror = () => {
+      console.log("[generateVideoThumbnail] Video load error");
+      cleanup();
+      resolve(null);
+    };
+
+    if (typeof source === "string") {
+      video.src = source;
+    } else {
+      blobUrl = URL.createObjectURL(source);
+      video.src = blobUrl;
+    }
+  });
+}
