@@ -177,6 +177,12 @@ export function InlineVideo({
       const v = videoRef.current;
       const currentTime = v?.currentTime || 0;
 
+      // Capture source rect for expand animation
+      const elRect = wrapRef.current?.getBoundingClientRect();
+      const sourceRect = elRect
+        ? { x: elRect.x, y: elRect.y, width: elRect.width, height: elRect.height }
+        : null;
+
       let posterDataUrl: string | undefined;
       if (v && v.videoWidth > 0 && v.videoHeight > 0) {
         try {
@@ -191,7 +197,7 @@ export function InlineVideo({
         } catch {}
       }
 
-      handoff.beginExpand(src, currentTime, posterDataUrl || null);
+      handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
       doPause();
       onExpand(currentTime, posterDataUrl);
     }

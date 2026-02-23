@@ -79,6 +79,8 @@ const EMOJI_TABS = [
 // =====================================================
 const QUICK_REACTIONS = ["❤️", "😂", "😮", "😢", "🙏", "👍"];
 
+const MAX_MESSAGE_LENGTH = 5000;
+
 // =====================================================
 // DOCUMENT ICON HELPER
 // =====================================================
@@ -116,6 +118,7 @@ export default function ChatPage() {
   const [showAttach, setShowAttach] = useState(false);
   const [showFormatBar, setShowFormatBar] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
+  const [charCount, setCharCount] = useState(0);
   const [linkUrl, setLinkUrl] = useState("");
   const [linkText, setLinkText] = useState("");
 
@@ -135,6 +138,9 @@ export default function ChatPage() {
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
   const [reactionPickerTab, setReactionPickerTab] = useState("smileys");
+  const [contextMenuClosing, setContextMenuClosing] = useState(false);
+  const contextMenuClosingRef = useRef(false);
+  const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // ------ Edit Mode ------
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
@@ -146,7 +152,9 @@ export default function ChatPage() {
   // ------ Lightbox ------
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [lightboxVideo, setLightboxVideo] = useState<string | null>(null);
+  const [lightboxVideoRect, setLightboxVideoRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [chatInfoPlayingVN, setChatInfoPlayingVN] = useState<{ url: string; duration?: number } | null>(null);
 
   // ------ Voice Note ------
   const [isRecording, setIsRecording] = useState(false);
@@ -1178,6 +1186,24 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
     return walk(div).replace(/\n{3,}/g, "\n\n").trim();
   }, []);
 
+    // =====================================================
+  // CLOSE CONTEXT MENU WITH BOUNCE-OUT
+  // =====================================================
+  const closeContextMenu = useCallback(() => {
+    if (contextMenuClosingRef.current) return;
+    contextMenuClosingRef.current = true;
+    setContextMenuClosing(true);
+
+    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
+    closeTimeoutRef.current = setTimeout(() => {
+      setContextMenuMsg(null);
+      setContextMenuPos(null);
+      setContextMenuClosing(false);
+      contextMenuClosingRef.current = false;
+      closeTimeoutRef.current = null;
+    }, 200);
+  }, []);
+
   // =====================================================
   // REACTIONS — OPTIMISTIC (instant)
   // =====================================================
@@ -1265,9 +1291,8 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
         });
     }
 
-    setContextMenuMsg(null);
-    setContextMenuPos(null);
-  }, [user?.id, messages]);
+    closeContextMenu();
+  }, [user?.id, messages, closeContextMenu]);
 
   // =====================================================
   // DELETE / EDIT / COPY / REPLY
@@ -1287,8 +1312,7 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
     } catch {
       toast.danger("Failed to delete message");
     }
-    setContextMenuMsg(null);
-    setContextMenuPos(null);
+    closeContextMenu();
   };
 
   const handleDeleteForMe = async (messageId: string) => {
@@ -1302,8 +1326,7 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
     } catch {
       toast.danger("Failed to delete message");
     }
-    setContextMenuMsg(null);
-    setContextMenuPos(null);
+    closeContextMenu();
   };
 
   const handleCopy = (content: string | null) => {
@@ -1315,28 +1338,27 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
     navigator.clipboard.writeText(clean).then(() => {
       toast.info("Copied to clipboard");
     });
-    setContextMenuMsg(null);
-    setContextMenuPos(null);
+    closeContextMenu();
   };
 
   const handleEdit = (msg: Message) => {
     setEditingMessage(msg);
     setTimeout(() => {
       if (editorRef.current && msg.content) {
-        editorRef.current.innerText = msg.content
+        const cleaned = msg.content
           .replace(/\*\*(.*?)\*\*/g, "$1")
           .replace(/\*(.*?)\*/g, "$1");
+        editorRef.current.innerText = cleaned;
         editorRef.current.focus();
+        setCharCount(cleaned.length);
       }
     }, 50);
-    setContextMenuMsg(null);
-    setContextMenuPos(null);
+    closeContextMenu();
   };
 
   const handleReply = (msg: Message) => {
     setReplyingTo(msg);
-    setContextMenuMsg(null);
-    setContextMenuPos(null);
+    closeContextMenu();
     setTimeout(() => editorRef.current?.focus(), 100);
   };
 
@@ -1407,6 +1429,29 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
       toast.danger("Failed to clear chat");
     }
   };
+
+    // =====================================================
+  // DOCUMENT DOWNLOAD (with proper filename)
+  // =====================================================
+  const handleDocumentDownload = useCallback(async (url: string, fileName: string | null) => {
+    const safeName = fileName || "document";
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = safeName;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch {
+      // Fallback: open in new tab
+      window.open(url, "_blank");
+    }
+  }, []);
 
   // =====================================================
   // FORMAT COMMANDS
@@ -1527,6 +1572,14 @@ const handleTouchStart = (msg: Message, e: React.TouchEvent | React.MouseEvent) 
   longPressStartRef.current = { x: clientX, y: clientY };
 
   longPressTimerRef.current = setTimeout(() => {
+    // Cancel any pending close animation
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+    contextMenuClosingRef.current = false;
+    setContextMenuClosing(false);
+
     // Vibrate if available (haptic feedback)
     if (navigator.vibrate) navigator.vibrate(30);
     setContextMenuMsg(msg);
@@ -1676,6 +1729,7 @@ const handleTouchEnd = () => {
     }
     return "";
   }, [otherUserOnline, otherUser?.last_seen_at]);
+    const isMineCtx = contextMenuMsg ? contextMenuMsg.sender_id === user?.id : false;
 
   // =====================================================
   // EDITOR KEYBOARD HANDLER
@@ -1921,6 +1975,11 @@ const handleTouchEnd = () => {
     const textContent = getEditorContent();
     if ((!textContent && pendingMedia.length === 0) || !user?.id) return;
 
+    if (textContent.length > MAX_MESSAGE_LENGTH) {
+      toast.warning(`Message too long. Max ${MAX_MESSAGE_LENGTH.toLocaleString()} characters.`);
+      return;
+    }
+
     // For media messages, block concurrent sends. For text-only, allow rapid fire.
     const hasMedia = pendingMedia.length > 0;
     if (hasMedia && sending) return;
@@ -1955,6 +2014,7 @@ const handleTouchEnd = () => {
         if (editErr) throw editErr;
         setEditingMessage(null);
         clearEditor();
+        setCharCount(0);
       } catch (e: any) {
         console.error("Edit error:", e?.message || e);
         toast.danger("Failed to edit message");
@@ -2025,6 +2085,7 @@ const handleTouchEnd = () => {
 
     // Clear input immediately
     clearEditor();
+    setCharCount(0);
     setPendingMedia([]);
     setReplyingTo(null);
 
@@ -2705,6 +2766,8 @@ onTouchEnd={() => {
         className="cursor-pointer active:scale-[0.98] transition-transform relative"
         onClick={(e) => {
           e.stopPropagation();
+          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          setLightboxVideoRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
           setLightboxVideo(m.url);
         }}
         onTouchEnd={(e) => {
@@ -2768,12 +2831,12 @@ onTouchEnd={() => {
   </>
 )}
                                     {m.media_type === "document" && (
-                                      <a
-                                        href={m.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        onClick={(e) => e.stopPropagation()}
-                                        className={`flex items-center gap-3 p-3 rounded-xl border active:scale-[0.98] transition-transform ${
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleDocumentDownload(m.url, m.file_name);
+                                        }}
+                                        className={`flex items-center gap-3 p-3 rounded-xl border active:scale-[0.98] transition-transform w-full text-left ${
                                           isMine
                                             ? "border-white/20 bg-white/10"
                                             : "border-white/10 bg-white/5"
@@ -2795,7 +2858,7 @@ onTouchEnd={() => {
                                           </p>
                                         </div>
                                         <Download className={`w-4 h-4 shrink-0 ${isMine ? "text-white/60" : "text-dark-400"}`} />
-                                      </a>
+                                      </button>
                                     )}
                                   </div>
                                 ))}
@@ -2944,7 +3007,7 @@ onTouchEnd={() => {
             </div>
           </div>
           <button
-            onClick={() => { setEditingMessage(null); clearEditor(); }}
+            onClick={() => { setEditingMessage(null); clearEditor(); setCharCount(0); }}
             className="p-1 rounded-lg hover:bg-white/10 active:scale-90 transition-transform"
           >
             <X className="w-4 h-4 text-dark-400" />
@@ -3146,7 +3209,11 @@ onTouchEnd={() => {
                 role="textbox"
                 aria-multiline="true"
                 data-placeholder={editingMessage ? "Edit message..." : replyingTo ? "Reply..." : "Message..."}
-                onInput={() => sendTyping()}
+                onInput={() => {
+                  sendTyping();
+                  const len = editorRef.current?.innerText.trim().length || 0;
+                  setCharCount(len);
+                }}
                 onKeyDown={handleEditorKeyDown}
                 onFocus={() => {
                   // Close attach menu when focusing editor, but NOT emoji picker
@@ -3156,6 +3223,13 @@ onTouchEnd={() => {
                 style={{ minHeight: 40, maxHeight: 120 }}
                 suppressContentEditableWarning
               />
+              {charCount > 4800 && (
+                <div className={`text-[10px] text-right mt-0.5 pr-2 ${
+                  charCount > MAX_MESSAGE_LENGTH ? "text-red-400 font-bold" : "text-dark-500"
+                }`}>
+                  {charCount.toLocaleString()}/{MAX_MESSAGE_LENGTH.toLocaleString()}
+                </div>
+              )}
             </div>
 
             <button
@@ -3219,22 +3293,36 @@ onTouchEnd={() => {
       <input ref={docInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.pptx,.ppt,.zip,.rar" multiple className="hidden" onChange={handleFileSelect} />
 
       {/* =====================================================
-          CONTEXT MENU — Premium WhatsApp-style with blur backdrop
+          CONTEXT MENU — WhatsApp-style with bounce + message preview
           ===================================================== */}
       {contextMenuMsg && contextMenuPos && typeof document !== "undefined" &&
         createPortal(
           <div
-            className="fixed inset-0 z-[99999] animate-in fade-in duration-150"
-            style={{ backdropFilter: "blur(8px)", backgroundColor: "rgba(0,0,0,0.5)" }}
-            onClick={() => { setContextMenuMsg(null); setContextMenuPos(null); }}
+            className="fixed inset-0 z-[99999]"
+            style={{
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              backgroundColor: "rgba(0,0,0,0.5)",
+              animation: contextMenuClosing
+                ? "context-menu-backdrop-out 200ms ease-out forwards"
+                : "context-menu-backdrop-in 200ms ease-out forwards",
+            }}
+            onClick={closeContextMenu}
           >
-            {/* Floating message preview */}
             <div
-              className="absolute animate-in zoom-in-95 fade-in duration-200"
+              className={`absolute flex flex-col ${isMineCtx ? "items-end" : "items-start"}`}
               style={{
-                left: contextMenuMsg.sender_id === user.id ? "auto" : 16,
-                right: contextMenuMsg.sender_id === user.id ? 16 : "auto",
-                top: Math.min(Math.max(contextMenuPos.y - 60, 60), window.innerHeight - 350),
+                left: isMineCtx ? "auto" : 16,
+                right: isMineCtx ? 16 : "auto",
+                top: Math.min(
+                  Math.max(contextMenuPos.y - 160, 60),
+                  window.innerHeight - 500
+                ),
+                maxWidth: "min(80vw, 320px)",
+                transformOrigin: isMineCtx ? "top right" : "top left",
+                animation: contextMenuClosing
+                  ? "context-menu-bounce-out 200ms ease-out forwards"
+                  : "context-menu-bounce-in 300ms ease-out forwards",
               }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -3262,8 +3350,7 @@ onTouchEnd={() => {
                       e.stopPropagation();
                       setReactionPickerMsgId(contextMenuMsg.id);
                       setReactionPickerTab("smileys");
-                      setContextMenuMsg(null);
-                      setContextMenuPos(null);
+                      closeContextMenu();
                     }}
                     className="w-9 h-9 flex items-center justify-center rounded-full bg-white/5 border border-white/10 hover:bg-white/10 active:scale-90 transition-all ml-1"
                   >
@@ -3272,8 +3359,151 @@ onTouchEnd={() => {
                 </div>
               )}
 
+              {/* Floating Message Preview */}
+              <div className="mb-2 max-w-[280px] w-fit">
+                {/* Reply preview */}
+                {contextMenuMsg.reply_to && (
+                  <div className={`px-3 py-1.5 rounded-t-2xl border-l-2 border-primary-500 ${
+                    isMineCtx ? "bg-primary-700/30" : "bg-white/5"
+                  }`}>
+                    <p className="text-[10px] text-primary-400 font-medium">
+                      {contextMenuMsg.reply_to.sender_id === user.id ? "You" : otherUser?.full_name || "Unknown"}
+                    </p>
+                    <p className="text-[11px] text-dark-400 truncate">
+                      {contextMenuMsg.reply_to.content?.slice(0, 60) || "Attachment"}
+                    </p>
+                  </div>
+                )}
+
+                <div className={`px-4 py-2.5 shadow-lg ${
+                  contextMenuMsg.reply_to ? "rounded-b-2xl" : "rounded-2xl"
+                } ${
+                  isMineCtx
+                    ? "bg-primary-600/90 text-white rounded-br-md"
+                    : "bg-[#1a1525] border border-white/5 text-dark-100 rounded-bl-md"
+                }`}>
+                  {/* Media preview */}
+                  {contextMenuMsg.media && contextMenuMsg.media.length > 0 && (
+                    <div className="mb-2 space-y-1.5">
+                      {contextMenuMsg.media.map((m) => (
+                        <div key={m.id}>
+                          {m.media_type === "image" && m.url && (
+                            <img
+                              src={m.url}
+                              alt=""
+                              className="rounded-xl max-w-full max-h-32 object-cover pointer-events-none"
+                            />
+                          )}
+                          {m.media_type === "video" && m.url && (
+                            <div className="relative pointer-events-none">
+                              <video src={m.url} className="rounded-xl max-w-full max-h-32" preload="metadata" />
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
+                                  <div className="w-0 h-0 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent border-l-[8px] border-l-white ml-0.5" />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                          {m.media_type === "audio" && (
+                            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${
+                              isMineCtx ? "bg-white/10" : "bg-white/5"
+                            }`}>
+                              <Mic className="w-4 h-4 text-primary-400 shrink-0" />
+                              <span className="text-xs">Voice message</span>
+                              {contextMenuMsg.metadata?.duration && (
+                                <span className={`text-[10px] ${isMineCtx ? "text-white/50" : "text-dark-500"}`}>
+                                  {formatDuration(contextMenuMsg.metadata.duration)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {m.media_type === "document" && (
+                            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${
+                              isMineCtx ? "bg-white/10" : "bg-white/5"
+                            }`}>
+                              <span className="text-sm">{getDocIcon(m.file_name)}</span>
+                              <span className="text-xs truncate max-w-[180px]">{m.file_name || "Document"}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Post share */}
+                  {contextMenuMsg.content_type === "post_share" && contextMenuMsg.metadata?.post_id && (
+                    <div className={`mb-2 p-2 rounded-lg ${isMineCtx ? "bg-white/10" : "bg-white/5"}`}>
+                      <p className="text-xs font-medium text-primary-400">📍 Shared Post</p>
+                      <p className="text-xs truncate">{contextMenuMsg.metadata.post_preview || "View post"}</p>
+                    </div>
+                  )}
+
+                  {/* Text content — clamped for long messages */}
+                  {contextMenuMsg.content && (
+                    <div className="relative max-h-[4.5rem] overflow-hidden">
+                      {renderContent(contextMenuMsg.content)}
+                      {contextMenuMsg.content.length > 150 && (
+                        <div
+                          className={`absolute bottom-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-t to-transparent ${
+                            isMineCtx ? "from-primary-600" : "from-[#1a1525]"
+                          }`}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Timestamp + delivery status */}
+                  <div className={`flex items-center gap-1.5 mt-1.5 ${isMineCtx ? "justify-end" : "justify-start"}`}>
+                    <span className={`text-[10px] ${isMineCtx ? "text-white/50" : "text-dark-500"}`}>
+                      {format(new Date(contextMenuMsg.created_at), "HH:mm")}
+                    </span>
+                    {contextMenuMsg.edited_at && (
+                      <span className={`text-[10px] ${isMineCtx ? "text-white/40" : "text-dark-600"}`}>
+                        · edited
+                      </span>
+                    )}
+                    {isMineCtx && <DeliveryLabel status={contextMenuMsg.delivery_status} />}
+                  </div>
+                </div>
+
+                {/* Reactions on the floating message */}
+                {contextMenuMsg.reactions && contextMenuMsg.reactions.length > 0 && (
+                  <div className={`flex flex-wrap gap-1 mt-1 ${isMineCtx ? "justify-end" : "justify-start"}`}>
+                    {Object.entries(
+                      contextMenuMsg.reactions.reduce((acc, r) => {
+                        acc[r.emoji] = (acc[r.emoji] || 0) + 1;
+                        return acc;
+                      }, {} as Record<string, number>)
+                    ).map(([emoji, count]) => {
+                      const myReaction = contextMenuMsg.reactions?.some(
+                        (r) => r.emoji === emoji && r.user_id === user.id
+                      );
+                      return (
+                        <button
+                          key={emoji}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleReaction(contextMenuMsg.id, emoji);
+                          }}
+                          className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all active:scale-90 ${
+                            myReaction
+                              ? "border-primary-500/40 bg-primary-600/20"
+                              : "border-white/10 bg-white/5 hover:bg-white/10"
+                          }`}
+                        >
+                          <span>{emoji}</span>
+                          {(count as number) > 1 && (
+                            <span className="text-[10px] text-dark-300">{count as number}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               {/* Action menu */}
-              <div className="glass-strong rounded-2xl overflow-hidden shadow-2xl border border-white/10 w-56 animate-in slide-in-from-bottom-2 duration-200">
+              <div className="glass-strong rounded-2xl overflow-hidden shadow-2xl border border-white/10 w-56">
                 {/* Reply */}
                 {!contextMenuMsg.is_deleted && (
                   <button
@@ -3444,7 +3674,7 @@ onTouchEnd={() => {
               }}
             >
               <button
-                onClick={() => setShowChatInfo(false)}
+                onClick={() => { setShowChatInfo(false); setChatInfoPlayingVN(null); }}
                 className="p-1.5 -ml-1 hover:bg-white/5 rounded-lg active:scale-95 transition-transform"
               >
                 <ArrowLeft className="w-5 h-5 text-dark-200" />
@@ -3491,44 +3721,92 @@ onTouchEnd={() => {
                 {chatMediaFiles.length === 0 ? (
                   <p className="text-xs text-dark-500">No media shared yet</p>
                 ) : (
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {chatMediaFiles.slice(0, 12).map((m) => (
-                      <div key={m.id}>
-                        {m.media_type === "image" ? (
+                  <>
+                    {/* Inline VN Player for chat info */}
+                    {chatInfoPlayingVN && (
+                      <div className="mb-3 animate-in slide-in-from-bottom-2 duration-200">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs text-dark-400">Playing voice note</span>
                           <button
-                            onClick={() => setLightboxImage(m.url)}
-                            className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800"
+                            onClick={() => setChatInfoPlayingVN(null)}
+                            className="p-1 rounded-lg hover:bg-white/10 active:scale-90 transition-transform"
                           >
-                            <img src={m.url} alt="" className="w-full h-full object-cover" />
+                            <X className="w-3.5 h-3.5 text-dark-400" />
                           </button>
-                        ) : m.media_type === "video" ? (
-                          <button
-                            onClick={() => setLightboxVideo(m.url)}
-                            className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800 relative"
-                          >
-                            <video src={m.url} className="w-full h-full object-cover" preload="metadata" />
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                              <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center">
-                                <div className="w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-l-[7px] border-l-black ml-0.5" />
-                              </div>
-                            </div>
-                          </button>
-                        ) : (
-                          <a
-                            href={m.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-full aspect-square rounded-lg bg-dark-800 border border-white/10 flex flex-col items-center justify-center gap-1"
-                          >
-                            <span className="text-lg">{m.media_type === "audio" ? "🎵" : getDocIcon(m.file_name)}</span>
-                            <span className="text-[9px] text-dark-400 truncate max-w-full px-1">
-                              {m.file_name?.split(".").pop()?.toUpperCase() || "FILE"}
-                            </span>
-                          </a>
-                        )}
+                        </div>
+                        <VoiceNotePlayer
+                          src={chatInfoPlayingVN.url}
+                          duration={chatInfoPlayingVN.duration}
+                          isMine={false}
+                        />
                       </div>
-                    ))}
-                  </div>
+                    )}
+
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {chatMediaFiles.slice(0, 12).map((m) => (
+                        <div key={m.id}>
+                          {m.media_type === "image" ? (
+                            <button
+                              onClick={() => setLightboxImage(m.url)}
+                              className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800"
+                            >
+                              <img src={m.url} alt="" className="w-full h-full object-cover" />
+                            </button>
+                          ) : m.media_type === "video" ? (
+                            <button
+                              onClick={(e) => {
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                setLightboxVideoRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
+                                setLightboxVideo(m.url);
+                              }}
+                              className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800 relative"
+                            >
+                              <video src={m.url} className="w-full h-full object-cover" preload="metadata" />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center">
+                                  <div className="w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-l-[7px] border-l-black ml-0.5" />
+                                </div>
+                              </div>
+                            </button>
+                          ) : m.media_type === "audio" ? (
+                            <button
+                              onClick={() => {
+                                setChatInfoPlayingVN(
+                                  chatInfoPlayingVN?.url === m.url
+                                    ? null
+                                    : { url: m.url, duration: undefined }
+                                );
+                              }}
+                              className={`w-full aspect-square rounded-lg border flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${
+                                chatInfoPlayingVN?.url === m.url
+                                  ? "bg-primary-600/20 border-primary-500/40"
+                                  : "bg-dark-800 border-white/10"
+                              }`}
+                            >
+                              <Mic className={`w-5 h-5 ${
+                                chatInfoPlayingVN?.url === m.url ? "text-primary-400" : "text-dark-400"
+                              }`} />
+                              <span className="text-[9px] text-dark-400">Voice</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleDocumentDownload(m.url, m.file_name)}
+                              className="w-full aspect-square rounded-lg bg-dark-800 border border-white/10 flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform"
+                            >
+                              <span className="text-lg">{getDocIcon(m.file_name)}</span>
+                              <span className="text-[9px] text-dark-400 truncate max-w-full px-1 break-all leading-tight text-center">
+                                {m.file_name
+                                  ? m.file_name.length > 12
+                                    ? m.file_name.slice(0, 9) + "..." + (m.file_name.split(".").pop() || "")
+                                    : m.file_name
+                                  : "FILE"}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -3573,8 +3851,9 @@ onTouchEnd={() => {
 
       <VideoLightbox
         isOpen={!!lightboxVideo}
-        onClose={() => setLightboxVideo(null)}
+        onClose={() => { setLightboxVideo(null); setLightboxVideoRect(null); }}
         videoUrl={lightboxVideo}
+        sourceRect={lightboxVideoRect}
       />
     </div>
   );

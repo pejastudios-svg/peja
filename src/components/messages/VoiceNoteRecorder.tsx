@@ -11,6 +11,28 @@ interface VoiceNoteRecorderProps {
   isUploading?: boolean;
 }
 
+const MAX_VN_DURATION = 60; // 1 minute cap per voice note
+
+// Resample accumulated recording peaks into fixed number of bars
+function resamplePeaks(peaks: number[], numBars: number): number[] {
+  if (peaks.length === 0) return Array(numBars).fill(0.3);
+
+  const step = peaks.length / numBars;
+  const resampled: number[] = [];
+  for (let i = 0; i < numBars; i++) {
+    const start = Math.floor(i * step);
+    const end = Math.min(Math.floor((i + 1) * step), peaks.length);
+    let peak = 0;
+    for (let j = start; j < end; j++) {
+      if (peaks[j] > peak) peak = peaks[j];
+    }
+    resampled.push(peak);
+  }
+
+  const max = Math.max(...resampled, 0.01);
+  return resampled.map((v) => Math.max(0.15, v / max));
+}
+
 // Check if we're in Capacitor native environment (Android only for voice recorder)
 function isCapacitorNative(): boolean {
   if (typeof window === "undefined") return false;
@@ -44,9 +66,11 @@ export function VoiceNoteRecorder({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const durationRef = useRef(0);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const webAnimationRef = useRef<number | null>(null);
+  const recordedPeaksRef = useRef<number[]>([]);
 
   // Check if native on mount
   useEffect(() => {
@@ -97,11 +121,13 @@ export function VoiceNoteRecorder({
   // Simulate audio levels animation during recording
   const startLevelAnimation = useCallback(() => {
     animationRef.current = setInterval(() => {
-      setAudioLevels(
-        Array(20)
-          .fill(0)
-          .map(() => 0.1 + Math.random() * 0.8)
-      );
+      const levels = Array(20)
+        .fill(0)
+        .map(() => 0.1 + Math.random() * 0.8);
+      setAudioLevels(levels);
+      // Accumulate average peak for waveform preview
+      const avg = levels.reduce((a, b) => a + b, 0) / levels.length;
+      recordedPeaksRef.current.push(avg);
     }, 100);
   }, []);
 
@@ -110,7 +136,8 @@ export function VoiceNoteRecorder({
       clearInterval(animationRef.current);
       animationRef.current = null;
     }
-    setAudioLevels(Array(20).fill(0.3));
+    // Show accumulated waveform in preview, or flat fallback
+    setAudioLevels(resamplePeaks(recordedPeaksRef.current, 20));
   }, []);
 
   // =====================================================
@@ -123,6 +150,7 @@ export function VoiceNoteRecorder({
       setRecordedBlob(null);
       setDuration(0);
       setPermissionDenied(false);
+      recordedPeaksRef.current = [];
 
       const { VoiceRecorder } = await import("capacitor-voice-recorder");
 
@@ -142,9 +170,19 @@ export function VoiceNoteRecorder({
       setIsRecording(true);
       onRecordingStart?.();
 
-      // Start timer
+      // Start timer (auto-stops at MAX_VN_DURATION)
+      durationRef.current = 0;
       timerRef.current = setInterval(() => {
-        setDuration((d) => d + 1);
+        durationRef.current += 1;
+        setDuration(durationRef.current);
+
+        if (durationRef.current >= MAX_VN_DURATION) {
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          stopNativeRecording();
+        }
       }, 1000);
 
       // Start level animation
@@ -273,6 +311,10 @@ export function VoiceNoteRecorder({
 
     setAudioLevels(levels);
 
+    // Accumulate average peak for waveform preview
+    const avg = levels.reduce((a, b) => a + b, 0) / levels.length;
+    recordedPeaksRef.current.push(avg);
+
     if (mediaRecorderRef.current?.state === "recording") {
       webAnimationRef.current = requestAnimationFrame(analyzeWebAudio);
     }
@@ -285,6 +327,7 @@ export function VoiceNoteRecorder({
       setRecordedBlob(null);
       setDuration(0);
       audioChunksRef.current = [];
+      recordedPeaksRef.current = [];
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Media devices not supported");
@@ -361,8 +404,18 @@ export function VoiceNoteRecorder({
       setIsRecording(true);
       onRecordingStart?.();
 
+      durationRef.current = 0;
       timerRef.current = setInterval(() => {
-        setDuration((d) => d + 1);
+        durationRef.current += 1;
+        setDuration(durationRef.current);
+
+        if (durationRef.current >= MAX_VN_DURATION) {
+          if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+          }
+          stopWebRecording();
+        }
       }, 1000);
 
       webAnimationRef.current = requestAnimationFrame(analyzeWebAudio);
@@ -403,7 +456,8 @@ export function VoiceNoteRecorder({
     }
 
     setIsRecording(false);
-    setAudioLevels(Array(20).fill(0.3));
+    // Show accumulated waveform in preview
+    setAudioLevels(resamplePeaks(recordedPeaksRef.current, 20));
 
     setTimeout(() => {
       if (streamRef.current) {
@@ -451,6 +505,8 @@ export function VoiceNoteRecorder({
     cleanup();
     setIsRecording(false);
     setRecordedBlob(null);
+    durationRef.current = 0;
+    recordedPeaksRef.current = [];
     setDuration(0);
     setError(null);
     setDebugInfo("");
@@ -476,6 +532,8 @@ export function VoiceNoteRecorder({
 
     onSend?.(file, duration);
     setRecordedBlob(null);
+    durationRef.current = 0;
+    recordedPeaksRef.current = [];
     setDuration(0);
     setDebugInfo("");
     cleanup();
@@ -557,8 +615,10 @@ export function VoiceNoteRecorder({
           ))}
         </div>
 
-        <span className="text-xs font-mono text-red-400 min-w-10 text-center">
-          {formatDuration(duration)}
+        <span className={`text-xs font-mono min-w-[4.5rem] text-center transition-colors ${
+          duration >= MAX_VN_DURATION - 10 ? "text-red-300 font-bold" : "text-red-400"
+        }`}>
+          {formatDuration(duration)}/{formatDuration(MAX_VN_DURATION)}
         </span>
 
         <button

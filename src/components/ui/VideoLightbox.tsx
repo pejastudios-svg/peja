@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, Play, Pause, Volume2, VolumeX } from "lucide-react";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
 import { supabase } from "@/lib/supabase";
@@ -16,6 +17,7 @@ export function VideoLightbox({
   startTime = 0,
   postId,
   posterUrl,
+  sourceRect,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -23,6 +25,7 @@ export function VideoLightbox({
   startTime?: number;
   postId?: string;
   posterUrl?: string | null;
+  sourceRect?: { x: number; y: number; width: number; height: number } | null;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewedRef = useRef<Set<string>>(new Set());
@@ -34,7 +37,12 @@ export function VideoLightbox({
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showPoster, setShowPoster] = useState(true);
-  useHlsPlayer(videoRef, videoUrl || "", isOpen);
+  const [videoBuffering, setVideoBuffering] = useState(true);
+  const [animPhase, setAnimPhase] = useState<"idle" | "enter" | "open" | "exit">("idle");
+  const exitTransformRef = useRef("scale(0.88)");
+  const animSourceRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const hasStoredAnimRect = useRef(false);
+    useHlsPlayer(videoRef, videoUrl || "", isOpen);
 
   const { soundEnabled, setSoundEnabled } = useAudio();
 
@@ -73,23 +81,37 @@ export function VideoLightbox({
       return {
         effectiveStartTime: handoffData.currentTime,
         effectivePoster: handoffData.posterDataUrl || posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null),
+        effectiveSourceRect: handoffData.sourceRect || sourceRect || null,
       };
     }
     return {
       effectiveStartTime: startTime,
       effectivePoster: posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null),
+      effectiveSourceRect: sourceRect || null,
     };
   };
 
-  const { effectiveStartTime, effectivePoster } = isOpen
+  const { effectiveStartTime, effectivePoster, effectiveSourceRect } = isOpen
     ? getEffectiveStartData()
-    : { effectiveStartTime: 0, effectivePoster: null };
+    : { effectiveStartTime: 0, effectivePoster: null, effectiveSourceRect: null };
+
+  // Capture source rect once when opening (before handoff is cleared by effect)
+  if (isOpen && !hasStoredAnimRect.current) {
+    animSourceRectRef.current = effectiveSourceRect;
+    hasStoredAnimRect.current = true;
+  }
+  if (!isOpen) {
+    hasStoredAnimRect.current = false;
+  }
 
   useEffect(() => {
+    let expandTimer: NodeJS.Timeout | null = null;
+
     if (isOpen) {
       setShowPoster(true);
       setShowControls(true);
       setIsPlaying(true);
+      setVideoBuffering(true);
       closingRef.current = false;
       hasAppliedHandoffRef.current = false;
       resetFadeTimer();
@@ -116,10 +138,17 @@ export function VideoLightbox({
 
       // Clear handoff after using it
       handoff.clearHandoff();
+
+      // Start expand animation
+      setAnimPhase("enter");
+      expandTimer = setTimeout(() => setAnimPhase("open"), 30);
     } else {
       document.body.style.overflow = "";
       setDragOffset({ x: 0, y: 0 });
       setShowPoster(true);
+      setVideoBuffering(true);
+      setAnimPhase("idle");
+      animSourceRectRef.current = null;
 
       if (videoRef.current) {
         videoRef.current.pause();
@@ -128,6 +157,7 @@ export function VideoLightbox({
     }
     return () => {
       document.body.style.overflow = "";
+      if (expandTimer) clearTimeout(expandTimer);
     };
   }, [isOpen, effectiveStartTime, postId]);
 
@@ -157,8 +187,19 @@ export function VideoLightbox({
       v.pause();
     }
 
-    window.dispatchEvent(new Event("peja-modal-close"));
-    onClose();
+    // Compute exit transform — continue in drag direction if dragging
+    if (dragDistance > 50) {
+      exitTransformRef.current = `translate(${dragOffset.x * 2}px, ${dragOffset.y * 2}px) scale(0.5)`;
+    } else {
+      exitTransformRef.current = "scale(0.88)";
+    }
+
+    setAnimPhase("exit");
+
+    setTimeout(() => {
+      window.dispatchEvent(new Event("peja-modal-close"));
+      onClose();
+    }, 280);
   };
 
   const handleScreenTap = (e: React.MouseEvent) => {
@@ -234,10 +275,78 @@ export function VideoLightbox({
 
   // Hide poster once video has actual frames to show
   const handleVideoCanPlay = () => {
+    setVideoBuffering(false);
     // Small delay to ensure frame is rendered
     setTimeout(() => {
       setShowPoster(false);
     }, 50);
+  };
+
+  // =====================================================
+  // ANIMATION STYLE HELPERS
+  // =====================================================
+  const getBackdropStyle = (): React.CSSProperties => {
+    if (animPhase === "exit") {
+      return { opacity: 0, transition: "opacity 280ms ease" };
+    }
+    if (animPhase === "enter") {
+      return { opacity: 0, transition: "none" };
+    }
+    return {
+      opacity: bgOpacity,
+      transition: isDragging ? "opacity 100ms ease-linear" : "opacity 300ms ease",
+    };
+  };
+
+  const getVideoContainerStyle = (): React.CSSProperties => {
+    if (animPhase === "exit") {
+      return {
+        transform: exitTransformRef.current,
+        opacity: 0,
+        borderRadius: "16px",
+        overflow: "hidden",
+        transition:
+          "transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 250ms ease, border-radius 280ms ease",
+      };
+    }
+
+    if (animPhase === "enter") {
+      const rect = animSourceRectRef.current;
+      let transform: string;
+      if (rect && typeof window !== "undefined") {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const tx = rect.x + rect.width / 2 - vw / 2;
+        const ty = rect.y + rect.height / 2 - vh / 2;
+        const s = Math.min(rect.width / vw, rect.height / vh);
+        transform = `translate(${tx}px, ${ty}px) scale(${Math.max(s, 0.08)})`;
+      } else {
+        transform = "scale(0.92)";
+      }
+      return {
+        transform,
+        opacity: 0.3,
+        borderRadius: "16px",
+        overflow: "hidden",
+        transition: "none",
+      };
+    }
+
+    // "open" phase — normal drag interaction
+    if (isDragging || dragDistance > 0) {
+      return {
+        transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${1 - dragDistance / 1000})`,
+        transition: isDragging ? "none" : "transform 0.3s ease-out",
+      };
+    }
+
+    return {
+      transform: "none",
+      opacity: 1,
+      borderRadius: "0",
+      transition:
+        "transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 300ms ease, border-radius 300ms ease",
+    };
   };
 
   if (!isOpen || !videoUrl) return null;
@@ -262,13 +371,13 @@ export function VideoLightbox({
       }}
     >
       <div
-        className="absolute inset-0 bg-black transition-opacity duration-100 ease-linear"
-        style={{ opacity: bgOpacity }}
+        className="absolute inset-0 bg-black"
+        style={getBackdropStyle()}
       />
 
       <div
         className={`absolute left-4 z-10 transition-opacity duration-300 ${
-          showControls ? "opacity-100" : "opacity-0 pointer-events-none"
+          showControls && animPhase !== "exit" ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
         style={{ top: "calc(1rem + var(--cap-status-bar-height, 0px))" }}
       >
@@ -287,10 +396,7 @@ export function VideoLightbox({
 
       <div
         className="relative z-1 w-full h-full flex items-center justify-center"
-        style={{
-          transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${1 - dragDistance / 1000})`,
-          transition: isDragging ? "none" : "transform 0.3s ease-out",
-        }}
+        style={getVideoContainerStyle()}
       >
         {/* Poster overlay - shows instantly, hides when video has frames */}
         {effectivePoster && showPoster && (
@@ -299,6 +405,13 @@ export function VideoLightbox({
             alt=""
             className="absolute inset-0 w-full h-full object-contain pointer-events-none z-[2]"
           />
+        )}
+
+        {/* Loading spinner */}
+        {videoBuffering && (
+          <div className="absolute inset-0 flex items-center justify-center z-[3] pointer-events-none">
+            <PejaSpinner className="w-14 h-14" />
+          </div>
         )}
 
           <video
@@ -313,6 +426,7 @@ export function VideoLightbox({
           onTimeUpdate={handleTimeUpdate}
           onCanPlay={handleVideoCanPlay}
           onPlaying={handleVideoCanPlay}
+          onWaiting={() => setVideoBuffering(true)}
           onEnded={() => setIsPlaying(false)}
           onLoadedData={() => {
             const v = videoRef.current;
@@ -327,9 +441,17 @@ export function VideoLightbox({
       </div>
 
       <div
-        className={`absolute bottom-0 inset-x-0 p-6 bg-gradient-to-t from-black/90 via-black/50 to-transparent z-10 transition-all duration-300 ${
-          showControls && !isDragging ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0"
+        className={`absolute bottom-0 inset-x-0 z-10 transition-all duration-300 ${
+          showControls && !isDragging && animPhase !== "exit"
+            ? "opacity-100 pointer-events-auto"
+            : "pointer-events-none opacity-0"
         }`}
+        style={{
+          padding: "2.5rem 1.5rem",
+          paddingBottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px))",
+          background:
+            "linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.5) 50%, transparent 100%)",
+        }}
         onClick={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
       >

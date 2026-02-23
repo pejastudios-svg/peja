@@ -3,6 +3,52 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Play, Pause, Loader2 } from "lucide-react";
 
+const NUM_BARS = 32;
+
+// Generate a pseudo-random fallback waveform
+function generateFallbackWaveform(count: number): number[] {
+  return Array.from({ length: count }, (_, i) => {
+    const seed = (i * 7 + 3) % 10;
+    const base = 0.25 + seed * 0.065 + Math.sin(i * 0.8) * 0.15;
+    return Math.min(Math.max(base, 0.15), 1.0);
+  });
+}
+
+// Extract waveform peaks from audio data
+async function extractWaveform(url: string, numBars: number): Promise<number[]> {
+  try {
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    const audioContext = new AudioCtx();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    const channelData = audioBuffer.getChannelData(0);
+    const samplesPerBar = Math.floor(channelData.length / numBars);
+    const peaks: number[] = [];
+
+    for (let i = 0; i < numBars; i++) {
+      const start = i * samplesPerBar;
+      const end = Math.min(start + samplesPerBar, channelData.length);
+      let peak = 0;
+      for (let j = start; j < end; j++) {
+        const abs = Math.abs(channelData[j]);
+        if (abs > peak) peak = abs;
+      }
+      peaks.push(peak);
+    }
+
+    const maxPeak = Math.max(...peaks, 0.01);
+    const normalized = peaks.map((p) => Math.max(0.1, p / maxPeak));
+
+    audioContext.close().catch(() => {});
+    return normalized;
+  } catch (e) {
+    console.log("[VoiceNotePlayer] Waveform extraction failed, using fallback:", e);
+    return generateFallbackWaveform(numBars);
+  }
+}
+
 interface VoiceNotePlayerProps {
   src: string;
   duration?: number; // Duration in seconds if known
@@ -10,7 +56,11 @@ interface VoiceNotePlayerProps {
   fileName?: string;
 }
 
-export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false }: VoiceNotePlayerProps) {
+export function VoiceNotePlayer({
+  src,
+  duration: initialDuration,
+  isMine = false,
+}: VoiceNotePlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);
@@ -20,6 +70,10 @@ export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(initialDuration || 0);
   const [error, setError] = useState(false);
+  const [waveformData, setWaveformData] = useState<number[]>(
+    generateFallbackWaveform(NUM_BARS)
+  );
+  const [isSeeking, setIsSeeking] = useState(false);
 
   // Format time as MM:SS
   const formatTime = useCallback((seconds: number): string => {
@@ -29,8 +83,23 @@ export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   }, []);
 
-  // Progress percentage
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  // Progress percentage (guarded against non-finite values)
+  const safeDuration = isFinite(duration) && duration > 0 ? duration : 0;
+  const progressPercent = safeDuration > 0 ? Math.min((currentTime / safeDuration) * 100, 100) : 0;
+
+  // Extract waveform from audio source
+  useEffect(() => {
+    if (!src) return;
+    let cancelled = false;
+
+    extractWaveform(src, NUM_BARS).then((data) => {
+      if (!cancelled) setWaveformData(data);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
 
   // Initialize audio element
   useEffect(() => {
@@ -46,7 +115,9 @@ export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false
     audio.preload = "metadata";
 
     const handleLoadedMetadata = () => {
-      setDuration(audio.duration);
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        setDuration(audio.duration);
+      }
       setIsLoading(false);
       setError(false);
     };
@@ -79,12 +150,19 @@ export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false
       setIsLoading(false);
     };
 
+    const handleDurationChange = () => {
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        setDuration(audio.duration);
+      }
+    };
+
     audio.addEventListener("loadedmetadata", handleLoadedMetadata);
     audio.addEventListener("canplay", handleCanPlay);
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("error", handleError);
     audio.addEventListener("waiting", handleWaiting);
     audio.addEventListener("playing", handlePlaying);
+    audio.addEventListener("durationchange", handleDurationChange);
 
     audio.src = src;
 
@@ -95,6 +173,7 @@ export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false
       audio.removeEventListener("error", handleError);
       audio.removeEventListener("waiting", handleWaiting);
       audio.removeEventListener("playing", handlePlaying);
+      audio.removeEventListener("durationchange", handleDurationChange);
       audio.pause();
       audio.src = "";
       if (animationRef.current) {
@@ -106,14 +185,23 @@ export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false
   // Animation frame for smooth progress updates
   const updateProgress = useCallback(() => {
     const audio = audioRef.current;
-    if (audio && isPlaying) {
+    if (audio && isPlaying && !isSeeking) {
       setCurrentTime(audio.currentTime);
+
+      // Fallback: pick up duration if it became available during playback
+      if (isFinite(audio.duration) && audio.duration > 0) {
+        setDuration((prev) => {
+          if (!prev || !isFinite(prev) || prev <= 0) return audio.duration;
+          return prev;
+        });
+      }
+
       animationRef.current = requestAnimationFrame(updateProgress);
     }
-  }, [isPlaying]);
+  }, [isPlaying, isSeeking]);
 
   useEffect(() => {
-    if (isPlaying) {
+    if (isPlaying && !isSeeking) {
       animationRef.current = requestAnimationFrame(updateProgress);
     } else {
       if (animationRef.current) {
@@ -127,7 +215,7 @@ export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isPlaying, updateProgress]);
+  }, [isPlaying, isSeeking, updateProgress]);
 
   // Toggle play/pause
   const togglePlay = async () => {
@@ -151,28 +239,104 @@ export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false
     }
   };
 
-  // Seek on progress bar click
-  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const audio = audioRef.current;
-    const progressBar = progressRef.current;
-    if (!audio || !progressBar || error || duration === 0) return;
+  // Calculate seek position from pointer/touch event
+  const getSeekPosition = useCallback(
+    (clientX: number): number | null => {
+      const bar = progressRef.current;
+      if (!bar) return null;
 
-    const rect = progressBar.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percentage = clickX / rect.width;
-    const newTime = percentage * duration;
+      const effectiveDuration = audioRef.current?.duration || duration;
+      if (!effectiveDuration || !isFinite(effectiveDuration) || effectiveDuration <= 0) return null;
 
-    audio.currentTime = newTime;
-    setCurrentTime(newTime);
+      const rect = bar.getBoundingClientRect();
+      if (rect.width === 0) return null;
+
+      const x = clientX - rect.left;
+      const percentage = Math.max(0, Math.min(1, x / rect.width));
+      const newTime = percentage * effectiveDuration;
+
+      if (!isFinite(newTime)) return null;
+      return newTime;
+    },
+    [duration]
+  );
+
+  // Seek handlers
+  const handleSeekStart = useCallback(
+    (clientX: number) => {
+      if (error || duration === 0) return;
+      setIsSeeking(true);
+
+      const newTime = getSeekPosition(clientX);
+      if (newTime !== null) {
+        const audio = audioRef.current;
+        if (audio) audio.currentTime = newTime;
+        setCurrentTime(newTime);
+      }
+    },
+    [error, duration, getSeekPosition]
+  );
+
+  const handleSeekMove = useCallback(
+    (clientX: number) => {
+      if (!isSeeking) return;
+
+      const newTime = getSeekPosition(clientX);
+      if (newTime !== null) {
+        const audio = audioRef.current;
+        if (audio) audio.currentTime = newTime;
+        setCurrentTime(newTime);
+      }
+    },
+    [isSeeking, getSeekPosition]
+  );
+
+  const handleSeekEnd = useCallback(() => {
+    setIsSeeking(false);
+  }, []);
+
+  // Mouse events for seeking
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleSeekStart(e.clientX);
+
+    const onMouseMove = (ev: MouseEvent) => handleSeekMove(ev.clientX);
+    const onMouseUp = () => {
+      handleSeekEnd();
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
   };
 
-  // Generate waveform bars (static visualization)
-  const waveformBars = Array.from({ length: 28 }, (_, i) => {
-    // Create a pseudo-random pattern that looks like audio waveform
-    const seed = (i * 7 + 3) % 10;
-    const height = 20 + seed * 6 + Math.sin(i * 0.8) * 15;
-    return Math.min(Math.max(height, 12), 80);
-  });
+  // Touch events for seeking
+  const handleWaveformTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    handleSeekStart(e.touches[0].clientX);
+  };
+
+  const handleWaveformTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleSeekMove(e.touches[0].clientX);
+  };
+
+  const handleWaveformTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    handleSeekEnd();
+  };
+
+  // Calculate which bar the scrubber indicator sits on
+  const scrubberBarIndex =
+    safeDuration > 0 && (isPlaying || currentTime > 0)
+      ? Math.min(
+          Math.floor((currentTime / safeDuration) * NUM_BARS),
+          NUM_BARS - 1
+        )
+      : -1;
 
   if (error) {
     return (
@@ -216,34 +380,59 @@ export function VoiceNotePlayer({ src, duration: initialDuration, isMine = false
         )}
       </button>
 
-      {/* Waveform & Progress */}
+      {/* Waveform Scrubber */}
       <div className="flex-1 min-w-0">
         <div
           ref={progressRef}
-          onClick={handleProgressClick}
-          className="relative h-8 flex items-center gap-[2px] cursor-pointer group"
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleWaveformTouchStart}
+          onTouchMove={handleWaveformTouchMove}
+          onTouchEnd={handleWaveformTouchEnd}
+          className="relative h-8 flex items-center gap-[2px] cursor-pointer group select-none touch-none"
         >
-          {waveformBars.map((height, i) => {
-            const barProgress = (i / waveformBars.length) * 100;
+          {waveformData.map((amplitude, i) => {
+            const barProgress = (i / waveformData.length) * 100;
             const isActive = barProgress <= progressPercent;
+            const isAtScrubber = i === scrubberBarIndex;
 
             return (
               <div
                 key={i}
-                className={`w-[3px] rounded-full transition-all duration-75 ${
-                  isActive
-                    ? isMine
-                      ? "bg-white"
-                      : "bg-primary-400"
-                    : isMine
-                    ? "bg-white/30"
-                    : "bg-white/20"
-                }`}
-                style={{
-                  height: `${height}%`,
-                  transform: isPlaying && isActive ? "scaleY(1.1)" : "scaleY(1)",
-                }}
-              />
+                className="relative flex items-center justify-center"
+                style={{ height: "100%", flex: "1 1 0" }}
+              >
+                <div
+                  className={`w-[3px] rounded-full ${
+                    isActive
+                      ? isMine
+                        ? "bg-white"
+                        : "bg-primary-400"
+                      : isMine
+                      ? "bg-white/30"
+                      : "bg-white/20"
+                  }`}
+                  style={{
+                    height: `${Math.max(12, Math.min(80, amplitude * 80))}%`,
+                    transform:
+                      isPlaying && isActive ? "scaleY(1.08)" : "scaleY(1)",
+                    transition:
+                      "transform 0.1s ease, background-color 0.075s ease",
+                  }}
+                />
+                {/* Scrubber indicator dot */}
+                {isAtScrubber && (
+                  <div
+                    className={`absolute top-1/2 -translate-y-1/2 w-[7px] h-[7px] rounded-full z-10 ${
+                      isMine ? "bg-white" : "bg-primary-400"
+                    }`}
+                    style={{
+                      boxShadow: isMine
+                        ? "0 0 6px rgba(255,255,255,0.5)"
+                        : "0 0 6px rgba(167,139,250,0.6)",
+                    }}
+                  />
+                )}
+              </div>
             );
           })}
         </div>

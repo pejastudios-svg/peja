@@ -220,21 +220,31 @@ export function validateMediaFile(file: File): {
   valid: boolean;
   error?: string;
 } {
-  const maxSize = 100 * 1024 * 1024; // 100MB
-
-  if (file.size > maxSize) {
-    return {
-      valid: false,
-      error: "File too large. Maximum 100MB allowed.",
-    };
-  }
-
-  if (file.type.startsWith("video/")) {
-    // Additional video validations can go here
-  }
+  const MAX_IMAGE_SIZE = 50 * 1024 * 1024;   // 50MB
+  const MAX_VIDEO_SIZE = 100 * 1024 * 1024;  // 100MB
+  const MAX_DOCUMENT_SIZE = 25 * 1024 * 1024; // 25MB
 
   if (file.type.startsWith("image/")) {
-    // Additional image validations can go here
+    if (file.size > MAX_IMAGE_SIZE) {
+      return {
+        valid: false,
+        error: `Image too large. Maximum ${MAX_IMAGE_SIZE / (1024 * 1024)}MB allowed.`,
+      };
+    }
+  } else if (file.type.startsWith("video/")) {
+    if (file.size > MAX_VIDEO_SIZE) {
+      return {
+        valid: false,
+        error: `Video too large. Maximum ${MAX_VIDEO_SIZE / (1024 * 1024)}MB allowed.`,
+      };
+    }
+  } else {
+    if (file.size > MAX_DOCUMENT_SIZE) {
+      return {
+        valid: false,
+        error: `File too large. Maximum ${MAX_DOCUMENT_SIZE / (1024 * 1024)}MB allowed.`,
+      };
+    }
   }
 
   return { valid: true };

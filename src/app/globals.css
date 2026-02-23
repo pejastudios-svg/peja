@@ -2319,3 +2319,77 @@ body.keyboard-open .post-detail-messages {
 }
 
 /* Mic button recording state */
+
+/* =====================================================
+   CONTEXT MENU BOUNCE ANIMATIONS
+   ===================================================== */
+@keyframes context-menu-bounce-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  75% {
+    transform: scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes context-menu-bounce-out {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes context-menu-backdrop-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes context-menu-backdrop-out {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* =====================================================
+   PEJA 4-CIRCLE ORBITAL SPINNER
+   ===================================================== */
+@keyframes peja-orbit-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes peja-orbit-ccw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes peja-spinner-depth {
+  0%, 100% {
+    transform: translateX(-50%) scale(0.6);
+    opacity: 0.65;
+  }
+  50% {
+    transform: translateX(-50%) scale(1.15);
+    opacity: 1;
+  }
+}
