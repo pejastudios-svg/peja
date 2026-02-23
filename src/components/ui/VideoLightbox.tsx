@@ -7,7 +7,7 @@ import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
 import { supabase } from "@/lib/supabase";
-import { getVideoThumbnailUrl, getOptimizedVideoUrl } from "@/lib/videoThumbnail";
+import { getVideoThumbnailUrl, getOptimizedVideoUrl, generateVideoThumbnail } from "@/lib/videoThumbnail";
 import { useHlsPlayer } from "@/hooks/useHlsPlayer";
 
 export function VideoLightbox({
@@ -37,6 +37,7 @@ export function VideoLightbox({
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showPoster, setShowPoster] = useState(true);
+    const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
   const [videoBuffering, setVideoBuffering] = useState(true);
   const [animPhase, setAnimPhase] = useState<"idle" | "enter" | "open" | "exit">("idle");
   const exitTransformRef = useRef("scale(0.88)");
@@ -80,13 +81,13 @@ export function VideoLightbox({
     if (handoffData && videoUrl && handoffData.src === videoUrl) {
       return {
         effectiveStartTime: handoffData.currentTime,
-        effectivePoster: handoffData.posterDataUrl || posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null),
+        effectivePoster: handoffData.posterDataUrl || posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null) || generatedPoster,
         effectiveSourceRect: handoffData.sourceRect || sourceRect || null,
       };
     }
     return {
       effectiveStartTime: startTime,
-      effectivePoster: posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null),
+      effectivePoster: posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null) || generatedPoster,
       effectiveSourceRect: sourceRect || null,
     };
   };
@@ -147,6 +148,7 @@ export function VideoLightbox({
       setDragOffset({ x: 0, y: 0 });
       setShowPoster(true);
       setVideoBuffering(true);
+      setGeneratedPoster(null);
       setAnimPhase("idle");
       animSourceRectRef.current = null;
 
@@ -160,6 +162,22 @@ export function VideoLightbox({
       if (expandTimer) clearTimeout(expandTimer);
     };
   }, [isOpen, effectiveStartTime, postId]);
+
+  // Generate thumbnail for non-Cloudinary videos (Supabase-hosted)
+  useEffect(() => {
+    if (!videoUrl || !isOpen) return;
+    if (posterUrl || getVideoThumbnailUrl(videoUrl)) return; // Already have a poster
+
+    let cancelled = false;
+
+    generateVideoThumbnail(videoUrl, 640).then((thumb) => {
+      if (!cancelled && thumb) {
+        setGeneratedPoster(thumb);
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [videoUrl, isOpen, posterUrl]);
 
   // Sync video muted state with global audio context
   useEffect(() => {

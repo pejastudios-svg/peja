@@ -129,6 +129,7 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
   const lastFetchRef = useRef<number>(0);
   const fetchInProgressRef = useRef<boolean>(false);
   const pendingClearRef = useRef<Set<string>>(new Set());
+  const initialFetchDoneRef = useRef(false);
 
   // =====================================================
   // LOAD FROM INDEXEDDB ON MOUNT (instant restore)
@@ -280,6 +281,7 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
         .filter(Boolean) as ConversationWithUser[];
 
       setConversations(merged);
+      initialFetchDoneRef.current = true;
       
       // Save to IndexedDB for instant restore
       saveToIDB(merged);
@@ -301,6 +303,7 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (!user?.id || !user.is_vip) return;
 
+    initialFetchDoneRef.current = false;
     fetchConversations();
 
     // Realtime updates - debounced
@@ -318,6 +321,9 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
       .channel(`dm-cache-${user.id}-${Date.now()}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
         const msg = payload.new as any;
+
+        // Suppress until initial fetch completes to prevent pop-in
+        if (!initialFetchDoneRef.current) return;
 
         setConversations((prev) => {
           const isViewing = typeof window !== "undefined" &&
@@ -366,6 +372,8 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
       })
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversations" }, (payload) => {
         const updated = payload.new as any;
+
+        if (!initialFetchDoneRef.current) return;
 
         setConversations((prev) => {
           const newList = prev.map((c) => {
