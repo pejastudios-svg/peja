@@ -85,12 +85,10 @@ export async function compressVideo(
       );
     }
 
-    // Validate Cloudinary config
-    if (!CONFIG.video.cloudinaryCloudName) {
-      throw new Error("NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME is not set");
-    }
-    if (!CONFIG.video.cloudinaryUploadPreset) {
-      throw new Error("NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET is not set");
+    // If Cloudinary not configured, skip compression and upload directly
+    if (!CONFIG.video.cloudinaryCloudName || !CONFIG.video.cloudinaryUploadPreset) {
+      console.log("[MediaCompression] Cloudinary not configured, skipping compression");
+      throw new Error("SKIP_COMPRESSION");
     }
 
     console.log("[MediaCompression] Cloudinary config:", {

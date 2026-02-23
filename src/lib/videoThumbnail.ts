@@ -124,53 +124,51 @@ export function getHlsUrl(videoUrl: string): string | null {
 /**
  * Generates a JPEG thumbnail from a video File or URL.
  * Returns a data URL string, or null on failure.
- * Seeks to 0.5s for a meaningful frame (not a black first frame).
+ * Works across Mac, iOS, and Android WebViews.
  */
 export async function generateVideoThumbnail(
   source: File | string,
   maxWidth = 480
 ): Promise<string | null> {
   return new Promise((resolve) => {
-    // Timeout: if thumbnail generation takes too long, skip it
     const timeout = setTimeout(() => {
+      console.log("[generateVideoThumbnail] Timed out");
       cleanup();
       resolve(null);
-    }, 8000);
+    }, 10000);
 
     const video = document.createElement("video");
     video.preload = "auto";
     video.muted = true;
     video.playsInline = true;
-    video.crossOrigin = "anonymous";
+    video.setAttribute("playsinline", "");
+    video.setAttribute("webkit-playsinline", "");
+    video.setAttribute("muted", "");
 
     let blobUrl: string | null = null;
+    let captured = false;
 
     const cleanup = () => {
       clearTimeout(timeout);
-      video.removeAttribute("src");
-      video.load();
+      try {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      } catch {}
       if (blobUrl) {
         URL.revokeObjectURL(blobUrl);
         blobUrl = null;
       }
     };
 
-    video.onloadeddata = () => {
-      // Seek to 0.5s or 10% of duration for a better frame
-      const seekTo = Math.min(0.5, video.duration * 0.1);
-      video.currentTime = seekTo;
-    };
+    const captureFrame = (): boolean => {
+      if (captured) return true;
 
-    video.onseeked = () => {
       try {
         const vw = video.videoWidth;
         const vh = video.videoHeight;
 
-        if (vw === 0 || vh === 0) {
-          cleanup();
-          resolve(null);
-          return;
-        }
+        if (vw === 0 || vh === 0) return false;
 
         const scale = Math.min(1, maxWidth / vw);
         const cw = Math.round(vw * scale);
@@ -181,29 +179,72 @@ export async function generateVideoThumbnail(
         canvas.height = ch;
 
         const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          cleanup();
-          resolve(null);
-          return;
-        }
+        if (!ctx) return false;
 
         ctx.drawImage(video, 0, 0, cw, ch);
         const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
 
+        // Verify it's not blank (very small data URL = blank frame)
+        if (dataUrl.length < 1000) return false;
+
+        captured = true;
         cleanup();
-
-        // Verify it's not a blank/empty image (very small data URL = blank)
-        if (dataUrl.length < 1000) {
-          resolve(null);
-          return;
-        }
-
         resolve(dataUrl);
+        return true;
       } catch (e) {
         console.log("[generateVideoThumbnail] Canvas error:", e);
-        cleanup();
-        resolve(null);
+        return false;
       }
+    };
+
+    // Strategy: try to capture at 0.5s, fall back to first available frame
+    video.onseeked = () => {
+      // Wait a frame for the seek to render
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          captureFrame();
+        }, 50);
+      });
+    };
+
+    video.onloadeddata = () => {
+      // Try to seek to 0.5s for a meaningful frame
+      try {
+        const seekTo = Math.min(0.5, (video.duration || 1) * 0.1);
+        if (isFinite(seekTo) && seekTo > 0 && isFinite(video.duration)) {
+          video.currentTime = seekTo;
+        } else {
+          // Can't seek — try capturing first frame after delay
+          setTimeout(() => {
+            if (!captureFrame()) {
+              // Last resort: try time 0
+              video.currentTime = 0.01;
+            }
+          }, 200);
+        }
+      } catch {
+        setTimeout(() => captureFrame(), 200);
+      }
+    };
+
+    // Fallback for mobile: canplay fires more reliably than loadeddata in some WebViews
+    video.oncanplay = () => {
+      if (captured) return;
+      // Give loadeddata/onseeked a chance first
+      setTimeout(() => {
+        if (!captured && video.readyState >= 2) {
+          try {
+            const seekTo = Math.min(0.5, (video.duration || 1) * 0.1);
+            if (isFinite(seekTo) && seekTo > 0 && isFinite(video.duration)) {
+              video.currentTime = seekTo;
+            } else {
+              captureFrame();
+            }
+          } catch {
+            captureFrame();
+          }
+        }
+      }, 500);
     };
 
     video.onerror = () => {
@@ -212,11 +253,43 @@ export async function generateVideoThumbnail(
       resolve(null);
     };
 
+    // Set source
     if (typeof source === "string") {
+      // Only set crossOrigin for remote URLs, NOT blob URLs
+      if (!source.startsWith("blob:") && !source.startsWith("data:")) {
+        video.crossOrigin = "anonymous";
+      }
       video.src = source;
     } else {
       blobUrl = URL.createObjectURL(source);
       video.src = blobUrl;
     }
+
+    // Explicitly load
+    video.load();
+
+    // Mobile WebViews often need play() to trigger data loading
+    // This must be in a user-gesture context (which it is — called from file input handler)
+    setTimeout(() => {
+      if (captured) return;
+      try {
+        const playPromise = video.play();
+        if (playPromise && typeof playPromise.then === "function") {
+          playPromise
+            .then(() => {
+              video.pause();
+              // If loadeddata/onseeked didn't fire yet, try capturing now
+              setTimeout(() => {
+                if (!captured) captureFrame();
+              }, 300);
+            })
+            .catch(() => {
+              // Autoplay blocked — loadeddata should still eventually fire
+            });
+        }
+      } catch {
+        // play() threw synchronously — fine, events should handle it
+      }
+    }, 100);
   });
 }
