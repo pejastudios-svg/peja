@@ -188,12 +188,14 @@ export default function ChatPage() {
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const myDeletionsRef = useRef<Set<string>>(new Set());
   const otherUserOnlineRef = useRef(false);
+  const initialFetchDoneRef = useRef(false);
 
   // Reset scroll flags when conversation changes
   useEffect(() => {
     initialScrollDone.current = false;
     hasRenderedOnce.current = false;
     messagesLengthRef.current = 0;
+    initialFetchDoneRef.current = false;
   }, [conversationId]);
 
   // =====================================================
@@ -534,7 +536,27 @@ useEffect(() => {
     });
 
     setMessages((prev) => {
-      // First load: set directly
+      // Initial fetch (over cache or empty): replace entirely for seamless display
+      if (!initialFetchDoneRef.current) {
+        initialFetchDoneRef.current = true;
+
+        // Keep any temp/optimistic messages that haven't resolved yet
+        const freshIds = new Set(finalMessages.map((m) => m.id));
+        const keptTemp = prev.filter(
+          (m) => m.id.startsWith("temp-") && !freshIds.has(m.id)
+        );
+
+        if (keptTemp.length === 0) return finalMessages;
+
+        const result = [...finalMessages, ...keptTemp];
+        result.sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        return result;
+      }
+
+      // Subsequent fetches (e.g., after sending): merge carefully
       if (prev.length === 0) return finalMessages;
 
       const prevMap = new Map(prev.map((m) => [m.id, m]));
@@ -556,14 +578,13 @@ useEffect(() => {
           if (m.id.startsWith("temp-")) return m;
           const fresh = freshMap.get(m.id);
           if (!fresh) return m;
-          // Only create new object if something meaningful changed
           if (
             m.delivery_status === fresh.delivery_status &&
             m.is_deleted === fresh.is_deleted &&
             m.content === fresh.content &&
             m.edited_at === fresh.edited_at
           ) {
-            return m; // Same reference — React skips re-render for this item
+            return m;
           }
           anyChanged = true;
           return {
@@ -577,10 +598,9 @@ useEffect(() => {
             read_at: fresh.read_at ?? m.read_at,
           };
         });
-        return anyChanged ? updated : prev; // Return same array ref if nothing changed
+        return anyChanged ? updated : prev;
       }
 
-      // New messages exist — append without disturbing existing messages
       const result = [
         ...prev.filter((m) => !m.id.startsWith("temp-") || !freshIds.has(m.id)),
         ...newMessages,
@@ -777,6 +797,10 @@ useEffect(() => {
         async (payload) => {
           const newMsg = payload.new as Message;
           if (myDeletionsRef.current.has(newMsg.id)) return;
+
+          // Skip realtime inserts until initial fetch completes
+          // (prevents individual messages from "popping in" during load)
+          if (!initialFetchDoneRef.current) return;
 
           let media: MessageMediaItem[] = [];
 if (newMsg.content_type === "media" || newMsg.content_type === "document") {
@@ -2792,11 +2816,13 @@ onTouchEnd={() => {
     )}
   </>
 )}
-                                    {m.media_type === "video" && (
-  <>
-    {m.url ? (
+                                     {m.media_type === "video" && (() => {
+  const thumbSrc = m.thumbnail_url || getVideoThumbnailUrl(m.url) || null;
+
+  if (m.url) {
+    return (
       <div
-        className="cursor-pointer active:scale-[0.98] transition-transform relative"
+        className="cursor-pointer active:scale-[0.98] transition-transform relative rounded-xl overflow-hidden"
         onClick={(e) => {
           e.stopPropagation();
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -2810,28 +2836,34 @@ onTouchEnd={() => {
           }
         }}
       >
-        <video
-          src={m.url}
-          poster={m.thumbnail_url || getVideoThumbnailUrl(m.url) || undefined}
-          className="rounded-xl max-w-full max-h-60"
-          preload="metadata"
-          playsInline
-          muted
-          controls={false}
-          disablePictureInPicture
-          controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
-          style={{ WebkitAppearance: "none" } as React.CSSProperties}
-        />
+        {thumbSrc ? (
+          <img
+            src={thumbSrc}
+            alt=""
+            className="rounded-xl max-w-full max-h-60 object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className={`rounded-xl w-48 h-32 flex items-center justify-center ${
+            isMine ? "bg-white/10" : "bg-dark-800"
+          }`}>
+            <span className="text-2xl">🎬</span>
+          </div>
+        )}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
             <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-14 border-l-white ml-1" />
           </div>
         </div>
       </div>
-    ) : m.thumbnail_url ? (
+    );
+  }
+
+  if (thumbSrc) {
+    return (
       <div className="relative rounded-xl overflow-hidden">
         <img
-          src={m.thumbnail_url}
+          src={thumbSrc}
           alt=""
           className="rounded-xl max-w-full max-h-60 object-cover"
         />
@@ -2844,23 +2876,25 @@ onTouchEnd={() => {
           <p className="text-[10px] text-white/70 truncate">{m.file_name}</p>
         </div>
       </div>
-    ) : (
-      <div
-        className={`flex items-center gap-3 p-4 rounded-xl ${
-          isMine ? "bg-white/10" : "bg-white/5"
-        }`}
-      >
-        <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
-          <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-white/60">Uploading video...</p>
-          <p className="text-[10px] text-white/40 truncate">{m.file_name}</p>
-        </div>
+    );
+  }
+
+  return (
+    <div
+      className={`flex items-center gap-3 p-4 rounded-xl ${
+        isMine ? "bg-white/10" : "bg-white/5"
+      }`}
+    >
+      <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
+        <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
       </div>
-    )}
-  </>
-)}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-white/60">Uploading video...</p>
+        <p className="text-[10px] text-white/40 truncate">{m.file_name}</p>
+      </div>
+    </div>
+  );
+})()}
                                     {m.media_type === "audio" && (
   <>
     {m.url ? (
@@ -3826,18 +3860,18 @@ onTouchEnd={() => {
                               }}
                               className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800 relative"
                             >
-                            <video
-                              src={m.url}
-                              poster={m.thumbnail_url || getVideoThumbnailUrl(m.url) || undefined}
-                              className="w-full h-full object-cover"
-                              preload="metadata"
-                              playsInline
-                              muted
-                              controls={false}
-                              disablePictureInPicture
-                              controlsList="nodownload nofullscreen noremoteplayback noplaybackrate"
-                              style={{ WebkitAppearance: "none" } as React.CSSProperties}
-                            />
+                              {(m.thumbnail_url || getVideoThumbnailUrl(m.url)) ? (
+                                <img
+                                  src={m.thumbnail_url || getVideoThumbnailUrl(m.url)!}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-dark-800">
+                                  <span className="text-lg">🎬</span>
+                                </div>
+                              )}
                               <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                                 <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center">
                                   <div className="w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-l-[7px] border-l-black ml-0.5" />
