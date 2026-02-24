@@ -23,11 +23,26 @@ const LS_KEY = "peja-auth";
 /** True when running inside a Capacitor Android shell */
 export function isCapacitorNative(): boolean {
   if (typeof window === "undefined") return false;
+  
+  // Must have the Capacitor bridge AND be running on a native platform
+  // (not just having the Capacitor JS package installed)
+  const cap = (window as any).Capacitor;
+  if (!cap) return false;
+  
+  // Capacitor.isNativePlatform() returns true only inside actual native shells
+  if (typeof cap.isNativePlatform === "function") {
+    return cap.isNativePlatform();
+  }
+  
+  // Fallback: check platform
+  if (cap.getPlatform && typeof cap.getPlatform === "function") {
+    const platform = cap.getPlatform();
+    return platform === "android" || platform === "ios";
+  }
+  
+  // Final fallback: check user agent for Android WebView
   const ua = navigator.userAgent || "";
-  return (
-    (/Android/.test(ua) && /wv/.test(ua)) ||
-    (window as any).Capacitor !== undefined
-  );
+  return /Android/.test(ua) && /wv/.test(ua);
 }
 
 /**

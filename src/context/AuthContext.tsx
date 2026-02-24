@@ -367,8 +367,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, newSession) => {
         console.log("Auth event:", event);
 
+        // TOKEN_REFRESHED: just update session reference, do nothing else
         if (event === 'TOKEN_REFRESHED') {
-          setSession(newSession);
+          if (newSession) setSession(newSession);
           return;
         }
 
@@ -377,30 +378,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (newSession?.user) {
           setSupabaseUser(newSession.user);
           
-          // Skip profile fetch if signIn/signUp is already handling it
-          // This prevents race conditions with fetchingRef and RLS timing
-          if (!signingInRef.current) {
-            fetchUserProfile(newSession.user.id).catch(() => {});
-          }
-          startUserRowSubscription(newSession.user.id).catch(() => {});
-          
-            if (event === 'SIGNED_IN') {
+          if (event === 'SIGNED_IN') {
+            // Only fetch profile on SIGNED_IN if signIn/signUp isn't handling it
+            if (!signingInRef.current) {
+              fetchUserProfile(newSession.user.id).catch(() => {});
+            }
+            startUserRowSubscription(newSession.user.id).catch(() => {});
             checkAndStartLocationTracking(newSession.user.id);
             presenceManager.start(newSession.user.id);
           }
-        } else {
-          // Only clear user state on explicit SIGNED_OUT event.
-          // Other events (INITIAL_SESSION, TOKEN_REFRESHED) may briefly
-          // have null session during transitions — don't wipe state for those.
+                } else {
           if (event === 'SIGNED_OUT') {
+            // Verify this is a REAL sign-out, not a false one from rate-limited token refresh.
+            // Check if localStorage still has a session — if so, the sign-out is fake.
+            const storedSession = typeof window !== "undefined" ? localStorage.getItem("peja-auth") : null;
+            let hasStoredSession = false;
+            try {
+              if (storedSession) {
+                const parsed = JSON.parse(storedSession);
+                hasStoredSession = !!(parsed?.access_token || parsed?.currentSession?.access_token);
+              }
+            } catch {}
+
+            if (hasStoredSession) {
+              console.log("[Auth] Ignoring false SIGNED_OUT (session still in storage, likely rate-limited refresh)");
+              // Don't clear anything — the session is still valid, just rate-limited
+              return;
+            }
+
             setUser(null);
             setSupabaseUser(null);
             setSession(null);
             userProfileCache = null;
             locationTracker.stop();
             presenceManager.stop();
-          } else {
-            console.log(`[Auth] Ignoring null session for event: ${event}`);
           }
         }
       }
@@ -731,10 +742,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(authData.session);
         setSupabaseUser(authData.user);
 
-        // Wait for Supabase client to internalize the new session token
-        await new Promise((r) => setTimeout(r, 300));
+        // Wait for Supabase client to actually have the session ready
+        for (let i = 0; i < 20; i++) {
+          await new Promise((r) => setTimeout(r, 150));
+          const { data: check } = await supabase.auth.getSession();
+          if (check.session?.access_token) break;
+        }
 
-        await fetchUserProfile(authData.user.id, true);
+        await fetchUserProfile(authData.user.id);
         checkAndStartLocationTracking(authData.user.id);
       }
 
@@ -784,11 +799,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(data.session);
       setSupabaseUser(data.user);
 
-      // Wait for Supabase client to internalize the new session token
-      // before making authenticated queries (prevents RLS empty errors)
-      await new Promise((r) => setTimeout(r, 300));
+      // Wait for Supabase client to actually have the session ready
+      // by polling getSession() until it returns a valid session
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        const { data: check } = await supabase.auth.getSession();
+        if (check.session?.access_token) break;
+      }
 
-      await fetchUserProfile(data.user.id, true);
+      await fetchUserProfile(data.user.id);
       checkAndStartLocationTracking(data.user.id);
 
       if (status === "suspended") {
