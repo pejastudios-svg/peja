@@ -129,6 +129,7 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
   const lastFetchRef = useRef<number>(0);
   const fetchInProgressRef = useRef<boolean>(false);
   const pendingClearRef = useRef<Set<string>>(new Set());
+  const pendingClearTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const initialFetchDoneRef = useRef(false);
 
   // =====================================================
@@ -140,13 +141,32 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
     const loadCached = async () => {
       const cached = await loadFromIDB();
       if (cached.length > 0) {
-        setConversations(cached);
+        // Apply any pending clears to cached data (in case IDB save was stale)
+        const withClears = pendingClearRef.current.size > 0
+          ? cached.map((c) =>
+              pendingClearRef.current.has(c.id) ? { ...c, unread_count: 0 } : c
+            )
+          : cached;
+        setConversations(withClears);
         setConversationsLoading(false);
       }
     };
     
     loadCached();
   }, [user?.id]);
+
+  // =====================================================
+  // HELPER: Check if a conversation is currently being viewed
+  // This is the SINGLE SOURCE OF TRUTH for "is user looking at this chat"
+  // =====================================================
+  const isConversationActive = useCallback((conversationId: string): boolean => {
+    if (typeof window === "undefined") return false;
+    // Check the global flag set by chat page on mount/unmount
+    if ((window as any).__pejaActiveConversationId === conversationId) return true;
+    // Fallback: check URL
+    if (window.location.pathname.includes(conversationId)) return true;
+    return false;
+  }, []);
 
   // =====================================================
   // FETCH CONVERSATIONS (with smart debouncing)
@@ -229,8 +249,8 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
       // Batch count unread - use Promise.all for speed
       const unreadResults = await Promise.all(
         convIds.map(async (convId) => {
-          // If this conversation was recently cleared, return 0
-          if (pendingClearRef.current.has(convId)) {
+          // If this conversation is currently being viewed OR has a pending clear, return 0
+          if (pendingClearRef.current.has(convId) || isConversationActive(convId)) {
             return { convId, count: 0 };
           }
           
@@ -266,8 +286,8 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
             }
           }
 
-          // Respect pending clears
-          const unreadCount = pendingClearRef.current.has(conv.id) 
+          // Respect pending clears AND active conversation
+          const unreadCount = (pendingClearRef.current.has(conv.id) || isConversationActive(conv.id))
             ? 0 
             : (unreadCounts[conv.id] || 0);
 
@@ -280,14 +300,21 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
         })
         .filter(Boolean) as ConversationWithUser[];
 
-      setConversations(merged);
+      // FINAL SAFETY NET: Apply pendingClearRef one more time before setting state.
+      // This catches any edge case where the DB returned stale data.
+      const finalMerged = pendingClearRef.current.size > 0
+        ? merged.map((c) =>
+            (pendingClearRef.current.has(c.id) || isConversationActive(c.id))
+              ? { ...c, unread_count: 0 }
+              : c
+          )
+        : merged;
+
+      setConversations(finalMerged);
       initialFetchDoneRef.current = true;
       
       // Save to IndexedDB for instant restore
-      saveToIDB(merged);
-      
-      // Clear pending clears after successful fetch
-      pendingClearRef.current.clear();
+      saveToIDB(finalMerged);
       
     } catch (e: any) {
       console.error("fetchConversations error:", e?.message || e);
@@ -295,7 +322,7 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
       setConversationsLoading(false);
       fetchInProgressRef.current = false;
     }
-  }, [user?.id]);
+  }, [user?.id, isConversationActive]);
 
   // =====================================================
   // INITIAL FETCH + REALTIME
@@ -317,7 +344,7 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
       fetchTimeout = setTimeout(() => fetchConversations(true), 500);
     };
 
-     const channel = supabase
+    const channel = supabase
       .channel(`dm-cache-${user.id}-${Date.now()}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
         const msg = payload.new as any;
@@ -326,21 +353,39 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
         if (!initialFetchDoneRef.current) return;
 
         setConversations((prev) => {
-          const isViewing = typeof window !== "undefined" &&
-            window.location.pathname.includes(msg.conversation_id);
+          // USE THE AUTHORITATIVE CHECK: is user currently viewing this chat?
+          const isActive = isConversationActive(msg.conversation_id);
+          // Also check pendingClearRef (user recently viewed and left)
+          const isCleared = pendingClearRef.current.has(msg.conversation_id);
 
           const updated = prev.map((c) => {
             if (c.id !== msg.conversation_id) return c;
 
-            // Dedup: skip if BottomNav already processed this
+            // Dedup: skip if we already processed this message timestamp
             if (
               c.last_message_at &&
               new Date(c.last_message_at).getTime() >= new Date(msg.created_at).getTime()
             ) {
+              // Even if deduped, enforce unread=0 if active or cleared
+              if ((isActive || isCleared) && c.unread_count > 0) {
+                return { ...c, unread_count: 0 };
+              }
               return c;
             }
 
             const isFromOther = msg.sender_id !== user.id;
+
+            // DETERMINE UNREAD COUNT:
+            // - If user is actively viewing this chat → 0
+            // - If conversation was recently cleared (pendingClearRef) → 0
+            // - If message is from the other user and NOT viewing → increment
+            // - If message is from me → keep current
+            let newUnreadCount = c.unread_count;
+            if (isActive || isCleared) {
+              newUnreadCount = 0;
+            } else if (isFromOther) {
+              newUnreadCount = (c.unread_count || 0) + 1;
+            }
 
             return {
               ...c,
@@ -351,10 +396,7 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
               last_message_sender_id: msg.sender_id,
               last_message_seen: false,
               updated_at: msg.created_at,
-              unread_count:
-                isFromOther && !isViewing
-                  ? (c.unread_count || 0) + 1
-                  : c.unread_count,
+              unread_count: newUnreadCount,
             };
           });
 
@@ -378,12 +420,18 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
         setConversations((prev) => {
           const newList = prev.map((c) => {
             if (c.id !== updated.id) return c;
+
+            // Preserve unread count — don't let conversation updates reset it
+            // Also enforce cleared/active state
+            const shouldBeZero = pendingClearRef.current.has(c.id) || isConversationActive(c.id);
+
             return {
               ...c,
               last_message_text: updated.last_message_text ?? c.last_message_text,
               last_message_at: updated.last_message_at ?? c.last_message_at,
               last_message_sender_id: updated.last_message_sender_id ?? c.last_message_sender_id,
               updated_at: updated.updated_at ?? c.updated_at,
+              unread_count: shouldBeZero ? 0 : c.unread_count,
             };
           });
 
@@ -432,7 +480,7 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, [user?.id, user?.is_vip, fetchConversations]);
+  }, [user?.id, user?.is_vip, fetchConversations, isConversationActive]);
 
   // =====================================================
   // CACHE HELPERS
@@ -464,15 +512,24 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
   // INSTANT OPTIMISTIC UPDATES
   // =====================================================
   const clearUnread = useCallback((conversationId: string) => {
-    // Add to pending clears so fetch doesn't override
     pendingClearRef.current.add(conversationId);
+    
+    // Auto-expire after 15 seconds (DB should have updated by then)
+    const existing = pendingClearTimersRef.current.get(conversationId);
+    if (existing) clearTimeout(existing);
+    pendingClearTimersRef.current.set(
+      conversationId,
+      setTimeout(() => {
+        pendingClearRef.current.delete(conversationId);
+        pendingClearTimersRef.current.delete(conversationId);
+      }, 15000)
+    );
     
     // Update state immediately
     setConversations((prev) => {
       const updated = prev.map((c) => 
         c.id === conversationId ? { ...c, unread_count: 0 } : c
       );
-      // Save to IDB
       saveToIDB(updated);
       return updated;
     });
@@ -496,7 +553,7 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
     }
   }, [user?.id, clearUnread]);
 
-   const updateLastMessage = useCallback((conversationId: string, text: string, senderId: string) => {
+  const updateLastMessage = useCallback((conversationId: string, text: string, senderId: string) => {
     setConversations((prev) => {
       const now = new Date().toISOString();
       const updated = prev.map((c) =>

@@ -264,7 +264,7 @@ export default function CreatePostPage() {
     );
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
 
     const currentPhotos = media.filter((m) => m.type.startsWith("image/")).length;
@@ -289,10 +289,26 @@ export default function CreatePostPage() {
       }
     }
 
-    const newPreviews = files.map((file) => ({
-      url: URL.createObjectURL(file),
-      type: file.type.startsWith("video/") ? "video" : "image",
-    }));
+    const newPreviews: { url: string; type: string }[] = [];
+
+    for (const file of files) {
+      if (file.type.startsWith("video/")) {
+        let thumbUrl: string | null = null;
+        try {
+          const { generateVideoThumbnail } = await import("@/lib/videoThumbnail");
+          thumbUrl = await generateVideoThumbnail(file);
+        } catch {}
+        newPreviews.push({
+          url: thumbUrl || "",
+          type: "video",
+        });
+      } else {
+        newPreviews.push({
+          url: URL.createObjectURL(file),
+          type: "image",
+        });
+      }
+    }
 
     setMedia((prev) => [...prev, ...files]);
     setMediaPreviews((prev) => [...prev, ...newPreviews]);
@@ -634,7 +650,13 @@ export default function CreatePostPage() {
                 <div key={index} className="relative aspect-square rounded-xl overflow-hidden bg-dark-800">
                   {preview.type === "video" ? (
                     <div className="relative w-full h-full">
-                      <video src={preview.url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
+                      {preview.url ? (
+                        <img src={preview.url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full bg-dark-800 flex items-center justify-center">
+                          <Video className="w-5 h-5 text-dark-500" />
+                        </div>
+                      )}
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                         <Play className="w-5 h-5 text-white" />
                       </div>

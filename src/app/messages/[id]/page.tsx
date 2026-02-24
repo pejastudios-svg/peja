@@ -188,6 +188,8 @@ export default function ChatPage() {
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const myDeletionsRef = useRef<Set<string>>(new Set());
   const otherUserOnlineRef = useRef(false);
+    const messagesRef = useRef<Message[]>([]);
+    const saveCacheTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const initialFetchDoneRef = useRef(false);
 
   // Reset scroll flags when conversation changes
@@ -197,6 +199,43 @@ export default function ChatPage() {
     messagesLengthRef.current = 0;
     initialFetchDoneRef.current = false;
   }, [conversationId]);
+
+    // =====================================================
+  // KEEP LOCAL CACHE FRESH — saves after every state change (debounced)
+  // This ensures re-opening a chat shows up-to-date messages instantly
+  // =====================================================
+  useEffect(() => {
+    if (!conversationId || messages.length === 0) return;
+    if (!initialFetchDoneRef.current) return;
+
+    if (saveCacheTimeoutRef.current) clearTimeout(saveCacheTimeoutRef.current);
+
+    saveCacheTimeoutRef.current = setTimeout(() => {
+      try {
+        // Only cache messages that have their media resolved (no temp media, no empty URLs for media messages)
+        const cacheData = messages
+          .filter((m) => {
+            if (m.id.startsWith("temp-")) return false;
+            // Skip media messages that haven't resolved their media yet
+            if (
+              (m.content_type === "media" || m.content_type === "document") &&
+              (!m.media || m.media.length === 0 || m.media.some((med) => !med.url))
+            ) {
+              return false;
+            }
+            return true;
+          })
+          .slice(-100);
+        if (cacheData.length > 0) {
+          localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
+        }
+      } catch {}
+    }, 1000); // Longer debounce to ensure media has resolved
+
+    return () => {
+      if (saveCacheTimeoutRef.current) clearTimeout(saveCacheTimeoutRef.current);
+    };
+  }, [messages, conversationId]);
 
   // =====================================================
   // AUTH GUARD
@@ -536,81 +575,88 @@ useEffect(() => {
     });
 
     setMessages((prev) => {
-      // Initial fetch (over cache or empty): replace entirely for seamless display
-      if (!initialFetchDoneRef.current) {
-        initialFetchDoneRef.current = true;
-
-        // Keep any temp/optimistic messages that haven't resolved yet
-        const freshIds = new Set(finalMessages.map((m) => m.id));
-        const keptTemp = prev.filter(
-          (m) => m.id.startsWith("temp-") && !freshIds.has(m.id)
-        );
-
-        if (keptTemp.length === 0) return finalMessages;
-
-        const result = [...finalMessages, ...keptTemp];
-        result.sort(
-          (a, b) =>
-            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-        return result;
-      }
-
-      // Subsequent fetches (e.g., after sending): merge carefully
-      if (prev.length === 0) return finalMessages;
-
-      const prevMap = new Map(prev.map((m) => [m.id, m]));
+      const freshMap = new Map(finalMessages.map((m) => [m.id, m]));
       const freshIds = new Set(finalMessages.map((m) => m.id));
 
-      // Find genuinely new messages not already displayed
-      const newMessages = finalMessages.filter((m) => !prevMap.has(m.id));
-
-      // Keep temp/optimistic messages not yet resolved
+      // Keep any temp/optimistic messages that haven't resolved
       const keptTemp = prev.filter(
         (m) => m.id.startsWith("temp-") && !freshIds.has(m.id)
       );
 
-      if (newMessages.length === 0 && keptTemp.length === 0) {
-        // No new messages — silently update metadata without visual pop
-        const freshMap = new Map(finalMessages.map((m) => [m.id, m]));
-        let anyChanged = false;
-        const updated = prev.map((m) => {
-          if (m.id.startsWith("temp-")) return m;
-          const fresh = freshMap.get(m.id);
-          if (!fresh) return m;
-          if (
-            m.delivery_status === fresh.delivery_status &&
-            m.is_deleted === fresh.is_deleted &&
-            m.content === fresh.content &&
-            m.edited_at === fresh.edited_at
-          ) {
-            return m;
-          }
-          anyChanged = true;
-          return {
-            ...m,
-            delivery_status: fresh.delivery_status ?? m.delivery_status,
-            is_deleted: fresh.is_deleted,
-            content: fresh.content,
-            edited_at: fresh.edited_at,
-            media: fresh.media && fresh.media.length > 0 ? fresh.media : m.media,
-            reactions: fresh.reactions ?? m.reactions,
-            read_at: fresh.read_at ?? m.read_at,
-          };
-        });
-        return anyChanged ? updated : prev;
+      // First load over empty state: set directly
+      if (prev.length === 0) {
+        initialFetchDoneRef.current = true;
+        if (keptTemp.length === 0) return finalMessages;
+        const result = [...finalMessages, ...keptTemp];
+        result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        return result;
       }
 
-      const result = [
-        ...prev.filter((m) => !m.id.startsWith("temp-") || !freshIds.has(m.id)),
-        ...newMessages,
-        ...keptTemp,
-      ];
-      result.sort(
-        (a, b) =>
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-      return result;
+      // Subsequent loads: preserve existing object references where nothing changed
+      // This prevents React from re-rendering messages (and flashing media)
+      const prevMap = new Map(prev.map((m) => [m.id, m]));
+
+      let anyStructuralChange = false;
+
+      // Check if the set of message IDs changed
+      const prevRealIds = new Set(prev.filter((m) => !m.id.startsWith("temp-")).map((m) => m.id));
+      if (prevRealIds.size !== freshIds.size || [...freshIds].some((id) => !prevRealIds.has(id))) {
+        anyStructuralChange = true;
+      }
+
+      const merged = finalMessages.map((fresh) => {
+        const existing = prevMap.get(fresh.id);
+        if (!existing) return fresh; // New message
+
+        // Compare meaningful fields — if same, keep old reference (React skips re-render)
+        const mediaChanged =
+          (existing.media?.length || 0) !== (fresh.media?.length || 0) ||
+          (fresh.media?.length || 0) > 0 && existing.media?.some((em, i) => {
+            const fm = fresh.media?.[i];
+            return !fm || em.url !== fm.url;
+          });
+
+        if (
+          existing.delivery_status === fresh.delivery_status &&
+          existing.is_deleted === fresh.is_deleted &&
+          existing.content === fresh.content &&
+          existing.edited_at === fresh.edited_at &&
+          existing.read_at === fresh.read_at &&
+          (existing.reactions?.length || 0) === (fresh.reactions?.length || 0) &&
+          !mediaChanged
+        ) {
+          return existing; // SAME REFERENCE — React will skip re-rendering this message
+        }
+
+        anyStructuralChange = true;
+        // Something changed — create new object but preserve existing media if fresh has none
+        return {
+          ...existing,
+          delivery_status: fresh.delivery_status ?? existing.delivery_status,
+          is_deleted: fresh.is_deleted,
+          content: fresh.content,
+          edited_at: fresh.edited_at,
+          read_at: fresh.read_at ?? existing.read_at,
+          reactions: fresh.reactions ?? existing.reactions,
+          reply_to: fresh.reply_to ?? existing.reply_to,
+          media: fresh.media && fresh.media.length > 0 ? fresh.media : existing.media,
+        };
+      });
+
+      initialFetchDoneRef.current = true;
+
+      if (!anyStructuralChange && keptTemp.length === 0) {
+        // Nothing changed at all — return exact same array reference
+        return prev;
+      }
+
+      if (keptTemp.length > 0) {
+        const result = [...merged, ...keptTemp];
+        result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        return result;
+      }
+
+      return merged;
     });
 
     try {
@@ -715,6 +761,11 @@ useEffect(() => {
   // AUTO-SCROLL ONLY FOR OWN MESSAGES
   // With column-reverse, we're always "at bottom" by default
   // =====================================================
+  // Keep ref in sync for unmount cache save
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   useEffect(() => {
     if (messages.length === 0) return;
     
@@ -778,6 +829,23 @@ useEffect(() => {
     container.addEventListener("touchmove", handler, { passive: false });
     return () => container.removeEventListener("touchmove", handler);
   }, [swipingMsgId, swipeX]);
+
+    // Save cache when leaving chat
+  useEffect(() => {
+    return () => {
+      if (saveCacheTimeoutRef.current) clearTimeout(saveCacheTimeoutRef.current);
+      try {
+        const current = messagesRef.current;
+        if (current.length > 0) {
+          const cacheData = current
+            .filter((m) => !m.id.startsWith("temp-"))
+            .slice(-100);
+          localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
+        }
+      } catch {}
+    };
+  }, [MSG_CACHE_KEY]);
+  
     // =====================================================
   // REALTIME: Messages + Read receipts + Reactions
   // =====================================================
@@ -799,27 +867,38 @@ useEffect(() => {
           if (myDeletionsRef.current.has(newMsg.id)) return;
 
           // Skip realtime inserts until initial fetch completes
-          // (prevents individual messages from "popping in" during load)
           if (!initialFetchDoneRef.current) return;
 
+          // Skip if this message is already in state (from fetchMessages or optimistic)
+          // This prevents duplicate rendering / media pop-in on initial load
+          setMessages((prev) => {
+            const existing = prev.find((m) => m.id === newMsg.id || (m.id.startsWith("temp-") && false));
+            if (existing && !existing.id.startsWith("temp-")) return prev; // Already have real message
+            return prev; // Will be handled below after media fetch
+          });
+
+          // Check if we already have this message with media
+          const alreadyHave = messagesRef.current.find(
+            (m) => m.id === newMsg.id && !m.id.startsWith("temp-")
+          );
+          if (alreadyHave && alreadyHave.media && alreadyHave.media.length > 0) return;
+
+          // Fetch media and reply data
           let media: MessageMediaItem[] = [];
-if (newMsg.content_type === "media" || newMsg.content_type === "document") {
-  // Wait for media to be inserted, with retry
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await new Promise((r) => setTimeout(r, 800));
-    const { data } = await supabase
-      .from("message_media")
-      .select("*")
-      .eq("message_id", newMsg.id);
-    
-    if (data && data.length > 0) {
-      media = data as MessageMediaItem[];
-      break;
-    }
-    
-    console.log(`[Realtime] Media fetch attempt ${attempt + 1} - no media found yet`);
-  }
-}
+          if (newMsg.content_type === "media" || newMsg.content_type === "document") {
+            for (let attempt = 0; attempt < 3; attempt++) {
+              await new Promise((r) => setTimeout(r, 600));
+              const { data } = await supabase
+                .from("message_media")
+                .select("*")
+                .eq("message_id", newMsg.id);
+
+              if (data && data.length > 0) {
+                media = data as MessageMediaItem[];
+                break;
+              }
+            }
+          }
 
           let replyTo: Message | null = null;
           if (newMsg.reply_to_id) {
@@ -832,14 +911,39 @@ if (newMsg.content_type === "media" || newMsg.content_type === "document") {
           }
 
           setMessages((prev) => {
+            // If message already exists with media, just update metadata
             const existing = prev.find((m) => m.id === newMsg.id);
             if (existing) {
-              return prev.map((m) =>
-                m.id === newMsg.id
-                  ? { ...m, media: media.length > 0 ? media : m.media }
-                  : m
-              );
+              // Only update if we have better data
+              if (media.length > 0 && (!existing.media || existing.media.length === 0)) {
+                return prev.map((m) =>
+                  m.id === newMsg.id
+                    ? { ...m, media }
+                    : m
+                );
+              }
+              return prev; // Already have this message with media, skip
             }
+
+            // Replace temp message if one matches
+            const tempIdx = prev.findIndex(
+              (m) => m.id.startsWith("temp-") && m.sender_id === newMsg.sender_id &&
+                Math.abs(new Date(m.created_at).getTime() - new Date(newMsg.created_at).getTime()) < 10000
+            );
+
+            if (tempIdx !== -1) {
+              const updated = [...prev];
+              updated[tempIdx] = {
+                ...newMsg,
+                media: media.length > 0 ? media : updated[tempIdx].media,
+                delivery_status: newMsg.sender_id === user.id ? ("sent" as const) : undefined,
+                reactions: [],
+                reply_to: replyTo,
+              };
+              return updated;
+            }
+
+            // Genuinely new message — add it
             return [
               ...prev,
               {

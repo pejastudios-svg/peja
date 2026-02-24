@@ -158,7 +158,7 @@ export function BottomNav() {
           });
         }
       )
-      .on(
+            .on(
         "postgres_changes",
         {
           event: "UPDATE",
@@ -166,14 +166,15 @@ export function BottomNav() {
           table: "conversation_participants",
           filter: `user_id=eq.${user.id}`,
         },
-        () => {
-          const activeConvo = (window as any).__pejaActiveConversationId;
-          setTimeout(() => {
-            fetchConversations(true);
-            if (activeConvo) {
-              setTimeout(() => clearUnread(activeConvo), 200);
-            }
-          }, 500);
+        (payload) => {
+          const updated = payload.new as any;
+
+          // When last_read_at is updated (user read a chat), just clear the badge.
+          // Do NOT trigger a full fetchConversations — that causes race conditions
+          // where stale DB data overwrites the optimistic clear.
+          if (updated?.conversation_id) {
+            clearUnread(updated.conversation_id);
+          }
         }
       )
       .subscribe();

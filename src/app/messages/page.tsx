@@ -163,23 +163,43 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (user?.id && user.is_vip) {
+      // Re-apply clearUnread for the chat we just left
+      // This ensures the badge stays cleared even if fetchConversations returns stale data
+      try {
+        const lastChatId = sessionStorage.getItem("peja-last-chat-id");
+        if (lastChatId) {
+          clearUnread(lastChatId);
+        }
+      } catch {}
+
       fetchConversations();
     }
-  }, [user?.id, fetchConversations]);
+  }, [user?.id, fetchConversations, clearUnread]);
 
-  // Refresh on focus - context handles optimistic updates
+  // Refresh on focus - clear unreads FIRST, then fetch
   useEffect(() => {
     const handleFocus = () => {
+      // STEP 1: Re-apply clears IMMEDIATELY before any fetch.
+      // This ensures the badge is visually 0 even if fetchConversations
+      // returns stale data from the DB.
+      try {
+        const lastChatId = sessionStorage.getItem("peja-last-chat-id");
+        if (lastChatId) {
+          clearUnread(lastChatId);
+        }
+      } catch {}
+
+      const activeConvo = (window as any).__pejaActiveConversationId;
+      if (activeConvo) {
+        clearUnread(activeConvo);
+      }
+
+      // STEP 2: Fetch fresh data after a short delay.
+      // clearUnread added the ID to pendingClearRef, so fetchConversations
+      // will respect it and return 0 for that conversation.
       setTimeout(() => {
         fetchConversations();
-        // Re-clear unread for active conversation after fetch overwrites optimistic state
-        setTimeout(() => {
-          const activeConvo = (window as any).__pejaActiveConversationId;
-          if (activeConvo) {
-            clearUnread(activeConvo);
-          }
-        }, 200);
-      }, 300);
+      }, 500);
     };
 
     window.addEventListener("focus", handleFocus);
@@ -192,7 +212,7 @@ export default function MessagesPage() {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [fetchConversations]);
+  }, [fetchConversations, clearUnread]);
 
   // =====================================================
   // SEARCH VIPs
