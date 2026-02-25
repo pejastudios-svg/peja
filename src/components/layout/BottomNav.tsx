@@ -51,8 +51,6 @@ export function BottomNav() {
 
   // =====================================================
   // REALTIME — always active, even when nav is hidden
-  // This is the proven working listener. It updates the
-  // context so both badge AND messages list update instantly.
   // =====================================================
   useEffect(() => {
     if (!isVip || !user?.id) return;
@@ -137,28 +135,11 @@ export function BottomNav() {
               return bTime - aTime;
             });
 
-            // Protect optimistic data from being overwritten by fetchConversations
-            if (msg.sender_id !== user.id && (window as any).__pejaActiveConversationId !== msg.conversation_id) {
-              const tracker = (window as any).__pejaUnreadProtect || {};
-              const protConv = updated.find((c) => c.id === msg.conversation_id);
-              if (protConv && protConv.unread_count > 0) {
-                tracker[msg.conversation_id] = {
-                  time: Date.now(),
-                  unread: protConv.unread_count,
-                  text: protConv.last_message_text,
-                  messageAt: protConv.last_message_at,
-                  senderId: protConv.last_message_sender_id,
-                  seen: protConv.last_message_seen,
-                };
-                (window as any).__pejaUnreadProtect = tracker;
-              }
-            }
-
             return updated;
           });
         }
       )
-            .on(
+      .on(
         "postgres_changes",
         {
           event: "UPDATE",
@@ -182,63 +163,7 @@ export function BottomNav() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isVip, user?.id, setConversations, fetchConversations]);
-
-  // =====================================================
-  // ENFORCEMENT: Restore optimistic unreads after any
-  // fetchConversations overwrites them. Runs whenever
-  // conversations change from ANY source.
-  // =====================================================
-  useEffect(() => {
-    const tracker = (window as any).__pejaUnreadProtect;
-    if (!tracker || Object.keys(tracker).length === 0) return;
-
-    const now = Date.now();
-    let needsCorrection = false;
-
-    // Check if any protected conversations were wiped
-    for (const convId of Object.keys(tracker)) {
-      const prot = tracker[convId];
-      // Expire protection after 30 seconds
-      if (now - prot.time > 30000) {
-        delete tracker[convId];
-        continue;
-      }
-      // Don't protect active conversation
-      if ((window as any).__pejaActiveConversationId === convId) {
-        delete tracker[convId];
-        continue;
-      }
-      const conv = conversations.find((c) => c.id === convId);
-      if (conv && (conv.unread_count || 0) < prot.unread) {
-        needsCorrection = true;
-        break;
-      }
-    }
-
-    if (needsCorrection) {
-      setConversations((prev) => {
-        let changed = false;
-        const restored = prev.map((c) => {
-          const prot = tracker[c.id];
-          if (!prot) return c;
-          if ((c.unread_count || 0) < prot.unread) {
-            changed = true;
-            return {
-              ...c,
-              unread_count: prot.unread,
-              last_message_text: prot.text,
-              last_message_at: prot.messageAt,
-              last_message_sender_id: prot.senderId,
-              last_message_seen: prot.seen,
-            };
-          }
-          return c;
-        });
-        return changed ? restored : prev;
-      });
-    }
-  }, [conversations, setConversations]);
+  }, [isVip, user?.id, setConversations, fetchConversations, clearUnread]);
 
   // Now that all hooks have been called, we can return null
   if (isHidden) return null;
