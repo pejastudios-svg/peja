@@ -308,6 +308,13 @@ export function InlineVideo({
     };
   }, []);
 
+  // Reset video state when src changes (e.g. media carousel)
+  useEffect(() => {
+    setVideoReady(false);
+    setIsPlaying(false);
+    setProgress(0);
+  }, [optimizedSrc]);
+
   useEffect(() => {
     return () => {
       const v = videoRef.current;
@@ -326,13 +333,12 @@ export function InlineVideo({
       onClick={handleContainerClick}
       onContextMenu={(e) => e.preventDefault()}
     >
-        <video
+      <video
         ref={videoRef}
         src={optimizedSrc}
-        poster={effectivePoster}
-        className={className}
+        className={`${className} ${!videoReady ? "opacity-0" : "opacity-100"}`}
         playsInline
-        preload="auto"
+        preload="metadata"
         muted
         loop
         onTimeUpdate={handleTimeUpdate}
@@ -346,22 +352,24 @@ export function InlineVideo({
         onError={() => onError?.()}
       />
 
-            {/* Poster overlay — prevents black flash until first frame renders */}
-      {!videoReady && effectivePoster && (
-        <img
-          src={effectivePoster}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover z-[1] pointer-events-none"
-        />
+      {/* Poster overlay — always covers the video until first frame actually renders */}
+      {!videoReady && (
+        <div className="absolute inset-0 z-[1] pointer-events-none">
+          {effectivePoster ? (
+            <img
+              src={effectivePoster}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full bg-dark-800" />
+          )}
+        </div>
       )}
 
-      {/* Loading shimmer when no poster available */}
-      {!videoReady && !effectivePoster && (
-        <div className="absolute inset-0 z-[1] pointer-events-none bg-dark-800 animate-pulse" />
-      )}
-
+      {/* Custom play button overlay — shown when not playing and not autoPlay, OR when video isn't ready yet and not autoPlay */}
       {!isPlaying && !autoPlay && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-5">
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-[2]">
           <button
             onClick={togglePlay}
             className="p-4 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
@@ -371,8 +379,20 @@ export function InlineVideo({
         </div>
       )}
 
+      {/* Play button on poster when autoPlay but video hasn't started yet (Android/slow networks) */}
+      {!videoReady && autoPlay && !isPlaying && (
+        <div className="absolute inset-0 flex items-center justify-center z-[2]">
+          <button
+            onClick={togglePlay}
+            className="p-4 rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors"
+          >
+            <Play className="w-8 h-8 fill-current" />
+          </button>
+        </div>
+      )}
+
       <div
-        className={`absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 ${
+        className={`absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 z-[3] ${
           showControls || !isPlaying ? "opacity-100" : "opacity-0"
         }`}
         onClick={(e) => e.stopPropagation()}

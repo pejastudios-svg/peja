@@ -35,16 +35,15 @@ export function isCapacitorNative(): boolean {
  * (has access_token, refresh_token, not empty/null)
  */
 function isValidSessionString(value: string | null | undefined): boolean {
-  if (!value || value === "null" || value === "{}" || value.length < 20) return false;
+  if (!value || value === "null" || value === "undefined" || value === "{}" || value.length < 50) return false;
   try {
     const parsed = JSON.parse(value);
+    if (typeof parsed !== "object" || parsed === null) return false;
     // Supabase stores session as an object with access_token and refresh_token
     // It can be nested: { currentSession: { access_token, refresh_token } }
     // Or flat: { access_token, refresh_token }
-    if (parsed.access_token && parsed.refresh_token) return true;
-    if (parsed.currentSession?.access_token && parsed.currentSession?.refresh_token) return true;
-    // Some versions store it differently
-    if (typeof parsed === "object" && Object.keys(parsed).length > 2) return true;
+    if (typeof parsed.access_token === "string" && typeof parsed.refresh_token === "string") return true;
+    if (typeof parsed.currentSession?.access_token === "string" && typeof parsed.currentSession?.refresh_token === "string") return true;
     return false;
   } catch {
     return false;
@@ -101,6 +100,8 @@ export async function syncSessionToNative(): Promise<void> {
     if (isValidSessionString(session)) {
       await Preferences.set({ key: NATIVE_SESSION_KEY, value: session! });
     }
+    // If localStorage session is invalid, do NOT overwrite native backup.
+    // The native backup may still be valid and needed for restore on next launch.
   } catch {}
 }
 

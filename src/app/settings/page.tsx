@@ -30,7 +30,7 @@ import {
 export default function SettingsPage() {
   useScrollRestore("settings");
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -60,13 +60,14 @@ export default function SettingsPage() {
   // Debug info
   const [debugInfo, setDebugInfo] = useState<string>("");
 useScrollRestore("settings");
-  useEffect(() => {
+    useEffect(() => {
+    if (authLoading) return;
     if (user) {
       loadSettings();
     } else {
-      setLoading(false);
+      window.location.replace("/login");
     }
-  }, [user]);
+  }, [user, authLoading]);
 
   const loadSettings = async () => {
     if (!user) {

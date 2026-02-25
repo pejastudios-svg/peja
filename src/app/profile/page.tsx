@@ -38,7 +38,7 @@ export default function ProfilePage() {
   const feedCache = useFeedCache();
   const router = useRouter();
   const pathname = usePathname();
-  const { user, signOut } = useAuth();
+    const { user, signOut, loading: authLoading } = useAuth();
 
   // --- INSTANT CACHE INITIALIZATION ---
   const [userPosts, setUserPosts] = useState<Post[]>(() => {
@@ -91,12 +91,12 @@ export default function ProfilePage() {
     router.prefetch("/settings");
   }, [router]);
 
-  // Handle Auth Redirects
-  useEffect(() => {
-    if (user === null) {
-      // Optional auth logic
+   // Handle Auth Redirects — redirect to login if session is truly gone
+   useEffect(() => {
+    if (!authLoading && !user) {
+      window.location.replace("/login");
     }
-  }, [user, router]);
+  }, [authLoading, user]);
 
   // --- FETCH DATA (stale-while-revalidate) ---
   useEffect(() => {
@@ -324,6 +324,8 @@ export default function ProfilePage() {
   // ============================================================
 
   if (!user) {
+    // AuthLoading=true: show skeleton briefly while session is being checked
+    // AuthLoading=false: the useEffect above will redirect to /login
     return (
       <div className="min-h-screen pb-20 pt-14">
         <div className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5 h-14" />

@@ -307,7 +307,6 @@ let userProfileCache: { userId: string; profile: User; timestamp: number } | nul
 const CACHE_DURATION = 5 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [lastStatus, setLastStatus] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -336,7 +335,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           checkAndStartLocationTracking(currentSession.user.id);
           presenceManager.start(currentSession.user.id);
           await startUserRowSubscription(currentSession.user.id);
-          subscribeToMyUserRow(currentSession.user.id);
         } else {
           // No cached session — try refreshing (handles expired access tokens)
           const { data: { session: refreshed } } = await supabase.auth.refreshSession();
@@ -347,7 +345,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             checkAndStartLocationTracking(refreshed.user.id);
             presenceManager.start(refreshed.user.id);
             await startUserRowSubscription(refreshed.user.id);
-            subscribeToMyUserRow(refreshed.user.id);
           }
         }
       } catch (error) {
@@ -380,7 +377,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSupabaseUser(newSession.user);
           fetchUserProfile(newSession.user.id).catch(() => {});
           startUserRowSubscription(newSession.user.id).catch(() => {});
-          subscribeToMyUserRow(newSession.user.id);
           
             if (event === 'SIGNED_IN') {
             checkAndStartLocationTracking(newSession.user.id);
@@ -396,9 +392,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
+    // Re-validate session when app resumes from background (Capacitor fix)
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState !== "visible") return;
+
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+
+        if (!currentSession) {
+          // Session gone — try to restore from native storage
+          await restoreNativeSession();
+          const { data: { session: restored } } = await supabase.auth.getSession();
+
+          if (!restored) {
+            // Try refreshing the token
+            const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+
+            if (!refreshed) {
+              // Truly logged out — clear state
+              console.log("[Auth] Session lost on resume, clearing state");
+              setUser(null);
+              setSupabaseUser(null);
+              setSession(null);
+              userProfileCache = null;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[Auth] Visibility change session check failed:", err);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       subscription.unsubscribe();
       locationTracker.stop();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -598,57 +628,6 @@ console.error("Profile fetch error:", {
     userRowChannelRef.current = ch;
   };
 
-  const subscribeToMyUserRow = (userId: string) => {
-    // Remove any previous channel
-    supabase.removeAllChannels?.(); // safe no-op if not available
-
-    const ch = supabase
-      .channel(`user-row-${userId}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "users", filter: `id=eq.${userId}` },
-        async (payload) => {
-          const u: any = payload.new;
-          if (!u?.id) return;
-
-          // Update local user state immediately
-          setUser((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              status: u.status,
-              is_guardian: u.is_guardian ?? prev.is_guardian,
-              is_admin: u.is_admin ?? prev.is_admin,
-              is_vip: u.is_vip ?? prev.is_vip,
-            };
-          });
-
-          // Toast on status change (in-app, no browser alert)
-          if (u.status && u.status !== lastStatus) {
-            setLastStatus(u.status);
-
-            if (u.status === "suspended") {
-              setFlashToast("warning", "Your account has been suspended.");
-            }
-
-            if (u.status === "banned") {
-              setFlashToast("danger", "Your account has been banned.");
-
-              // Immediately kick out
-              await supabase.auth.signOut();
-              setUser(null);
-              setSupabaseUser(null);
-              setSession(null);
-
-              window.location.assign("/login");
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return ch;
-  };
 
   async function signUp(email: string, password: string, fullName: string, phone: string) {
     try {

@@ -304,7 +304,7 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
                   ) : (
                     <InlineVideo
                       src={currentMedia.url}
-                      poster={currentMedia.thumbnail_url}
+                      poster={currentMedia.thumbnail_url || getVideoThumbnailUrl(currentMedia.url) || undefined}
                       className="w-full h-full object-cover"
                       showExpand={true}
                       showMute={true}

@@ -141,12 +141,14 @@ export default function CreatePostPage() {
   }, []);
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/login");
-    } else if (!authLoading && user) {
-      handleGetLocation();
+    if (authLoading) return;
+    if (!user) {
+      // Hard navigate to ensure login page renders even in Capacitor WebView
+      window.location.replace("/login");
+      return;
     }
-  }, [user, authLoading, router]);
+    handleGetLocation();
+  }, [user, authLoading]);
 
   if (authLoading) {
     return (
@@ -367,7 +369,7 @@ export default function CreatePostPage() {
 
   if (authError || !authUser) {
     setError("Please sign in to post");
-    router.push("/login");
+    window.location.replace("/login");
     return;
   }
 
@@ -375,7 +377,7 @@ export default function CreatePostPage() {
   setUploadProgress(0);
 
   try {
-    const mediaUrls: { url: string; type: "photo" | "video" }[] = [];
+    const mediaUrls: { url: string; type: "photo" | "video"; thumbnailUrl?: string | null }[] = [];
     const totalFiles = media.length;
 
     let done = 0;
@@ -473,6 +475,21 @@ export default function CreatePostPage() {
         mediaUrls.push({
           url: mediaUrl,
           type: isVideo ? "video" : "photo",
+          thumbnailUrl: isVideo && mediaUrl.includes("res.cloudinary.com")
+            ? (() => {
+                try {
+                  const parts = mediaUrl.split("/video/upload/");
+                  if (parts.length === 2) {
+                    const versionMatch = parts[1].match(/(v\d+\/.+)/);
+                    if (versionMatch) {
+                      const jpgPath = versionMatch[1].replace(/\.[^.]+$/, ".jpg");
+                      return `${parts[0]}/video/upload/so_0,w_480,h_480,c_limit,f_jpg,q_auto/${jpgPath}`;
+                    }
+                  }
+                } catch {}
+                return null;
+              })()
+            : null,
         });
 
         done++;
@@ -518,20 +535,25 @@ export default function CreatePostPage() {
 
     setUploadProgress(85);
 
-    for (const mediaItem of mediaUrls) {
-      await supabase.from("post_media").insert({
-        post_id: post.id,
-        url: mediaItem.url,
-        media_type: mediaItem.type,
-        is_sensitive: isSensitive,
-      });
+    if (mediaUrls.length > 0) {
+      await supabase.from("post_media").insert(
+        mediaUrls.map((mediaItem) => ({
+          post_id: post.id,
+          url: mediaItem.url,
+          media_type: mediaItem.type,
+          is_sensitive: isSensitive,
+          ...(mediaItem.thumbnailUrl ? { thumbnail_url: mediaItem.thumbnailUrl } : {}),
+        }))
+      );
     }
 
-    for (const tag of tags) {
-      await supabase.from("post_tags").insert({
-        post_id: post.id,
-        tag,
-      });
+    if (tags.length > 0) {
+      await supabase.from("post_tags").insert(
+        tags.map((tag) => ({
+          post_id: post.id,
+          tag,
+        }))
+      );
     }
 
     setUploadProgress(90);
