@@ -7,7 +7,6 @@ import { Home, Map, PlusCircle, User, MessageCircle } from "lucide-react";
 import { SOSButton } from "../sos/SOSButton";
 import { useAuth } from "@/context/AuthContext";
 import { useMessageCache } from "@/context/MessageCacheContext";
-import { supabase } from "@/lib/supabase";
 
 const navItems = [
   { href: "/", icon: Home, label: "Home" },
@@ -20,7 +19,7 @@ export function BottomNav() {
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
-  const { conversations, setConversations, fetchConversations, clearUnread } = useMessageCache();
+  const { conversations } = useMessageCache();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -30,6 +29,7 @@ export function BottomNav() {
     pathname.startsWith("/post/") || !!pathname.match(/^\/messages\/[^/]+$/);
 
   // Badge count from context — single source of truth
+  // NO realtime subscription here. MessageCacheContext handles everything.
   const dmUnread = useMemo(() => {
     if (!isVip) return 0;
     return conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0);
@@ -48,122 +48,6 @@ export function BottomNav() {
       return () => document.removeEventListener("mousedown", handleClick);
     }
   }, [showProfileMenu, isHidden]);
-
-  // =====================================================
-  // REALTIME — always active, even when nav is hidden
-  // =====================================================
-  useEffect(() => {
-    if (!isVip || !user?.id) return;
-
-    const channel = supabase
-      .channel("dm-unread-nav")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        (payload) => {
-          const msg = payload.new as any;
-          if (!msg.conversation_id) return;
-
-          // Pre-cache the message so it's already there when chat opens
-          try {
-            const cacheKey = `peja-chat-cache-${msg.conversation_id}`;
-            let messages: any[] = [];
-
-            const cached = localStorage.getItem(cacheKey);
-            if (cached) {
-              const parsed = JSON.parse(cached);
-              if (Array.isArray(parsed)) messages = parsed;
-            }
-
-            if (!messages.find((m: any) => m.id === msg.id)) {
-              messages.push({
-                ...msg,
-                media: [],
-                delivery_status: msg.sender_id === user.id ? "sent" : undefined,
-                read_at: null,
-                hidden_for_me: false,
-                reactions: [],
-                reply_to: null,
-              });
-              localStorage.setItem(cacheKey, JSON.stringify(messages.slice(-100)));
-            }
-          } catch {}
-
-          // Update context conversations INSTANTLY (optimistic)
-          setConversations((prev) => {
-            const isViewing =
-              (window as any).__pejaActiveConversationId === msg.conversation_id;
-
-            const updated = prev.map((c) => {
-              if (c.id !== msg.conversation_id) return c;
-
-              // Dedup: skip if we already processed this message
-              if (
-                c.last_message_at &&
-                new Date(c.last_message_at).getTime() >= new Date(msg.created_at).getTime()
-              ) {
-                // Even if deduped, force unread to 0 if user is viewing
-                if (isViewing && (c.unread_count || 0) > 0) {
-                  return { ...c, unread_count: 0, last_message_seen: true };
-                }
-                return c;
-              }
-
-              const isFromOther = msg.sender_id !== user.id;
-
-              return {
-                ...c,
-                last_message_text:
-                  msg.content?.slice(0, 100) ||
-                  (msg.content_type === "media" ? "Sent an attachment" : "New message"),
-                last_message_at: msg.created_at,
-                last_message_sender_id: msg.sender_id,
-                last_message_seen: isViewing,
-                updated_at: msg.created_at,
-                unread_count: isViewing
-                  ? 0
-                  : isFromOther
-                  ? (c.unread_count || 0) + 1
-                  : c.unread_count,
-              };
-            });
-
-            // Sort: most recent at top
-            updated.sort((a, b) => {
-              const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-              const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-              return bTime - aTime;
-            });
-
-            return updated;
-          });
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "conversation_participants",
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          const updated = payload.new as any;
-
-          // When last_read_at is updated (user read a chat), just clear the badge.
-          // Do NOT trigger a full fetchConversations — that causes race conditions
-          // where stale DB data overwrites the optimistic clear.
-          if (updated?.conversation_id) {
-            clearUnread(updated.conversation_id);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [isVip, user?.id, setConversations, fetchConversations, clearUnread]);
 
   // Now that all hooks have been called, we can return null
   if (isHidden) return null;
@@ -270,7 +154,7 @@ export function BottomNav() {
                 <User className="w-5 h-5" />
               )}
               {isVip && dmUnread > 0 && (
-                <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] flex items-center justify-center bg-primary-600 text-white text-[10px] font-bold rounded-full px-1">
+                <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-[16px] flex items-center justify-center bg-primary-600 text-white text-[10px] font-bold rounded-full px-1 animate-in zoom-in duration-200">
                   {dmUnread > 99 ? "99+" : dmUnread}
                 </span>
               )}

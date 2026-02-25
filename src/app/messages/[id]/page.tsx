@@ -103,11 +103,19 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const toast = useToast();
-  const { setRecordingConversationId, clearUnread, markConversationRead, updateLastMessage } = useMessageCache();
+const { 
+  setRecordingConversationId, 
+  clearUnread, 
+  markConversationRead, 
+  updateLastMessage, 
+  subscribeToChat, 
+  setActiveConversation 
+} = useMessageCache();
   const MSG_CACHE_KEY = `peja-chat-cache-${conversationId}`;
 
   // ------ Core State ------
   const [messages, setMessages] = useState<Message[]>([]);
+  const [initialFetchComplete, setInitialFetchComplete] = useState(false);
   const [otherUser, setOtherUser] = useState<VIPUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -174,7 +182,6 @@ export default function ChatPage() {
   // ------ Refs ------
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
-  const channelRef = useRef<any>(null);
   const presenceChannelRef = useRef<any>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -238,66 +245,56 @@ export default function ChatPage() {
     if (user.is_vip === false) { router.replace("/"); return; }
   }, [user, authLoading, router]);
 
-  
-  // =====================================================
-  // SET ACTIVE CONVERSATION FOR NOTIFICATION SUPPRESSION
-  // =====================================================
-  useEffect(() => {
-    (window as any).__pejaActiveConversationId = conversationId;
-    return () => {
-      (window as any).__pejaActiveConversationId = null;
-    };
-  }, [conversationId]);
-
-    // Stable ref for clearUnread — avoids changing realtime effect dep array size
-  const clearUnreadRef = useRef(clearUnread);
-  useEffect(() => { clearUnreadRef.current = clearUnread; }, [clearUnread]);
-
-  // =====================================================
-  // CLEAR UNREAD IMMEDIATELY ON MOUNT
+ // =====================================================
+  // SET ACTIVE CONVERSATION ON MOUNT
+  // Context handles: clear unread, suppress badge, mark as read
   // =====================================================
   useEffect(() => {
-    if (conversationId && user?.id) {
-      // Clear unread badge INSTANTLY via context (optimistic)
-      clearUnread(conversationId);
-      
-      // Mark as read in database (background, non-blocking)
-      markConversationRead(conversationId);
-      
-      // Mark DM notifications for this conversation as read on the notifications page
-      (async () => {
-        try {
-          const { data: unreadNotifs } = await supabase
-            .from("notifications")
-            .select("id, data")
-            .eq("user_id", user.id)
-            .in("type", ["dm_message", "dm_reaction"])
-            .eq("is_read", false);
+    if (!conversationId || !user?.id) return;
 
-          if (unreadNotifs && unreadNotifs.length > 0) {
-            const idsToMark = unreadNotifs
-              .filter((n: any) => n.data?.conversation_id === conversationId)
-              .map((n: any) => n.id);
+    // Tell context this chat is open — handles badge clearing
+    setActiveConversation(conversationId);
+    
+    // Mark as read in DB (background)
+    markConversationRead(conversationId);
 
-            if (idsToMark.length > 0) {
-              await supabase
-                .from("notifications")
-                .update({ is_read: true })
-                .in("id", idsToMark);
-              window.dispatchEvent(new Event("peja-notifications-changed"));
-            }
-          }
-        } catch (e) {
-          console.error("[Chat] Failed to mark DM notifications as read:", e);
-        }
-      })();
-      
-      // Store for reference
+    // Mark DM notifications as read (background, non-blocking)
+    (async () => {
       try {
-        sessionStorage.setItem("peja-last-chat-id", conversationId);
-      } catch {}
-    }
-  }, [conversationId, user?.id, clearUnread, markConversationRead]);
+        const { data: unreadNotifs } = await supabase
+          .from("notifications")
+          .select("id, data")
+          .eq("user_id", user.id)
+          .in("type", ["dm_message", "dm_reaction"])
+          .eq("is_read", false);
+
+        if (unreadNotifs && unreadNotifs.length > 0) {
+          const idsToMark = unreadNotifs
+            .filter((n: any) => n.data?.conversation_id === conversationId)
+            .map((n: any) => n.id);
+
+          if (idsToMark.length > 0) {
+            await supabase
+              .from("notifications")
+              .update({ is_read: true })
+              .in("id", idsToMark);
+            window.dispatchEvent(new Event("peja-notifications-changed"));
+          }
+        }
+      } catch (e) {
+        console.error("[Chat] Failed to mark DM notifications as read:", e);
+      }
+    })();
+
+    try {
+      sessionStorage.setItem("peja-last-chat-id", conversationId);
+    } catch {}
+
+    return () => {
+      // Tell context we left this chat
+      setActiveConversation(null);
+    };
+  }, [conversationId, user?.id, setActiveConversation, markConversationRead]);
 
     // =====================================================
   // BROADCAST RECORDING STATE
@@ -337,6 +334,11 @@ useEffect(() => {
       console.error("[Cache] Failed to restore:", e);
     }
 
+    // If we have cached messages AND cached user, check if cache is recent.
+    // If opened within the last 30 seconds, skip the full refetch to save egress.
+    const cacheAge = Date.now() - (Number(localStorage.getItem(`peja-chat-ts-${conversationId}`)) || 0);
+    const skipFullFetch = hasCachedMessages && cacheAge < 30000;
+
     // STEP 2: Try to restore cached other user data
     try {
       const cachedUser = localStorage.getItem(`peja-chat-user-${conversationId}`);
@@ -356,7 +358,11 @@ useEffect(() => {
       console.error("[Cache] Failed to restore user:", e);
     }
 
-     // STEP 3: Fetch fresh data in background
+// STEP 3: Fetch fresh data in background (skip if cache is very fresh)
+    if (skipFullFetch) {
+      setLoading(false);
+      return;
+    }
     try {
       // Run participant data and deletions in parallel
       const [participantsResult, deletionsResult] = await Promise.all([
@@ -484,16 +490,16 @@ useEffect(() => {
    const fetchMessages = useCallback(async (otherReadAt?: string | null) => {
     if (!user?.id) return;
 
-    const { data, error } = await supabase
+const { data, error } = await supabase
       .from("messages")
       .select("*")
       .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true })
-      .limit(200);
+      .order("created_at", { ascending: false })
+      .limit(50);
 
     if (error) { console.error("Messages fetch:", error.message); return; }
 
-    const msgs = (data || []) as Message[];
+const msgs = ((data || []) as Message[]).reverse();
     if (msgs.length === 0) { setMessages([]); return; }
 
     const deletedForMe = myDeletionsRef.current;
@@ -575,9 +581,10 @@ useEffect(() => {
         (m) => m.id.startsWith("temp-") && !freshIds.has(m.id)
       );
 
-      // First load over empty state: set directly
+// First load over empty state: set directly
       if (prev.length === 0) {
         initialFetchDoneRef.current = true;
+        setTimeout(() => setInitialFetchComplete(true), 0);
         if (keptTemp.length === 0) return finalMessages;
         const result = [...finalMessages, ...keptTemp];
         result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
@@ -635,7 +642,8 @@ useEffect(() => {
         };
       });
 
-      initialFetchDoneRef.current = true;
+initialFetchDoneRef.current = true;
+      setTimeout(() => setInitialFetchComplete(true), 0);
 
       if (!anyStructuralChange && keptTemp.length === 0) {
         // Nothing changed at all — return exact same array reference
@@ -654,6 +662,7 @@ useEffect(() => {
     try {
       const cacheData = finalMessages.slice(-100);
       localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
+    localStorage.setItem(`peja-chat-ts-${conversationId}`, String(Date.now()));
     } catch {}
   }, [user?.id, conversationId]);
 
@@ -841,293 +850,216 @@ useEffect(() => {
     // =====================================================
   // REALTIME: Messages + Read receipts + Reactions
   // =====================================================
-  useEffect(() => {
+// =====================================================
+  // REALTIME: Subscribe via unified context channel
+  // No duplicate postgres_changes subscription needed.
+  // Context dispatches events to us via subscribeToChat.
+  // =====================================================
+useEffect(() => {
     if (!user?.id || !conversationId) return;
+    if (!initialFetchComplete) return;     
 
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
+    const unsubscribe = subscribeToChat(conversationId, {
+      // ---- NEW MESSAGE ----
+      onMessageInsert: async (newMsg: Message) => {
+        if (myDeletionsRef.current.has(newMsg.id)) return;
 
-    const channel = supabase
-      .channel(`chat-rt-${conversationId}-${Date.now()}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
-        async (payload) => {
-          const newMsg = payload.new as Message;
-          if (myDeletionsRef.current.has(newMsg.id)) return;
+        // Check if we already have this message (from optimistic send or cache)
+        const alreadyHave = messagesRef.current.find(
+          (m) => m.id === newMsg.id && !m.id.startsWith("temp-")
+        );
+        if (alreadyHave) return;
 
-          // Skip realtime inserts until initial fetch completes
-          if (!initialFetchDoneRef.current) return;
+        // Fetch media if needed (single attempt, no retry loop)
+        let media: MessageMediaItem[] = [];
+        if (newMsg.content_type === "media" || newMsg.content_type === "document") {
+          // Small delay for DB propagation
+          await new Promise((r) => setTimeout(r, 300));
+          const { data } = await supabase
+            .from("message_media")
+            .select("*")
+            .eq("message_id", newMsg.id);
+          if (data && data.length > 0) {
+            media = data as MessageMediaItem[];
+          }
+        }
 
-          // Skip if this message is already in state (from fetchMessages or optimistic)
-          // This prevents duplicate rendering / media pop-in on initial load
-          setMessages((prev) => {
-            const existing = prev.find((m) => m.id === newMsg.id || (m.id.startsWith("temp-") && false));
-            if (existing && !existing.id.startsWith("temp-")) return prev; // Already have real message
-            return prev; // Will be handled below after media fetch
-          });
+        // Fetch reply data if needed
+        let replyTo: Message | null = null;
+        if (newMsg.reply_to_id) {
+          const { data: replyData } = await supabase
+            .from("messages")
+            .select("*")
+            .eq("id", newMsg.reply_to_id)
+            .single();
+          if (replyData) replyTo = replyData as Message;
+        }
 
-          // Check if we already have this message with media
-          const alreadyHave = messagesRef.current.find(
+        setMessages((prev) => {
+          // Check again inside setState (prev might have changed)
+          const existingReal = prev.find(
             (m) => m.id === newMsg.id && !m.id.startsWith("temp-")
           );
-          if (alreadyHave && alreadyHave.media && alreadyHave.media.length > 0) return;
-
-          // Fetch media and reply data
-          let media: MessageMediaItem[] = [];
-          if (newMsg.content_type === "media" || newMsg.content_type === "document") {
-            for (let attempt = 0; attempt < 3; attempt++) {
-              await new Promise((r) => setTimeout(r, 600));
-              const { data } = await supabase
-                .from("message_media")
-                .select("*")
-                .eq("message_id", newMsg.id);
-
-              if (data && data.length > 0) {
-                media = data as MessageMediaItem[];
-                break;
-              }
+          if (existingReal) {
+            // Only update if we have better media data
+            if (media.length > 0 && (!existingReal.media || existingReal.media.length === 0)) {
+              return prev.map((m) =>
+                m.id === newMsg.id ? { ...m, media } : m
+              );
             }
+            return prev;
           }
 
-          let replyTo: Message | null = null;
-          if (newMsg.reply_to_id) {
-            const { data: replyData } = await supabase
-              .from("messages")
-              .select("*")
-              .eq("id", newMsg.reply_to_id)
-              .single();
-            if (replyData) replyTo = replyData as Message;
-          }
-
-          setMessages((prev) => {
-            // If message already exists with media, just update metadata
-            const existing = prev.find((m) => m.id === newMsg.id);
-            if (existing) {
-              // Only update if we have better data
-              if (media.length > 0 && (!existing.media || existing.media.length === 0)) {
-                return prev.map((m) =>
-                  m.id === newMsg.id
-                    ? { ...m, media }
-                    : m
-                );
-              }
-              return prev; // Already have this message with media, skip
-            }
-
-            // Replace temp message if one matches
-            const tempIdx = prev.findIndex(
-              (m) => m.id.startsWith("temp-") && m.sender_id === newMsg.sender_id &&
-                Math.abs(new Date(m.created_at).getTime() - new Date(newMsg.created_at).getTime()) < 10000
-            );
-
-            if (tempIdx !== -1) {
-              const updated = [...prev];
-              updated[tempIdx] = {
-                ...newMsg,
-                media: media.length > 0 ? media : updated[tempIdx].media,
-                delivery_status: newMsg.sender_id === user.id ? ("sent" as const) : undefined,
-                reactions: [],
-                reply_to: replyTo,
-              };
-              return updated;
-            }
-
-            // Genuinely new message — add it
-            return [
-              ...prev,
-              {
-                ...newMsg,
-                media,
-                delivery_status: newMsg.sender_id === user.id ? ("sent" as const) : undefined,
-                reactions: [],
-                reply_to: replyTo,
-              },
-            ];
-          });
-
-          if (newMsg.sender_id !== user.id) {
-            // Timing-safe: use max of client time and message server time + 1s buffer
-            // This handles clock skew between client and server
-            const readTime = new Date(
-              Math.max(Date.now(), new Date(newMsg.created_at).getTime()) + 1000
-            ).toISOString();
-
-            // Update last_read_at to guaranteed AFTER message creation
-            supabase.from("conversation_participants")
-              .update({ last_read_at: readTime })
-              .eq("conversation_id", conversationId)
-              .eq("user_id", user.id)
-              .then(() => {});
-
-            // Insert read receipt for this specific message explicitly
-            supabase.from("message_reads").upsert({
-              message_id: newMsg.id,
-              user_id: user.id,
-              read_at: readTime,
-            }, { onConflict: "message_id,user_id" }).then(() => {});
-
-            // Also run bulk markAsRead for any other pending unread messages
-            markAsRead();
-            clearUnreadRef.current(conversationId);
-
-            // Mark any DM notification for this chat as read
-            supabase
-              .from("notifications")
-              .select("id, data")
-              .eq("user_id", user.id)
-              .eq("type", "dm_message")
-              .eq("is_read", false)
-              .then(({ data: notifs }) => {
-                if (notifs && notifs.length > 0) {
-                  const ids = notifs
-                    .filter((n: any) => n.data?.conversation_id === conversationId)
-                    .map((n: any) => n.id);
-                  if (ids.length > 0) {
-                    supabase
-                      .from("notifications")
-                      .update({ is_read: true })
-                      .in("id", ids)
-                      .then(() => {
-                        window.dispatchEvent(new Event("peja-notifications-changed"));
-                      });
-                  }
-                }
-              });
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "messages", filter: `conversation_id=eq.${conversationId}` },
-        (payload) => {
-          const u = payload.new as Message;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === u.id
-                ? {
-                    ...m,
-                    is_deleted: u.is_deleted,
-                    content: u.content,
-                    edited_at: u.edited_at,
-                    content_type: u.content_type,
-                  }
-                : m
-            )
+          // Replace temp message if one matches
+          const tempIdx = prev.findIndex(
+            (m) =>
+              m.id.startsWith("temp-") &&
+              m.sender_id === newMsg.sender_id &&
+              Math.abs(
+                new Date(m.created_at).getTime() -
+                  new Date(newMsg.created_at).getTime()
+              ) < 10000
           );
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "message_reads" },
-        (payload) => {
-          const read = payload.new as any;
-          if (read.user_id === user.id) return;
 
-          setMessages((prev) => {
-            const msgExists = prev.some((m) => m.id === read.message_id);
-            if (!msgExists) return prev;
-
-            return prev.map((m) =>
-              m.id === read.message_id && m.sender_id === user.id
-                ? { ...m, delivery_status: "seen" as const, read_at: read.read_at }
-                : m
-            );
-          });
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "message_reactions" },
-        async (payload) => {
-          const reactionData = (payload.new || payload.old) as any;
-          if (!reactionData?.message_id) return;
-
-          const { data: reactions } = await supabase
-            .from("message_reactions")
-            .select("*")
-            .eq("message_id", reactionData.message_id);
-
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === reactionData.message_id
-                ? { ...m, reactions: reactions || [] }
-                : m
-            )
-          );
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "conversation_participants", filter: `conversation_id=eq.${conversationId}` },
-        (payload) => {
-          const updated = payload.new as any;
-          if (updated.user_id !== user.id && updated.last_read_at) {
-            setOtherLastReadAt(updated.last_read_at);
-            setMessages((prev) =>
-              prev.map((m) => {
-                if (m.sender_id !== user.id) return m;
-                if (m.delivery_status === "seen") return m;
-                if (new Date(updated.last_read_at) >= new Date(m.created_at)) {
-                  return { ...m, delivery_status: "seen" as const };
-                }
-                return m;
-              })
-            );
+          if (tempIdx !== -1) {
+            const updated = [...prev];
+            updated[tempIdx] = {
+              ...newMsg,
+              media: media.length > 0 ? media : updated[tempIdx].media,
+              delivery_status:
+                newMsg.sender_id === user.id
+                  ? ("sent" as const)
+                  : undefined,
+              reactions: [],
+              reply_to: replyTo,
+            };
+            return updated;
           }
-        }
-      )
-      .subscribe();
 
-    channelRef.current = channel;
+          // Genuinely new message — add it
+          return [
+            ...prev,
+            {
+              ...newMsg,
+              media,
+              delivery_status:
+                newMsg.sender_id === user.id
+                  ? ("sent" as const)
+                  : undefined,
+              reactions: [],
+              reply_to: replyTo,
+            },
+          ];
+        });
+
+        // Mark DM notifications as read if from other user
+        if (newMsg.sender_id !== user.id) {
+          supabase
+            .from("notifications")
+            .select("id, data")
+            .eq("user_id", user.id)
+            .eq("type", "dm_message")
+            .eq("is_read", false)
+            .then(({ data: notifs }) => {
+              if (notifs && notifs.length > 0) {
+                const ids = notifs
+                  .filter(
+                    (n: any) =>
+                      n.data?.conversation_id === conversationId
+                  )
+                  .map((n: any) => n.id);
+                if (ids.length > 0) {
+                  supabase
+                    .from("notifications")
+                    .update({ is_read: true })
+                    .in("id", ids)
+                    .then(() => {
+                      window.dispatchEvent(
+                        new Event("peja-notifications-changed")
+                      );
+                    });
+                }
+              }
+            });
+        }
+      },
+
+      // ---- MESSAGE UPDATE (edit, delete) ----
+      onMessageUpdate: (updatedMsg: Message) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === updatedMsg.id
+              ? {
+                  ...m,
+                  is_deleted: updatedMsg.is_deleted,
+                  content: updatedMsg.content,
+                  edited_at: updatedMsg.edited_at,
+                  content_type: updatedMsg.content_type,
+                }
+              : m
+          )
+        );
+      },
+
+      // ---- REACTION CHANGE ----
+      onReactionChange: (messageId: string, reactions: any[]) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId ? { ...m, reactions: reactions || [] } : m
+          )
+        );
+      },
+
+      // ---- READ RECEIPT ----
+      onReadReceipt: (data: {
+        message_id: string;
+        user_id: string;
+        read_at: string;
+      }) => {
+        if (data.user_id === user.id) return;
+
+        setMessages((prev) => {
+          const msgExists = prev.some((m) => m.id === data.message_id);
+          if (!msgExists) return prev;
+
+          return prev.map((m) =>
+            m.id === data.message_id && m.sender_id === user.id
+              ? {
+                  ...m,
+                  delivery_status: "seen" as const,
+                  read_at: data.read_at,
+                }
+              : m
+          );
+        });
+      },
+
+      // ---- PARTICIPANT UPDATE (other user's last_read_at) ----
+      onParticipantUpdate: (updated: any) => {
+        if (updated.user_id === user.id) return;
+        if (!updated.last_read_at) return;
+
+        setOtherLastReadAt(updated.last_read_at);
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.sender_id !== user.id) return m;
+            if (m.delivery_status === "seen") return m;
+            if (
+              new Date(updated.last_read_at) >= new Date(m.created_at)
+            ) {
+              return { ...m, delivery_status: "seen" as const };
+            }
+            return m;
+          })
+        );
+      },
+    });
 
     return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
-      }
+      unsubscribe();
     };
-  }, [user?.id, conversationId, markAsRead]);
+}, [user?.id, conversationId, subscribeToChat, initialFetchComplete]);
 
-  // =====================================================
-  // POLLING FALLBACK: Check read status every 5s
-  // =====================================================
-  useEffect(() => {
-    if (!user?.id || !conversationId) return;
-
-    const checkReadStatus = async () => {
-      const { data: otherP } = await supabase
-        .from("conversation_participants")
-        .select("last_read_at, user_id")
-        .eq("conversation_id", conversationId)
-        .neq("user_id", user.id)
-        .single();
-
-      if (otherP?.last_read_at) {
-        const newLastRead = otherP.last_read_at;
-        setOtherLastReadAt((prev) => {
-          if (prev === newLastRead) return prev;
-          setMessages((msgs) =>
-            msgs.map((m) => {
-              if (m.sender_id !== user.id) return m;
-              if (m.delivery_status === "seen") return m;
-              if (new Date(newLastRead) >= new Date(m.created_at)) {
-                return { ...m, delivery_status: "seen" as const };
-              }
-              return m;
-            })
-          );
-          return newLastRead;
-        });
-      }
-    };
-
-    setTimeout(checkReadStatus, 2000);
-    const interval = setInterval(checkReadStatus, 5000);
-    return () => clearInterval(interval);
-  }, [user?.id, conversationId]);
 
   // =====================================================
   // TYPING INDICATOR
@@ -2883,6 +2815,7 @@ onTouchEnd={() => {
       <img
         src={m.url}
         alt=""
+        loading="lazy"
         className="rounded-xl max-w-full max-h-60 object-cover cursor-pointer active:scale-[0.98] transition-transform"
         onClick={(e) => {
           e.stopPropagation();

@@ -1,72 +1,77 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./AuthContext";
-import type { Message, Conversation, VIPUser } from "@/lib/types";
+import type { Conversation, VIPUser, Message } from "@/lib/types";
 
-type ConversationWithUser = Conversation & {
+// =====================================================
+// TYPES
+// =====================================================
+
+export type ConversationWithUser = Conversation & {
   other_user: VIPUser;
   unread_count: number;
   last_message_seen?: boolean;
 };
 
-type CachedConversation = {
-  conversation: ConversationWithUser;
-  messages: Message[];
-  lastFetch: number;
+type ChatListener = {
+  onMessageInsert: (msg: any) => void;
+  onMessageUpdate: (msg: any) => void;
+  onReactionChange: (messageId: string, reactions: any[]) => void;
+  onReadReceipt: (data: { message_id: string; user_id: string; read_at: string }) => void;
+  onParticipantUpdate: (data: any) => void;
 };
 
 interface MessageCacheContextValue {
-  // Conversations list
   conversations: ConversationWithUser[];
   conversationsLoading: boolean;
+  fetchConversations: () => Promise<void>;
   setConversations: React.Dispatch<React.SetStateAction<ConversationWithUser[]>>;
-  fetchConversations: (force?: boolean) => Promise<void>;
-  
-  // Individual conversation
-  getConversation: (id: string) => CachedConversation | null;
-  getCachedMessages: (conversationId: string) => Message[];
-  cacheMessages: (conversationId: string, messages: Message[]) => void;
-  
-  // Optimistic updates - INSTANT
+
+  // Badge management — these are the ONLY way to modify unread counts
   clearUnread: (conversationId: string) => void;
   markConversationRead: (conversationId: string) => void;
-  addOptimisticMessage: (conversationId: string, message: Message) => void;
-  updateMessageStatus: (conversationId: string, tempId: string, realMessage: Message) => void;
   updateLastMessage: (conversationId: string, text: string, senderId: string) => void;
-  
-  // Recording state
+
+  // Chat page integration
+  subscribeToChat: (conversationId: string, listener: ChatListener) => () => void;
+  setActiveConversation: (conversationId: string | null) => void;
+  activeConversationId: string | null;
+
+  // UI state shared across pages
   recordingConversationId: string | null;
   setRecordingConversationId: (id: string | null) => void;
-  
-  // Typing state (for header display)
-  typingInConversation: string | null;
-  setTypingInConversation: (id: string | null) => void;
 }
 
 const MessageCacheContext = createContext<MessageCacheContextValue | null>(null);
 
-// IndexedDB helper for persistent cache
-const DB_NAME = "peja-messages";
+// =====================================================
+// INDEXEDDB — cache conversation list for instant load
+// =====================================================
+const DB_NAME = "peja-msg-v2";
 const DB_VERSION = 1;
-const CONV_STORE = "conversations";
+const STORE = "convs";
 
-async function openDB(): Promise<IDBDatabase | null> {
-  if (typeof window === "undefined" || !window.indexedDB) return null;
-  
+function idbOpen(): Promise<IDBDatabase | null> {
+  if (typeof window === "undefined" || !window.indexedDB) return Promise.resolve(null);
   return new Promise((resolve) => {
     try {
-      const request = indexedDB.open(DB_NAME, DB_VERSION);
-      
-      request.onerror = () => resolve(null);
-      
-      request.onsuccess = () => resolve(request.result);
-      
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result;
-        if (!db.objectStoreNames.contains(CONV_STORE)) {
-          db.createObjectStore(CONV_STORE, { keyPath: "id" });
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => resolve(req.result);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) {
+          db.createObjectStore(STORE, { keyPath: "id" });
         }
       };
     } catch {
@@ -75,39 +80,29 @@ async function openDB(): Promise<IDBDatabase | null> {
   });
 }
 
-async function saveToIDB(conversations: ConversationWithUser[]): Promise<void> {
-  const db = await openDB();
+async function idbSave(data: ConversationWithUser[]): Promise<void> {
+  const db = await idbOpen();
   if (!db) return;
-  
   try {
-    const tx = db.transaction(CONV_STORE, "readwrite");
-    const store = tx.objectStore(CONV_STORE);
-    
-    // Clear and save fresh
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
     store.clear();
-    conversations.forEach((c) => store.put(c));
-    
-    await new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject();
-    });
+    data.forEach((c) => store.put(c));
   } catch {} finally {
     db.close();
   }
 }
 
-async function loadFromIDB(): Promise<ConversationWithUser[]> {
-  const db = await openDB();
+async function idbLoad(): Promise<ConversationWithUser[]> {
+  const db = await idbOpen();
   if (!db) return [];
-  
   try {
-    const tx = db.transaction(CONV_STORE, "readonly");
-    const store = tx.objectStore(CONV_STORE);
-    
+    const tx = db.transaction(STORE, "readonly");
+    const store = tx.objectStore(STORE);
     return new Promise((resolve) => {
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => resolve([]);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
     });
   } catch {
     return [];
@@ -116,440 +111,603 @@ async function loadFromIDB(): Promise<ConversationWithUser[]> {
   }
 }
 
+// =====================================================
+// HELPERS
+// =====================================================
+function sortByLastMessage(convs: ConversationWithUser[]): ConversationWithUser[] {
+  return [...convs].sort((a, b) => {
+    const at = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+    const bt = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+    return bt - at;
+  });
+}
+
+// =====================================================
+// PROVIDER
+// =====================================================
 export function MessageCacheProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
-  
+
   const [conversations, setConversations] = useState<ConversationWithUser[]>([]);
   const [conversationsLoading, setConversationsLoading] = useState(true);
-  const [conversationCache, setConversationCache] = useState<Map<string, CachedConversation>>(new Map());
+  const [activeConversationId, setActiveIdState] = useState<string | null>(null);
   const [recordingConversationId, setRecordingConversationId] = useState<string | null>(null);
-  const [typingInConversation, setTypingInConversation] = useState<string | null>(null);
-  
+
+  // Refs
+  const activeConvRef = useRef<string | null>(null);
   const channelRef = useRef<any>(null);
-  const lastFetchRef = useRef<number>(0);
-  const fetchInProgressRef = useRef<boolean>(false);
-  const pendingClearRef = useRef<Set<string>>(new Set());
-  const pendingClearTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const initialFetchDoneRef = useRef(false);
+  const chatListenersRef = useRef<Map<string, Set<ChatListener>>>(new Map());
+  const conversationsRef = useRef<ConversationWithUser[]>([]);
+  const userIdRef = useRef<string | null>(null);
+  const hasFetchedRef = useRef(false);
+
+  // Keep refs in sync
+  useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
+  useEffect(() => { userIdRef.current = user?.id || null; }, [user?.id]);
 
   // =====================================================
-  // LOAD FROM INDEXEDDB ON MOUNT (instant restore)
+  // SET ACTIVE CONVERSATION
   // =====================================================
-  useEffect(() => {
-    if (!user?.id) return;
-    
-    const loadCached = async () => {
-      const cached = await loadFromIDB();
-      if (cached.length > 0) {
-        // Apply any pending clears to cached data (in case IDB save was stale)
-        const withClears = pendingClearRef.current.size > 0
-          ? cached.map((c) =>
-              pendingClearRef.current.has(c.id) ? { ...c, unread_count: 0 } : c
-            )
-          : cached;
-        setConversations(withClears);
-        setConversationsLoading(false);
+const setActiveConversation = useCallback((id: string | null) => {
+    const previousId = activeConvRef.current;
+    activeConvRef.current = id;
+    setActiveIdState(id);
+    if (typeof window !== "undefined") {
+      (window as any).__pejaActiveConversationId = id;
+    }
+
+    // LEAVING a chat: update last_read_at to the latest message timestamp
+    // This ensures all messages the user saw are marked as read in the DB,
+    // so refreshing the page won't bring back stale badge counts.
+    if (previousId && !id && userIdRef.current) {
+      const userId = userIdRef.current;
+      supabase
+        .from("messages")
+        .select("created_at")
+        .eq("conversation_id", previousId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .then(({ data }) => {
+          if (data && data.length > 0) {
+            const latestMsgTime = data[0].created_at;
+            // Set last_read_at to 1 second AFTER the latest message
+            // to ensure the gt() query in fetchConversations excludes it
+            const readTime = new Date(
+              new Date(latestMsgTime).getTime() + 1000
+            ).toISOString();
+
+            supabase
+              .from("conversation_participants")
+              .update({ last_read_at: readTime })
+              .eq("conversation_id", previousId)
+              .eq("user_id", userId)
+              .then(() => {});
+          }
+        });
+    }
+
+    // Entering a chat: clear unread immediately
+    if (id) {
+      setConversations((prev) => {
+        const conv = prev.find((c) => c.id === id);
+        if (!conv || conv.unread_count === 0) return prev;
+        const updated = prev.map((c) =>
+          c.id === id ? { ...c, unread_count: 0 } : c
+        );
+        idbSave(updated);
+        return updated;
+      });
+
+      // Also mark as read on ENTER using latest message time
+      if (userIdRef.current) {
+        const userId = userIdRef.current;
+        supabase
+          .from("messages")
+          .select("created_at")
+          .eq("conversation_id", id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .then(({ data }) => {
+            if (data && data.length > 0) {
+              const readTime = new Date(
+                new Date(data[0].created_at).getTime() + 1000
+              ).toISOString();
+
+              supabase
+                .from("conversation_participants")
+                .update({ last_read_at: readTime })
+                .eq("conversation_id", id)
+                .eq("user_id", userId)
+                .then(() => {});
+            }
+          });
       }
-    };
-    
-    loadCached();
-  }, [user?.id]);
-
-  // =====================================================
-  // HELPER: Check if a conversation is currently being viewed
-  // This is the SINGLE SOURCE OF TRUTH for "is user looking at this chat"
-  // =====================================================
-  const isConversationActive = useCallback((conversationId: string): boolean => {
-    if (typeof window === "undefined") return false;
-    // Check the global flag set by chat page on mount/unmount
-    if ((window as any).__pejaActiveConversationId === conversationId) return true;
-    // Fallback: check URL
-    if (window.location.pathname.includes(conversationId)) return true;
-    return false;
+    }
   }, []);
 
   // =====================================================
-  // FETCH CONVERSATIONS (with smart debouncing)
+  // SUBSCRIBE TO CHAT (used by [id]/page.tsx)
   // =====================================================
-  const fetchConversations = useCallback(async (force = false) => {
+  const subscribeToChat = useCallback((conversationId: string, listener: ChatListener): (() => void) => {
+    if (!chatListenersRef.current.has(conversationId)) {
+      chatListenersRef.current.set(conversationId, new Set());
+    }
+    chatListenersRef.current.get(conversationId)!.add(listener);
+    return () => {
+      const set = chatListenersRef.current.get(conversationId);
+      if (set) {
+        set.delete(listener);
+        if (set.size === 0) chatListenersRef.current.delete(conversationId);
+      }
+    };
+  }, []);
+
+  const dispatch = useCallback((conversationId: string, action: (l: ChatListener) => void) => {
+    const listeners = chatListenersRef.current.get(conversationId);
+    if (!listeners) return;
+    listeners.forEach((l) => { try { action(l); } catch {} });
+  }, []);
+
+  // =====================================================
+  // LOAD CACHED CONVERSATIONS (instant display)
+  // =====================================================
+  useEffect(() => {
     if (!user?.id) return;
-    
-    // Prevent concurrent fetches
-    if (fetchInProgressRef.current && !force) return;
-    
-    // Debounce rapid calls (2 second minimum between fetches)
-    const now = Date.now();
-    if (!force && now - lastFetchRef.current < 2000) return;
-    
-    fetchInProgressRef.current = true;
-    lastFetchRef.current = now;
+    idbLoad().then((cached) => {
+      if (cached.length > 0) {
+        setConversations(cached);
+        setConversationsLoading(false);
+      }
+    });
+  }, [user?.id]);
+
+  // =====================================================
+  // FETCH CONVERSATIONS FROM DB
+  // Called ONCE on mount. After that, only realtime updates.
+  // =====================================================
+  const fetchConversations = useCallback(async () => {
+    if (!user?.id) return;
 
     try {
-      const { data: participantRows, error: pErr } = await supabase
+      // 1. My participation
+      const { data: myParts, error: e1 } = await supabase
         .from("conversation_participants")
         .select("conversation_id, last_read_at, is_blocked, is_muted")
         .eq("user_id", user.id);
 
-      if (pErr) throw pErr;
-      if (!participantRows || participantRows.length === 0) {
+      if (e1) throw e1;
+      if (!myParts || myParts.length === 0) {
         setConversations([]);
         setConversationsLoading(false);
-        fetchInProgressRef.current = false;
         return;
       }
 
-      const convIds = participantRows.map((p) => p.conversation_id);
-      const participantMap: Record<string, { last_read_at: string; is_blocked: boolean; is_muted: boolean }> = {};
-      participantRows.forEach((p) => {
-        participantMap[p.conversation_id] = {
-          last_read_at: p.last_read_at,
-          is_blocked: p.is_blocked,
-          is_muted: p.is_muted,
-        };
-      });
+      const convIds = myParts.map((p) => p.conversation_id);
+      const myPartMap: Record<string, { last_read_at: string }> = {};
+      myParts.forEach((p) => { myPartMap[p.conversation_id] = { last_read_at: p.last_read_at }; });
 
-      const { data: convData, error: cErr } = await supabase
-        .from("conversations")
-        .select("*")
-        .in("id", convIds)
-        .order("updated_at", { ascending: false });
+      // 2. Conversations + other participants + users in parallel
+      const [convRes, otherPartRes] = await Promise.all([
+        supabase.from("conversations").select("*").in("id", convIds),
+        supabase.from("conversation_participants")
+          .select("conversation_id, user_id, last_read_at")
+          .in("conversation_id", convIds)
+          .neq("user_id", user.id),
+      ]);
 
-      if (cErr) throw cErr;
-
-      const { data: allParticipants, error: apErr } = await supabase
-        .from("conversation_participants")
-        .select("conversation_id, user_id, last_read_at")
-        .in("conversation_id", convIds)
-        .neq("user_id", user.id);
-
-      if (apErr) throw apErr;
+      if (convRes.error) throw convRes.error;
+      if (otherPartRes.error) throw otherPartRes.error;
 
       const otherUserMap: Record<string, string> = {};
-      const otherLastReadMap: Record<string, string> = {};
-      (allParticipants || []).forEach((p) => {
+      const otherReadMap: Record<string, string> = {};
+      (otherPartRes.data || []).forEach((p) => {
         otherUserMap[p.conversation_id] = p.user_id;
-        otherLastReadMap[p.conversation_id] = p.last_read_at;
+        otherReadMap[p.conversation_id] = p.last_read_at;
       });
 
-      const otherUserIds = Array.from(new Set(Object.values(otherUserMap)));
-
-      let usersData: any[] = [];
+      const otherUserIds = [...new Set(Object.values(otherUserMap))];
+      let usersMap: Record<string, VIPUser> = {};
       if (otherUserIds.length > 0) {
-        const { data, error: uErr } = await supabase
+        const { data: users } = await supabase
           .from("users")
           .select("id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status")
           .in("id", otherUserIds);
-        if (uErr) throw uErr;
-        usersData = data || [];
+        (users || []).forEach((u: any) => { usersMap[u.id] = u; });
       }
 
-      const usersMap: Record<string, VIPUser> = {};
-      usersData.forEach((u: any) => { usersMap[u.id] = u; });
-
-      // Batch count unread - use Promise.all for speed
-      const unreadResults = await Promise.all(
-        convIds.map(async (convId) => {
-          // If this conversation is currently being viewed OR has a pending clear, return 0
-          if (pendingClearRef.current.has(convId) || isConversationActive(convId)) {
-            return { convId, count: 0 };
+// 3. Count unread in parallel
+      // Also get the LATEST message timestamp per conversation so we can
+      // detect and repair stale last_read_at values
+      const unreadCounts: Record<string, number> = {};
+      await Promise.all(
+        convIds.map(async (cid) => {
+          if (activeConvRef.current === cid) {
+            unreadCounts[cid] = 0;
+            return;
           }
-          
-          const lastRead = participantMap[convId]?.last_read_at;
-          if (!lastRead) return { convId, count: 0 };
+          const lastRead = myPartMap[cid]?.last_read_at;
+          if (!lastRead) {
+            unreadCounts[cid] = 0;
+            return;
+          }
 
-          const { count } = await supabase
-            .from("messages")
-            .select("*", { count: "exact", head: true })
-            .eq("conversation_id", convId)
-            .neq("sender_id", user.id)
-            .gt("created_at", lastRead)
-            .eq("is_deleted", false);
+          // Get unread count AND the latest message I sent in this chat
+          const [unreadResult, myLatestResult] = await Promise.all([
+            supabase
+              .from("messages")
+              .select("*", { count: "exact", head: true })
+              .eq("conversation_id", cid)
+              .neq("sender_id", user.id)
+              .gt("created_at", lastRead)
+              .eq("is_deleted", false),
+            supabase
+              .from("messages")
+              .select("created_at")
+              .eq("conversation_id", cid)
+              .eq("sender_id", user.id)
+              .order("created_at", { ascending: false })
+              .limit(1),
+          ]);
 
-          return { convId, count: count || 0 };
+          const rawCount = unreadResult.count || 0;
+
+          // REPAIR: If I sent a message AFTER last_read_at, it means I was
+          // in this chat more recently than last_read_at suggests.
+          // The last_read_at update must have failed. Fix it now.
+          const myLastMsg = myLatestResult.data?.[0]?.created_at;
+          if (myLastMsg && new Date(myLastMsg) > new Date(lastRead)) {
+            // I was active in this chat after last_read_at — repair it
+            const repairedTime = new Date(
+              Math.max(new Date(myLastMsg).getTime(), Date.now()) 
+            ).toISOString();
+
+            supabase
+              .from("conversation_participants")
+              .update({ last_read_at: repairedTime })
+              .eq("conversation_id", cid)
+              .eq("user_id", user.id)
+              .then(() => {});
+
+            // After repair, only count messages AFTER my last sent message
+            const { count: repairedCount } = await supabase
+              .from("messages")
+              .select("*", { count: "exact", head: true })
+              .eq("conversation_id", cid)
+              .neq("sender_id", user.id)
+              .gt("created_at", myLastMsg)
+              .eq("is_deleted", false);
+
+            unreadCounts[cid] = repairedCount || 0;
+          } else {
+            unreadCounts[cid] = rawCount;
+          }
         })
       );
 
-      const unreadCounts: Record<string, number> = {};
-      unreadResults.forEach((r) => { unreadCounts[r.convId] = r.count; });
-
-      const merged: ConversationWithUser[] = (convData || [])
+      // 4. Build final list
+      const merged: ConversationWithUser[] = (convRes.data || [])
         .map((conv: any) => {
-          const otherUserId = otherUserMap[conv.id];
-          const otherUser = otherUserId ? usersMap[otherUserId] : null;
+          const otherId = otherUserMap[conv.id];
+          const otherUser = otherId ? usersMap[otherId] : null;
           if (!otherUser) return null;
 
           let lastMessageSeen = false;
           if (conv.last_message_sender_id === user.id && conv.last_message_at) {
-            const otherLastRead = otherLastReadMap[conv.id];
-            if (otherLastRead && new Date(otherLastRead) >= new Date(conv.last_message_at)) {
+            const otherRead = otherReadMap[conv.id];
+            if (otherRead && new Date(otherRead) >= new Date(conv.last_message_at)) {
               lastMessageSeen = true;
             }
           }
 
-          // Respect pending clears AND active conversation
-          const unreadCount = (pendingClearRef.current.has(conv.id) || isConversationActive(conv.id))
-            ? 0 
-            : (unreadCounts[conv.id] || 0);
-
           return {
             ...conv,
             other_user: otherUser,
-            unread_count: unreadCount,
+            unread_count: unreadCounts[conv.id] || 0,
             last_message_seen: lastMessageSeen,
           };
         })
         .filter(Boolean) as ConversationWithUser[];
 
-      // FINAL SAFETY NET: Apply pendingClearRef one more time before setting state.
-      // This catches any edge case where the DB returned stale data.
-      const finalMerged = pendingClearRef.current.size > 0
-        ? merged.map((c) =>
-            (pendingClearRef.current.has(c.id) || isConversationActive(c.id))
-              ? { ...c, unread_count: 0 }
-              : c
-          )
-        : merged;
-
-      setConversations(finalMerged);
-      initialFetchDoneRef.current = true;
-      
-      // Save to IndexedDB for instant restore
-      saveToIDB(finalMerged);
-      
+      const sorted = sortByLastMessage(merged);
+      setConversations(sorted);
+      idbSave(sorted);
+      hasFetchedRef.current = true;
     } catch (e: any) {
-      console.error("fetchConversations error:", e?.message || e);
+      console.error("[MessageCache] fetch error:", e?.message || e);
     } finally {
       setConversationsLoading(false);
-      fetchInProgressRef.current = false;
     }
-  }, [user?.id, isConversationActive]);
+  }, [user?.id]);
 
   // =====================================================
-  // INITIAL FETCH + REALTIME
+  // INITIAL FETCH — once per mount
+  // =====================================================
+  useEffect(() => {
+    if (!user?.id || !user.is_vip) return;
+    hasFetchedRef.current = false;
+    fetchConversations();
+  }, [user?.id, user?.is_vip, fetchConversations]);
+
+  // =====================================================
+  // UNIFIED REALTIME CHANNEL
+  //
+  // Rules:
+  // - Badge increment: ONLY here, ONLY for messages from other users
+  //   in conversations we're NOT currently viewing
+  // - Badge decrement: ONLY via setActiveConversation or clearUnread
+  // - NO fetchConversations after realtime events
   // =====================================================
   useEffect(() => {
     if (!user?.id || !user.is_vip) return;
 
-    initialFetchDoneRef.current = false;
-    fetchConversations();
-
-    // Realtime updates - debounced
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
     }
 
-    let fetchTimeout: NodeJS.Timeout | null = null;
-    const debouncedFetch = () => {
-      if (fetchTimeout) clearTimeout(fetchTimeout);
-      fetchTimeout = setTimeout(() => fetchConversations(true), 500);
-    };
-
     const channel = supabase
-      .channel(`dm-cache-${user.id}-${Date.now()}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
-        const msg = payload.new as any;
+      .channel(`dm-rt-${user.id}-${Date.now()}`)
 
-        // Suppress until initial fetch completes to prevent pop-in
-        if (!initialFetchDoneRef.current) return;
+      // ---- NEW MESSAGE ----
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const msg = payload.new as any;
+          if (!msg.conversation_id) return;
 
-        setConversations((prev) => {
-          // USE THE AUTHORITATIVE CHECK: is user currently viewing this chat?
-          const isActive = isConversationActive(msg.conversation_id);
-          // Also check pendingClearRef (user recently viewed and left)
-          const isCleared = pendingClearRef.current.has(msg.conversation_id);
+          const userId = userIdRef.current;
+          if (!userId) return;
 
-          const updated = prev.map((c) => {
-            if (c.id !== msg.conversation_id) return c;
+          // Only process messages for conversations we're part of
+          const isOurs = conversationsRef.current.some((c) => c.id === msg.conversation_id);
+          const isFromMe = msg.sender_id === userId;
+          if (!isOurs && !isFromMe) return;
 
-            // Dedup: skip if we already processed this message timestamp
-            if (
-              c.last_message_at &&
-              new Date(c.last_message_at).getTime() >= new Date(msg.created_at).getTime()
-            ) {
-              // Even if deduped, enforce unread=0 if active or cleared
-              if ((isActive || isCleared) && c.unread_count > 0) {
-                return { ...c, unread_count: 0 };
+          // Dispatch to chat page listener
+          dispatch(msg.conversation_id, (l) => l.onMessageInsert(msg));
+
+          // Update conversation list
+          const isViewing = activeConvRef.current === msg.conversation_id;
+
+          setConversations((prev) => {
+            let found = false;
+            const updated = prev.map((c) => {
+              if (c.id !== msg.conversation_id) return c;
+              found = true;
+
+              // Dedup check
+              if (c.last_message_at && new Date(c.last_message_at).getTime() >= new Date(msg.created_at).getTime()) {
+                return c;
               }
-              return c;
+
+              // THE ONLY PLACE unread_count increments:
+              // - Message is from someone else
+              // - We are NOT viewing that chat right now
+              let newUnread = c.unread_count || 0;
+              if (!isFromMe && !isViewing) {
+                newUnread = newUnread + 1;
+              }
+
+              return {
+                ...c,
+                last_message_text: msg.content?.slice(0, 100) || (msg.content_type === "media" ? "Sent an attachment" : "New message"),
+                last_message_at: msg.created_at,
+                last_message_sender_id: msg.sender_id,
+                last_message_seen: false,
+                updated_at: msg.created_at,
+                unread_count: newUnread,
+              };
+            });
+
+            if (!found) return prev;
+
+            const sorted = sortByLastMessage(updated);
+            idbSave(sorted);
+            return sorted;
+          });
+
+          // Auto-mark as read if viewing
+          if (isViewing && !isFromMe) {
+            supabase
+              .from("conversation_participants")
+              .update({ last_read_at: new Date().toISOString() })
+              .eq("conversation_id", msg.conversation_id)
+              .eq("user_id", userId)
+              .then(() => {});
+
+            supabase
+              .from("message_reads")
+              .upsert(
+                { message_id: msg.id, user_id: userId, read_at: new Date().toISOString() },
+                { onConflict: "message_id,user_id" }
+              )
+              .then(() => {});
+          }
+
+          // Pre-cache in localStorage
+          try {
+            const key = `peja-chat-cache-${msg.conversation_id}`;
+            let msgs: any[] = [];
+            const raw = localStorage.getItem(key);
+            if (raw) { try { msgs = JSON.parse(raw); } catch {} }
+            if (Array.isArray(msgs) && !msgs.find((m: any) => m.id === msg.id)) {
+              msgs.push({
+                ...msg,
+                media: [],
+                delivery_status: isFromMe ? "sent" : undefined,
+                read_at: null,
+                hidden_for_me: false,
+                reactions: [],
+                reply_to: null,
+              });
+              localStorage.setItem(key, JSON.stringify(msgs.slice(-100)));
             }
-
-            const isFromOther = msg.sender_id !== user.id;
-
-            // DETERMINE UNREAD COUNT:
-            // - If user is actively viewing this chat → 0
-            // - If conversation was recently cleared (pendingClearRef) → 0
-            // - If message is from the other user and NOT viewing → increment
-            // - If message is from me → keep current
-            let newUnreadCount = c.unread_count;
-            if (isActive || isCleared) {
-              newUnreadCount = 0;
-            } else if (isFromOther) {
-              newUnreadCount = (c.unread_count || 0) + 1;
-            }
-
-            return {
-              ...c,
-              last_message_text:
-                msg.content?.slice(0, 100) ||
-                (msg.content_type === "media" ? "Sent an attachment" : "New message"),
-              last_message_at: msg.created_at,
-              last_message_sender_id: msg.sender_id,
-              last_message_seen: false,
-              updated_at: msg.created_at,
-              unread_count: newUnreadCount,
-            };
-          });
-
-          updated.sort((a, b) => {
-            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-            return bTime - aTime;
-          });
-
-          saveToIDB(updated);
-          return updated;
-        });
-
-        debouncedFetch();
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversations" }, (payload) => {
-        const updated = payload.new as any;
-
-        if (!initialFetchDoneRef.current) return;
-
-        setConversations((prev) => {
-          const newList = prev.map((c) => {
-            if (c.id !== updated.id) return c;
-
-            // Preserve unread count — don't let conversation updates reset it
-            // Also enforce cleared/active state
-            const shouldBeZero = pendingClearRef.current.has(c.id) || isConversationActive(c.id);
-
-            return {
-              ...c,
-              last_message_text: updated.last_message_text ?? c.last_message_text,
-              last_message_at: updated.last_message_at ?? c.last_message_at,
-              last_message_sender_id: updated.last_message_sender_id ?? c.last_message_sender_id,
-              updated_at: updated.updated_at ?? c.updated_at,
-              unread_count: shouldBeZero ? 0 : c.unread_count,
-            };
-          });
-
-          newList.sort((a, b) => {
-            const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-            const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-            return bTime - aTime;
-          });
-
-          saveToIDB(newList);
-          return newList;
-        });
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversation_participants" }, (payload) => {
-        const updated = payload.new as any;
-        if (updated.user_id !== user.id && updated.last_read_at) {
-          setConversations((prev) =>
-            prev.map((c) => {
-              if (c.id !== updated.conversation_id) return c;
-              if (c.last_message_sender_id !== user.id) return c;
-              if (!c.last_message_at) return c;
-              const seen = new Date(updated.last_read_at) >= new Date(c.last_message_at);
-              return { ...c, last_message_seen: seen };
-            })
-          );
+          } catch {}
         }
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "message_reads" }, (payload) => {
-        const read = payload.new as any;
-        if (read.user_id !== user.id) {
+      )
+
+      // ---- MESSAGE UPDATE (edit/delete) ----
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "messages" },
+        (payload) => {
+          const msg = payload.new as any;
+          if (!msg.conversation_id) return;
+          dispatch(msg.conversation_id, (l) => l.onMessageUpdate(msg));
+        }
+      )
+
+      // ---- CONVERSATION UPDATE ----
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "conversations" },
+        (payload) => {
+          const updated = payload.new as any;
+          setConversations((prev) => {
+            const newList = prev.map((c) => {
+              if (c.id !== updated.id) return c;
+              return {
+                ...c,
+                last_message_text: updated.last_message_text ?? c.last_message_text,
+                last_message_at: updated.last_message_at ?? c.last_message_at,
+                last_message_sender_id: updated.last_message_sender_id ?? c.last_message_sender_id,
+                updated_at: updated.updated_at ?? c.updated_at,
+                // DO NOT touch unread_count here
+              };
+            });
+            const sorted = sortByLastMessage(newList);
+            idbSave(sorted);
+            return sorted;
+          });
+        }
+      )
+
+      // ---- PARTICIPANT UPDATE ----
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "conversation_participants" },
+        (payload) => {
+          const updated = payload.new as any;
+          const userId = userIdRef.current;
+
+          // Other user read our messages — update "seen" status
+          if (updated.user_id !== userId && updated.last_read_at) {
+            setConversations((prev) =>
+              prev.map((c) => {
+                if (c.id !== updated.conversation_id) return c;
+                if (c.last_message_sender_id !== userId) return c;
+                if (!c.last_message_at) return c;
+                const seen = new Date(updated.last_read_at) >= new Date(c.last_message_at);
+                if (c.last_message_seen === seen) return c;
+                return { ...c, last_message_seen: seen };
+              })
+            );
+
+            dispatch(updated.conversation_id, (l) => l.onParticipantUpdate(updated));
+          }
+        }
+      )
+
+      // ---- READ RECEIPTS ----
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "message_reads" },
+        (payload) => {
+          const read = payload.new as any;
+          if (read.user_id === userIdRef.current) return;
+
           setConversations((prev) =>
             prev.map((c) => {
-              if (c.last_message_sender_id !== user.id) return c;
+              if (c.last_message_sender_id !== userIdRef.current) return c;
+              if (c.last_message_seen) return c;
               return { ...c, last_message_seen: true };
             })
           );
+
+          chatListenersRef.current.forEach((listeners) => {
+            listeners.forEach((l) => {
+              try {
+                l.onReadReceipt({
+                  message_id: read.message_id,
+                  user_id: read.user_id,
+                  read_at: read.read_at,
+                });
+              } catch {}
+            });
+          });
         }
-      })
+      )
+
+      // ---- REACTIONS ----
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "message_reactions" },
+        async (payload) => {
+          const data = (payload.new || payload.old) as any;
+          if (!data?.message_id) return;
+          const { data: reactions } = await supabase
+            .from("message_reactions")
+            .select("*")
+            .eq("message_id", data.message_id);
+          chatListenersRef.current.forEach((listeners) => {
+            listeners.forEach((l) => {
+              try { l.onReactionChange(data.message_id, reactions || []); } catch {}
+            });
+          });
+        }
+      )
+
       .subscribe();
 
     channelRef.current = channel;
 
     return () => {
-      if (fetchTimeout) clearTimeout(fetchTimeout);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
     };
-  }, [user?.id, user?.is_vip, fetchConversations, isConversationActive]);
+  }, [user?.id, user?.is_vip, dispatch]);
 
   // =====================================================
-  // CACHE HELPERS
-  // =====================================================
-  const getConversation = useCallback((id: string) => {
-    return conversationCache.get(id) || null;
-  }, [conversationCache]);
-
-  const getCachedMessages = useCallback((conversationId: string) => {
-    return conversationCache.get(conversationId)?.messages || [];
-  }, [conversationCache]);
-
-  const cacheMessages = useCallback((conversationId: string, messages: Message[]) => {
-    setConversationCache((prev) => {
-      const next = new Map(prev);
-      const conv = conversations.find((c) => c.id === conversationId);
-      if (!conv) return next;
-      
-      next.set(conversationId, {
-        conversation: conv,
-        messages,
-        lastFetch: Date.now(),
-      });
-      return next;
-    });
-  }, [conversations]);
-
-  // =====================================================
-  // INSTANT OPTIMISTIC UPDATES
+  // BADGE OPERATIONS — the ONLY way to modify unread
   // =====================================================
   const clearUnread = useCallback((conversationId: string) => {
-    pendingClearRef.current.add(conversationId);
-    
-    // Auto-expire after 15 seconds (DB should have updated by then)
-    const existing = pendingClearTimersRef.current.get(conversationId);
-    if (existing) clearTimeout(existing);
-    pendingClearTimersRef.current.set(
-      conversationId,
-      setTimeout(() => {
-        pendingClearRef.current.delete(conversationId);
-        pendingClearTimersRef.current.delete(conversationId);
-      }, 15000)
-    );
-    
-    // Update state immediately
     setConversations((prev) => {
-      const updated = prev.map((c) => 
+      const conv = prev.find((c) => c.id === conversationId);
+      if (!conv || conv.unread_count === 0) return prev;
+      const updated = prev.map((c) =>
         c.id === conversationId ? { ...c, unread_count: 0 } : c
       );
-      saveToIDB(updated);
+      idbSave(updated);
       return updated;
     });
   }, []);
 
-  const markConversationRead = useCallback(async (conversationId: string) => {
+const markConversationRead = useCallback(async (conversationId: string) => {
     if (!user?.id) return;
-    
-    // Optimistic update first
     clearUnread(conversationId);
-    
-    // Background DB update
     try {
+      // Get the latest message timestamp and set last_read_at AFTER it
+      const { data } = await supabase
+        .from("messages")
+        .select("created_at")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      const readTime = data && data.length > 0
+        ? new Date(new Date(data[0].created_at).getTime() + 1000).toISOString()
+        : new Date().toISOString();
+
       await supabase
         .from("conversation_participants")
-        .update({ last_read_at: new Date().toISOString() })
+        .update({ last_read_at: readTime })
         .eq("conversation_id", conversationId)
         .eq("user_id", user.id);
     } catch (e) {
-      console.error("Failed to mark as read:", e);
+      console.error("[MessageCache] markRead error:", e);
     }
   }, [user?.id, clearUnread]);
 
@@ -558,77 +716,49 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
       const now = new Date().toISOString();
       const updated = prev.map((c) =>
         c.id === conversationId
-          ? {
-              ...c,
-              last_message_text: text,
-              last_message_at: now,
-              last_message_sender_id: senderId,
-              last_message_seen: false,
-              updated_at: now,
-            }
+          ? { ...c, last_message_text: text, last_message_at: now, last_message_sender_id: senderId, last_message_seen: false, updated_at: now }
           : c
       );
-
-      // Sort by most recent
-      updated.sort((a, b) => {
-        const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-        const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-        return bTime - aTime;
-      });
-
-      saveToIDB(updated);
-      return updated;
+      const sorted = sortByLastMessage(updated);
+      idbSave(sorted);
+      return sorted;
     });
   }, []);
 
-  const addOptimisticMessage = useCallback((conversationId: string, message: Message) => {
-    setConversationCache((prev) => {
-      const next = new Map(prev);
-      const cached = next.get(conversationId);
-      if (!cached) return next;
-      
-      next.set(conversationId, {
-        ...cached,
-        messages: [...cached.messages, message],
-      });
-      return next;
-    });
-  }, []);
-
-  const updateMessageStatus = useCallback((conversationId: string, tempId: string, realMessage: Message) => {
-    setConversationCache((prev) => {
-      const next = new Map(prev);
-      const cached = next.get(conversationId);
-      if (!cached) return next;
-      
-      next.set(conversationId, {
-        ...cached,
-        messages: cached.messages.map((m) => (m.id === tempId ? realMessage : m)),
-      });
-      return next;
-    });
-  }, []);
-
-  const value: MessageCacheContextValue = {
+  // =====================================================
+  // CONTEXT VALUE
+  // =====================================================
+  const value = useMemo<MessageCacheContextValue>(() => ({
     conversations,
     conversationsLoading,
-    setConversations,
     fetchConversations,
-    getConversation,
-    getCachedMessages,
-    cacheMessages,
+    setConversations,
     clearUnread,
     markConversationRead,
-    addOptimisticMessage,
-    updateMessageStatus,
     updateLastMessage,
+    subscribeToChat,
+    setActiveConversation,
+    activeConversationId,
     recordingConversationId,
     setRecordingConversationId,
-    typingInConversation,
-    setTypingInConversation,
-  };
+  }), [
+    conversations,
+    conversationsLoading,
+    fetchConversations,
+    clearUnread,
+    markConversationRead,
+    updateLastMessage,
+    subscribeToChat,
+    setActiveConversation,
+    activeConversationId,
+    recordingConversationId,
+  ]);
 
-  return <MessageCacheContext.Provider value={value}>{children}</MessageCacheContext.Provider>;
+  return (
+    <MessageCacheContext.Provider value={value}>
+      {children}
+    </MessageCacheContext.Provider>
+  );
 }
 
 export function useMessageCache() {

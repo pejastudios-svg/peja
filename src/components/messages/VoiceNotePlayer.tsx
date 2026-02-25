@@ -87,18 +87,22 @@ export function VoiceNotePlayer({
   const safeDuration = isFinite(duration) && duration > 0 ? duration : 0;
   const progressPercent = safeDuration > 0 ? Math.min((currentTime / safeDuration) * 100, 100) : 0;
 
-  // Extract waveform from audio source
+// Use fallback waveform instead of downloading the entire file.
+  // extractWaveform fetches the full audio file just for visualization,
+  // doubling egress for every voice note. The fallback looks good enough.
   useEffect(() => {
     if (!src) return;
-    let cancelled = false;
-
-    extractWaveform(src, NUM_BARS).then((data) => {
-      if (!cancelled) setWaveformData(data);
+    // Generate a deterministic pseudo-random waveform based on the URL
+    // so the same voice note always looks the same
+    let hash = 0;
+    for (let i = 0; i < src.length; i++) {
+      hash = ((hash << 5) - hash + src.charCodeAt(i)) | 0;
+    }
+    const seeded = Array.from({ length: NUM_BARS }, (_, i) => {
+      const seed = Math.abs(((hash * (i + 1) * 9301 + 49297) % 233280) / 233280);
+      return Math.max(0.15, Math.min(1.0, 0.2 + seed * 0.7 + Math.sin(i * 0.6) * 0.15));
     });
-
-    return () => {
-      cancelled = true;
-    };
+    setWaveformData(seeded);
   }, [src]);
 
   // Initialize audio element
