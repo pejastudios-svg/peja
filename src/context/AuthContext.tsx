@@ -313,6 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const initRef = useRef(false);
   const fetchingRef = useRef(false);
+  const signingInRef = useRef(false);
   const userRowChannelRef = useRef<RealtimeChannel | null>(null);
   const statusRef = useRef<string | null>(null);
 
@@ -375,7 +376,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (newSession?.user) {
           setSupabaseUser(newSession.user);
-          fetchUserProfile(newSession.user.id).catch(() => {});
+          
+          // Skip profile fetch if signIn/signUp is already handling it
+          // This prevents race conditions with fetchingRef and RLS timing
+          if (!signingInRef.current) {
+            fetchUserProfile(newSession.user.id).catch(() => {});
+          }
           startUserRowSubscription(newSession.user.id).catch(() => {});
           
             if (event === 'SIGNED_IN') {
@@ -383,18 +389,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             presenceManager.start(newSession.user.id);
           }
         } else {
-          setUser(null);
-          setSupabaseUser(null);
-          userProfileCache = null;
-          locationTracker.stop();
-          presenceManager.stop();
+          // Only clear user state on explicit SIGNED_OUT event.
+          // Other events (INITIAL_SESSION, TOKEN_REFRESHED) may briefly
+          // have null session during transitions — don't wipe state for those.
+          if (event === 'SIGNED_OUT') {
+            setUser(null);
+            setSupabaseUser(null);
+            setSession(null);
+            userProfileCache = null;
+            locationTracker.stop();
+            presenceManager.stop();
+          } else {
+            console.log(`[Auth] Ignoring null session for event: ${event}`);
+          }
         }
       }
     );
 
     // Re-validate session when app resumes from background (Capacitor fix)
+    // Only runs on Capacitor native — not needed on desktop/localhost
     const handleVisibilityChange = async () => {
       if (document.visibilityState !== "visible") return;
+
+      // Only run this recovery logic on Capacitor native where WebView
+      // can clear localStorage in the background. On web/localhost this
+      // causes race conditions during login.
+      const isNative =
+        typeof window !== "undefined" &&
+        ((window as any).Capacitor !== undefined ||
+          (/Android/.test(navigator.userAgent) && /wv/.test(navigator.userAgent)));
+      if (!isNative) return;
+
+      // Wait a moment for any in-flight auth state changes to settle
+      await new Promise((r) => setTimeout(r, 1000));
 
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
@@ -473,31 +500,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function fetchUserProfile(userId: string) {
-    if (userProfileCache && 
+  async function fetchUserProfile(userId: string, force = false) {
+    if (!force && userProfileCache && 
         userProfileCache.userId === userId && 
         Date.now() - userProfileCache.timestamp < CACHE_DURATION) {
       setUser(userProfileCache.profile);
       return;
     }
 
-    if (fetchingRef.current) return;
+    // If already fetching, wait for it to finish rather than skipping
+    if (fetchingRef.current) {
+      // Wait up to 5 seconds for the current fetch to complete
+      for (let i = 0; i < 50; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        if (!fetchingRef.current) break;
+      }
+      // If cache was populated by the other fetch, use it
+      if (userProfileCache && userProfileCache.userId === userId) {
+        setUser(userProfileCache.profile);
+        return;
+      }
+      // If still fetching after 5s, proceed anyway
+      if (fetchingRef.current) return;
+    }
     fetchingRef.current = true;
 
     try {
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", userId)
-        .maybeSingle();
+      let data: any = null;
+      let error: any = null;
+
+      // Retry up to 3 times — session token may not be ready on first attempt
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const res = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle();
+
+        data = res.data;
+        error = res.error;
+
+        if (!error && data) break; // Success
+        if (attempt < 2) {
+          console.log(`[Auth] Profile fetch attempt ${attempt + 1} failed, retrying...`);
+          await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+        }
+      }
 
       if (error) {
-console.error("Profile fetch error:", {
-  message: (error as any)?.message,
-  details: (error as any)?.details,
-  hint: (error as any)?.hint,
-  code: (error as any)?.code,
-});
+        console.error("Profile fetch error:", {
+          message: (error as any)?.message,
+          details: (error as any)?.details,
+          hint: (error as any)?.hint,
+          code: (error as any)?.code,
+        });
       }
 
       const profile: User = data ? {
@@ -630,6 +686,7 @@ console.error("Profile fetch error:", {
 
 
   async function signUp(email: string, password: string, fullName: string, phone: string) {
+    signingInRef.current = true;
     try {
       console.log("🔐 Starting signup process...");
       
@@ -673,7 +730,11 @@ console.error("Profile fetch error:", {
       if (authData.session) {
         setSession(authData.session);
         setSupabaseUser(authData.user);
-        await fetchUserProfile(authData.user.id);
+
+        // Wait for Supabase client to internalize the new session token
+        await new Promise((r) => setTimeout(r, 300));
+
+        await fetchUserProfile(authData.user.id, true);
         checkAndStartLocationTracking(authData.user.id);
       }
 
@@ -683,10 +744,13 @@ console.error("Profile fetch error:", {
     } catch (error: any) {
       console.error("❌ Signup exception:", error);
       return { error: error };
+    } finally {
+      signingInRef.current = false;
     }
   }
 
   async function signIn(email: string, password: string) {
+    signingInRef.current = true;
     try {
           const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -719,7 +783,12 @@ console.error("Profile fetch error:", {
     if (data.session) {
       setSession(data.session);
       setSupabaseUser(data.user);
-      await fetchUserProfile(data.user.id);
+
+      // Wait for Supabase client to internalize the new session token
+      // before making authenticated queries (prevents RLS empty errors)
+      await new Promise((r) => setTimeout(r, 300));
+
+      await fetchUserProfile(data.user.id, true);
       checkAndStartLocationTracking(data.user.id);
 
       if (status === "suspended") {
@@ -730,6 +799,8 @@ console.error("Profile fetch error:", {
     return { error: null };
     } catch (error) {
       return { error: error as Error };
+    } finally {
+      signingInRef.current = false;
     }
   }
 

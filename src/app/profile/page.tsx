@@ -93,10 +93,14 @@ export default function ProfilePage() {
 
    // Handle Auth Redirects — redirect to login if session is truly gone
    useEffect(() => {
-    if (!authLoading && !user) {
-      window.location.replace("/login");
+    if (authLoading) return;
+    if (!user) {
+      const timer = setTimeout(() => {
+        router.replace("/login");
+      }, 1000);
+      return () => clearTimeout(timer);
     }
-  }, [authLoading, user]);
+  }, [authLoading, user, router]);
 
   // --- FETCH DATA (stale-while-revalidate) ---
   useEffect(() => {

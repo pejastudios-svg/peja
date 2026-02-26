@@ -204,7 +204,7 @@ export default function ChatPage() {
   // KEEP LOCAL CACHE FRESH — saves after every state change (debounced)
   // This ensures re-opening a chat shows up-to-date messages instantly
   // =====================================================
-  useEffect(() => {
+   useEffect(() => {
     if (!conversationId || messages.length === 0) return;
     if (!initialFetchDoneRef.current) return;
 
@@ -212,25 +212,17 @@ export default function ChatPage() {
 
     saveCacheTimeoutRef.current = setTimeout(() => {
       try {
-        // Only cache messages that have their media resolved (no temp media, no empty URLs for media messages)
+        // Cache all real messages. For media messages without resolved URLs,
+        // keep them in cache (they'll be refreshed on next fetch).
+        // Only skip temp/optimistic messages.
         const cacheData = messages
-          .filter((m) => {
-            if (m.id.startsWith("temp-")) return false;
-            // Skip media messages that haven't resolved their media yet
-            if (
-              (m.content_type === "media" || m.content_type === "document") &&
-              (!m.media || m.media.length === 0 || m.media.some((med) => !med.url))
-            ) {
-              return false;
-            }
-            return true;
-          })
+          .filter((m) => !m.id.startsWith("temp-"))
           .slice(-100);
         if (cacheData.length > 0) {
           localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
         }
       } catch {}
-    }, 1000); // Longer debounce to ensure media has resolved
+    }, 2000);
 
     return () => {
       if (saveCacheTimeoutRef.current) clearTimeout(saveCacheTimeoutRef.current);

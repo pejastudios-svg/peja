@@ -65,9 +65,12 @@ useScrollRestore("settings");
     if (user) {
       loadSettings();
     } else {
-      window.location.replace("/login");
+      const timer = setTimeout(() => {
+        router.replace("/login");
+      }, 1000);
+      return () => clearTimeout(timer);
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, router]);
 
   const loadSettings = async () => {
     if (!user) {

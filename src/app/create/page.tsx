@@ -143,12 +143,15 @@ export default function CreatePostPage() {
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
-      // Hard navigate to ensure login page renders even in Capacitor WebView
-      window.location.replace("/login");
-      return;
+      // Small delay to avoid race condition during auth state transitions
+      // (e.g. overlay mounting briefly before session is hydrated)
+      const timer = setTimeout(() => {
+        router.replace("/login");
+      }, 500);
+      return () => clearTimeout(timer);
     }
     handleGetLocation();
-  }, [user, authLoading]);
+  }, [user, authLoading, router]);
 
   if (authLoading) {
     return (

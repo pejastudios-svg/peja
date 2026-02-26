@@ -416,13 +416,19 @@ export function VideoLightbox({
         className="relative z-1 w-full h-full flex items-center justify-center"
         style={getVideoContainerStyle()}
       >
-        {/* Poster overlay - shows instantly, hides when video has frames */}
-        {effectivePoster && showPoster && (
-          <img
-            src={effectivePoster}
-            alt=""
-            className="absolute inset-0 w-full h-full object-contain pointer-events-none z-[2]"
-          />
+        {/* Poster overlay — always covers video until frames render. Never shows ugly browser default. */}
+        {showPoster && (
+          <div className="absolute inset-0 z-[2] pointer-events-none">
+            {effectivePoster ? (
+              <img
+                src={effectivePoster}
+                alt=""
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <div className="w-full h-full bg-black" />
+            )}
+          </div>
         )}
 
         {/* Loading spinner */}
@@ -435,10 +441,12 @@ export function VideoLightbox({
           <video
           ref={videoRef}
           src={videoUrl ? getOptimizedVideoUrl(videoUrl) : undefined}
-          className="max-w-full max-h-full w-full h-full object-contain pointer-events-none"
+          className={`max-w-full max-h-full w-full h-full object-contain pointer-events-none transition-opacity duration-150 ${
+            showPoster ? "opacity-0" : "opacity-100"
+          }`}
           playsInline
           autoPlay
-          preload="auto"
+          preload="metadata"
           loop
           muted={!soundEnabled}
           onTimeUpdate={handleTimeUpdate}
