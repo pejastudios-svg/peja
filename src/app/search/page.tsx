@@ -275,7 +275,7 @@ function SearchContent() {
   const hasActiveFilters = selectedCategory || dateRange !== "all";
 
   const handleSharePost = async (post: Post) => {
-    const shareUrl = `${window.location.origin}/post/${post.id}`;
+    const shareUrl = `https://peja.life/post/${post.id}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: "Peja Alert", url: shareUrl });

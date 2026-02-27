@@ -626,7 +626,7 @@ useEffect(() => {
 
   // --- Handlers ---
   const handleShare = async (postId: string) => {
-    const url = `${window.location.origin}/post/${postId}`;
+    const url = `https://peja.life/post/${postId}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: "Peja Alert", url });
