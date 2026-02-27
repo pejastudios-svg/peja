@@ -38,7 +38,6 @@ export function useHlsPlayer(
       video.src = hlsUrl;
 
       const onError = () => {
-        console.log("[HLS] Native HLS failed, falling back to MP4");
         video.src = mp4Fallback;
       };
       video.addEventListener("error", onError, { once: true });
@@ -60,7 +59,6 @@ export function useHlsPlayer(
 
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) {
-          console.log("[HLS] Fatal error, falling back to MP4");
           hls.destroy();
           hlsRef.current = null;
           video.src = mp4Fallback;

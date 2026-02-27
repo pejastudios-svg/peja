@@ -149,7 +149,6 @@ export default function GuardianQueuePage() {
       const { data: flagged, error } = await query.limit(50);
 
       if (error) {
-        console.error("Guardian queue fetch error:", error);
         setItems([]);
         return;
       }
@@ -183,8 +182,7 @@ export default function GuardianQueuePage() {
             .in("id", allPostIds)
         : { data: [], error: null };
 
-      if (postsErr) console.error("Guardian queue posts fetch error:", postsErr);
-
+      if (postsErr)
       const postsMap: Record<string, any> = {};
       (postsData || []).forEach((p: any) => (postsMap[p.id] = p));
 
@@ -193,8 +191,7 @@ export default function GuardianQueuePage() {
         ? await supabase.from("post_media").select("post_id,url,media_type").in("post_id", postIds)
         : { data: [], error: null };
 
-      if (mediaErr) console.error("Guardian queue media fetch error:", mediaErr);
-
+      if (mediaErr)
       const mediaMap: Record<string, { url: string; media_type: string }[]> = {};
       (mediaData || []).forEach((m: any) => {
         if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
@@ -210,8 +207,7 @@ export default function GuardianQueuePage() {
         ? await supabase.from("users").select("id,full_name,avatar_url").in("id", userIds)
         : { data: [], error: null };
 
-      if (usersErr) console.error("Guardian queue users fetch error:", usersErr);
-
+      if (usersErr)
       const usersMap: Record<string, { full_name: string; avatar_url?: string }> = {};
       (usersData || []).forEach((u: any) => (usersMap[u.id] = { full_name: u.full_name, avatar_url: u.avatar_url }));
 
@@ -281,7 +277,6 @@ export default function GuardianQueuePage() {
         if (match) openReview(match);
       }
     } catch (e) {
-      console.error("Guardian queue exception:", e);
       setItems([]);
     } finally {
       setLoading(false);
@@ -324,7 +319,6 @@ export default function GuardianQueuePage() {
     setSelectedItem(null);
 
   } catch (error: any) {
-    console.error("Action error:", error);
     alert(error.message || "Failed to complete action");
   } finally {
     setActionLoading(false);

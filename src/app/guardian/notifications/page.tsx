@@ -65,8 +65,7 @@ export default function GuardianNotificationsPage() {
       .order("created_at", { ascending: false })
       .limit(80);
 
-    if (error) console.error(error);
-    setItems((data || []) as any);
+    if (error)    setItems((data || []) as any);
     if (!silent) setLoading(false);
   };
 
@@ -84,7 +83,6 @@ export default function GuardianNotificationsPage() {
 
     // Use unique channel name with timestamp
     const channelName = `guardian-notifications-page-${uid}-${Date.now()}`;
-    console.log("[Guardian Notifications] Setting up channel:", channelName);
 
     const channel = supabase
       .channel(channelName)
@@ -97,12 +95,10 @@ export default function GuardianNotificationsPage() {
           filter: `recipient_id=eq.${uid}` 
         },
         (payload) => {
-          console.log("[Guardian Notifications] Realtime event:", payload.eventType);
           fetchItems(true);
         }
       )
       .subscribe((status) => {
-        console.log("[Guardian Notifications] Subscription status:", status);
       });
 
     channelRef.current = channel;
@@ -112,7 +108,6 @@ export default function GuardianNotificationsPage() {
 
   // Also listen for flagged content changes
   const handleFlaggedChange = () => {
-    console.log("[Guardian Notifications] Flagged content changed, refreshing...");
     fetchItems(true);
   };
   

@@ -43,7 +43,6 @@ export async function sendSMS(
       return { success: false, error: data.message || 'Failed to send SMS' };
     }
   } catch (error) {
-    console.error('SMS send error:', error);
     return { success: false, error: 'Network error' };
   }
 }

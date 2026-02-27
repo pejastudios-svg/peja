@@ -77,7 +77,6 @@ export async function DELETE(req: NextRequest) {
       .eq("id", userId);
 
     if (userDeleteError) {
-      console.error("Error deleting user record:", userDeleteError);
       return NextResponse.json(
         { error: "Failed to delete user record" },
         { status: 500 }
@@ -88,7 +87,6 @@ export async function DELETE(req: NextRequest) {
     const { error: authDeleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
 
     if (authDeleteError) {
-      console.error("Error deleting auth user:", authDeleteError);
       // User data is already deleted, so we still return success
       // The auth user will be orphaned but that's better than failing
     }
@@ -96,7 +94,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true });
 
   } catch (error: any) {
-    console.error("Delete account error:", error);
     return NextResponse.json(
       { error: error.message || "Failed to delete account" },
       { status: 500 }

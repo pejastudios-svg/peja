@@ -26,10 +26,6 @@ export async function compressImage(
   onProgress?: (progress: number) => void
 ): Promise<File> {
   try {
-    console.log("[MediaCompression] Starting image compression:", {
-      originalSize: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-      name: file.name,
-    });
 
     const compressed = await imageCompression(file, {
       ...CONFIG.image,
@@ -38,11 +34,6 @@ export async function compressImage(
       },
     });
 
-    console.log("[MediaCompression] Image compressed:", {
-      originalSize: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
-      compressedSize: `${(compressed.size / 1024 / 1024).toFixed(2)} MB`,
-      reduction: `${(((file.size - compressed.size) / file.size) * 100).toFixed(1)}%`,
-    });
 
     // Return as File with original name
     return new File([compressed], file.name, {
@@ -50,7 +41,6 @@ export async function compressImage(
       lastModified: Date.now(),
     });
   } catch (error) {
-    console.error("[MediaCompression] Image compression failed:", error);
     throw new Error("Failed to compress image");
   }
 }
@@ -65,15 +55,9 @@ export async function compressVideo(
   try {
     const originalSizeMB = file.size / 1024 / 1024;
 
-    console.log("[MediaCompression] Starting video upload:", {
-      originalSize: `${originalSizeMB.toFixed(2)} MB`,
-      name: file.name,
-      type: file.type,
-    });
 
     // Check if already under limit
     if (originalSizeMB <= CONFIG.video.maxSizeMB) {
-      console.log("[MediaCompression] Video already under size limit, skipping compression");
       throw new Error("SKIP_COMPRESSION");
     }
 
@@ -87,14 +71,9 @@ export async function compressVideo(
 
     // If Cloudinary not configured, skip compression and upload directly
     if (!CONFIG.video.cloudinaryCloudName || !CONFIG.video.cloudinaryUploadPreset) {
-      console.log("[MediaCompression] Cloudinary not configured, skipping compression");
       throw new Error("SKIP_COMPRESSION");
     }
 
-    console.log("[MediaCompression] Cloudinary config:", {
-      cloudName: CONFIG.video.cloudinaryCloudName,
-      uploadPreset: CONFIG.video.cloudinaryUploadPreset,
-    });
 
     // Build FormData (transformation now comes from preset)
     const formData = new FormData();
@@ -108,28 +87,15 @@ export async function compressVideo(
         xhr.upload.addEventListener("progress", (e) => {
           if (e.lengthComputable) {
             const progress = Math.round((e.loaded / e.total) * 100);
-            console.log(`[Cloudinary] Upload progress: ${progress}%`);
             onProgress?.(progress);
           }
         });
 
         xhr.addEventListener("load", () => {
-          console.log("[Cloudinary] Response received:", {
-            status: xhr.status,
-            statusText: xhr.statusText,
-          });
 
           if (xhr.status === 200) {
             try {
               const response = JSON.parse(xhr.responseText);
-              console.log("[Cloudinary] Upload success:", {
-                url: response.secure_url,
-                originalBytes: file.size,
-                compressedBytes: response.bytes,
-                reduction: `${(((file.size - response.bytes) / file.size) * 100).toFixed(1)}%`,
-                duration: response.duration,
-                format: response.format,
-              });
 
               resolve({
                 url: response.secure_url,
@@ -137,17 +103,10 @@ export async function compressVideo(
                 duration: response.duration,
               });
             } catch (parseError) {
-              console.error("[Cloudinary] JSON parse error:", parseError);
-              console.error("[Cloudinary] Raw response:", xhr.responseText);
               reject(new Error("Invalid response from Cloudinary"));
             }
           } else {
             // Detailed error logging
-            console.error("[Cloudinary] Upload failed:", {
-              status: xhr.status,
-              statusText: xhr.statusText,
-              responseText: xhr.responseText,
-            });
 
             let errorMessage = `Upload failed with status ${xhr.status}`;
 
@@ -163,17 +122,14 @@ export async function compressVideo(
         });
 
         xhr.addEventListener("error", () => {
-          console.error("[Cloudinary] Network error during upload");
           reject(new Error("Network error during upload"));
         });
 
         xhr.addEventListener("abort", () => {
-          console.error("[Cloudinary] Upload cancelled by user");
           reject(new Error("Upload cancelled"));
         });
 
         const uploadUrl = `https://api.cloudinary.com/v1_1/${CONFIG.video.cloudinaryCloudName}/video/upload`;
-        console.log("[Cloudinary] Uploading to:", uploadUrl);
 
         xhr.open("POST", uploadUrl);
         xhr.send(formData);
@@ -185,7 +141,6 @@ export async function compressVideo(
     if (error.message === "SKIP_COMPRESSION") {
       throw error; // Re-throw for caller to handle
     }
-    console.error("[MediaCompression] Video compression failed:", error);
     throw new Error(error.message || "Failed to compress video");
   }
 }

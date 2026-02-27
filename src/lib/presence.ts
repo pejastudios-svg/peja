@@ -151,7 +151,6 @@ class PresenceManager {
       try {
         cb(userId, isOnline);
       } catch (e) {
-        console.error("[Presence] Listener error:", e);
       }
     });
   }
@@ -172,7 +171,6 @@ class PresenceManager {
           return; // Silent — expected when offline/backgrounded
         }
       }
-      console.warn("[Presence] last_seen_at update failed:", (error as any)?.message || error);
     }
   } catch (e: any) {
     // Silently ignore network/fetch errors
@@ -180,7 +178,6 @@ class PresenceManager {
     if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('network') || msg.includes('AbortError')) {
       return;
     }
-    console.warn("[Presence] updateLastSeen error:", msg);
   }
 }
 

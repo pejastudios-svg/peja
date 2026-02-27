@@ -203,7 +203,6 @@ const handleConversationTap = useCallback((convId: string) => {
       setNewChatOpen(false);
       router.push(`/messages/${convId}`, { scroll: false });
     } catch (e: any) {
-      console.error("startConversation error:", e?.message || e);
     } finally { setCreating(null); }
   }, [user?.id, router]);
 

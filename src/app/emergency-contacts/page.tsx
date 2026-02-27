@@ -112,7 +112,6 @@ export default function EmergencyContactsPage() {
           setShowNotOnPeja(true);
         }
       } catch (error) {
-        console.error("Search error:", error);
         setSearchResults([]);
       } finally {
         setSearching(false);
@@ -165,7 +164,6 @@ export default function EmergencyContactsPage() {
         setContacts([]);
       }
     } catch (error) {
-      console.error("Error fetching contacts:", error);
     } finally {
       setLoading(false);
     }
@@ -216,7 +214,6 @@ export default function EmergencyContactsPage() {
       setContacts((prev) => [...prev, newContact]);
       handleCloseModal();
     } catch (error) {
-      console.error("Error adding contact:", error);
       setError("Failed to add contact. Please try again.");
     } finally {
       setSaving(false);
@@ -238,7 +235,6 @@ export default function EmergencyContactsPage() {
       setContacts((prev) => prev.filter((c) => c.id !== deleteId));
       setDeleteId(null);
     } catch (error) {
-      console.error("Error deleting contact:", error);
     } finally {
       setDeleting(false);
     }

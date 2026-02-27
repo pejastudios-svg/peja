@@ -88,8 +88,7 @@ export default function AdminNotificationsPage() {
         .order("created_at", { ascending: false })
         .limit(80);
 
-      if (error) console.error(error);
-      setItems((data || []) as any);
+      if (error)      setItems((data || []) as any);
     } finally {
       fetchingRef.current = false;
       if (!silent) setLoading(false);

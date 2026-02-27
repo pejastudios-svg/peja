@@ -69,11 +69,9 @@ export async function sendPushNotification(params: {
       error?.code === "messaging/registration-token-not-registered" ||
       error?.code === "messaging/invalid-registration-token"
     ) {
-      console.warn("[FCM] Invalid token, should be removed:", params.token.slice(0, 20));
       return false;
     }
 
-    console.error("[FCM] Send error:", error?.message || error);
     return false;
   }
 }
@@ -122,7 +120,6 @@ export async function sendPushToUser(params: {
       .delete()
       .in("id", invalidTokenIds);
 
-    console.log(`[FCM] Cleaned up ${invalidTokenIds.length} invalid tokens`);
   }
 
   return sentCount;

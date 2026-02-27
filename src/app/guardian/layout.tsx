@@ -54,12 +54,10 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
         .eq("is_read", false);
 
       if (!error) {
-        console.log("[Guardian Layout] Fetched unread count:", count);
         setUnreadCount(count || 0);
         setBadgeKey(prev => prev + 1);
       }
     } catch (e) {
-      console.error("[Guardian Layout] fetchUnreadCount error:", e);
     }
   }, [user?.id]);
 
@@ -67,7 +65,6 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
   useEffect(() => {
     if (!user?.id) return;
 
-    console.log("[Guardian Layout] Setting up for user:", user.id);
     fetchUnreadCount();
 
     // Cleanup existing channel
@@ -77,7 +74,6 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
     }
 
     const channelName = `guardian-layout-badge-${user.id}-${Date.now()}`;
-    console.log("[Guardian Layout] Creating channel:", channelName);
 
     const channel = supabase
       .channel(channelName)
@@ -90,7 +86,6 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
           filter: `recipient_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log("[Guardian Layout] INSERT received:", payload.new);
           fetchUnreadCount();
         }
       )
@@ -103,7 +98,6 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
           filter: `recipient_id=eq.${user.id}`,
         },
         () => {
-          console.log("[Guardian Layout] UPDATE received");
           fetchUnreadCount();
         }
       )
@@ -116,19 +110,16 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
           filter: `recipient_id=eq.${user.id}`,
         },
         () => {
-          console.log("[Guardian Layout] DELETE received");
           fetchUnreadCount();
         }
       )
       .subscribe((status) => {
-        console.log("[Guardian Layout] Subscription status:", status);
       });
 
     channelRef.current = channel;
 
     return () => {
       if (channelRef.current) {
-        console.log("[Guardian Layout] Cleaning up channel");
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
@@ -138,7 +129,6 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
   // Listen for manual badge refresh events
   useEffect(() => {
     const handleBadgeRefresh = () => {
-      console.log("[Guardian Layout] Badge refresh event received");
       fetchUnreadCount();
     };
 

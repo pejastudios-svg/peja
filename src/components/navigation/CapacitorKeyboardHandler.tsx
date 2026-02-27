@@ -51,7 +51,6 @@ export function CapacitorKeyboardHandler() {
           hideListener.remove();
         };
       } catch (e) {
-        console.warn("Capacitor Keyboard plugin not available, using fallback");
         setupVisualViewportHandler();
       }
     };

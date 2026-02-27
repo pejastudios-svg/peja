@@ -79,7 +79,6 @@ export default function BecomeGuardianPage() {
 
       setExistingApplication(data);
     } catch (error) {
-      console.error("Error checking application:", error);
     } finally {
       setLoading(false);
     }
@@ -130,7 +129,6 @@ export default function BecomeGuardianPage() {
 
       setSuccess(true);
     } catch (err: any) {
-      console.error("Error submitting:", err);
       setError(err.message || "Failed to submit application");
     } finally {
       setSubmitting(false);

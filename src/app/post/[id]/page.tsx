@@ -532,7 +532,6 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
         setCommentsLoading(false);
       }
     } catch (err) {
-      console.error("Fetch comments error:", err);
       if (isMounted.current) setCommentsLoading(false);
     }
   }, [postId, user]);
@@ -590,7 +589,6 @@ const handleConfirm = async () => {
       notifyPostConfirmed(postId, post.user_id, user.full_name || "Someone");
     }
   } catch (err) {
-    console.error("Confirm error:", err);
   } finally {
     setConfirmLoading(false);
   }
@@ -674,7 +672,6 @@ setLikeBusy(prev => {
     }
 
   } catch (err) {
-    console.error("Like error:", err);
     // Rollback on error
     setAllComments(prev => prev.map(c => {
       if (c.id === commentId) {
@@ -838,7 +835,6 @@ setLikeBusy(prev => {
             .upload(fileName, file, { cacheControl: "3600", upsert: false });
 
           if (uploadError) {
-            console.error("Upload error:", uploadError);
             continue;
           }
 
@@ -903,7 +899,6 @@ setLikeBusy(prev => {
       }
 
     } catch (err: any) {
-      console.error("Submit error:", err);
       
       setAllComments(prev => prev.filter(c => c.id !== tempId));
       setPost(p => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
@@ -948,7 +943,6 @@ setLikeBusy(prev => {
       }).eq("id", postId);
 
     } catch (err) {
-      console.error("Delete error:", err);
       fetchComments();
     }
   };
@@ -1066,15 +1060,12 @@ setTimeout(() => setToastMsg(null), 2500);
     setShowDeleteModal(false);
 
     // Debug: Check cache before removal
-    console.log("[DELETE] Before removePost, checking all caches:");
     const testKeys = ["home:nearby:unseen", "home:nearby:seen", "home:trending:unseen", "home:trending:seen"];
     testKeys.forEach(k => {
       const cached = feedCache.get(k);
       if (cached) {
         const found = cached.posts.find(p => p.id === postId);
-        console.log(`[DELETE] Cache key "${k}": ${cached.posts.length} posts, target post ${found ? "FOUND" : "not found"}`);
       } else {
-        console.log(`[DELETE] Cache key "${k}": null`);
       }
     });
 
@@ -1082,12 +1073,10 @@ setTimeout(() => setToastMsg(null), 2500);
     feedCache.removePost(postId);
 
     // Debug: Check cache after removal
-    console.log("[DELETE] After removePost:");
     testKeys.forEach(k => {
       const cached = feedCache.get(k);
       if (cached) {
         const found = cached.posts.find(p => p.id === postId);
-        console.log(`[DELETE] Cache key "${k}": ${cached.posts.length} posts, target post ${found ? "STILL FOUND!" : "removed ✓"}`);
       }
     });
 
@@ -1111,7 +1100,6 @@ setTimeout(() => setToastMsg(null), 2500);
     }, 300);
 
   } catch (err: any) {
-    console.error("Delete error:", err);
     toastApi.danger(err.message || "Failed to delete post");
   } finally {
     setDeleting(false);
@@ -1166,35 +1154,23 @@ setTimeout(() => setToastMsg(null), 2500);
   };
 
     const handleReportCommentAction = async () => {
-  console.log("=== REPORT COMMENT CLICKED ===");
-  console.log("Selected comment:", selectedComment?.id);
-  console.log("Reason:", reportReason);
-  console.log("User:", user?.id);
   
   if (!reportReason || !user || !selectedComment) {
-    console.log("❌ Missing data, returning early");
     return;
   }
   
   setSubmittingReport(true);
   
   try {
-    console.log("1️⃣ Getting auth session...");
     const { data: auth } = await supabase.auth.getSession();
     const token = auth.session?.access_token;
-    console.log("2️⃣ Token exists:", !!token);
 
     if (!token) {
-      console.log("❌ No token!");
       toastApi.danger("Session expired. Please sign in again.");
       setSubmittingReport(false);
       return;
     }
 
-    console.log("3️⃣ Calling API with:", {
-      commentId: selectedComment.id,
-      reason: reportReason,
-    });
     
         const res = await fetch(apiUrl("/api/report-comment"), {
       method: "POST",
@@ -1209,16 +1185,12 @@ setTimeout(() => setToastMsg(null), 2500);
       }),
     });
 
-    console.log("4️⃣ API Response status:", res.status);
     const json = await res.json();
-    console.log("5️⃣ API Response body:", json);
 
     if (!res.ok || !json.ok) {
-      console.log("❌ API returned error:", json.error);
       throw new Error(json.error || "Failed to report");
     }
 
-    console.log("✅ Report successful!");
     
     // Close modals
     setShowCommentReportModal(false);
@@ -1235,7 +1207,6 @@ setTimeout(() => setToastMsg(null), 2500);
     }
 
   } catch (err: any) {
-    console.error("❌ CATCH ERROR:", err);
     toastApi.danger(err.message || "Failed to report");
   } finally {
     setSubmittingReport(false);

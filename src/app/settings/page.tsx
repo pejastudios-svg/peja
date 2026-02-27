@@ -79,7 +79,6 @@ useScrollRestore("settings");
     }
 
     try {
-      console.log("Loading settings for user:", user.id);
       
       const { data: settings, error } = await supabase
         .from("user_settings")
@@ -87,11 +86,8 @@ useScrollRestore("settings");
         .eq("user_id", user.id)
         .maybeSingle();
 
-      console.log("Loaded settings:", settings);
-      console.log("Load error:", error);
 
       if (error && error.code !== "PGRST116") {
-        console.error("Load settings error:", error);
         setDebugInfo(`Load error: ${error.message}`);
       }
 
@@ -114,7 +110,6 @@ useScrollRestore("settings");
         setDebugInfo("No settings found, using defaults");
       }
     } catch (error: any) {
-      console.error("Error loading settings:", error);
       setDebugInfo(`Error: ${error.message}`);
     } finally {
       setLoading(false);
@@ -147,7 +142,6 @@ useScrollRestore("settings");
       updated_at: new Date().toISOString(),
     };
 
-    console.log("Saving settings:", settingsData);
 
     try {
       let result;
@@ -169,10 +163,8 @@ useScrollRestore("settings");
           .single();
       }
 
-      console.log("Save result:", result);
 
       if (result.error) {
-        console.error("Save error:", result.error);
         setSaveError(`Failed to save: ${result.error.message}`);
         setDebugInfo(`Save error: ${result.error.message}`);
       } else {
@@ -182,7 +174,6 @@ useScrollRestore("settings");
         setTimeout(() => setSaveSuccess(false), 3000);
       }
     } catch (error: any) {
-      console.error("Error saving settings:", error);
       setSaveError(`Error: ${error.message}`);
       setDebugInfo(`Exception: ${error.message}`);
     } finally {

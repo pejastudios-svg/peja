@@ -74,7 +74,6 @@ export default function AdminUsersPage() {
       if (error) throw error;
       setUsers(data || []);
     } catch (err) {
-      console.error("Error fetching users:", err);
       setUsers([]);
     } finally {
       setLoading(false);
@@ -133,17 +132,14 @@ let json: any;
 try {
   json = JSON.parse(text);
 } catch {
-  console.error("API returned non-JSON:", text.slice(0, 300));
   throw new Error("API crashed (non-JSON). Check terminal logs + service role env.");
 }
-    console.log("set-user-status response:", res.status, json);
     if (!res.ok || !json.ok) {
       throw new Error(json.error || `Request failed (${res.status})`);
     }
 
   await fetchUsers();
   } catch (err) {
-    console.error("Status update error:", err);
     alert("Failed to update user status");
   } finally {
     setActionLoading(null);

@@ -47,7 +47,6 @@ export default function GuardianInAppToasts({ onNewNotification }: Props) {
 
       // Create unique channel name
       const channelName = `guardian-toast-${uid}-${Date.now()}`;
-      console.log("[GuardianToast] Setting up channel:", channelName);
 
       const channel = supabase
         .channel(channelName)
@@ -61,7 +60,6 @@ export default function GuardianInAppToasts({ onNewNotification }: Props) {
           },
           (payload) => {
             const notification = payload.new as NotifRow;
-            console.log("[GuardianToast] Received notification:", notification.title);
 
             // Play sound
             playNotificationSound();
@@ -82,7 +80,6 @@ export default function GuardianInAppToasts({ onNewNotification }: Props) {
           }
         )
         .subscribe((status) => {
-          console.log("[GuardianToast] Subscription status:", status);
         });
 
       channelRef.current = channel;
@@ -92,7 +89,6 @@ export default function GuardianInAppToasts({ onNewNotification }: Props) {
 
     return () => {
       if (channelRef.current) {
-        console.log("[GuardianToast] Cleaning up channel");
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
@@ -115,7 +111,6 @@ export default function GuardianInAppToasts({ onNewNotification }: Props) {
       
       onNewNotification?.();
     } catch (e) {
-      console.error("[GuardianToast] Failed to mark as read:", e);
     }
 
     // Navigate based on type

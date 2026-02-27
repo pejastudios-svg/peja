@@ -203,7 +203,6 @@ setHourlyData(hourly);
         setTopScreens(topScreens);
         setTopEvents(topEvents);
       } catch (e) {
-        console.error("Analytics load error:", e);
       } finally {
         setLoading(false);
       }

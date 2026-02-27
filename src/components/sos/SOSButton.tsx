@@ -136,11 +136,9 @@ export function SOSButton({ className = "" }: { className?: string }) {
             })
             .eq("id", sosId);
         } catch (err) {
-          console.warn("SOS location update failed:", err);
         }
       },
       (err) => {
-        console.warn("SOS watchPosition error:", err.code, err.message);
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
     );
@@ -305,7 +303,6 @@ export function SOSButton({ className = "" }: { className?: string }) {
         lng = pos.coords.longitude;
         address = await getAddress(lat, lng);
       } catch (locErr) {
-        console.warn("Location error:", locErr);
       }
       const { data: userData } = await supabase
         .from("users")
@@ -354,8 +351,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
         radius_m: 5000,
         max_results: 200,
       });
-      if (nearbyErr) console.error("nearby rpc error:", nearbyErr);
-      const nearbyIds = (nearby || [])
+      if (nearbyErr)      const nearbyIds = (nearby || [])
         .map((r: any) => r.id)
         .filter((id: string) => id && id !== user.id);
       const tagInfo = selectedTag ? SOS_TAGS.find(t => t.id === selectedTag) : null;
@@ -397,11 +393,9 @@ export function SOSButton({ className = "" }: { className?: string }) {
               accessToken: token,
               mode: 'activator',
             });
-            console.log('[SOS] Native background tracking started');
           }
         }
       } catch (e) {
-        console.warn('[SOS] Native tracking not available, using web fallback', e);
       }
       setLoadingComplete(true);
       
@@ -409,7 +403,6 @@ export function SOSButton({ className = "" }: { className?: string }) {
         setShowNotifiedCard(true);
       }, 500);
     } catch (err) {
-      console.error("SOS error:", err);
       await runLoadingAnimation();
       setLoadingFailed(true);
     } finally {
@@ -442,10 +435,8 @@ export function SOSButton({ className = "" }: { className?: string }) {
         const isCapacitor = typeof (window as any).Capacitor !== 'undefined';
         if (isCapacitor) {
           await SOSLocation.stopTracking();
-          console.log('[SOS] Native background tracking stopped');
         }
       } catch (e) {
-        console.warn('[SOS] Failed to stop native tracking', e);
       }
       setSosActive(false);
       setSosId(null);
@@ -458,7 +449,6 @@ export function SOSButton({ className = "" }: { className?: string }) {
         localStorage.removeItem('peja-sos-notify-status');
       } catch {}
     } catch (err) {
-      console.error("Cancel error:", err);
     } finally {
       setLoading(false);
     }

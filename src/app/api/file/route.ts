@@ -11,13 +11,19 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Missing url" }, { status: 400 });
     }
 
-    // Only allow proxying from our Supabase storage
-    const allowedOrigins = [
-      "supabase.co/storage",
-      "supabase.in/storage",
-    ];
-    if (!allowedOrigins.some((o) => url.includes(o))) {
-      return NextResponse.json({ error: "Invalid URL" }, { status: 403 });
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+    }
+
+    if (
+      parsedUrl.protocol !== "https:" ||
+      !parsedUrl.hostname.endsWith(".supabase.co") ||
+      !parsedUrl.pathname.startsWith("/storage/")
+    ) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const response = await fetch(url);
@@ -28,10 +34,9 @@ export async function GET(req: NextRequest) {
     const contentType = response.headers.get("content-type") || "application/octet-stream";
     const body = response.body;
 
-    const fileName = name || "document";
+    const rawName = name || "document";
+    const fileName = rawName.replace(/[^\w\s.\-()]/g, "_").slice(0, 200);
 
-    // For PDFs and images, display inline (in browser viewer)
-    // For everything else, force download
     const isInline = contentType.includes("pdf") || contentType.startsWith("image/");
     const disposition = isInline
       ? `inline; filename="${fileName}"`
@@ -47,7 +52,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (e: any) {
-    console.error("File proxy error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

@@ -189,7 +189,6 @@ export function VoiceNoteRecorder({
       startLevelAnimation();
 
     } catch (e: any) {
-      console.error("[VoiceRecorder] Native start error:", e);
 
       if (e.message?.includes("permission") || e.code === "PERMISSION_DENIED") {
         setPermissionDenied(true);
@@ -215,15 +214,12 @@ export function VoiceNoteRecorder({
       stopLevelAnimation();
       setIsRecording(false);
 
-      console.log("[VoiceRecorder] Stop result:", result);
 
       if (result.value && result.value.recordDataBase64) {
         // Convert base64 to blob
         const mimeType = result.value.mimeType || "audio/aac";
         const base64Data = result.value.recordDataBase64;
 
-        console.log("[VoiceRecorder] Base64 length:", base64Data.length);
-        console.log("[VoiceRecorder] MIME type:", mimeType);
 
         // Convert base64 to blob
         const byteCharacters = atob(base64Data);
@@ -236,7 +232,6 @@ export function VoiceNoteRecorder({
         const byteArray = new Uint8Array(byteNumbers);
         const blob = new Blob([byteArray], { type: mimeType });
 
-        console.log("[VoiceRecorder] Blob size:", blob.size);
 
         if (blob.size > 0) {
           const finalDuration = Math.round((Date.now() - startTimeRef.current) / 1000);
@@ -249,13 +244,11 @@ export function VoiceNoteRecorder({
           setDebugInfo("Blob size: 0");
         }
       } else {
-        console.log("[VoiceRecorder] No recording data in result");
         setError("No audio data recorded");
         setDebugInfo("No data in result");
       }
 
     } catch (e: any) {
-      console.error("[VoiceRecorder] Native stop error:", e);
       setError("Failed to stop recording");
       setDebugInfo(`Error: ${e.message}`);
       setIsRecording(false);
@@ -353,7 +346,6 @@ export function VoiceNoteRecorder({
         source.connect(analyser);
         analyserRef.current = analyser;
       } catch (e) {
-        console.log("[VoiceRecorder] Could not set up analyzer:", e);
       }
 
       const mimeType = getSupportedMimeType();
@@ -421,7 +413,6 @@ export function VoiceNoteRecorder({
       webAnimationRef.current = requestAnimationFrame(analyzeWebAudio);
 
     } catch (e: any) {
-      console.error("[VoiceRecorder] Web start error:", e);
 
       if (e.name === "NotAllowedError" || e.name === "PermissionDeniedError") {
         setPermissionDenied(true);
@@ -528,7 +519,6 @@ export function VoiceNoteRecorder({
       type: recordedBlob.type,
     });
 
-    console.log("[VoiceRecorder] Sending:", file.name, file.size, file.type);
 
     onSend?.(file, duration);
     setRecordedBlob(null);

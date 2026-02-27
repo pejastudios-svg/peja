@@ -135,7 +135,6 @@ export default function NotificationsPage() {
       setNotifications(list);
       feedCache.setPosts("notifications:list", list as unknown as any[]);
     } catch (error) {
-      console.error("Error:", error);
     } finally {
       setLoading(false);
     }
@@ -186,7 +185,6 @@ export default function NotificationsPage() {
 
       setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n)));
     } catch (error) {
-      console.error("Error marking as read:", error);
     }
   };
 
@@ -211,7 +209,6 @@ export default function NotificationsPage() {
 
       setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
     } catch (error) {
-      console.error("Error deleting notification:", error);
     }
   };
 

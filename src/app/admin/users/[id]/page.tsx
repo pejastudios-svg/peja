@@ -83,7 +83,6 @@ export default function AdminUserDetailPage() {
 
       setContacts((json.contacts || []) as AdminEmergencyContact[]);
     } catch (e) {
-      console.error("fetchEmergencyContacts error:", e);
       setContacts([]);
     } finally {
       setContactsLoading(false);
@@ -177,7 +176,6 @@ export default function AdminUserDetailPage() {
 
       setPosts(formatted);
     } catch (e) {
-      console.error("fetchUserPosts error:", e);
       setPosts([]);
     } finally {
       setPostsLoading(false);
@@ -195,7 +193,6 @@ export default function AdminUserDetailPage() {
           fetchUserPosts()
         ]);
       } catch (e) {
-        console.error(e);
         setU(null);
       } finally {
         setLoading(false);

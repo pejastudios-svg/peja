@@ -78,7 +78,6 @@ export async function POST(req: NextRequest) {
               }),
             });
           } catch (e) {
-            console.error("Failed to send suspend email:", e);
           }
         }
       }
@@ -115,7 +114,6 @@ export async function POST(req: NextRequest) {
               }),
             });
           } catch (e) {
-            console.error("Failed to send ban email:", e);
           }
         }
       }
@@ -151,7 +149,6 @@ export async function POST(req: NextRequest) {
               }),
             });
           } catch (e) {
-            console.error("Failed to send unsuspend email:", e);
           }
         }
       }
@@ -187,7 +184,6 @@ export async function POST(req: NextRequest) {
               }),
             });
           } catch (e) {
-            console.error("Failed to send unban email:", e);
           }
         }
       }
@@ -195,7 +191,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, user: data });
   } catch (e: any) {
-    console.error("set-user-status error:", e);
     return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });
   }
 }

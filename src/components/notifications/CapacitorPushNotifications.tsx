@@ -60,9 +60,7 @@ export function CapacitorPushNotifications() {
             lights: true,
           });
 
-          console.log("[Push] Notification channels created successfully");
         } catch (channelErr) {
-          console.warn("[Push] Channel creation error:", channelErr);
         }
 
         // Request permission
@@ -71,13 +69,11 @@ export function CapacitorPushNotifications() {
         if (permResult.receive === "granted") {
           await PushNotifications.register();
         } else {
-          console.log("[Push] Permission denied");
           return;
         }
 
         // Listen for registration success
         PushNotifications.addListener("registration", async (token) => {
-          console.log("[Push] FCM Token:", token.value);
 
           try {
             await supabase
@@ -92,22 +88,18 @@ export function CapacitorPushNotifications() {
                 { onConflict: "user_id,token" }
               );
 
-            console.log("[Push] Token saved to database");
           } catch (err) {
-            console.error("[Push] Failed to save token:", err);
           }
         });
 
         // Listen for registration errors
         PushNotifications.addListener("registrationError", (error) => {
-          console.error("[Push] Registration error:", error);
         });
 
         // Listen for notifications received while app is in foreground
         PushNotifications.addListener(
           "pushNotificationReceived",
           (notification) => {
-            console.log("[Push] Foreground notification:", notification);
           }
         );
 
@@ -115,7 +107,6 @@ export function CapacitorPushNotifications() {
         PushNotifications.addListener(
           "pushNotificationActionPerformed",
           (action) => {
-            console.log("[Push] Notification tapped:", action);
 
             const data = action.notification.data;
 
@@ -135,7 +126,6 @@ export function CapacitorPushNotifications() {
           }
         );
       } catch (err) {
-        console.error("[Push] Setup error:", err);
       }
     };
 

@@ -49,7 +49,6 @@ export function Header({ onMenuClick, onCreateClick, variant = "default", title,
         setUnreadCount(count || 0);
       }
     } catch (error) {
-      console.error("Error fetching unread count:", error);
     }
   };
 

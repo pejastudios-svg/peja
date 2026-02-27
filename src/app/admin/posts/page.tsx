@@ -143,7 +143,6 @@ export default function AdminPostsPage() {
       if (categoryFilter !== "all") query = query.eq("category", categoryFilter);
       const { data: postsData, count, error } = await query;
       if (error) {
-        console.error(error);
         setPosts([]);
         setTotalCount(0);
         return;
@@ -174,7 +173,6 @@ export default function AdminPostsPage() {
       setPosts(merged);
       setTotalCount(count || 0);
     } catch (e) {
-      console.error(e);
       setPosts([]);
     } finally {
       setLoading(false);
@@ -238,7 +236,6 @@ export default function AdminPostsPage() {
       setPosts(merged);
       setTotalCount(merged.length);
     } catch (error) {
-      console.error(error);
       setPosts([]);
     } finally {
       setLoading(false);
@@ -264,12 +261,10 @@ export default function AdminPostsPage() {
       });
       const result = await res.json();
       if (!res.ok || !result.ok) {
-        console.error("Delete API error:", result.error);
         return false;
       }
       return true;
     } catch (err) {
-      console.error("Delete API exception:", err);
       return false;
     }
   }, [toast]);
@@ -295,7 +290,6 @@ export default function AdminPostsPage() {
       setConfirmDeleteId(null);
       toast.success("Post deleted successfully");
     } catch (error) {
-      console.error(error);
       toast.danger("Failed to delete post");
     } finally {
       setActionLoading(false);
@@ -340,7 +334,6 @@ export default function AdminPostsPage() {
         toast.danger("Failed to delete posts");
       }
     } catch (error) {
-      console.error(error);
       toast.danger("Bulk delete failed");
     } finally {
       setActionLoading(false);
@@ -359,7 +352,6 @@ export default function AdminPostsPage() {
       }
       toast.success(`Post status changed to ${newStatus}`);
     } catch (error) {
-      console.error(error);
       toast.danger("Failed to update status");
     } finally {
       setActionLoading(false);

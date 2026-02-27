@@ -40,7 +40,6 @@ export default function GuardianActionsPage() {
       if (error) throw error;
       setRows((data || []) as any);
     } catch (e) {
-      console.error(e);
       setRows([]);
     } finally {
       setLoading(false);

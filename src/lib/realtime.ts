@@ -18,7 +18,6 @@ class RealtimeManager {
     // Check retry count to prevent spam
     const retries = this.retryCount.get(channelName) || 0;
     if (retries >= this.maxRetries) {
-      console.log('Realtime: Max retries reached, skipping subscription');
       return () => {};
     }
 
@@ -43,13 +42,11 @@ class RealtimeManager {
         .subscribe((status) => {
           if (status === 'CHANNEL_ERROR') {
             this.retryCount.set(channelName, retries + 1);
-            console.log(`Realtime subscription failed (attempt ${retries + 1}/${this.maxRetries})`);
           }
         });
 
       this.channels.set(channelName, channel);
     } catch (error) {
-      console.error('Realtime subscription error:', error);
     }
 
     return () => this.unsubscribe(channelName);
@@ -79,7 +76,6 @@ class RealtimeManager {
 
       this.channels.set(channelName, channel);
     } catch (error) {
-      console.error('Notification subscription error:', error);
     }
 
     return () => this.unsubscribe(channelName);
@@ -109,7 +105,6 @@ class RealtimeManager {
 
       this.channels.set(channelName, channel);
     } catch (error) {
-      console.error('SOS subscription error:', error);
     }
 
     return () => this.unsubscribe(channelName);
@@ -144,7 +139,6 @@ class RealtimeManager {
 
       this.channels.set(channelName, channel);
     } catch (error) {
-      console.error('Comments subscription error:', error);
     }
 
     return () => this.unsubscribe(channelName);

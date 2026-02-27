@@ -37,7 +37,6 @@ export function UserNotificationPopup() {
   useEffect(() => {
     if (!user?.id || isModPage) return;
 
-    console.log("[UserPopup] Setting up listener for user:", user.id);
 
     const channel = supabase
       .channel(`user-popup-${user.id}-${Date.now()}`)
@@ -51,7 +50,6 @@ export function UserNotificationPopup() {
         },
         (payload) => {
           const row = payload.new as NotifRow;
-          console.log("[UserPopup] Received:", row.title);
 
           // Suppress completely if user is currently in the chat this DM belongs to
           if (
@@ -60,7 +58,6 @@ export function UserNotificationPopup() {
           ) {
             const activeConvo = (window as any).__pejaActiveConversationId;
             if (activeConvo === row.data.conversation_id) {
-              console.log("[UserPopup] Suppressed — user is in this chat");
               supabase
                 .from("notifications")
                 .update({ is_read: true })
@@ -83,11 +80,9 @@ export function UserNotificationPopup() {
         }
       )
       .subscribe((status) => {
-        console.log("[UserPopup] Subscription:", status);
       });
 
     return () => {
-      console.log("[UserPopup] Cleaning up");
       supabase.removeChannel(channel);
       if (timerRef.current) clearTimeout(timerRef.current);
     };

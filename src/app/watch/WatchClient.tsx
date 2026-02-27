@@ -266,11 +266,9 @@ export default function WatchClient({
 
    // ✅ DEBUG: Add this to see what values are being received
   useEffect(() => {
-    console.log("[WatchClient] Received props:", { startId, source, sourceKey });
     
     if (sourceKey) {
       const cached = feedCache.get(sourceKey);
-      console.log("[WatchClient] Cache for sourceKey:", sourceKey, "has", cached?.posts?.length || 0, "posts");
     }
   }, [startId, source, sourceKey]);
 
@@ -383,9 +381,7 @@ export default function WatchClient({
   useEffect(() => { postsRef.current = posts; }, [posts]);
 
   const closeWatch = () => {
-  console.log("[Watch] closeWatch called");
   sessionStorage.setItem("peja-returning-from-watch", Date.now().toString());
-  console.log("[Watch] Flag set in sessionStorage");
   window.dispatchEvent(new Event("peja-close-watch"));
   router.back();
 };
@@ -409,17 +405,14 @@ useEffect(() => {
   let cancelled = false;
 
   const init = async () => {
-    console.log("[Watch] Initializing with:", { startId, sourceKey });
     
     // ✅ STEP 1: Try to get posts from the SOURCE page's cache
     if (sourceKey) {
       const cached = feedCache.get(sourceKey);
-      console.log("[Watch] Cache lookup for", sourceKey, "->", cached?.posts?.length || 0, "posts");
       
       if (cached?.posts?.length) {
         // Check if startId exists in cached posts
         const hasStartPost = cached.posts.some(p => p.id === startId);
-        console.log("[Watch] startId", startId, "found in cache:", hasStartPost);
         
         if (hasStartPost || !startId) {
           setPosts(cached.posts);
@@ -429,12 +422,10 @@ useEffect(() => {
           return;
         }
         // startId not in cache, fall through to fetch
-        console.log("[Watch] startId not in cache, will fetch");
       }
     }
 
     // ✅ STEP 2: Fetch from database
-    console.log("[Watch] Fetching from DB, startId:", startId);
     setLoading(true);
 
     try {
@@ -453,16 +444,13 @@ useEffect(() => {
           .single();
         
         if (error) {
-          console.error("[Watch] Error fetching startId post:", error);
         } else {
           startPost = data;
-          console.log("[Watch] Fetched startPost:", startPost?.id);
         }
       }
 
       // If we couldn't find the specific post, show error
       if (startId && !startPost) {
-        console.error("[Watch] Could not find post with id:", startId);
         // Still continue to show other posts
       }
 
@@ -482,7 +470,6 @@ useEffect(() => {
       if (cancelled) return;
       
       if (error) {
-        console.error("[Watch] Error fetching posts:", error);
         setPosts([]);
         setLoading(false);
         return;
@@ -544,10 +531,8 @@ useEffect(() => {
         formatted = [startFormatted, ...formatted];
       }
 
-      console.log("[Watch] Final posts count:", formatted.length);
       
       if (formatted.length === 0) {
-        console.error("[Watch] No posts found!");
       }
 
       confirmRef.current.hydrateCounts(formatted.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
@@ -555,7 +540,6 @@ useEffect(() => {
       setPosts(formatted);
       setLoading(false);
     } catch (err) {
-      console.error("[Watch] Fetch error:", err);
       setPosts([]);
       setLoading(false);
     }
@@ -574,7 +558,6 @@ useEffect(() => {
     
     // Not found - keep as-is (shouldn't happen with our fetch fix above)
     if (idx === -1) {
-      console.warn("[Watch] startId not found in posts:", startId);
       return posts;
     }
     
@@ -707,7 +690,6 @@ useEffect(() => {
       toast.success("Report submitted");
     }
   } catch (err: any) {
-    console.error("Report error:", err);
     toast.danger(err.message || "Failed to report");
   } finally {
     setSubmittingReport(false);
@@ -766,7 +748,6 @@ useEffect(() => {
     }
     
   } catch (error: any) {
-    console.error("Delete error:", error);
     toast.danger(error.message || "Failed to delete post");
   } finally {
     setDeleting(false);

@@ -119,7 +119,6 @@ export default function InAppNotificationToasts() {
           try {
             playNotificationSound();
           } catch (e) {
-            console.error("[InAppToasts] Sound error:", e);
           }
 
           // Add toast

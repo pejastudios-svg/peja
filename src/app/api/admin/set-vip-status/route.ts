@@ -28,20 +28,15 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) {
-      console.error("[set-vip-status] Error:", error);
       return NextResponse.json(
         { ok: false, error: error.message },
         { status: 500 }
       );
     }
 
-    console.log(
-      `[set-vip-status] Admin ${adminUser.id} ${value ? "granted" : "revoked"} VIP for user ${userId}`
-    );
 
     return NextResponse.json({ ok: true, user });
   } catch (e: any) {
-    console.error("[set-vip-status] Error:", e);
     return NextResponse.json(
       { ok: false, error: e?.message || "Server error" },
       { status: e?.message?.includes("Unauthorized") ? 403 : 500 }

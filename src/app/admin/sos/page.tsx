@@ -70,7 +70,6 @@ export default function AdminSOSPage() {
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
       setSosContacts(json.contacts || []);
     } catch (e) {
-      console.error("fetchSOSUserContacts error:", e);
       setSosContacts([]);
     } finally {
       setSosContactsLoading(false);
@@ -120,8 +119,7 @@ export default function AdminSOSPage() {
       .eq("status", "active")
       .lt("created_at", cutoff);
 
-    if (expireErr) console.error("Auto-expire SOS failed:", expireErr);
-
+    if (expireErr)
     // Fetch SOS (no embedded joins)
     let query = supabase
       .from("sos_alerts")
@@ -142,14 +140,12 @@ export default function AdminSOSPage() {
       ? await supabase.from("users").select("id,full_name,email,phone,avatar_url").in("id", userIds)
       : { data: [], error: null };
 
-    if (usersErr) console.error("SOS users fetch error:", usersErr);
-
+    if (usersErr)
     const usersMap: Record<string, any> = {};
     (usersData || []).forEach((u: any) => (usersMap[u.id] = u));
 
     setSOSAlerts(rows.map((s) => ({ ...s, users: usersMap[s.user_id] })));
   } catch (e) {
-    console.error("Error fetching SOS:", e);
     setSOSAlerts([]);
   } finally {
     setLoading(false);
@@ -181,7 +177,6 @@ const handleDeleteSOS = async (sosId: string) => {
     setShowModal(false);
     setSelectedSOS(null);
   } catch (e: any) {
-    console.error(e);
     alert(e.message || "Failed");
   } finally {
     setActionLoading(false);
@@ -219,7 +214,6 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
       setSelectedSOS(null);
     }
   } catch (err) {
-    console.error(err);
     alert("Failed to delete SOS");
   } finally {
     setActionLoading(false);
@@ -250,7 +244,6 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
     setShowModal(false);
     setSelectedSOS(null);
   } catch (e: any) {
-    console.error(e);
     alert(e.message || "Failed");
   } finally {
     setActionLoading(false);

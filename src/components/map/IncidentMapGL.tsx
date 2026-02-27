@@ -247,7 +247,6 @@ export default function IncidentMapGL({
           }
           return merged;
         });
-        console.log(`[Map] Recovered ${recovered.length} helpers from Supabase`);
       }
     };
     recoverHelpers();
@@ -424,7 +423,7 @@ export default function IncidentMapGL({
             window.addEventListener("deviceorientation", handleOrientation, true);
           }
         })
-        .catch(console.error);
+        .catch(() => {});
     } else {
       window.addEventListener("deviceorientation", handleOrientation, true);
     }
@@ -461,10 +460,7 @@ export default function IncidentMapGL({
           detail: { lat: position.coords.latitude, lng: position.coords.longitude }
         }));
       },
-      (error) => console.warn("Location watch error:", error),
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
+      (error) =>    return () => navigator.geolocation.clearWatch(watchId);
   }, []);
   // Real-time SOS location updates (SOS markers move in real-time)
   useEffect(() => {
@@ -664,7 +660,6 @@ export default function IncidentMapGL({
         }
       },
       (error) => {
-        console.warn("Helper location tracking error:", error);
       },
       { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 }
     );
@@ -745,17 +740,14 @@ export default function IncidentMapGL({
               sosOwnerId: sos.user_id,
               helperName: helperName,
             });
-            console.log('[Map] Native helper background tracking started');
           }
         }
       } catch (e) {
-        console.warn('[Map] Native helper tracking not available', e);
       }
       setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ETA: ${eta} minutes.`);
       setTimeout(() => setToast(null), 3000);
       setSelectedSOS(null);
     } catch (err) {
-      console.error("Error:", err);
       setToast("Failed to notify. Please try again.");
       setTimeout(() => setToast(null), 3000);
     } finally {
@@ -788,7 +780,6 @@ export default function IncidentMapGL({
             .select("full_name, avatar_url")
             .eq("id", user.id)
             .single();
-          console.log("[Map] Restarting helper tracking for SOS:", sosId);
           startHelperLocationTracking(
             sosData.user_id,
             sosId,

@@ -86,7 +86,6 @@ export default function AnalyticsTracker() {
       } else {
         // If RLS prevents session insert, we silently skip analytics for now
         // (should not happen since you added policies)
-        console.warn("analytics session insert error:", error?.message);
       }
     };
 
@@ -174,7 +173,6 @@ export default function AnalyticsTracker() {
 
     track().catch((e) => {
       // analytics should never break app
-      console.warn("analytics track error:", e?.message || e);
     });
   }, [pathname, user?.id]);
 

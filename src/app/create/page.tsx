@@ -409,7 +409,6 @@ export default function CreatePostPage() {
             setUploadProgress(overallProgress);
           });
 
-          console.log(`[Upload] Image compressed: ${(file.size / 1024).toFixed(0)}KB → ${(fileToUpload.size / 1024).toFixed(0)}KB`);
         }
 
         // COMPRESS VIDEOS
@@ -430,11 +429,6 @@ export default function CreatePostPage() {
               uploadToCloudinary = true;
               cloudinaryUrl = result.url;
 
-              console.log("[Upload] Video compressed via Cloudinary:", {
-                original: `${sizeMB.toFixed(2)}MB`,
-                compressed: `${(result.size / 1024 / 1024).toFixed(2)}MB`,
-                reduction: `${(((file.size - result.size) / file.size) * 100).toFixed(1)}%`,
-              });
             } catch (error: any) {
               if (error.message !== "SKIP_COMPRESSION") {
                 throw error;
@@ -500,7 +494,6 @@ export default function CreatePostPage() {
         setToast(null);
 
       } catch (error: any) {
-        console.error("[Upload] Media processing error:", error);
         setError(error.message || "Failed to process media");
         setIsLoading(false);
         setUploadProgress(0);
@@ -580,9 +573,7 @@ export default function CreatePostPage() {
       location.latitude,
       location.longitude
     ).then(count => {
-      console.log(`Notified ${count} users about new post`);
     }).catch(err => {
-      console.error("Error notifying users:", err);
     });
 
     setUploadProgress(100);
@@ -598,7 +589,6 @@ export default function CreatePostPage() {
     }, 650);
 
   } catch (err: any) {
-    console.error("Submit error:", err);
     setError(err.message || "Something went wrong");
   } finally {
     setIsLoading(false);

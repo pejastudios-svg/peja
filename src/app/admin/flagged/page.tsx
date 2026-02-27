@@ -103,7 +103,6 @@ export default function AdminFlaggedPage() {
     if (!silent) setLoading(true);
     else setRefreshing(true);
 
-    console.log("[Admin Flagged] Fetching...");
 
     try {
       const { data: flags, error } = await supabase
@@ -116,7 +115,6 @@ export default function AdminFlaggedPage() {
       if (error) throw error;
 
       const rows = (flags || []) as any[];
-      console.log("[Admin Flagged] Found", rows.length, "items");
 
       // Fetch related data...
       const postIds = Array.from(new Set(rows.map((x) => x.post_id).filter(Boolean)));
@@ -188,7 +186,6 @@ export default function AdminFlaggedPage() {
         }
       }
     } catch (e) {
-      console.error("[Admin Flagged] Fetch error:", e);
       setItems([]);
     } finally {
       setLoading(false);
@@ -202,7 +199,6 @@ export default function AdminFlaggedPage() {
   }, [fetchFlagged]);
 
   const handleRefresh = () => {
-    console.log("[Admin Flagged] Manual refresh");
     fetchFlagged(true);
   };
 
@@ -238,7 +234,6 @@ if (action === "remove" && selected.post_id) {
       setShowModal(false);
       setSelected(null);
     } catch (e: any) {
-      console.error(e);
       alert(e?.message || "Failed");
     } finally {
       setActionLoading(false);

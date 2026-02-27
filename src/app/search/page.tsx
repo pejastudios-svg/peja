@@ -129,9 +129,7 @@ function SearchContent() {
             : Promise.resolve({ data: [], error: null } as any),
         ]);
 
-      if (mediaErr) console.error("Search media error:", mediaErr);
-      if (tagsErr) console.error("Search tags error:", tagsErr);
-
+      if (mediaErr)      if (tagsErr)
       const mediaMap: Record<string, any[]> = {};
       (mediaData || []).forEach((m: any) => {
         if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
@@ -209,7 +207,6 @@ function SearchContent() {
       setPosts(top);
       feedCache.setPosts(feedKey, top);
     } catch (error) {
-      console.error("Search error:", error);
       if (posts.length === 0) setPosts([]);
     } finally {
       setLoading(false);
@@ -221,7 +218,6 @@ function SearchContent() {
     const handlePostDeleted = (e: Event) => {
       const customEvent = e as CustomEvent;
       const { postId } = customEvent.detail || {};
-      console.log("[Search] Post deleted event received:", postId);
 
       if (postId) {
         setPosts((prev) => {
@@ -235,7 +231,6 @@ function SearchContent() {
     const handlePostArchived = (e: Event) => {
       const customEvent = e as CustomEvent;
       const { postId } = customEvent.detail || {};
-      console.log("[Search] Post archived event received:", postId);
 
       if (postId) {
         setPosts((prev) => {

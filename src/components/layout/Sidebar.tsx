@@ -64,7 +64,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         setIsGuardian(data.is_guardian || false);
       }
     } catch (error) {
-      console.error("Error checking roles:", error);
     }
   };
 

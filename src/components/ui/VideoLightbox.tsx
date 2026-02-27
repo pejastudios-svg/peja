@@ -71,7 +71,6 @@ export function VideoLightbox({
           .eq("id", id);
       }
     } catch (e) {
-      console.error("Failed to increment view:", e);
     }
   };
 

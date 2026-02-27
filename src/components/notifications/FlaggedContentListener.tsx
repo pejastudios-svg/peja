@@ -17,7 +17,6 @@ export function FlaggedContentListener({ onNewFlaggedContent }: Props) {
   }, [onNewFlaggedContent]);
 
   useEffect(() => {
-    console.log("[FlaggedContentListener] Setting up listener");
 
     const channelName = `flagged-content-${Date.now()}`;
     
@@ -31,7 +30,6 @@ export function FlaggedContentListener({ onNewFlaggedContent }: Props) {
           table: "flagged_content",
         },
         (payload) => {
-          console.log("[FlaggedContentListener] Change detected:", payload.eventType);
           callbackRef.current();
           
           // Also dispatch events for badge refresh
@@ -40,11 +38,9 @@ export function FlaggedContentListener({ onNewFlaggedContent }: Props) {
         }
       )
       .subscribe((status) => {
-        console.log("[FlaggedContentListener] Subscription:", status);
       });
 
     return () => {
-      console.log("[FlaggedContentListener] Cleaning up");
       supabase.removeChannel(channel);
     };
   }, []);

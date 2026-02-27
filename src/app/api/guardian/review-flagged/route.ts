@@ -181,9 +181,7 @@ export async function POST(req: NextRequest) {
           .insert(adminNotifications);
 
         if (notifErr) {
-          console.error("Failed to notify admins of escalation:", notifErr);
         } else {
-          console.log(`Notified ${admins.length} admin(s) of escalation`);
         }
       }
     }
@@ -198,12 +196,10 @@ export async function POST(req: NextRequest) {
         reason: flagged.reason,
       });
     } catch (e) {
-      console.log("Guardian actions table may not exist yet");
     }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    console.error("Guardian review error:", e);
     return NextResponse.json(
       { ok: false, error: e?.message || "Server error" },
       { status: 500 }

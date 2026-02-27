@@ -621,7 +621,7 @@ export default function IncidentMapInner({
             window.addEventListener("deviceorientation", handleOrientation, true);
           }
         })
-        .catch(console.error);
+        .catch(() => {});
     } else {
       window.addEventListener("deviceorientation", handleOrientation, true);
     }
@@ -672,7 +672,6 @@ export default function IncidentMapInner({
       setTimeout(() => setToast(null), 3000);
       setSelectedSOS(null);
     } catch (err) {
-      console.error("Error:", err);
       setToast("Failed to notify. Please try again.");
       setTimeout(() => setToast(null), 3000);
     } finally {
@@ -729,7 +728,6 @@ export default function IncidentMapInner({
         });
       },
       (error) => {
-        console.warn("Helper location tracking error:", error);
       },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
     );

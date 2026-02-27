@@ -52,7 +52,6 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
           .in("post_id", newIds)
           .then(({ data, error }) => {
             if (error) {
-              console.error("hydrateCounts auto-load error:", error);
               return;
             }
             setConfirmed((prev) => {
@@ -77,7 +76,6 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       .in("post_id", ids);
 
     if (error) {
-      console.error("loadConfirmedFor error:", error);
       return;
     }
 
@@ -143,7 +141,6 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
       return { confirmed: serverConfirmed, newCount: serverCount };
     } catch (e) {
-      console.error("toggle_post_confirmation error:", e);
 
       // rollback
       setConfirmed((prev) => {

@@ -44,7 +44,6 @@ async function extractWaveform(url: string, numBars: number): Promise<number[]> 
     audioContext.close().catch(() => {});
     return normalized;
   } catch (e) {
-    console.log("[VoiceNotePlayer] Waveform extraction failed, using fallback:", e);
     return generateFallbackWaveform(numBars);
   }
 }
@@ -140,7 +139,6 @@ export function VoiceNotePlayer({
     };
 
     const handleError = () => {
-      console.error("[VoiceNotePlayer] Error loading audio:", src);
       setError(true);
       setIsLoading(false);
       setIsPlaying(false);
@@ -237,7 +235,6 @@ export function VoiceNotePlayer({
         setIsLoading(false);
       }
     } catch (e) {
-      console.error("[VoiceNotePlayer] Play error:", e);
       setError(true);
       setIsLoading(false);
     }

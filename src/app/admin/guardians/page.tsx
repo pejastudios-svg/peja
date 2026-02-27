@@ -224,8 +224,7 @@ export default function AdminGuardiansPage() {
             .in("id", userIds)
         : { data: [], error: null };
 
-      if (usersErr) console.error(usersErr);
-
+      if (usersErr)
       const usersMap: Record<string, any> = {};
       (usersData || []).forEach((u: any) => (usersMap[u.id] = u));
 
@@ -237,7 +236,6 @@ export default function AdminGuardiansPage() {
 
       setItems(merged);
     } catch (e) {
-      console.error("Admin guardians fetch error:", e);
       setItems([]);
     } finally {
       setLoading(false);
@@ -257,7 +255,6 @@ export default function AdminGuardiansPage() {
       if (error) throw error;
       setGuardians((data || []) as any);
     } catch (e) {
-      console.error("fetchGuardians error:", e);
       setGuardians([]);
     } finally {
       setGuardiansLoading(false);
@@ -314,7 +311,6 @@ export default function AdminGuardiansPage() {
 
       setActions(merged);
     } catch (e) {
-      console.error("fetchActions error:", e);
       setActions([]);
     } finally {
       setActionsLoading(false);
@@ -425,7 +421,6 @@ export default function AdminGuardiansPage() {
       await fetchApps();
       await fetchGuardians();
     } catch (e: any) {
-      console.error(e);
       alert(e?.message || "Failed");
     } finally {
       setActionLoading(false);
@@ -455,7 +450,6 @@ export default function AdminGuardiansPage() {
       setSelected(null);
       await fetchApps();
     } catch (e: any) {
-      console.error(e);
       alert(e?.message || "Failed to delete");
     } finally {
       setActionLoading(false);
@@ -496,7 +490,6 @@ export default function AdminGuardiansPage() {
       setToast(`Guardian access removed: ${json.user?.full_name || "User"} ✓`);
       setTimeout(() => setToast(null), 2500);
     } catch (e: any) {
-      console.error(e);
       setToast(e?.message || "Failed to remove guardian");
       setTimeout(() => setToast(null), 3000);
     } finally {

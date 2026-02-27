@@ -68,7 +68,6 @@ export default function GuardianDashboardPage() {
 
       setRecentQueue(recentQueueData || []);
     } catch (error) {
-      console.error("Error fetching guardian data:", error);
     } finally {
       setLoading(false);
     }

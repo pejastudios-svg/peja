@@ -67,7 +67,6 @@ export default function GuardianStatsPage() {
           pendingQueue: pendingQueue || 0,
         });
       } catch (e) {
-        console.error(e);
       } finally {
         setLoading(false);
       }

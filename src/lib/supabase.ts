@@ -82,22 +82,17 @@ export async function restoreNativeSession(): Promise<void> {
     if (isValidSessionString(current)) {
       // localStorage has a valid session — back it up to native
       await Preferences.set({ key: NATIVE_SESSION_KEY, value: current! });
-      console.log("[Auth] localStorage session is valid, backed up to native");
       return;
     }
 
     // localStorage is empty or invalid — try to restore from native
-    console.log("[Auth] localStorage session invalid or missing, checking native storage...");
     const { value: saved } = await Preferences.get({ key: NATIVE_SESSION_KEY });
 
     if (isValidSessionString(saved)) {
-      console.log("[Auth] Restoring valid session from native storage into localStorage");
       localStorage.setItem(LS_KEY, saved!);
     } else {
-      console.log("[Auth] No valid session in native storage either");
     }
   } catch (err) {
-    console.warn("[Auth] Native session restore failed:", err);
   }
 }
 
@@ -129,6 +124,5 @@ export async function clearNativeSession(): Promise<void> {
   try {
     const { Preferences } = await import("@capacitor/preferences");
     await Preferences.remove({ key: NATIVE_SESSION_KEY });
-    console.log("[Auth] Native session cleared");
   } catch {}
 }

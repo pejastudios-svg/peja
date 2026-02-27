@@ -413,7 +413,6 @@ const setActiveConversation = useCallback((id: string | null) => {
       idbSave(sorted);
       hasFetchedRef.current = true;
     } catch (e: any) {
-      console.error("[MessageCache] fetch error:", e?.message || e);
     } finally {
       setConversationsLoading(false);
     }
@@ -707,7 +706,6 @@ const markConversationRead = useCallback(async (conversationId: string) => {
         .eq("conversation_id", conversationId)
         .eq("user_id", user.id);
     } catch (e) {
-      console.error("[MessageCache] markRead error:", e);
     }
   }, [user?.id, clearUnread]);
 

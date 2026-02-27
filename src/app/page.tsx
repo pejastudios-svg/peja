@@ -236,7 +236,6 @@ export default function Home() {
         }
 
         if (error || !data) {
-          console.error("Fetch error after retries:", error);
           // ── Never wipe posts the user can already see ──
           return;
         }
@@ -338,7 +337,6 @@ export default function Home() {
         setPosts(finalPosts);
         feedCache.setPosts(feedKey, finalPosts);
       } catch (err) {
-        console.error("Fetch error:", err);
         // ── Never wipe posts the user can already see ──
       } finally {
         fetchingRef.current = false;
@@ -357,7 +355,6 @@ export default function Home() {
   // Listen for new post created event
   useEffect(() => {
     const handleNewPost = () => {
-      console.log("[Home] New post created, refreshing feed...");
       fetchPostsRef.current(true);
     };
 
@@ -373,7 +370,6 @@ export default function Home() {
     const handlePostDeleted = (e: Event) => {
       const customEvent = e as CustomEvent;
       const { postId } = customEvent.detail || {};
-      console.log("[Home] Post deleted event received:", postId);
 
       if (postId) {
         setPosts((prev) => {
@@ -387,7 +383,6 @@ export default function Home() {
     const handlePostArchived = (e: Event) => {
       const customEvent = e as CustomEvent;
       const { postId } = customEvent.detail || {};
-      console.log("[Home] Post archived event received:", postId);
 
       if (postId) {
         setPosts((prev) => {
@@ -496,11 +491,9 @@ export default function Home() {
       },
       // On post update
       (updatedPost) => {
-        console.log("[Realtime] Post updated:", updatedPost.id, "status:", updatedPost.status);
 
         setPosts((prev) => {
           if (updatedPost.status === "archived" || updatedPost.status === "deleted") {
-            console.log("[Realtime] Removing archived post:", updatedPost.id);
             const next = prev.filter((p) => p.id !== updatedPost.id);
             feedCache.setPosts(feedKey, next);
             return next;

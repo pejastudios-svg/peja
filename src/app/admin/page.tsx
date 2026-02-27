@@ -193,7 +193,6 @@ export default function AdminOverviewPage() {
 
       setSeries(Object.values(buckets));
     } catch (e) {
-      console.error("Admin overview fetch error:", e);
     } finally {
       setLoading(false);
     }

@@ -134,7 +134,6 @@ export default function MapClient() {
     };
 
     const handleError = (error: GeolocationPositionError) => {
-      console.warn("Location watch error:", error.message);
     };
 
     watchIdRef.current = navigator.geolocation.watchPosition(
@@ -182,7 +181,6 @@ export default function MapClient() {
         }
       },
       (error) => {
-        console.warn("Location error:", error.message);
         setGettingLocation(false);
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 }
@@ -201,7 +199,6 @@ export default function MapClient() {
         setCompassEnabled(true);
       }
     } catch (e) {
-      console.warn("Compass permission denied:", e);
     }
   };
 
@@ -275,7 +272,6 @@ export default function MapClient() {
       setPosts(formatted);
       feedCache.setPosts("map:posts", formatted);
     } catch (e) {
-      console.error("Error fetching posts:", e);
     } finally {
       setLoading(false);
     }
@@ -297,7 +293,6 @@ export default function MapClient() {
         .limit(200);
 
       if (sosError) {
-        console.error("SOS query error:", sosError);
         return;
       }
 
@@ -357,7 +352,6 @@ export default function MapClient() {
         }
       }
     } catch (e) {
-      console.error("SOS fetch failed:", e);
     }
   }, [sosIdFromUrl, latFromUrl, lngFromUrl, feedCache]);
 

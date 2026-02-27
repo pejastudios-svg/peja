@@ -311,7 +311,6 @@ export function WatchCommentSheet({
         if (onCommentSuccess) onCommentSuccess();
       }
     } catch (err) {
-      console.error(err);
     } finally {
       setSubmitting(false);
       setReplyingTo(null);
@@ -387,7 +386,6 @@ export function WatchCommentSheet({
       }
 
     } catch (err: any) {
-      console.error("Report comment error:", err);
       toast.danger(err.message || "Failed to report");
     } finally {
       setSubmittingReport(false);
@@ -404,7 +402,6 @@ export function WatchCommentSheet({
       await supabase.from("post_comments").delete().eq("id", selectedComment.id);
       await supabase.rpc('decrement_comment_count', { post_id: post.id });
     } catch (err) {
-      console.error("Delete failed", err);
     }
   };
 

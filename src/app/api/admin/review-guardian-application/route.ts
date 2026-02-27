@@ -68,8 +68,7 @@ export async function POST(req: NextRequest) {
       is_read: false,
     });
 
-    if (notifErr) console.warn("Failed to create applicant notification:", notifErr);
-
+    if (notifErr)
     return NextResponse.json({ ok: true, status: newStatus });
   } catch (e: any) {
     return NextResponse.json(

@@ -198,7 +198,6 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
 
       setHotspots(sortedHotspots);
     } catch (err) {
-      console.error("Error fetching incidents:", err);
     } finally {
       setLoading(false);
     }

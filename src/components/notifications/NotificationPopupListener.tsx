@@ -42,7 +42,6 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
     const getUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        console.log(`[PopupListener:${table}] Got user:`, user.id);
         setUserId(user.id);
       }
     };
@@ -51,16 +50,9 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
 
   useEffect(() => {
     if (!userId) {
-      console.log(`[PopupListener:${table}] No userId yet, waiting...`);
       return;
     }
 
-    console.log(`[PopupListener:${table}] ========================================`);
-    console.log(`[PopupListener:${table}] Setting up listener`);
-    console.log(`[PopupListener:${table}] Table: ${table}`);
-    console.log(`[PopupListener:${table}] User ID: ${userId}`);
-    console.log(`[PopupListener:${table}] Filter: ${userColumn}=eq.${userId}`);
-    console.log(`[PopupListener:${table}] ========================================`);
 
     // Cleanup existing
     if (channelRef.current) {
@@ -69,7 +61,6 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
     }
 
     const channelName = `popup-${table}-${userId}-${Date.now()}`;
-    console.log(`[PopupListener:${table}] Channel name:`, channelName);
 
     const channel = supabase
       .channel(channelName)
@@ -82,10 +73,6 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
           filter: `${userColumn}=eq.${userId}`,
         },
         (payload) => {
-          console.log(`[PopupListener:${table}] ========================================`);
-          console.log(`[PopupListener:${table}] 🔔 RECEIVED NOTIFICATION!`);
-          console.log(`[PopupListener:${table}] Payload:`, JSON.stringify(payload.new, null, 2));
-          console.log(`[PopupListener:${table}] ========================================`);
 
           const row = payload.new as NotifRow;
 
@@ -96,7 +83,6 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
           ) {
             const activeConvo = (window as any).__pejaActiveConversationId;
             if (activeConvo === row.data.conversation_id) {
-              console.log(`[PopupListener:${table}] Suppressed — user is in this chat`);
               supabase
                 .from(table)
                 .update({ is_read: true })
@@ -111,29 +97,23 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
           
           try {
             playNotificationSound();
-            console.log(`[PopupListener:${table}] Sound played`);
           } catch (e) {
-            console.error(`[PopupListener:${table}] Sound error:`, e);
           }
 
           onNotification?.();
 
           if (timerRef.current) clearTimeout(timerRef.current);
           timerRef.current = setTimeout(() => {
-            console.log(`[PopupListener:${table}] Auto-dismissing popup`);
             setPopup(null);
           }, 8000);
         }
       )
       .subscribe((status, err) => {
-        console.log(`[PopupListener:${table}] Subscription status:`, status);
-        if (err) console.error(`[PopupListener:${table}] Subscription error:`, err);
-      });
+        if (err)      });
 
     channelRef.current = channel;
 
     return () => {
-      console.log(`[PopupListener:${table}] Cleaning up channel`);
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
@@ -145,9 +125,7 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
   // Debug when popup changes
   useEffect(() => {
     if (popup) {
-      console.log(`[PopupListener:${table}] Popup is now showing:`, popup.title);
     } else {
-      console.log(`[PopupListener:${table}] Popup is now hidden`);
     }
   }, [popup, table]);
 
@@ -195,7 +173,6 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
 
       onNotification?.();
     } catch (e) {
-      console.error(`[PopupListener:${table}] Failed to mark as read:`, e);
     }
 
     setPopup(null);

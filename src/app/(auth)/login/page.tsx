@@ -50,7 +50,6 @@ export default function LoginPage() {
       // Success - redirect to home
       router.push("/");
     } catch (err: any) {
-      console.error("Login error:", err);
       setError(err.message || "An unexpected error occurred");
       setLoading(false);
     }

@@ -43,18 +43,15 @@ export async function createNotification({
     });
 
     if (error) {
-      console.error("Error creating notification:", error);
       return false;
     }
 
     // Also send FCM push notification (fire and forget)
     sendFCMPush(userId, title, body || "", data || {}).catch((err) => {
-      console.warn("[FCM] Push failed (non-blocking):", err);
     });
 
     return true;
   } catch (error) {
-    console.error("Notification error:", error);
     return false;
   }
 }
@@ -94,7 +91,6 @@ async function sendFCMPush(
     });
   } catch (err) {
     // Non-blocking, don't throw
-    console.warn("[FCM] Push send error:", err);
   }
 }
 
@@ -234,13 +230,11 @@ async function shouldNotifyUser(
   const settings = user.settings;
   const catType = getCategoryType(category);
 
-  console.log(`\n🔍 Checking user ${user.id.slice(0, 8)}...`);
 
   // ============================================
   // CASE 1: No settings - BLOCK
   // ============================================
   if (!settings) {
-    console.log(`  ✗ No settings found - BLOCKING`);
     return false;
   }
 
@@ -248,46 +242,36 @@ async function shouldNotifyUser(
   // CASE 2: Push notifications disabled
   // ============================================
   if (settings.push_enabled === false) {
-    console.log(`  ✗ Push notifications DISABLED`);
     return false;
   }
 
   // ============================================
   // CASE 3: Check category preferences
   // ============================================
-  console.log(`  📂 Category: ${category} (type: ${catType})`);
   
   switch (catType) {
     case "danger":
       if (settings.danger_alerts === false) {
-        console.log(`  ✗ 🔴 Danger alerts DISABLED`);
         return false;
       }
-      console.log(`  ✓ 🔴 Danger alerts enabled`);
       break;
       
     case "caution":
       if (settings.caution_alerts === false) {
-        console.log(`  ✗ 🟠 Caution alerts DISABLED`);
         return false;
       }
-      console.log(`  ✓ 🟠 Caution alerts enabled`);
       break;
       
     case "awareness":
       if (settings.awareness_alerts === false) {
-        console.log(`  ✗ 🟡 Awareness alerts DISABLED`);
         return false;
       }
-      console.log(`  ✓ 🟡 Awareness alerts enabled`);
       break;
       
     case "info":
       if (settings.info_alerts === false) {
-        console.log(`  ✗ 🔵 Info alerts DISABLED`);
         return false;
       }
-      console.log(`  ✓ 🔵 Info alerts enabled`);
       break;
   }
 
@@ -300,10 +284,8 @@ async function shouldNotifyUser(
     
     if (isInQuietHours(start, end)) {
       if (catType !== "danger") {
-        console.log(`  ✗ Quiet hours active - only danger allowed`);
         return false;
       }
-      console.log(`  ✓ Quiet hours active but danger category`);
     }
   }
 
@@ -311,29 +293,22 @@ async function shouldNotifyUser(
   // CASE 5: Check location/zone preferences
   // ============================================
   const alertZoneType = settings.alert_zone_type || "all_nigeria";
-  console.log(`  📍 Zone type: "${alertZoneType}"`);
 
   // FIX: Use strict comparison and handle all cases
   if (alertZoneType === "all_nigeria") {
     // ✅ All Nigeria - always allow
-    console.log(`  ✓ All Nigeria - ALLOWED`);
     return true;
   } else if (alertZoneType === "states") {
     // ✅ Selected States
     const selectedStates = settings.selected_states || [];
-    console.log(`  📍 Selected states: [${selectedStates.join(', ')}]`);
-    console.log(`  📍 Post address: "${postAddress}"`);
     
     if (selectedStates.length === 0) {
-      console.log(`  ✓ No states selected - allowing all`);
       return true;
     }
     
     const postState = extractStateFromAddress(postAddress);
-    console.log(`  📍 Extracted state: "${postState}"`);
     
     if (!postState) {
-      console.log(`  ✗ Cannot determine post state - BLOCKING`);
       return false;
     }
     
@@ -341,21 +316,15 @@ async function shouldNotifyUser(
       s => s.trim().toLowerCase() === postState.trim().toLowerCase()
     );
     
-    console.log(`  ${isInSelectedState ? '✓' : '✗'} State match: ${isInSelectedState}`);
     return isInSelectedState;
   } else if (alertZoneType === "radius") {
     // ✅ Custom Radius
-    console.log(`  📍 Checking radius...`);
-    console.log(`  📍 User location: lat=${user.last_latitude}, lng=${user.last_longitude}`);
-    console.log(`  📍 Post location: lat=${postLatitude}, lng=${postLongitude}`);
     
     if (!user.last_latitude || !user.last_longitude) {
-      console.log(`  ✗ User has no saved location`);
       return false;
     }
     
     if (!postLatitude || !postLongitude) {
-      console.log(`  ✗ Post has no coordinates`);
       return false;
     }
     
@@ -368,11 +337,9 @@ async function shouldNotifyUser(
     );
     
     const withinRadius = distance <= radiusKm;
-    console.log(`  📍 Distance: ${distance.toFixed(2)}km, Radius: ${radiusKm}km - ${withinRadius ? 'WITHIN ✓' : 'OUTSIDE ✗'}`);
     return withinRadius;
   } else {
     // Unknown zone type - allow to be safe
-    console.log(`  ⚠️ Unknown zone type "${alertZoneType}" - allowing`);
     return true;
   }
 }
@@ -388,14 +355,6 @@ export async function notifyUsersAboutIncident(
   latitude?: number,
   longitude?: number
 ): Promise<number> {
-  console.log("========================================");
-  console.log("NOTIFY USERS ABOUT INCIDENT");
-  console.log("Post ID:", postId);
-  console.log("Category:", category);
-  console.log("Address:", address);
-  console.log("Latitude:", latitude);
-  console.log("Longitude:", longitude);
-  console.log("========================================");
 
   try {
     // =====================================================
@@ -408,16 +367,13 @@ export async function notifyUsersAboutIncident(
       .eq("status", "active");
 
     if (usersError) {
-      console.error("Error fetching users:", usersError);
       return 0;
     }
 
     if (!users || users.length === 0) {
-      console.log("No users to notify");
       return 0;
     }
 
-    console.log(`Found ${users.length} potential users`);
 
     // =====================================================
     // STEP 2: GET SETTINGS FOR ALL USERS IN ONE QUERY
@@ -430,11 +386,9 @@ export async function notifyUsersAboutIncident(
       .in("user_id", userIds);
 
     if (settingsError) {
-      console.error("Error fetching settings:", settingsError);
       return 0;
     }
 
-    console.log(`Fetched settings for ${allSettings?.length || 0} users`);
 
     // Create a map of user_id -> settings
     const settingsMap: Record<string, any> = {};
@@ -483,20 +437,14 @@ export async function notifyUsersAboutIncident(
 
         if (success) {
           notifiedCount++;
-          console.log(`✓ Notified user ${user.id.slice(0, 8)}`);
         }
       } else {
-        console.log(`✗ Skipped user ${user.id.slice(0, 8)} (settings filter)`);
       }
     }
 
-    console.log(`========================================`);
-    console.log(`TOTAL NOTIFIED: ${notifiedCount} / ${users.length}`);
-    console.log(`========================================`);
 
     return notifiedCount;
   } catch (error) {
-    console.error("Error in notifyUsersAboutIncident:", error);
     return 0;
   }
 }
@@ -613,7 +561,6 @@ export async function cleanupOldSOSNotifications(): Promise<void> {
       .eq("type", "sos_alert")
       .lt("created_at", twentyFourHoursAgo);
   } catch (error) {
-    console.error("Error cleaning up SOS notifications:", error);
   }
 }
 

@@ -288,7 +288,6 @@ const {
           }
         }
       } catch (e) {
-        console.error("[Chat] Failed to mark DM notifications as read:", e);
       }
     })();
 
@@ -337,7 +336,6 @@ useEffect(() => {
         }
       }
     } catch (e) {
-      console.error("[Cache] Failed to restore:", e);
     }
 
     // If we have cached messages AND cached user, check if cache is recent.
@@ -361,7 +359,6 @@ useEffect(() => {
         }
       }
     } catch (e) {
-      console.error("[Cache] Failed to restore user:", e);
     }
 
 // STEP 3: Fetch fresh data in background (skip if cache is very fresh)
@@ -427,7 +424,6 @@ useEffect(() => {
 
       try { sessionStorage.setItem("peja-last-chat-id", conversationId); } catch {}
     } catch (e: any) {
-      console.error("Chat fetch error:", e?.message || e);
       if (!hasCachedMessages) {
         router.replace("/messages");
       }
@@ -503,7 +499,7 @@ const { data, error } = await supabase
       .order("created_at", { ascending: false })
       .limit(50);
 
-    if (error) { console.error("Messages fetch:", error.message); return; }
+    if (error) { return; }
 
 const msgs = ((data || []) as Message[]).reverse();
     if (msgs.length === 0) { setMessages([]); return; }
@@ -1554,7 +1550,6 @@ const handleDocumentOpen = useCallback((url: string, fileName: string | null, fi
         const { generateVideoThumbnail } = await import("@/lib/videoThumbnail");
         preview = (await generateVideoThumbnail(file)) || "";
       } catch (e) {
-        console.log("[FileSelect] Video thumbnail generation failed:", e);
       }
     }
 
@@ -1593,7 +1588,6 @@ const handleDocumentOpen = useCallback((url: string, fileName: string | null, fi
 }, [sendRecordingState]);
 
   const handleRecordingEnd = useCallback((blob: Blob, duration: number) => {
-    console.log("[VoiceNote] Recording ended, blob size:", blob.size, "duration:", duration);
     // Recording ended but not cancelled - blob is ready
     // The VoiceNoteRecorder will show the preview and send button
   }, []);
@@ -1812,17 +1806,10 @@ const handleTouchEnd = () => {
 
   // Validate file has content
   if (!file || file.size === 0) {
-    console.error("[VoiceNote] File is empty or invalid");
     toast.danger("Recording failed - no audio data");
     return;
   }
 
-  console.log("[VoiceNote] Starting upload:", {
-    fileName: file.name,
-    fileSize: file.size,
-    fileType: file.type,
-    duration,
-  });
 
   setVoiceNoteUploading(true);
   setShowVoiceRecorder(false);
@@ -1886,7 +1873,6 @@ const handleTouchEnd = () => {
       else contentType = "audio/mp4";
     }
 
-    console.log("[VoiceNote] Uploading to path:", path, "contentType:", contentType);
 
     // Upload to storage
     const { error: uploadError } = await supabase.storage
@@ -1897,11 +1883,9 @@ const handleTouchEnd = () => {
       });
 
     if (uploadError) {
-      console.error("[VoiceNote] Upload error:", uploadError);
       throw new Error(`Upload failed: ${uploadError.message}`);
     }
 
-    console.log("[VoiceNote] Upload successful, getting public URL...");
 
     // Get public URL
     const { data: urlData } = supabase.storage
@@ -1912,7 +1896,6 @@ const handleTouchEnd = () => {
       throw new Error("Failed to get public URL after upload");
     }
 
-    console.log("[VoiceNote] Public URL:", urlData.publicUrl);
 
     // Insert message into database
     const { data: newMsg, error: msgError } = await supabase
@@ -1929,11 +1912,9 @@ const handleTouchEnd = () => {
       .single();
 
     if (msgError) {
-      console.error("[VoiceNote] Message insert error:", msgError);
       throw new Error(`Message insert failed: ${msgError.message}`);
     }
 
-    console.log("[VoiceNote] Message created with ID:", newMsg.id);
 
     // Insert media record - THIS IS CRITICAL
     const { data: mediaData, error: mediaError } = await supabase
@@ -1950,13 +1931,11 @@ const handleTouchEnd = () => {
       .single();
 
     if (mediaError) {
-      console.error("[VoiceNote] Media record insert error:", mediaError);
       // Delete the orphaned message since media failed
       await supabase.from("messages").delete().eq("id", newMsg.id);
       throw new Error(`Media record failed: ${mediaError.message}`);
     }
 
-    console.log("[VoiceNote] Media record created:", mediaData);
 
     // Update optimistic message with real data
     setMessages((prev) =>
@@ -2009,10 +1988,8 @@ const handleTouchEnd = () => {
       );
     }
 
-    console.log("[VoiceNote] Send complete!");
 
   } catch (e: any) {
-    console.error("[VoiceNote] Send failed:", e);
 
     // Remove the failed optimistic message
     setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
@@ -2070,7 +2047,6 @@ const handleTouchEnd = () => {
         clearEditor();
         setCharCount(0);
       } catch (e: any) {
-        console.error("Edit error:", e?.message || e);
         toast.danger("Failed to edit message");
       } finally {
         setSending(false);
@@ -2191,10 +2167,6 @@ const handleTouchEnd = () => {
             uploadToCloudinary = true;
             cloudinaryUrl = result.url;
             
-            console.log("[Upload] Video compressed via Cloudinary:", {
-              original: `${sizeMB.toFixed(2)}MB`,
-              compressed: `${(result.size / 1024 / 1024).toFixed(2)}MB`,
-            });
           } catch (error: any) {
             if (error.message !== "SKIP_COMPRESSION") {
               throw error;
@@ -2221,7 +2193,6 @@ const handleTouchEnd = () => {
           .upload(path, fileToUpload);
 
         if (uploadError) {
-          console.error("Upload error:", uploadError);
           continue;
         }
 
@@ -2253,7 +2224,6 @@ const handleTouchEnd = () => {
             thumbnailUrl = thumbUrlData.publicUrl;
           }
         } catch (thumbError) {
-          console.log("[Upload] Thumbnail upload failed:", thumbError);
         }
       }
 
@@ -2269,7 +2239,6 @@ const handleTouchEnd = () => {
       setUploadingMsgIds((prev) => new Map(prev).set(tempId, progress));
 
     } catch (error: any) {
-      console.error("[Upload] Media processing error:", error);
       toast.danger(error.message || "Failed to process media");
       continue;
     }
@@ -2360,7 +2329,6 @@ const handleTouchEnd = () => {
         );
       }
     } catch (e: any) {
-      console.error("Send error:", e?.message || e);
 
       setMessages((prev) =>
         prev.map((msg) =>

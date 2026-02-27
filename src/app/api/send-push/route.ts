@@ -1,12 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "../_auth";
+import { getSupabaseAdmin } from "../_supabaseAdmin";
 import { sendPushToUser } from "../_firebaseAdmin";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireUser(req);
+    const { user } = await requireUser(req);
+
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: userData } = await supabaseAdmin
+      .from("users")
+      .select("is_admin")
+      .eq("id", user.id)
+      .single();
+
+    if (!userData?.is_admin) {
+      return NextResponse.json(
+        { ok: false, error: "Forbidden" },
+        { status: 403 }
+      );
+    }
 
     const { userId, title, body, data } = await req.json();
 
@@ -26,9 +41,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, sent: sentCount });
   } catch (e: any) {
-    console.error("[send-push] Error:", e);
     return NextResponse.json(
-      { ok: false, error: e?.message || "Server error" },
+      { ok: false, error: "Server error" },
       { status: 500 }
     );
   }

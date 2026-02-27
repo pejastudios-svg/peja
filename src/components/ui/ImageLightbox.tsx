@@ -54,7 +54,6 @@ const incrementView = async (id: string) => {
         .eq("id", id);
     }
   } catch (e) {
-    console.error("Failed to increment view:", e);
   }
 };
 

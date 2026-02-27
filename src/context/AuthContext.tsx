@@ -63,7 +63,6 @@ class LocationTracker {
     this.userId = userId;
     this.isTracking = true;
     
-    console.log("🌍 Starting location tracking...");
 
     if (typeof window === "undefined") return;
 
@@ -118,7 +117,6 @@ class LocationTracker {
           }
         })
         .catch((err: any) => {
-          console.warn("Compass permission denied:", err);
         });
     } else {
       window.addEventListener("deviceorientation", handleOrientation, true);
@@ -141,7 +139,6 @@ class LocationTracker {
   }
 
   stop() {
-    console.log("🛑 Stopping location tracking");
     
     if (this.watchId !== null) {
       navigator.geolocation.clearWatch(this.watchId);
@@ -197,7 +194,6 @@ class LocationTracker {
     try {
       const address = await this.getAddressFromCoords(latitude, longitude);
 
-      console.log(`📍 Location updated: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
 
       const { error } = await supabase
         .from("users")
@@ -210,10 +206,8 @@ class LocationTracker {
         .eq("id", this.userId);
 
       if (error) {
-        console.error("Error saving location:", error);
       }
     } catch (err) {
-      console.error("Error in savePosition:", err);
     }
   }
 
@@ -263,13 +257,10 @@ class LocationTracker {
   private handleError(error: GeolocationPositionError) {
     switch (error.code) {
       case error.PERMISSION_DENIED:
-        console.warn("📍 Location permission denied");
         break;
       case error.POSITION_UNAVAILABLE:
-        console.warn("📍 Location unavailable");
         break;
       case error.TIMEOUT:
-        console.warn("📍 Location request timeout");
         break;
     }
   }
@@ -288,7 +279,6 @@ class LocationTracker {
           });
         },
         (error) => {
-          console.warn("Could not get position:", error.message);
           resolve(null);
         },
         {
@@ -349,7 +339,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch (error) {
-        console.error("Auth init error:", error);
       } finally {
         setLoading(false);
       }
@@ -365,7 +354,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
-        console.log("Auth event:", event);
 
         // TOKEN_REFRESHED: just update session reference, do nothing else
         if (event === 'TOKEN_REFRESHED') {
@@ -401,7 +389,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             } catch {}
 
             if (hasStoredSession) {
-              console.log("[Auth] Ignoring false SIGNED_OUT (session still in storage, likely rate-limited refresh)");
               // Don't clear anything — the session is still valid, just rate-limited
               return;
             }
@@ -448,7 +435,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (!refreshed) {
               // Truly logged out — clear state
-              console.log("[Auth] Session lost on resume, clearing state");
               setUser(null);
               setSupabaseUser(null);
               setSession(null);
@@ -457,7 +443,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch (err) {
-        console.warn("[Auth] Visibility change session check failed:", err);
       }
     };
 
@@ -489,7 +474,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const hasCustomRadius = settings?.alert_zone_type === "radius";
       const hasActiveSOS = !!sos;
 
-      console.log("🌍 User needs location tracking:", { hasCustomRadius, hasActiveSOS });
 
       if (hasCustomRadius || hasActiveSOS) {
         locationTracker.start(userId);
@@ -507,7 +491,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (error) {
-      console.error("Error checking location tracking:", error);
     }
   }
 
@@ -553,18 +536,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (!error && data) break; // Success
         if (attempt < 2) {
-          console.log(`[Auth] Profile fetch attempt ${attempt + 1} failed, retrying...`);
           await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         }
       }
 
       if (error) {
-        console.error("Profile fetch error:", {
-          message: (error as any)?.message,
-          details: (error as any)?.details,
-          hint: (error as any)?.hint,
-          code: (error as any)?.code,
-        });
       }
 
       const profile: User = data ? {
@@ -609,7 +585,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         timestamp: Date.now(),
       };
     } catch (error) {
-      console.error("Profile error:", error);
       setUser({
         id: userId,
         email: supabaseUser?.email || "",
@@ -699,7 +674,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signUp(email: string, password: string, fullName: string, phone: string) {
     signingInRef.current = true;
     try {
-      console.log("🔐 Starting signup process...");
       
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email,
@@ -713,7 +687,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (authError) {
-        console.error("❌ Auth signup error:", authError);
         return { error: authError };
       }
       
@@ -721,7 +694,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: new Error("Failed to create user") };
       }
 
-      console.log("✅ Auth user created:", authData.user.id);
 
       try {
         const { error: updateError } = await supabase
@@ -730,12 +702,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .eq("id", authData.user.id);
 
         if (updateError) {
-          console.warn("⚠️ Phone update error:", updateError);
         } else {
-          console.log("✅ Phone number updated");
         }
       } catch (updateErr) {
-        console.warn("⚠️ Phone update exception:", updateErr);
       }
 
       if (authData.session) {
@@ -753,11 +722,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         checkAndStartLocationTracking(authData.user.id);
       }
 
-      console.log("✅ Signup complete!");
       return { error: null };
       
     } catch (error: any) {
-      console.error("❌ Signup exception:", error);
       return { error: error };
     } finally {
       signingInRef.current = false;

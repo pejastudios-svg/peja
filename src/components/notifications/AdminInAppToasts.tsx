@@ -47,7 +47,6 @@ export default function AdminInAppToasts({ onNewNotification }: Props) {
 
       // Create unique channel name
       const channelName = `admin-toast-${uid}-${Date.now()}`;
-      console.log("[AdminToast] Setting up channel:", channelName);
 
       const channel = supabase
         .channel(channelName)
@@ -61,7 +60,6 @@ export default function AdminInAppToasts({ onNewNotification }: Props) {
           },
           (payload) => {
             const notification = payload.new as NotifRow;
-            console.log("[AdminToast] Received notification:", notification.title);
 
             // Play sound
             playNotificationSound();
@@ -83,7 +81,6 @@ export default function AdminInAppToasts({ onNewNotification }: Props) {
           }
         )
         .subscribe((status) => {
-          console.log("[AdminToast] Subscription status:", status);
         });
 
       channelRef.current = channel;
@@ -93,7 +90,6 @@ export default function AdminInAppToasts({ onNewNotification }: Props) {
 
     return () => {
       if (channelRef.current) {
-        console.log("[AdminToast] Cleaning up channel");
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
@@ -116,7 +112,6 @@ export default function AdminInAppToasts({ onNewNotification }: Props) {
       
       onNewNotification?.();
     } catch (e) {
-      console.error("[AdminToast] Failed to mark as read:", e);
     }
 
     // Navigate based on type

@@ -158,7 +158,6 @@ async function setupDeepLinkListener() {
     const { App } = await import("@capacitor/app");
 
     App.addListener("appUrlOpen", (event) => {
-      console.log("[DeepLink] URL:", event.url);
 
       let path: string | null = null;
 
@@ -179,12 +178,10 @@ url.hostname === "peja.life" ||
       }
 
       if (path && path !== window.location.pathname) {
-        console.log("[DeepLink] Navigating to:", path);
         window.location.assign(path);
       }
     });
   } catch (err) {
-    console.warn("[DeepLink] @capacitor/app not available:", err);
   }
 }
 
@@ -203,7 +200,6 @@ async function setupNetworkMonitor(setIsOffline: (offline: boolean) => void) {
 
     // Listen for changes
     Network.addListener("networkStatusChange", (status) => {
-      console.log("[Network] Status changed:", status.connected, status.connectionType);
       setIsOffline(!status.connected);
     });
   } catch {

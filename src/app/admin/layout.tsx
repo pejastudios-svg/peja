@@ -60,12 +60,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         .eq("is_read", false);
 
       if (!error) {
-        console.log("[Admin Layout] Fetched unread count:", count);
         setUnreadCount(count || 0);
         setBadgeKey(prev => prev + 1); // Force re-render
       }
     } catch (e) {
-      console.error("[Admin Layout] fetchUnreadCount error:", e);
     }
   }, [user?.id]);
 
@@ -73,7 +71,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!user?.id) return;
 
-    console.log("[Admin Layout] Setting up for user:", user.id);
     fetchUnreadCount();
 
     // Cleanup existing channel
@@ -84,7 +81,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     // Create unique channel
     const channelName = `admin-layout-badge-${user.id}-${Date.now()}`;
-    console.log("[Admin Layout] Creating channel:", channelName);
 
     const channel = supabase
       .channel(channelName)
@@ -97,7 +93,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           filter: `recipient_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log("[Admin Layout] INSERT received:", payload.new);
           fetchUnreadCount();
         }
       )
@@ -110,7 +105,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           filter: `recipient_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log("[Admin Layout] UPDATE received");
           fetchUnreadCount();
         }
       )
@@ -123,19 +117,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           filter: `recipient_id=eq.${user.id}`,
         },
         (payload) => {
-          console.log("[Admin Layout] DELETE received");
           fetchUnreadCount();
         }
       )
       .subscribe((status) => {
-        console.log("[Admin Layout] Subscription status:", status);
       });
 
     channelRef.current = channel;
 
     return () => {
       if (channelRef.current) {
-        console.log("[Admin Layout] Cleaning up channel");
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
       }
@@ -145,7 +136,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Listen for manual badge refresh events
 useEffect(() => {
   const handleBadgeRefresh = () => {
-    console.log("[Admin Layout] Badge refresh event received");
     fetchUnreadCount();
   };
 

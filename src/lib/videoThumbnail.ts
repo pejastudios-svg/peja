@@ -132,7 +132,6 @@ export async function generateVideoThumbnail(
 ): Promise<string | null> {
   return new Promise((resolve) => {
     const timeout = setTimeout(() => {
-      console.log("[generateVideoThumbnail] Timed out");
       cleanup();
       resolve(null);
     }, 10000);
@@ -192,7 +191,6 @@ export async function generateVideoThumbnail(
         resolve(dataUrl);
         return true;
       } catch (e) {
-        console.log("[generateVideoThumbnail] Canvas error:", e);
         return false;
       }
     };
@@ -248,7 +246,6 @@ export async function generateVideoThumbnail(
     };
 
     video.onerror = () => {
-      console.log("[generateVideoThumbnail] Video load error");
       cleanup();
       resolve(null);
     };

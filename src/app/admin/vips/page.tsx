@@ -113,7 +113,6 @@ export default function AdminVIPsPage() {
       if (error) throw error;
       setVips((data || []) as VIPUser[]);
     } catch (e) {
-      console.error("fetchVIPs error:", e);
       setVips([]);
     } finally {
       setVipsLoading(false);
@@ -175,7 +174,6 @@ export default function AdminVIPsPage() {
         if (error) throw error;
         setSearchResults((data || []) as SearchUser[]);
       } catch (e) {
-        console.error("Search error:", e);
         setSearchResults([]);
       } finally {
         setSearchLoading(false);
@@ -215,7 +213,6 @@ export default function AdminVIPsPage() {
       await fetchVIPs();
       showToast(`✓ VIP granted to ${userName}`);
     } catch (e: any) {
-      console.error(e);
       showToast(e?.message || "Failed to grant VIP");
     } finally {
       setActionLoading(null);
@@ -257,7 +254,6 @@ export default function AdminVIPsPage() {
       await fetchVIPs();
       showToast(`✓ VIP revoked from ${revokeTarget.full_name || "User"}`);
     } catch (e: any) {
-      console.error(e);
       showToast(e?.message || "Failed to revoke VIP");
     } finally {
       setActionLoading(null);

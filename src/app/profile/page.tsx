@@ -114,7 +114,6 @@ export default function ProfilePage() {
     const handlePostDeleted = (e: Event) => {
       const customEvent = e as CustomEvent;
       const { postId } = customEvent.detail || {};
-      console.log("[Profile] Post deleted event received:", postId);
 
       if (postId) {
         setUserPosts((prev) => {
@@ -133,7 +132,6 @@ export default function ProfilePage() {
     const handlePostArchived = (e: Event) => {
       const customEvent = e as CustomEvent;
       const { postId } = customEvent.detail || {};
-      console.log("[Profile] Post archived event received:", postId);
 
       if (postId) {
         setUserPosts((prev) => {
@@ -173,7 +171,6 @@ export default function ProfilePage() {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("Error fetching user posts:", error);
         if (userPosts.length === 0) setUserPosts([]);
         return;
       }
@@ -212,7 +209,6 @@ export default function ProfilePage() {
       );
       confirm.loadConfirmedFor(formattedPosts.map((p) => p.id));
     } catch (e) {
-      console.error("Error:", e);
     } finally {
       setPostsLoading(false);
     }
@@ -269,7 +265,6 @@ export default function ProfilePage() {
       confirm.hydrateCounts(filtered.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
       confirm.loadConfirmedFor(filtered.map((p) => p.id));
     } catch (e) {
-      console.error(e);
     } finally {
       setConfirmedLoading(false);
     }
@@ -317,7 +312,6 @@ export default function ProfilePage() {
       await signOut();
       router.push("/login");
     } catch (err: any) {
-      console.error("Delete account error:", err);
       setDeleteError(err.message || "Failed to delete account. Please try again.");
       setDeleting(false);
     }
