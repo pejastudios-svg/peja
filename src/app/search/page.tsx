@@ -129,7 +129,8 @@ function SearchContent() {
             : Promise.resolve({ data: [], error: null } as any),
         ]);
 
-      if (mediaErr)      if (tagsErr)
+      if (mediaErr) { /* skip */ }
+      if (tagsErr) { /* skip */ }
       const mediaMap: Record<string, any[]> = {};
       (mediaData || []).forEach((m: any) => {
         if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];

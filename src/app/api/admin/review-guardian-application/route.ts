@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       is_read: false,
     });
 
-    if (notifErr)
+    if (notifErr) { /* skip */ }
     return NextResponse.json({ ok: true, status: newStatus });
   } catch (e: any) {
     return NextResponse.json(

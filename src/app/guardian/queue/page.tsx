@@ -182,7 +182,7 @@ export default function GuardianQueuePage() {
             .in("id", allPostIds)
         : { data: [], error: null };
 
-      if (postsErr)
+      if (postsErr) { /* skip */ }
       const postsMap: Record<string, any> = {};
       (postsData || []).forEach((p: any) => (postsMap[p.id] = p));
 
@@ -191,7 +191,7 @@ export default function GuardianQueuePage() {
         ? await supabase.from("post_media").select("post_id,url,media_type").in("post_id", postIds)
         : { data: [], error: null };
 
-      if (mediaErr)
+      if (mediaErr) { /* skip */ }
       const mediaMap: Record<string, { url: string; media_type: string }[]> = {};
       (mediaData || []).forEach((m: any) => {
         if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
@@ -207,7 +207,7 @@ export default function GuardianQueuePage() {
         ? await supabase.from("users").select("id,full_name,avatar_url").in("id", userIds)
         : { data: [], error: null };
 
-      if (usersErr)
+      if (usersErr) { /* skip */ }
       const usersMap: Record<string, { full_name: string; avatar_url?: string }> = {};
       (usersData || []).forEach((u: any) => (usersMap[u.id] = { full_name: u.full_name, avatar_url: u.avatar_url }));
 

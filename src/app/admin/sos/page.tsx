@@ -140,7 +140,7 @@ export default function AdminSOSPage() {
       ? await supabase.from("users").select("id,full_name,email,phone,avatar_url").in("id", userIds)
       : { data: [], error: null };
 
-    if (usersErr)
+    if (usersErr) { /* skip */ }
     const usersMap: Record<string, any> = {};
     (usersData || []).forEach((u: any) => (usersMap[u.id] = u));
 
