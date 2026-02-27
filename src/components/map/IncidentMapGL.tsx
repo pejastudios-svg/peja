@@ -460,7 +460,8 @@ export default function IncidentMapGL({
           detail: { lat: position.coords.latitude, lng: position.coords.longitude }
         }));
       },
-      (error) =>    return () => navigator.geolocation.clearWatch(watchId);
+      () => {}, { enableHighAccuracy: true });
+    return () => navigator.geolocation.clearWatch(watchId);
   }, []);
   // Real-time SOS location updates (SOS markers move in real-time)
   useEffect(() => {

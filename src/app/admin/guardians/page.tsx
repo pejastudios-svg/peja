@@ -224,7 +224,7 @@ export default function AdminGuardiansPage() {
             .in("id", userIds)
         : { data: [], error: null };
 
-      if (usersErr)
+      if (usersErr) { /* skip */ }
       const usersMap: Record<string, any> = {};
       (usersData || []).forEach((u: any) => (usersMap[u.id] = u));
 

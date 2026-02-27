@@ -351,7 +351,8 @@ export function SOSButton({ className = "" }: { className?: string }) {
         radius_m: 5000,
         max_results: 200,
       });
-      if (nearbyErr)      const nearbyIds = (nearby || [])
+      if (nearbyErr) { /* skip */ }
+      const nearbyIds = (nearby || [])
         .map((r: any) => r.id)
         .filter((id: string) => id && id !== user.id);
       const tagInfo = selectedTag ? SOS_TAGS.find(t => t.id === selectedTag) : null;

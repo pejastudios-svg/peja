@@ -109,7 +109,8 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
         }
       )
       .subscribe((status, err) => {
-        if (err)      });
+        if (err) { /* error */ }
+      });
 
     channelRef.current = channel;
 

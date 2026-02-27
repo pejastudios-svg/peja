@@ -119,7 +119,7 @@ export default function AdminSOSPage() {
       .eq("status", "active")
       .lt("created_at", cutoff);
 
-    if (expireErr)
+    if (expireErr) { /* skip */ }
     // Fetch SOS (no embedded joins)
     let query = supabase
       .from("sos_alerts")
