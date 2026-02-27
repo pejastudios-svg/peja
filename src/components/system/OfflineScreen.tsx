@@ -19,7 +19,7 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
 
-      await fetch("https://peja.vercel.app/", {
+      await fetch("https://peja.life/", {
         method: "HEAD",
         cache: "no-store",
         mode: "no-cors",

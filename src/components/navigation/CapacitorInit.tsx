@@ -165,8 +165,9 @@ async function setupDeepLinkListener() {
       try {
         const url = new URL(event.url);
         if (
-          url.hostname === "peja.vercel.app" ||
-          url.hostname === "www.peja.vercel.app"
+url.hostname === "peja.life" ||
+          url.hostname === "www.peja.life" ||
+          url.hostname === "peja.vercel.app"
         ) {
           path = url.pathname + url.search + url.hash;
         }

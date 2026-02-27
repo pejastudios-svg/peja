@@ -22,6 +22,7 @@ import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
 import { VoiceNoteRecorder } from "@/components/messages/VoiceNoteRecorder";
 import { useMessageCache } from "@/context/MessageCacheContext";
+import { DocumentViewer } from "@/components/messages/DocumentViewer";
 import {
   ArrowLeft,
   Send,
@@ -162,6 +163,11 @@ const {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [lightboxVideo, setLightboxVideo] = useState<string | null>(null);
   const [lightboxVideoRect, setLightboxVideoRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [docViewer, setDocViewer] = useState<{
+  url: string;
+  fileName: string | null;
+  fileSize: number | null;
+} | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [chatInfoPlayingVN, setChatInfoPlayingVN] = useState<{ url: string; duration?: number } | null>(null);
 
@@ -1486,24 +1492,8 @@ useEffect(() => {
     // =====================================================
   // DOCUMENT DOWNLOAD (with proper filename)
   // =====================================================
-  const handleDocumentDownload = useCallback(async (url: string, fileName: string | null) => {
-    const safeName = fileName || "document";
-    try {
-      const response = await fetch(url);
-      const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
-      a.download = safeName;
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-    } catch {
-      // Fallback: open in new tab
-      window.open(url, "_blank");
-    }
+const handleDocumentOpen = useCallback((url: string, fileName: string | null, fileSize?: number | null) => {
+    setDocViewer({ url, fileName, fileSize: fileSize || null });
   }, []);
 
   // =====================================================
@@ -2953,7 +2943,7 @@ onTouchEnd={() => {
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          handleDocumentDownload(m.url, m.file_name);
+                                        handleDocumentOpen(m.url, m.file_name, m.file_size)
                                         }}
                                         className={`flex items-center gap-3 p-3 rounded-xl border active:scale-[0.98] transition-transform w-full text-left ${
                                           isMine
@@ -3929,7 +3919,7 @@ onTouchEnd={() => {
                             </button>
                           ) : (
                             <button
-                              onClick={() => handleDocumentDownload(m.url, m.file_name)}
+                              onClick={() => handleDocumentOpen(m.url, m.file_name)}
                               className="w-full aspect-square rounded-lg bg-dark-800 border border-white/10 flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform"
                             >
                               <span className="text-lg">{getDocIcon(m.file_name)}</span>
@@ -3993,6 +3983,14 @@ onTouchEnd={() => {
         onClose={() => { setLightboxVideo(null); setLightboxVideoRect(null); }}
         videoUrl={lightboxVideo}
         sourceRect={lightboxVideoRect}
+      />
+      {/* Document Viewer */}
+      <DocumentViewer
+        isOpen={!!docViewer}
+        onClose={() => setDocViewer(null)}
+        url={docViewer?.url || null}
+        fileName={docViewer?.fileName || null}
+        fileSize={docViewer?.fileSize}
       />
     </div>
   );

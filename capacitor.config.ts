@@ -2,10 +2,10 @@ import type { CapacitorConfig } from "@capacitor/cli";
 import { KeyboardResize } from "@capacitor/keyboard";
 
 const config: CapacitorConfig = {
-  appId: "com.jedidiah.peja2025",
+appId: "com.peja.app",
   appName: "Peja",
   webDir: "out",
-  server: {
+server: {
     url: "https://peja.vercel.app",
     cleartext: true,
   },

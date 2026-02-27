@@ -47,10 +47,16 @@
             <!-- Android will open your app instead of the browser -->
             <!-- IF the assetlinks.json verification passes.       -->
             <!-- ================================================ -->
-            <intent-filter android:autoVerify="true">
+<intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="peja.life" />
+                <data
+                    android:scheme="https"
+                    android:host="www.peja.life" />
                 <data
                     android:scheme="https"
                     android:host="peja.vercel.app" />

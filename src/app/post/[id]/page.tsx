@@ -955,7 +955,7 @@ setLikeBusy(prev => {
 
   // Share
   const handleShare = async () => {
-    const url = `https://peja.vercel.app/post/${postId}`;
+const url = `https://peja.life/post/${postId}`;
     if (navigator.share) {
       try {
         await navigator.share({

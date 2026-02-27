@@ -174,7 +174,7 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
  const handleShareClick = async (e: React.MouseEvent) => {
   e.stopPropagation();
   
-  const url = `${window.location.origin}/post/${post.id}`;
+ const url = `https://peja.life/post/${post.id}`;
   
   // Try native share first (mobile)
   if (navigator.share) {
