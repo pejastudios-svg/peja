@@ -29,6 +29,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
 import { notifyUsersAboutIncident } from "@/lib/notifications";
+import { PostLoadingAnimation } from "@/components/posts/PostLoadingAnimation";
 
 // Category icon mapping
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -113,6 +114,7 @@ export default function CreatePostPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const isMounted = useRef(true);
+  const isSubmitting = useRef(false);
 
   const [media, setMedia] = useState<File[]>([]);
   const [mediaPreviews, setMediaPreviews] = useState<{ url: string; type: string }[]>([]);
@@ -342,29 +344,36 @@ export default function CreatePostPage() {
   };
 
   const handleSubmit = async () => {
+  if (isSubmitting.current) return;
+  isSubmitting.current = true;
   setError("");
 
   if (user?.status === "suspended") {
     setError("Your account is suspended. You can still receive alerts, but you cannot post.");
+    isSubmitting.current = false;
     return;
   }
   if (user?.status === "banned") {
     setError("Your account is banned.");
+    isSubmitting.current = false;
     return;
   }
 
   if (media.length === 0) {
     setError("Please add at least one photo or video");
+    isSubmitting.current = false;
     return;
   }
 
   if (!category) {
     setError("Please select a category");
+    isSubmitting.current = false;
     return;
   }
 
   if (!location) {
     setError("Location is required");
+    isSubmitting.current = false;
     return;
   }
 
@@ -373,6 +382,7 @@ export default function CreatePostPage() {
   if (authError || !authUser) {
     setError("Please sign in to post");
     window.location.replace("/login");
+    isSubmitting.current = false;
     return;
   }
 
@@ -594,6 +604,7 @@ export default function CreatePostPage() {
     setIsLoading(false);
     setUploadProgress(0);
     setToast(null);
+    isSubmitting.current = false;
   }
 };
 
@@ -628,21 +639,7 @@ export default function CreatePostPage() {
           </div>
         )}
 
-        {/* Upload Progress */}
-        {isLoading && uploadProgress > 0 && (
-          <div className="mb-4 p-4 rounded-xl bg-primary-500/10 border border-primary-500/20">
-            <div className="flex justify-between mb-2">
-              <span className="text-sm text-primary-400 font-medium">Uploading...</span>
-              <span className="text-sm text-primary-400">{uploadProgress}%</span>
-            </div>
-            <div className="w-full bg-dark-700 rounded-full h-2 overflow-hidden">
-              <div
-                className="bg-primary-500 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${uploadProgress}%`, boxShadow: "0 0 10px rgba(139,92,246,0.5)" }}
-              />
-            </div>
-          </div>
-        )}
+
 
         {/* Media Upload */}
         <div className="glass-card mb-4">
@@ -959,11 +956,12 @@ export default function CreatePostPage() {
           )}
         </button>
 
-        {toast && (
-          <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[99999] px-4 py-2 rounded-xl glass-float text-dark-100">
-            {toast}
-          </div>
-        )}
+        {/* Post Loading Animation */}
+        <PostLoadingAnimation
+          isActive={isLoading}
+          uploadProgress={uploadProgress}
+          toast={toast}
+        />
       </main>
     </div>
   );
