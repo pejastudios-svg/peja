@@ -171,6 +171,7 @@ export default function EditProfilePage() {
       
       await refreshUser();
       setSuccess(true);
+      setLoading(false);
       setTimeout(() => {
         router.push("/profile");
       }, 1500);
