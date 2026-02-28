@@ -114,7 +114,7 @@ export default function CreatePostPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const isMounted = useRef(true);
-  const isSubmitting = useRef(false);
+  const [submitted, setSubmitted] = useState(false);
 
   const [media, setMedia] = useState<File[]>([]);
   const [mediaPreviews, setMediaPreviews] = useState<{ url: string; type: string }[]>([]);
@@ -344,36 +344,36 @@ export default function CreatePostPage() {
   };
 
   const handleSubmit = async () => {
-  if (isSubmitting.current) return;
-  isSubmitting.current = true;
+  if (submitted) return;
+  setSubmitted(true);
   setError("");
 
   if (user?.status === "suspended") {
     setError("Your account is suspended. You can still receive alerts, but you cannot post.");
-    isSubmitting.current = false;
+    setSubmitted(false);
     return;
   }
   if (user?.status === "banned") {
     setError("Your account is banned.");
-    isSubmitting.current = false;
+    setSubmitted(false);
     return;
   }
 
   if (media.length === 0) {
     setError("Please add at least one photo or video");
-    isSubmitting.current = false;
+    setSubmitted(false);
     return;
   }
 
   if (!category) {
     setError("Please select a category");
-    isSubmitting.current = false;
+    setSubmitted(false);
     return;
   }
 
   if (!location) {
     setError("Location is required");
-    isSubmitting.current = false;
+    setSubmitted(false);
     return;
   }
 
@@ -382,7 +382,7 @@ export default function CreatePostPage() {
   if (authError || !authUser) {
     setError("Please sign in to post");
     window.location.replace("/login");
-    isSubmitting.current = false;
+    setSubmitted(false);
     return;
   }
 
@@ -604,7 +604,6 @@ export default function CreatePostPage() {
     setIsLoading(false);
     setUploadProgress(0);
     setToast(null);
-    isSubmitting.current = false;
   }
 };
 
@@ -936,7 +935,7 @@ export default function CreatePostPage() {
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={isLoading}
+          disabled={isLoading || submitted}
           className="w-full py-3.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:hover:scale-100"
           style={{
             background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
