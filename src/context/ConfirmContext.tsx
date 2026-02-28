@@ -23,12 +23,11 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const inFlight = useRef<Set<string>>(new Set());
-  const debouncedRpc = useRef(createDebouncedAction(500));
-  const toast = useToast();
   const toastApi = useToast();
-
   const loadedRef = useRef<Set<string>>(new Set());
+  const debouncedRpc = useRef(createDebouncedAction(600));
+  const originalState = useRef<Record<string, boolean>>({});
+  const notifiedPosts = useRef<Set<string>>(new Set());
 
   const hydrateCounts = (pairs: { postId: string; confirmations: number }[]) => {
     setCounts((prev) => {
@@ -39,24 +38,19 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
 
-    // Auto-load confirmed status for any post IDs we haven't checked yet
     if (user?.id) {
       const newIds = pairs
         .map((p) => p.postId)
         .filter((id) => !loadedRef.current.has(id));
       if (newIds.length > 0) {
         newIds.forEach((id) => loadedRef.current.add(id));
-        // Call loadConfirmedFor asynchronously — it's defined below in the same closure
-        // and will be available when this callback actually executes
         supabase
           .from("post_confirmations")
           .select("post_id")
           .eq("user_id", user.id)
           .in("post_id", newIds)
           .then(({ data, error }) => {
-            if (error) {
-              return;
-            }
+            if (error) return;
             setConfirmed((prev) => {
               const next = new Set(prev);
               (data || []).forEach((r: any) => next.add(r.post_id));
@@ -78,9 +72,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       .eq("user_id", user.id)
       .in("post_id", ids);
 
-    if (error) {
-      return;
-    }
+    if (error) return;
 
     setConfirmed((prev) => {
       const next = new Set(prev);
@@ -95,86 +87,89 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
   const toggle = async (postId: string, fallbackCount: number) => {
     if (!user?.id) return null;
-        if (user.status !== "active") {
+    if (user.status !== "active") {
       toastApi.warning("Your account is suspended. You cannot confirm incidents.");
       return null;
     }
-    if (user.status !== "active") {
-  toast.warning("Your account is suspended. You cannot confirm incidents.");
-  return null;
-}
-    if (inFlight.current.has(postId)) return null;
-    inFlight.current.add(postId);
 
-    const was = confirmed.has(postId);
-    const current = getCount(postId, fallbackCount);
+    const currentlyConfirmed = confirmed.has(postId);
+    const currentCount = getCount(postId, fallbackCount);
 
-    // optimistic
+    // Save original state on FIRST tap only
+    if (!(postId in originalState.current)) {
+      originalState.current[postId] = currentlyConfirmed;
+    }
+
+    // Optimistic UI update
     setConfirmed((prev) => {
       const next = new Set(prev);
-      if (was) next.delete(postId);
+      if (currentlyConfirmed) next.delete(postId);
       else next.add(postId);
       return next;
     });
-
     setCounts((prev) => ({
       ...prev,
-      [postId]: was ? Math.max(0, current - 1) : current + 1,
+      [postId]: currentlyConfirmed ? Math.max(0, currentCount - 1) : currentCount + 1,
     }));
 
-    try {
-      // Debounced RPC — only fires after user stops tapping for 500ms
-      return new Promise<{ confirmed: boolean; newCount: number } | null>((resolve) => {
-        debouncedRpc.current(postId, async () => {
-          try {
-            const { data, error } = await supabase.rpc("toggle_post_confirmation", {
-              p_post_id: postId,
-              p_user_id: user.id,
+    const newState = !currentlyConfirmed;
+
+    // Debounce: wait 600ms after last tap, then decide
+    return new Promise<{ confirmed: boolean; newCount: number } | null>((resolve) => {
+      debouncedRpc.current(postId, async () => {
+        const origState = originalState.current[postId];
+        delete originalState.current[postId];
+
+        // If final state === original state, user toggled back — skip RPC
+        if (newState === origState) {
+          resolve(null);
+          return;
+        }
+
+        // State actually changed — send ONE RPC call
+        try {
+          const { data, error } = await supabase.rpc("toggle_post_confirmation", {
+            p_post_id: postId,
+            p_user_id: user.id,
+          });
+          if (error) throw error;
+
+          const row = data?.[0];
+          const serverConfirmed = !!row?.confirmed;
+          const serverCount = Number(row?.new_count ?? 0);
+
+          setConfirmed((prev) => {
+            const next = new Set(prev);
+            if (serverConfirmed) next.add(postId);
+            else next.delete(postId);
+            return next;
+          });
+          setCounts((prev) => ({ ...prev, [postId]: serverCount }));
+
+          // Only notify ONCE per post per session
+          if (serverConfirmed && user?.id && !notifiedPosts.current.has(postId)) {
+            notifiedPosts.current.add(postId);
+            supabase.from("posts").select("user_id").eq("id", postId).single().then(({ data: postData }) => {
+              if (postData?.user_id && postData.user_id !== user.id) {
+                notifyPostConfirmed(postId, postData.user_id, user.full_name || user.email || "Someone");
+              }
             });
-
-            if (error) throw error;
-
-            const row = data?.[0];
-            const serverConfirmed = !!row?.confirmed;
-            const serverCount = Number(row?.new_count ?? 0);
-
-            setConfirmed((prev) => {
-              const next = new Set(prev);
-              if (serverConfirmed) next.add(postId);
-              else next.delete(postId);
-              return next;
-            });
-            setCounts((prev) => ({ ...prev, [postId]: serverCount }));
-
-            // Only notify after debounced RPC confirms
-            if (serverConfirmed && user?.id) {
-              // Fetch post owner to notify (we dont have it in context)
-              supabase.from("posts").select("user_id").eq("id", postId).single().then(({ data: postData }) => {
-                if (postData?.user_id && postData.user_id !== user.id) {
-                  notifyPostConfirmed(postId, postData.user_id, user.full_name || user.email || "Someone");
-                }
-              });
-            }
-
-            resolve({ confirmed: serverConfirmed, newCount: serverCount });
-          } catch (e) {
-            // rollback
-            setConfirmed((prev) => {
-              const next = new Set(prev);
-              if (was) next.add(postId);
-              else next.delete(postId);
-              return next;
-            });
-            setCounts((prev) => ({ ...prev, [postId]: current }));
-            resolve(null);
           }
-        });
+
+          resolve({ confirmed: serverConfirmed, newCount: serverCount });
+        } catch (e) {
+          // Rollback to original state
+          setConfirmed((prev) => {
+            const next = new Set(prev);
+            if (origState) next.add(postId);
+            else next.delete(postId);
+            return next;
+          });
+          setCounts((prev) => ({ ...prev, [postId]: currentCount }));
+          resolve(null);
+        }
       });
-    } catch (e) {
-      return null;
-    } finally {
-      inFlight.current.delete(postId);
-    }
+    });
   };
 
   const value = useMemo(
