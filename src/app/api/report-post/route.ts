@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "../_auth";
 import { getSupabaseAdmin } from "../_supabaseAdmin";
+import { isRateLimited } from "../_rateLimit";
 
 export const runtime = "nodejs";
 

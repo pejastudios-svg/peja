@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getSupabaseAdmin } from "../_supabaseAdmin";
+import { isRateLimited } from "../_rateLimit";
 
 export async function DELETE(req: NextRequest) {
   try {

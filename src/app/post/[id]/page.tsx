@@ -585,9 +585,7 @@ const handleConfirm = async () => {
     const res = await confirmCtx.toggle(postId, post?.confirmations || 0);
 
     // notify owner only when confirming (not unconfirm)
-    if (res?.confirmed && post?.user_id && post.user_id !== user.id) {
-      notifyPostConfirmed(postId, post.user_id, user.full_name || "Someone");
-    }
+
   } catch (err) {
   } finally {
     setConfirmLoading(false);

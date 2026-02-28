@@ -2,6 +2,8 @@
 
 import React, { createContext, useContext, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { createDebouncedAction } from "@/lib/debounceAction";
+import { notifyPostConfirmed } from "@/lib/notifications";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 
@@ -22,6 +24,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [confirmed, setConfirmed] = useState<Set<string>>(new Set());
   const [counts, setCounts] = useState<Record<string, number>>({});
   const inFlight = useRef<Set<string>>(new Set());
+  const debouncedRpc = useRef(createDebouncedAction(500));
   const toast = useToast();
   const toastApi = useToast();
 
@@ -120,37 +123,54 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
     }));
 
     try {
-      const { data, error } = await supabase.rpc("toggle_post_confirmation", {
-        p_post_id: postId,
-        p_user_id: user.id,
+      // Debounced RPC — only fires after user stops tapping for 500ms
+      return new Promise<{ confirmed: boolean; newCount: number } | null>((resolve) => {
+        debouncedRpc.current(postId, async () => {
+          try {
+            const { data, error } = await supabase.rpc("toggle_post_confirmation", {
+              p_post_id: postId,
+              p_user_id: user.id,
+            });
+
+            if (error) throw error;
+
+            const row = data?.[0];
+            const serverConfirmed = !!row?.confirmed;
+            const serverCount = Number(row?.new_count ?? 0);
+
+            setConfirmed((prev) => {
+              const next = new Set(prev);
+              if (serverConfirmed) next.add(postId);
+              else next.delete(postId);
+              return next;
+            });
+            setCounts((prev) => ({ ...prev, [postId]: serverCount }));
+
+            // Only notify after debounced RPC confirms
+            if (serverConfirmed && user?.id) {
+              // Fetch post owner to notify (we dont have it in context)
+              supabase.from("posts").select("user_id").eq("id", postId).single().then(({ data: postData }) => {
+                if (postData?.user_id && postData.user_id !== user.id) {
+                  notifyPostConfirmed(postId, postData.user_id, user.full_name || user.email || "Someone");
+                }
+              });
+            }
+
+            resolve({ confirmed: serverConfirmed, newCount: serverCount });
+          } catch (e) {
+            // rollback
+            setConfirmed((prev) => {
+              const next = new Set(prev);
+              if (was) next.add(postId);
+              else next.delete(postId);
+              return next;
+            });
+            setCounts((prev) => ({ ...prev, [postId]: current }));
+            resolve(null);
+          }
+        });
       });
-
-      if (error) throw error;
-
-      const row = data?.[0];
-      const serverConfirmed = !!row?.confirmed;
-      const serverCount = Number(row?.new_count ?? 0);
-
-      setConfirmed((prev) => {
-        const next = new Set(prev);
-        if (serverConfirmed) next.add(postId);
-        else next.delete(postId);
-        return next;
-      });
-      setCounts((prev) => ({ ...prev, [postId]: serverCount }));
-
-      return { confirmed: serverConfirmed, newCount: serverCount };
     } catch (e) {
-
-      // rollback
-      setConfirmed((prev) => {
-        const next = new Set(prev);
-        if (was) next.add(postId);
-        else next.delete(postId);
-        return next;
-      });
-      setCounts((prev) => ({ ...prev, [postId]: current }));
-
       return null;
     } finally {
       inFlight.current.delete(postId);

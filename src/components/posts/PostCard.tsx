@@ -29,7 +29,6 @@ import { Post, CATEGORIES } from "@/lib/types";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { formatDistanceToNow, differenceInHours } from "date-fns";
-import { notifyPostConfirmed } from "@/lib/notifications";
 
 interface PostCardProps {
   post: Post;
@@ -108,9 +107,7 @@ const handleConfirmClick = async (e: React.MouseEvent) => {
     setOptimisticConfirmed(null);
     setOptimisticCount(null);
 
-    if (res?.confirmed && post.user_id && post.user_id !== user.id) {
-      notifyPostConfirmed(post.id, post.user_id, user.full_name || "Someone");
-    }
+
 
     onConfirm?.(post.id);
   } catch {

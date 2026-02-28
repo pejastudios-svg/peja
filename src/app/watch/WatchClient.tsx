@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post, REPORT_REASONS } from "@/lib/types";
 import { useAuth } from "@/context/AuthContext";
-import { notifyPostConfirmed } from "@/lib/notifications";
 import { ReelVideo } from "@/components/reels/ReelVideo";
 import { WatchCommentSheet } from "@/components/watch/WatchCommentSheet";
 import { CheckCircle, MessageCircle, Share2, Eye, ChevronLeft, ChevronRight, Flag, Trash2, MoreVertical } from "lucide-react";
@@ -627,7 +626,7 @@ useEffect(() => {
     }
     const res = await confirm.toggle(post.id, post.confirmations || 0);
     if (res?.confirmed && post.user_id && post.user_id !== user.id) {
-      notifyPostConfirmed(post.id, post.user_id, user.full_name || "Someone").catch(() => {});
+
     }
   };
 

@@ -2,8 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "edge";
 
+// Simple in-memory rate limit for file proxy
+const fileRateStore = new Map<string, { count: number; resetAt: number }>();
+
 export async function GET(req: NextRequest) {
   try {
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const now = Date.now();
+    const entry = fileRateStore.get(ip);
+    if (!entry || now > entry.resetAt) {
+      fileRateStore.set(ip, { count: 1, resetAt: now + 60000 });
+    } else {
+      entry.count++;
+      if (entry.count > 30) {
+        return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+      }
+    }
     const url = req.nextUrl.searchParams.get("url");
     const name = req.nextUrl.searchParams.get("name");
 
