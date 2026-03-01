@@ -11,6 +11,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import {
   ArrowLeft,
   Search,
@@ -222,7 +223,8 @@ const handleConversationTap = useCallback((convId: string) => {
   if (authLoading || !user) return null;
   if (user.is_vip === false) return null;
 
-  return (
+return (
+    <PullToRefresh onRefresh={async () => { await fetchConversations(); }}>
     <div className="min-h-screen pb-20">
       {/* HEADER */}
       <header className="fixed top-0 left-0 right-0 z-40 glass-header">
@@ -315,7 +317,8 @@ const handleConversationTap = useCallback((convId: string) => {
       </Modal>
 
       <BottomNav />
-    </div>
+</div>
+    </PullToRefresh>
   );
 }
 

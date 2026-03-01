@@ -1,5 +1,6 @@
 "use client";
 
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { useState, useEffect } from "react";
 import { useFeedCache } from "@/context/FeedContext";
 import { useRouter } from "next/navigation";
@@ -294,6 +295,7 @@ export default function NotificationsPage() {
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   return (
+    <PullToRefresh onRefresh={async () => { await fetchNotifications(); }}>
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header variant="back" title="Notifications" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
 
@@ -417,5 +419,6 @@ export default function NotificationsPage() {
 
       <BottomNav />
     </div>
+    </PullToRefresh>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -283,6 +284,7 @@ function SearchContent() {
   };
 
   return (
+    <PullToRefresh onRefresh={async () => { await performSearch(); }}>
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header onCreateClick={() => router.push("/create")} />
 
@@ -470,7 +472,8 @@ function SearchContent() {
       </main>
 
       <BottomNav />
-    </div>
+</div>
+    </PullToRefresh>
   );
 }
 

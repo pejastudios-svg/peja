@@ -1,5 +1,6 @@
 "use client";
 
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { useState, useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useFeedCache } from "@/context/FeedContext";
@@ -350,6 +351,7 @@ export default function ProfilePage() {
   const listLoading = showingConfirmed ? confirmedLoading : postsLoading;
 
   return (
+    <PullToRefresh onRefresh={async () => { await fetchUserPosts(); }}>
     <div className="min-h-screen pb-20">
       <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
@@ -599,5 +601,6 @@ export default function ProfilePage() {
         </div>
       </main>
     </div>
+    </PullToRefresh>
   );
 }
