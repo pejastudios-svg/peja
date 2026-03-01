@@ -1,8 +1,15 @@
 apply plugin: 'com.android.application'
-
 android {
     namespace = "com.peja.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    signingConfigs {
+        release {
+            storeFile file("peja-release.jks")
+            storePassword "peja2025!"
+            keyAlias "peja"
+            keyPassword "peja2025!"
+        }
+    }
     defaultConfig {
         applicationId "com.peja.app"
         minSdkVersion rootProject.ext.minSdkVersion
@@ -16,8 +23,9 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    buildTypes {
+buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

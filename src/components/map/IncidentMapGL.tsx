@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import MapGL, { Marker, NavigationControl, MapRef } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Post, CATEGORIES, SOSAlert, SOS_TAGS } from "@/lib/types";
@@ -147,6 +147,7 @@ export default function IncidentMapGL({
     bearing: 0,
     pitch: 0,
   });
+  const [mapLoaded, setMapLoaded] = useState(false);
   const [bearing, setBearing] = useState(0);
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
   const [sendingHelp, setSendingHelp] = useState(false);
@@ -819,7 +820,8 @@ export default function IncidentMapGL({
     };
   }, []);
   // Handle map move
-  const handleMove = useCallback((evt: { viewState: ViewState }) => {
+const handleMove = useCallback((evt: { viewState: ViewState }) => {
+    if (!mapRef.current?.getMap()?.isStyleLoaded()) return;
     setViewState(evt.viewState);
   }, []);
   const handleInteractionStart = useCallback(() => {
@@ -841,6 +843,24 @@ export default function IncidentMapGL({
   }, []);
   const isOwnSOS = selectedSOS && myUserId && selectedSOS.user_id === myUserId;
   const tagInfo = selectedSOS?.tag ? SOS_TAGS.find(t => t.id === selectedSOS.tag) : null;
+  
+  const MAP_STYLE = useMemo(() => ({
+  version: 8 as const,
+  sources: {
+    osm: {
+      type: "raster" as const,
+      tiles: [
+        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    },
+  },
+  layers: [{ id: "osm", type: "raster" as const, source: "osm" }],
+}), []);
+
   return (
     <>
       <MapGL
@@ -858,25 +878,12 @@ export default function IncidentMapGL({
         dragRotate={true}
         touchZoomRotate={true}
         style={{ width: "100%", height: "100%" }}
-        mapStyle={{
-          version: 8,
-          sources: {
-            osm: {
-              type: "raster",
-              tiles: [
-                "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-                "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
-              ],
-              tileSize: 256,
-              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-            },
-          },
-          layers: [{ id: "osm", type: "raster", source: "osm" }],
-        }}
+        mapStyle={MAP_STYLE}
         maxZoom={18}
         minZoom={3}
+      onLoad={() => setMapLoaded(true)}
       >
+        {mapLoaded && <>
         <NavigationControl position="top-right" showCompass={false} />
         {/* Post/Incident Markers */}
         {posts.map(post => {
@@ -1082,6 +1089,7 @@ export default function IncidentMapGL({
             </div>
           </Marker>
         )}
+      </>}
       </MapGL>
       {/* Toast */}
       {toast && (

@@ -18,7 +18,6 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Edit,
   Camera,
   Trash2,
   AlertTriangle,
@@ -359,9 +358,7 @@ export default function ProfilePage() {
             <ChevronLeft className="w-5 h-5 text-dark-200" />
           </button>
           <h1 className="font-semibold text-dark-50">Profile</h1>
-          <button onClick={() => router.push("/settings")} className="p-2 -mr-2 hover:bg-white/5 rounded-lg transition-colors">
-            <Settings className="w-5 h-5 text-dark-200" />
-          </button>
+         <div className="w-9" />
         </div>
       </header>
 
@@ -402,10 +399,6 @@ export default function ProfilePage() {
                   )}
                 </div>
               </div>
-
-              <Button variant="secondary" size="sm" onClick={() => router.push("/profile/edit")}>
-                <Edit className="w-4 h-4" />
-              </Button>
             </div>
           </div>
         </div>

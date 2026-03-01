@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES, SOSAlert } from "@/lib/types";
 import { Header } from "@/components/layout/Header";
 import { Badge } from "@/components/ui/Badge";
-import { Loader2, Navigation, List, Map as MapIcon, AlertTriangle, BarChart3, Compass } from "lucide-react";
+import { Loader2, Navigation, Map as MapIcon, AlertTriangle, BarChart3, Compass } from "lucide-react";
 import { subHours } from "date-fns";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFeedCache } from "@/context/FeedContext";
@@ -524,7 +524,7 @@ export default function MapClient() {
                 setCompassEnabled(false);
               }
             }}
-            className={`absolute bottom-36 right-4 z-1000 p-3 rounded-full shadow-lg transition-all ${
+            className={`absolute right-4 z-1000 transition-all duration-300 ${showList ? "bottom-[calc(60%+3.5rem)]" : "bottom-[116px]"} p-3 rounded-full shadow-lg transition-all ${
               compassEnabled
                 ? "bg-primary-600 text-white"
                 : "glass-float text-primary-400 hover:bg-white/10"
@@ -539,7 +539,7 @@ export default function MapClient() {
               handleCenterOnUser();
             }}
             disabled={gettingLocation}
-            className="absolute bottom-24 right-4 z-1000 p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
+className={`absolute right-4 z-1000 transition-all duration-300 ${showList ? "bottom-[calc(60%+0.5rem)]" : "bottom-[68px]"} p-3 glass-float rounded-full shadow-lg hover:bg-white/10`}
           >
             {gettingLocation ? (
               <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
@@ -551,18 +551,11 @@ export default function MapClient() {
           {/* Analytics toggle button */}
           <button
             onClick={() => setShowAnalytics(true)}
-            className="absolute bottom-36 left-4 z-1000 p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
+className={`absolute left-4 z-1000 transition-all duration-300 ${showList ? "bottom-[calc(60%+0.5rem)]" : "bottom-[68px]"} p-3 glass-float rounded-full shadow-lg hover:bg-white/10`}
           >
             <BarChart3 className="w-5 h-5 text-primary-400" />
           </button>
 
-          {/* List toggle button */}
-          <button
-            onClick={() => setShowList(!showList)}
-            className="absolute bottom-24 left-4 z-1000 p-3 glass-float rounded-full shadow-lg"
-          >
-            {showList ? <MapIcon className="w-5 h-5 text-primary-400" /> : <List className="w-5 h-5 text-primary-400" />}
-          </button>
 
           {/* Bottom drawer */}
           <div
@@ -628,44 +621,6 @@ export default function MapClient() {
                 );
               })}
             </div>
-          </div>
-
-          {/* Map Legend - Collapsible */}
-          <div className="absolute top-32 right-4 z-1000">
-            <button
-              onClick={() => setShowLegend((prev) => !prev)}
-              className="glass-float rounded-lg p-2 text-xs flex items-center gap-2"
-            >
-              <div className="flex gap-1">
-                <span className="w-2 h-2 bg-red-500 rounded-full" />
-                <span className="w-2 h-2 bg-orange-500 rounded-full" />
-                <span className="w-2 h-2 bg-primary-500 rounded-full" />
-              </div>
-              <ChevronDown className={`w-3 h-3 text-dark-300 transition-transform ${showLegend ? "rotate-180" : ""}`} />
-            </button>
-
-            {showLegend && (
-              <div className="glass-float rounded-lg p-3 text-xs space-y-2 mt-1">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 bg-red-500 rounded-full" />
-                  <span className="text-dark-200">Danger</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 bg-orange-500 rounded-full" />
-                  <span className="text-dark-200">Caution</span>
-                </div>
-                <div className="flex items-center gap-2 pt-1 border-t border-white/10">
-                  <span className="w-3 h-3 bg-primary-500 rounded-full" />
-                  <span className="text-dark-200">You</span>
-                </div>
-                {compassEnabled && (
-                  <div className="flex items-center gap-2 pt-1 border-t border-white/10">
-                    <Compass className="w-3 h-3 text-primary-400" />
-                    <span className="text-primary-400">Direction Active</span>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </main>
