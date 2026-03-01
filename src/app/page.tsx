@@ -11,7 +11,7 @@ import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { realtimeManager } from "@/lib/realtime";
-import { TrendingUp, MapPin, Loader2, Search, RefreshCw } from "lucide-react";
+import { TrendingUp, MapPin, Loader2, Search } from "lucide-react";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
@@ -649,13 +649,6 @@ export default function Home() {
             >
               Trending
             </Button>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="ml-auto p-2 glass-sm rounded-lg hover:bg-white/10"
-            >
-              <RefreshCw className={`w-4 h-4 text-dark-400 ${refreshing ? "animate-spin" : ""}`} />
-            </button>
           </div>
 
           {loading && posts.length === 0 ? (
