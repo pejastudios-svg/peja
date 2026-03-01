@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { PostCard } from "@/components/posts/PostCard";
@@ -580,8 +581,8 @@ export default function Home() {
   );
 
   // Refresh handler
-  const handleRefresh = useCallback(() => {
-    fetchPostsRef.current(true);
+  const handleRefresh = useCallback(async () => {
+    await fetchPostsRef.current(true);
   }, []);
 
   // ============================================================
