@@ -14,9 +14,10 @@ export function PullToRefresh({ onRefresh, children, className = "" }: PullToRef
   const [refreshing, setRefreshing] = useState(false);
   const startY = useRef(0);
   const pulling = useRef(false);
+  const currentPull = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const THRESHOLD = 70;
+  const THRESHOLD = 50;
 
   useEffect(() => {
     const el = containerRef.current;
@@ -26,6 +27,7 @@ export function PullToRefresh({ onRefresh, children, className = "" }: PullToRef
       if (window.scrollY > 5 || refreshing) return;
       startY.current = e.touches[0].clientY;
       pulling.current = true;
+      currentPull.current = 0;
     };
 
     const onTouchMove = (e: TouchEvent) => {
@@ -33,16 +35,21 @@ export function PullToRefresh({ onRefresh, children, className = "" }: PullToRef
       if (window.scrollY > 5) {
         pulling.current = false;
         setPullDistance(0);
+        currentPull.current = 0;
         return;
       }
 
       const diff = e.touches[0].clientY - startY.current;
-      if (diff > 10) {
+      if (diff > 5) {
         e.preventDefault();
-        setPullDistance(Math.min(diff * 0.4, 120));
+        // Less damping so it feels responsive
+        const distance = Math.min(diff * 0.55, 130);
+        currentPull.current = distance;
+        setPullDistance(distance);
       } else if (diff < -5) {
         pulling.current = false;
         setPullDistance(0);
+        currentPull.current = 0;
       }
     };
 
@@ -50,22 +57,23 @@ export function PullToRefresh({ onRefresh, children, className = "" }: PullToRef
       if (!pulling.current) return;
       pulling.current = false;
 
-      const dist = pullDistance;
+      const dist = currentPull.current;
       if (dist >= THRESHOLD && !refreshing) {
         setRefreshing(true);
-        setPullDistance(THRESHOLD);
+        setPullDistance(40);
         try {
           await onRefresh();
         } finally {
           setRefreshing(false);
           setPullDistance(0);
+          currentPull.current = 0;
         }
       } else {
         setPullDistance(0);
+        currentPull.current = 0;
       }
     };
 
-    // CRITICAL: { passive: false } allows e.preventDefault() to work on Android
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
     el.addEventListener("touchend", onTouchEnd);
@@ -75,24 +83,26 @@ export function PullToRefresh({ onRefresh, children, className = "" }: PullToRef
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
     };
-  }, [refreshing, pullDistance, onRefresh]);
+  }, [refreshing, onRefresh]);
 
   const progress = Math.min(pullDistance / THRESHOLD, 1);
 
   return (
     <div ref={containerRef} className={className}>
-      {pullDistance > 0 && (
+      {(pullDistance > 0 || refreshing) && (
         <div
           className="flex items-center justify-center pointer-events-none fixed top-0 left-0 right-0 z-50"
           style={{
-            height: `${pullDistance}px`,
+            height: `${Math.max(pullDistance, refreshing ? 40 : 0)}px`,
+            transition: pulling.current ? "none" : "height 0.25s ease",
             paddingTop: "env(safe-area-inset-top, 0px)",
           }}
         >
           <div
             style={{
-              opacity: progress,
-              transform: `rotate(${progress * 360}deg)`,
+              opacity: refreshing ? 1 : progress,
+              transform: refreshing ? "none" : `rotate(${progress * 360}deg)`,
+              transition: pulling.current ? "none" : "all 0.25s ease",
             }}
           >
             <Loader2
