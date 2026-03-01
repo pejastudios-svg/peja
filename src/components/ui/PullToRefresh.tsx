@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 
 interface PullToRefreshProps {
@@ -10,47 +10,38 @@ interface PullToRefreshProps {
 }
 
 export function PullToRefresh({ onRefresh, children, className = "" }: PullToRefreshProps) {
-  const [pulling, setPulling] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const startY = useRef(0);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const pulling = useRef(false);
 
-  const THRESHOLD = 80;
+  const THRESHOLD = 70;
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    // Only activate if scrolled to top
-    if (container.scrollTop > 5) return;
-    
+  const handleTouchStart = useCallback((e: TouchEvent) => {
+    // Only activate if page is scrolled to top
+    if (window.scrollY > 5 || refreshing) return;
     startY.current = e.touches[0].clientY;
-    setPulling(true);
-  }, []);
+    pulling.current = true;
+  }, [refreshing]);
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!pulling || refreshing) return;
-    
-    const container = containerRef.current;
-    if (!container || container.scrollTop > 5) {
-      setPulling(false);
+  const handleTouchMove = useCallback((e: TouchEvent) => {
+    if (!pulling.current || refreshing) return;
+    if (window.scrollY > 5) {
+      pulling.current = false;
       setPullDistance(0);
       return;
     }
 
-    const currentY = e.touches[0].clientY;
-    const diff = currentY - startY.current;
-    
+    const diff = e.touches[0].clientY - startY.current;
     if (diff > 0) {
-      // Dampen the pull (feels more natural)
+      e.preventDefault();
       setPullDistance(Math.min(diff * 0.4, 120));
     }
-  }, [pulling, refreshing]);
+  }, [refreshing]);
 
   const handleTouchEnd = useCallback(async () => {
-    if (!pulling) return;
-    setPulling(false);
+    if (!pulling.current) return;
+    pulling.current = false;
 
     if (pullDistance >= THRESHOLD && !refreshing) {
       setRefreshing(true);
@@ -64,24 +55,31 @@ export function PullToRefresh({ onRefresh, children, className = "" }: PullToRef
     } else {
       setPullDistance(0);
     }
-  }, [pulling, pullDistance, refreshing, onRefresh]);
+  }, [pullDistance, refreshing, onRefresh]);
+
+  useEffect(() => {
+    document.addEventListener("touchstart", handleTouchStart, { passive: true });
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      document.removeEventListener("touchstart", handleTouchStart);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
 
   const progress = Math.min(pullDistance / THRESHOLD, 1);
 
   return (
-    <div
-      ref={containerRef}
-      className={className}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
+    <div className={className}>
       {/* Pull indicator */}
       <div
-        className="flex items-center justify-center overflow-hidden transition-all"
+        className="flex items-center justify-center overflow-hidden pointer-events-none fixed top-0 left-0 right-0 z-50"
         style={{
           height: pullDistance > 0 ? `${pullDistance}px` : "0px",
-          transition: pulling ? "none" : "height 0.3s ease",
+          transition: pulling.current ? "none" : "height 0.3s ease",
+          paddingTop: "env(safe-area-inset-top, 0px)",
         }}
       >
         <div
@@ -89,7 +87,7 @@ export function PullToRefresh({ onRefresh, children, className = "" }: PullToRef
           style={{
             opacity: progress,
             transform: `rotate(${progress * 360}deg)`,
-            transition: pulling ? "none" : "all 0.3s ease",
+            transition: pulling.current ? "none" : "all 0.3s ease",
           }}
         >
           <Loader2
