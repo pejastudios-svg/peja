@@ -601,6 +601,7 @@ export default function Home() {
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header onCreateClick={() => router.push("/create")} />
 
+      <PullToRefresh onRefresh={handleRefresh}>
       <main className="pt-14">
         {user && !user.occupation && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
@@ -685,6 +686,7 @@ export default function Home() {
           )}
         </div>
       </main>
+      </PullToRefresh>
 
       <BottomNav />
     </div>
