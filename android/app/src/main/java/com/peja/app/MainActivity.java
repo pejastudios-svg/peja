@@ -22,6 +22,7 @@ public class MainActivity extends BridgeActivity {
 
             String dbPath = getApplicationContext().getDir("database", MODE_PRIVATE).getPath();
             webSettings.setDatabasePath(dbPath);
+            webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
 
             CookieManager cookieManager = CookieManager.getInstance();
             cookieManager.setAcceptCookie(true);
