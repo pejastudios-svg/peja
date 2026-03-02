@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { NotificationPopupListener } from "@/components/notifications/NotificationPopupListener";
+import AdminPinGate from "@/components/admin/AdminPinGate";
 import {
   LayoutDashboard,
   Users,
@@ -210,7 +211,8 @@ useEffect(() => {
     );
   };
 
-  return (
+return (
+    <AdminPinGate>
     <div className="min-h-screen peja-hud">
       {/* Notification Popup Listener */}
       <NotificationPopupListener
@@ -330,7 +332,8 @@ useEffect(() => {
       </aside>
 
       {/* Main Content */}
-      <main className="lg:ml-64 pt-14 lg:pt-0 min-h-screen">{children}</main>
+<main className="lg:ml-64 pt-14 lg:pt-0 min-h-screen">{children}</main>
     </div>
+    </AdminPinGate>
   );
 }
