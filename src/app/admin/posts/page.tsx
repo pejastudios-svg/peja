@@ -12,6 +12,8 @@ import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
+import { useSearchParams, useRouter } from "next/navigation";
+
 import {
   Search,
   FileText,
@@ -49,6 +51,8 @@ interface PostData {
 export default function AdminPostsPage() {
   useScrollRestore("admin:posts");
   const toast = useToast();
+   const router = useRouter();             
+  const searchParams = useSearchParams();      
   const [posts, setPosts] = useState<PostData[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -76,6 +80,69 @@ export default function AdminPostsPage() {
   const isSearchMode = searchQuery.trim().length > 0;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pageSize = 20;
+
+    const autoOpenHandled = useRef(false);
+
+  useEffect(() => {
+    const postId = searchParams.get("postId");
+    if (!postId || autoOpenHandled.current) return;
+    autoOpenHandled.current = true;
+
+    // Clean the URL so refreshing doesn't re-open
+    router.replace("/admin/posts", { scroll: false });
+
+    // Fetch the post directly and open the modal
+    (async () => {
+      try {
+        const { data: post, error } = await supabase
+          .from("posts")
+          .select(
+            "id,user_id,category,comment,address,status,confirmations,views,comment_count,report_count,is_sensitive,created_at"
+          )
+          .eq("id", postId)
+          .single();
+
+        if (error || !post) {
+          toast.danger("Post not found");
+          return;
+        }
+
+        // Fetch user info
+        let userData: { full_name: string; email: string } | undefined;
+        if (post.user_id) {
+          const { data: u } = await supabase
+            .from("users")
+            .select("full_name,email")
+            .eq("id", post.user_id)
+            .single();
+          if (u) userData = { full_name: u.full_name, email: u.email };
+        }
+
+        // Fetch media
+        const { data: mediaData } = await supabase
+          .from("post_media")
+          .select("post_id,url,media_type")
+          .eq("post_id", postId);
+
+        const fullPost: PostData = {
+          ...post,
+          users: userData,
+          post_media: (mediaData || []).map((m: any) => ({
+            url: m.url,
+            media_type: m.media_type,
+          })),
+        };
+
+        setSelectedPost(fullPost);
+        setShowPostModal(true);
+        setCurrentMediaIndex(0);
+      } catch {
+        toast.danger("Failed to load post");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  
   // Auto-enter select mode when selections exist
   useEffect(() => {
     if (selectedIds.size > 0 && !selectMode) {
