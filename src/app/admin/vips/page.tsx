@@ -345,27 +345,29 @@ export default function AdminVIPsPage() {
               className="hud-panel p-4 flex items-center justify-between gap-4 group hover:border-primary-500/30 transition-all"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!v.avatar_url) return;
-                    setLightboxUrl(v.avatar_url);
-                    setLightboxOpen(true);
-                  }}
-                  className="relative w-12 h-12 rounded-full overflow-hidden bg-dark-800 border-2 border-primary-500/40 shrink-0"
-                >
-                  {v.avatar_url ? (
-                    <img src={v.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <User className="w-6 h-6 text-dark-400" />
-                    </div>
-                  )}
+                <div className="relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!v.avatar_url) return;
+                      setLightboxUrl(v.avatar_url);
+                      setLightboxOpen(true);
+                    }}
+                    className="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border-2 border-primary-500/40"
+                  >
+                    {v.avatar_url ? (
+                      <img src={v.avatar_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <User className="w-6 h-6 text-dark-400" />
+                      </div>
+                    )}
+                  </button>
                   {/* VIP crown indicator */}
-                  <div className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-primary-600 flex items-center justify-center border-2 border-[#120a1e]">
+                  <div className="absolute -top-1.5 -right-1 w-5 h-5 rounded-full bg-primary-600 flex items-center justify-center border-2 border-[#120a1e] z-10 pointer-events-none">
                     <Crown className="w-3 h-3 text-yellow-300" />
                   </div>
-                </button>
+                </div>
 
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
