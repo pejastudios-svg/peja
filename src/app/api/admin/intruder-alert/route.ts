@@ -13,7 +13,9 @@ export async function POST(req: NextRequest) {
   const ua = req.headers.get("user-agent") || "unknown";
   const supabaseAdmin = getSupabaseAdmin();
 
-  // ── simple DB-based rate limit (max 3 per 30 s per IP) ──
+  const errors: string[] = [];
+
+  // ── rate limit (max 3 per 30s per IP) ──
   const thirtyAgo = new Date(Date.now() - 30_000).toISOString();
   const { count } = await supabaseAdmin
     .from("admin_access_log")
@@ -23,12 +25,19 @@ export async function POST(req: NextRequest) {
     .gte("created_at", thirtyAgo);
 
   if ((count || 0) >= 3) {
-    return NextResponse.json({ ok: false }, { status: 429 });
+    return NextResponse.json({ ok: false, error: "rate_limited" }, { status: 429 });
   }
 
-  const { photo, userId, userEmail, userName } = await req.json();
+  let body: any = {};
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
+  }
 
-  // ── upload photo to Cloudinary (signed, server-side) ──
+  const { photo, userId, userEmail, userName } = body;
+
+  // ── upload photo to Cloudinary ──
   let photoUrl: string | null = null;
 
   if (photo) {
@@ -36,7 +45,9 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.CLOUDINARY_API_KEY;
     const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
-    if (cloudName && apiKey && apiSecret) {
+    if (!cloudName || !apiKey || !apiSecret) {
+      errors.push("Cloudinary env vars missing");
+    } else {
       try {
         const timestamp = Math.floor(Date.now() / 1000).toString();
         const folder = "peja-intruder-alerts";
@@ -56,14 +67,20 @@ export async function POST(req: NextRequest) {
           `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
           { method: "POST", body: form }
         );
+
         if (up.ok) {
           const d = await up.json();
           photoUrl = d.secure_url || null;
+        } else {
+          const errText = await up.text();
+          errors.push(`Cloudinary upload failed: ${up.status} - ${errText}`);
         }
-      } catch (e) {
-        console.error("Cloudinary upload failed:", e);
+      } catch (e: any) {
+        errors.push(`Cloudinary error: ${e.message}`);
       }
     }
+  } else {
+    errors.push("No photo provided (camera may have been denied)");
   }
 
   // ── IP geolocation ──
@@ -74,24 +91,40 @@ export async function POST(req: NextRequest) {
     );
     if (g.ok) {
       const d = await g.json();
-      if (d.status === "success")
+      if (d.status === "success") {
         geo = `${d.city}, ${d.regionName}, ${d.country} (${d.isp})`;
+      }
     }
-  } catch {}
+  } catch {
+    errors.push("Geolocation lookup failed");
+  }
 
   // ── log to DB ──
-  await supabaseAdmin.from("admin_access_log").insert({
-    user_id: userId || null,
-    action: "intruder_alert_sent",
-    ip_address: ip,
-    user_agent: ua,
-    metadata: { photo_url: photoUrl, geo, user_email: userEmail, user_name: userName },
-  });
+  try {
+    await supabaseAdmin.from("admin_access_log").insert({
+      user_id: userId || null,
+      action: "intruder_alert_sent",
+      ip_address: ip,
+      user_agent: ua,
+      metadata: { photo_url: photoUrl, geo, user_email: userEmail, user_name: userName, errors },
+    });
+  } catch (e: any) {
+    errors.push(`DB log failed: ${e.message}`);
+  }
 
   // ── send email ──
   const alertEmail = process.env.ADMIN_ALERT_EMAIL;
   const webhookUrl = process.env.APPS_SCRIPT_EMAIL_WEBHOOK_URL;
   const webhookSecret = process.env.APPS_SCRIPT_WEBHOOK_SECRET;
+
+  let emailSent = false;
+
+  if (!alertEmail) {
+    errors.push("ADMIN_ALERT_EMAIL not set in environment variables");
+  }
+  if (!webhookUrl) {
+    errors.push("APPS_SCRIPT_EMAIL_WEBHOOK_URL not set");
+  }
 
   if (alertEmail && webhookUrl) {
     const now = new Date().toLocaleString("en-US", { timeZone: "Africa/Nairobi" });
@@ -124,7 +157,7 @@ export async function POST(req: NextRequest) {
 </div>`;
 
     try {
-      await fetch(webhookUrl, {
+      const emailRes = await fetch(webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -134,10 +167,22 @@ export async function POST(req: NextRequest) {
           html,
         }),
       });
-    } catch (e) {
-      console.error("Email send failed:", e);
+
+      if (emailRes.ok) {
+        emailSent = true;
+      } else {
+        const errText = await emailRes.text();
+        errors.push(`Email webhook failed: ${emailRes.status} - ${errText}`);
+      }
+    } catch (e: any) {
+      errors.push(`Email send error: ${e.message}`);
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    email_sent: emailSent,
+    photo_uploaded: !!photoUrl,
+    debug: errors.length > 0 ? errors : undefined,
+  });
 }
