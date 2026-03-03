@@ -102,7 +102,7 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/admin/check-session", { credentials: "include" });
+        const r = await fetch("/api/admin/check-session/", { credentials: "include" });
         const d = await r.json();
         if (d.valid) setUnlocked(true);
       } catch {}
@@ -120,7 +120,7 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
         setUnlocked(false);
         setPin("");
         try {
-          await fetch("/api/admin/logout-session", {
+          await fetch("/api/admin/logout-session/", {
             method: "POST",
             credentials: "include",
           });
@@ -217,7 +217,7 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
       try {
         const loc = await getLocation();
 
-        await fetch("/api/admin/intruder-alert", {
+        await fetch("/api/admin/intruder-alert/", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -249,7 +249,7 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
     setLoading(true);
 
     try {
-      const res = await fetch("/api/admin/verify-pin", {
+      const res = await fetch("/api/admin/verify-pin/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

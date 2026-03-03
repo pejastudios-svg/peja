@@ -226,7 +226,7 @@ export default function SettingsPage() {
     setPwLoading(true);
 
     try {
-      const res = await fetch("/api/auth/request-password-change", {
+      const res = await fetch("/api/auth/request-password-change/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -267,7 +267,7 @@ export default function SettingsPage() {
     setPwLoading(true);
 
     try {
-      const res = await fetch("/api/auth/confirm-password-change", {
+      const res = await fetch("/api/auth/confirm-password-change/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
