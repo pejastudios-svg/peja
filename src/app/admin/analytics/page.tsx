@@ -10,6 +10,8 @@ import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
 import type { MapHelper } from "@/components/admin/AdminLiveMap";
+import { useRouter } from "next/navigation";
+
 import {
   AreaChart,
   Area,
@@ -40,6 +42,12 @@ import {
   ChevronDown,
   MapPin,
   Navigation,
+  Download, 
+  Calendar, 
+  Filter, 
+  ExternalLink, 
+  RefreshCw, 
+  FileText,
   CheckCircle2,
 } from "lucide-react";
 import { subDays, formatDistanceToNow } from "date-fns";
@@ -96,6 +104,20 @@ type SOSDispatch = {
     milestone: string | null;
     lastUpdate: string;
   }[];
+};
+
+type ActivityEvent = {
+  id: string;
+  type: "incident" | "sos" | "sos_resolved" | "helper_dispatched" | "helper_arrived" | "flag" | "new_user";
+  title: string;
+  description: string;
+  userId?: string;
+  userName?: string;
+  userAvatar?: string | null;
+  relatedId?: string;
+  category?: string;
+  timestamp: string;
+  metadata?: Record<string, any>;
 };
 
 /* ═══════════════ HELPERS ═══════════════ */
@@ -294,6 +316,12 @@ export default function AdminAnalyticsPage() {
     pageViews24h: 0,
     postOpens24h: 0,
     watchOpens24h: 0,
+    // ↓ ADD THESE
+    usersWhoPosted: 0,
+    usersWhoSOS: 0,
+    confirmedPosts: 0,
+    totalConfirmations: 0,
+    peakHours: "No data yet",
   });
 
   /* ── chart state ── */
@@ -303,19 +331,14 @@ export default function AdminAnalyticsPage() {
   const [seriesData, setSeriesData] = useState<
     { day: string; posts: number; sos: number; flags: number }[]
   >([]);
-  const [hourlyData, setHourlyData] = useState<{ hour: number; count: number }[]>(
-    () => Array.from({ length: 24 }, (_, i) => ({ hour: i, count: 0 }))
-  );
+
   const [categoryData, setCategoryData] = useState<
     { name: string; count: number; color: string }[]
   >([]);
 
   /* ── tables ── */
-  const [topScreens, setTopScreens] = useState<
-    { screen: string; count: number }[]
-  >([]);
-  const [topEvents, setTopEvents] = useState<
-    { event_name: string; count: number }[]
+  const [topFeatures, setTopFeatures] = useState<
+    { name: string; count: number; pct: number }[]
   >([]);
 
   /* ── hotspots ── */
@@ -328,6 +351,20 @@ export default function AdminAnalyticsPage() {
   const [mapHelpers, setMapHelpers] = useState<MapHelper[]>([]);
   const [dispatches, setDispatches] = useState<SOSDispatch[]>([]);
   const helperPollRef = useRef<NodeJS.Timeout | null>(null);
+
+  const router = useRouter();
+
+  /* ── activity log ── */
+  const [activityLog, setActivityLog] = useState<ActivityEvent[]>([]);
+  const [activityFilter, setActivityFilter] = useState("all");
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityLoading, setActivityLoading] = useState(false);
+
+  /* ── report export ── */
+  const [reportRange, setReportRange] = useState("week");
+  const [reportLoading, setReportLoading] = useState(false);
+  const [customDateFrom, setCustomDateFrom] = useState("");
+  const [customDateTo, setCustomDateTo] = useState("");
 
   /* ── refs ── */
   const channelsRef = useRef<any[]>([]);
@@ -362,6 +399,362 @@ export default function AdminAnalyticsPage() {
     },
     []
   );
+
+    /* ══════════════════════════════════════════════
+     FETCH ACTIVITY LOG
+     ══════════════════════════════════════════════ */
+  const fetchActivityLog = useCallback(async () => {
+    setActivityLoading(true);
+    try {
+      const [postsRes, sosRes, helpersRes, flagsRes, newUsersRes] = await Promise.all([
+        supabase.from("posts")
+          .select("id, user_id, category, comment, address, status, created_at")
+          .order("created_at", { ascending: false }).limit(150),
+        supabase.from("sos_alerts")
+          .select("id, user_id, status, tag, address, created_at")
+          .order("created_at", { ascending: false }).limit(100),
+        supabase.from("sos_helpers")
+          .select("id, user_id, sos_id, milestone, eta, created_at, updated_at")
+          .order("created_at", { ascending: false }).limit(100),
+        supabase.from("flagged_content")
+          .select("id, reporter_id, content_type, reason, status, created_at")
+          .order("created_at", { ascending: false }).limit(100),
+        supabase.from("users")
+          .select("id, full_name, avatar_url, created_at")
+          .order("created_at", { ascending: false }).limit(50),
+      ]);
+
+      // Collect all user IDs
+      const userIds = new Set<string>();
+      (postsRes.data || []).forEach((p: any) => p.user_id && userIds.add(p.user_id));
+      (sosRes.data || []).forEach((s: any) => s.user_id && userIds.add(s.user_id));
+      (helpersRes.data || []).forEach((h: any) => h.user_id && userIds.add(h.user_id));
+      (flagsRes.data || []).forEach((f: any) => f.reporter_id && userIds.add(f.reporter_id));
+
+      const { data: userData } = userIds.size > 0
+        ? await supabase.from("users").select("id, full_name, avatar_url").in("id", Array.from(userIds))
+        : { data: [] };
+
+      const userMap: Record<string, { name: string; avatar: string | null }> = {};
+      (userData || []).forEach((u: any) => {
+        userMap[u.id] = { name: u.full_name || "Unknown", avatar: u.avatar_url };
+      });
+
+      const events: ActivityEvent[] = [];
+
+      // Incident reports
+      (postsRes.data || []).forEach((p: any) => {
+        const cat = CATEGORIES.find((c) => c.id === p.category);
+        const u = userMap[p.user_id];
+        events.push({
+          id: `post-${p.id}`,
+          type: "incident",
+          title: cat?.name || p.category,
+          description: p.comment?.slice(0, 120) || "No description",
+          userId: p.user_id,
+          userName: u?.name || "Unknown",
+          userAvatar: u?.avatar,
+          relatedId: p.id,
+          category: p.category,
+          timestamp: p.created_at,
+          metadata: { address: p.address, status: p.status },
+        });
+      });
+
+      // SOS alerts
+      (sosRes.data || []).forEach((s: any) => {
+        const u = userMap[s.user_id];
+        const tagInfo = s.tag ? SOS_TAGS.find((t) => t.id === s.tag) : null;
+        events.push({
+          id: `sos-${s.id}`,
+          type: s.status === "active" ? "sos" : "sos_resolved",
+          title: s.status === "active" ? "SOS Activated" : `SOS ${s.status}`,
+          description: tagInfo ? `${tagInfo.icon} ${tagInfo.label}` : "Emergency alert",
+          userId: s.user_id,
+          userName: u?.name || "Unknown",
+          userAvatar: u?.avatar,
+          relatedId: s.id,
+          timestamp: s.created_at,
+          metadata: { address: s.address, status: s.status, tag: s.tag },
+        });
+      });
+
+      // Helpers
+      (helpersRes.data || []).forEach((h: any) => {
+        const u = userMap[h.user_id];
+        events.push({
+          id: `helper-${h.id}`,
+          type: h.milestone === "arrived" ? "helper_arrived" : "helper_dispatched",
+          title: h.milestone === "arrived" ? "Helper Arrived" : "Helper Dispatched",
+          description: h.milestone === "arrived"
+            ? "Arrived at SOS location"
+            : `Responding to SOS • ETA ${h.eta || "?"} min`,
+          userId: h.user_id,
+          userName: u?.name || "Unknown",
+          userAvatar: u?.avatar,
+          relatedId: h.sos_id,
+          timestamp: h.milestone === "arrived" ? (h.updated_at || h.created_at) : h.created_at,
+          metadata: { milestone: h.milestone, eta: h.eta, sosId: h.sos_id },
+        });
+      });
+
+      // Flags
+      (flagsRes.data || []).forEach((f: any) => {
+        const u = userMap[f.reporter_id];
+        events.push({
+          id: `flag-${f.id}`,
+          type: "flag",
+          title: "Content Flagged",
+          description: `${f.content_type} - ${f.reason || "No reason"}`,
+          userId: f.reporter_id,
+          userName: u?.name || "Unknown",
+          userAvatar: u?.avatar,
+          relatedId: f.content_id,
+          timestamp: f.created_at,
+          metadata: { reason: f.reason, contentType: f.content_type, status: f.status },
+        });
+      });
+
+      // New users
+      (newUsersRes.data || []).forEach((u: any) => {
+        events.push({
+          id: `user-${u.id}`,
+          type: "new_user",
+          title: "New User Joined",
+          description: `${u.full_name || "Anonymous"} created an account`,
+          userId: u.id,
+          userName: u.full_name || "Anonymous",
+          userAvatar: u.avatar_url,
+          timestamp: u.created_at,
+        });
+      });
+
+      events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setActivityLog(events);
+    } catch {
+      /* silent */
+    } finally {
+      setActivityLoading(false);
+    }
+  }, []);
+
+    /* ══════════════════════════════════════════════
+     GENERATE PDF REPORT
+     ══════════════════════════════════════════════ */
+  const generateReport = useCallback(async () => {
+    setReportLoading(true);
+    try {
+      const now = new Date();
+      let fromDate: Date;
+      let toDate: Date = now;
+
+      switch (reportRange) {
+        case "today":
+          fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          break;
+        case "week":
+          fromDate = subDays(now, 7);
+          break;
+        case "month":
+          fromDate = subDays(now, 30);
+          break;
+        case "all":
+          fromDate = new Date(2020, 0, 1);
+          break;
+        case "custom":
+          fromDate = customDateFrom ? new Date(customDateFrom) : subDays(now, 7);
+          toDate = customDateTo ? new Date(customDateTo + "T23:59:59") : now;
+          break;
+        default:
+          fromDate = subDays(now, 7);
+      }
+
+      const fromISO = fromDate.toISOString();
+      const toISO = toDate.toISOString();
+
+      // Fetch all data for the range
+      const [postsRes, sosRes, helpersRes, flagsRes, newUsersRes] = await Promise.all([
+        supabase.from("posts")
+          .select("id, user_id, category, comment, address, status, created_at")
+          .gte("created_at", fromISO).lte("created_at", toISO)
+          .order("created_at", { ascending: false }).limit(5000),
+        supabase.from("sos_alerts")
+          .select("id, user_id, status, tag, address, created_at")
+          .gte("created_at", fromISO).lte("created_at", toISO)
+          .order("created_at", { ascending: false }).limit(2000),
+        supabase.from("sos_helpers")
+          .select("id, user_id, sos_id, milestone, eta, created_at")
+          .gte("created_at", fromISO).lte("created_at", toISO)
+          .order("created_at", { ascending: false }).limit(2000),
+        supabase.from("flagged_content")
+          .select("id, reporter_id, content_type, reason, status, created_at")
+          .gte("created_at", fromISO).lte("created_at", toISO)
+          .order("created_at", { ascending: false }).limit(2000),
+        supabase.from("users")
+          .select("id, full_name, created_at")
+          .gte("created_at", fromISO).lte("created_at", toISO)
+          .order("created_at", { ascending: false }).limit(1000),
+      ]);
+
+      // Resolve user names
+      const userIds = new Set<string>();
+      (postsRes.data || []).forEach((p: any) => userIds.add(p.user_id));
+      (sosRes.data || []).forEach((s: any) => userIds.add(s.user_id));
+      (helpersRes.data || []).forEach((h: any) => userIds.add(h.user_id));
+      (flagsRes.data || []).forEach((f: any) => userIds.add(f.reporter_id));
+
+      const { data: allUsers } = userIds.size > 0
+        ? await supabase.from("users").select("id, full_name").in("id", Array.from(userIds))
+        : { data: [] };
+
+      const uMap: Record<string, string> = {};
+      (allUsers || []).forEach((u: any) => { uMap[u.id] = u.full_name || "Unknown"; });
+
+      // Build table rows
+      const rows: { time: string; type: string; user: string; detail: string; extra: string }[] = [];
+
+      (postsRes.data || []).forEach((p: any) => {
+        const cat = CATEGORIES.find((c) => c.id === p.category);
+        rows.push({
+          time: new Date(p.created_at).toLocaleString(),
+          type: "Incident Report",
+          user: uMap[p.user_id] || "Unknown",
+          detail: cat?.name || p.category,
+          extra: `${p.address || "No location"} • ${p.status}`,
+        });
+      });
+
+      (sosRes.data || []).forEach((s: any) => {
+        const tagInfo = s.tag ? SOS_TAGS.find((t) => t.id === s.tag) : null;
+        rows.push({
+          time: new Date(s.created_at).toLocaleString(),
+          type: `SOS (${s.status})`,
+          user: uMap[s.user_id] || "Unknown",
+          detail: tagInfo ? `${tagInfo.icon} ${tagInfo.label}` : "Emergency",
+          extra: s.address || "No location",
+        });
+      });
+
+      (helpersRes.data || []).forEach((h: any) => {
+        rows.push({
+          time: new Date(h.created_at).toLocaleString(),
+          type: h.milestone === "arrived" ? "Helper Arrived" : "Helper Dispatched",
+          user: uMap[h.user_id] || "Unknown",
+          detail: h.milestone === "arrived" ? "Arrived at SOS" : `ETA ${h.eta || "?"} min`,
+          extra: `SOS: ${h.sos_id?.slice(0, 8) || "-"}`,
+        });
+      });
+
+      (flagsRes.data || []).forEach((f: any) => {
+        rows.push({
+          time: new Date(f.created_at).toLocaleString(),
+          type: "Content Flagged",
+          user: uMap[f.reporter_id] || "Unknown",
+          detail: f.reason || "No reason",
+          extra: `${f.content_type} • ${f.status}`,
+        });
+      });
+
+      (newUsersRes.data || []).forEach((u: any) => {
+        rows.push({
+          time: new Date(u.created_at).toLocaleString(),
+          type: "New User",
+          user: u.full_name || "Anonymous",
+          detail: "Account created",
+          extra: "",
+        });
+      });
+
+      rows.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+      // Summary counts
+      const summary = {
+        incidents: (postsRes.data || []).length,
+        sos: (sosRes.data || []).length,
+        helpers: (helpersRes.data || []).length,
+        flags: (flagsRes.data || []).length,
+        newUsers: (newUsersRes.data || []).length,
+        total: rows.length,
+      };
+
+      const rangeLabel = reportRange === "custom"
+        ? `${fromDate.toLocaleDateString()} - ${toDate.toLocaleDateString()}`
+        : reportRange === "today" ? "Today"
+        : reportRange === "week" ? "Last 7 Days"
+        : reportRange === "month" ? "Last 30 Days"
+        : "All Time";
+
+      // Generate HTML
+      const tableRows = rows.map((r) => `
+        <tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;white-space:nowrap">${r.time}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;font-weight:600">${r.type}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px">${r.user}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px">${r.detail}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#6b7280">${r.extra}</td>
+        </tr>
+      `).join("");
+
+      const html = `<!DOCTYPE html><html><head><title>PEJA Report - ${rangeLabel}</title>
+        <style>
+          * { margin:0; padding:0; box-sizing:border-box; }
+          body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; color:#111827; padding:40px; }
+          @media print { body { padding:20px; } .no-print { display:none; } }
+          .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:32px; padding-bottom:16px; border-bottom:2px solid #111827; }
+          .header h1 { font-size:24px; font-weight:800; letter-spacing:-0.5px; }
+          .header p { font-size:13px; color:#6b7280; }
+          .summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:32px; }
+          .summary-card { padding:16px; border:1px solid #e5e7eb; border-radius:8px; text-align:center; }
+          .summary-card .num { font-size:28px; font-weight:800; color:#111827; }
+          .summary-card .label { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; margin-top:4px; }
+          table { width:100%; border-collapse:collapse; font-size:12px; }
+          th { padding:10px 12px; text-align:left; background:#f9fafb; border-bottom:2px solid #e5e7eb; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; }
+          tr:hover { background:#f9fafb; }
+          .footer { margin-top:32px; padding-top:16px; border-top:1px solid #e5e7eb; font-size:11px; color:#9ca3af; text-align:center; }
+          .print-btn { position:fixed; bottom:24px; right:24px; padding:12px 24px; background:#7c3aed; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; box-shadow:0 4px 12px rgba(124,58,237,0.3); }
+          .print-btn:hover { background:#6d28d9; }
+        </style>
+      </head><body>
+        <button class="print-btn no-print" onclick="window.print()">Save as PDF</button>
+        <div class="header">
+          <div>
+            <h1>PEJA Analytics Report</h1>
+            <p>Period: ${rangeLabel}</p>
+          </div>
+          <div style="text-align:right">
+            <p style="font-size:11px;color:#9ca3af">Generated ${new Date().toLocaleString()}</p>
+            <p style="font-size:11px;color:#9ca3af">${summary.total} total events</p>
+          </div>
+        </div>
+        <div class="summary">
+          <div class="summary-card"><div class="num">${summary.incidents}</div><div class="label">Incident Reports</div></div>
+          <div class="summary-card"><div class="num">${summary.sos}</div><div class="label">SOS Alerts</div></div>
+          <div class="summary-card"><div class="num">${summary.helpers}</div><div class="label">Helpers Dispatched</div></div>
+          <div class="summary-card"><div class="num">${summary.flags}</div><div class="label">Content Flagged</div></div>
+          <div class="summary-card"><div class="num">${summary.newUsers}</div><div class="label">New Users</div></div>
+        </div>
+        <table>
+          <thead><tr><th>Time</th><th>Event Type</th><th>User</th><th>Details</th><th>Extra</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        <div class="footer">PEJA (Your Brother's Keeper) - Confidential Report</div>
+      </body></html>`;
+
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(html);
+        w.document.close();
+      }
+    } catch {
+      /* silent */
+    } finally {
+      setReportLoading(false);
+    }
+  }, [reportRange, customDateFrom, customDateTo]);
+
+    useEffect(() => {
+    if (!loading) fetchActivityLog();
+  }, [loading, fetchActivityLog]);
 
   /* ══════════════════════════════════════════════
      FETCH HELPERS VIA API (polls every 15s)
@@ -540,44 +933,6 @@ const res = await fetch("/api/sos-helpers", {
           (e) => e.event_name === "watch_open"
         ).length;
 
-        /* hourly */
-        const hourly = Array.from({ length: 24 }, (_, i) => ({
-          hour: i,
-          count: 0,
-        }));
-        for (const e of ev24 || []) {
-          const h = new Date((e as any).created_at).getHours();
-          if (hourly[h]) hourly[h].count++;
-        }
-        setHourlyData(hourly);
-
-        /* top screens */
-        const sMap = new Map<string, number>();
-        for (const e of ev24 || []) {
-          if (e.event_name !== "page_view") continue;
-          const k = e.screen || "unknown";
-          sMap.set(k, (sMap.get(k) || 0) + 1);
-        }
-        setTopScreens(
-          [...sMap.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10)
-            .map(([screen, count]) => ({ screen, count }))
-        );
-
-        /* top events */
-        const eMap = new Map<string, number>();
-        for (const e of ev24 || []) {
-          const k = e.event_name || "unknown";
-          eMap.set(k, (eMap.get(k) || 0) + 1);
-        }
-        setTopEvents(
-          [...eMap.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10)
-            .map(([event_name, count]) => ({ event_name, count }))
-        );
-
         /* ── 7-day series ── */
         const start7 = subDays(now, 6).toISOString();
         const [{ data: p7 }, { data: s7 }, { data: f7 }] = await Promise.all([
@@ -639,6 +994,7 @@ const res = await fetch("/api/sos-helpers", {
               .gte("created_at", d60min)
               .limit(5000),
           ]);
+          
         const mMap = new Map<string, number>();
         seed.forEach((pt, i) => mMap.set(pt.time, i));
         const bump = (rows: any[], field: "posts" | "sos" | "flags") => {
@@ -658,7 +1014,7 @@ const res = await fetch("/api/sos-helpers", {
         /* ── categories ── */
         const { data: catPosts } = await supabase
           .from("posts")
-          .select("category")
+          .select("category, user_id, status, confirmations")
           .limit(10000);
         const cMap = new Map<string, number>();
         (catPosts || []).forEach((p: any) =>
@@ -680,6 +1036,81 @@ const res = await fetch("/api/sos-helpers", {
             .filter((c) => c.count > 0)
             .sort((a, b) => b.count - a.count)
         );
+
+                /* ── engagement funnel data ── */
+        const usersWhoPosted = new Set(
+          (catPosts || []).map((p: any) => p.user_id).filter(Boolean)
+        ).size;
+        const confirmedPosts = (catPosts || []).filter(
+          (p: any) => (p.confirmations || 0) > 0
+        ).length;
+        const totalConfirmations = (catPosts || []).reduce(
+          (sum: number, p: any) => sum + (p.confirmations || 0), 0
+        );
+
+        const { data: sosUserData } = await supabase
+          .from("sos_alerts")
+          .select("user_id")
+          .limit(10000);
+        const usersWhoSOS = new Set(
+          (sosUserData || []).map((s: any) => s.user_id).filter(Boolean)
+        ).size;
+
+        /* ── peak hours ── */
+        const hourBuckets = Array.from({ length: 24 }, () => 0);
+        for (const e of ev24 || []) {
+          const h = new Date((e as any).created_at).getHours();
+          hourBuckets[h]++;
+        }
+        const totalEvForPeak = hourBuckets.reduce((a, b) => a + b, 0);
+        let peakHours = "No data yet";
+        if (totalEvForPeak > 0) {
+          const sorted = hourBuckets
+            .map((count, hour) => ({ hour, count }))
+            .filter((h) => h.count > 0)
+            .sort((a, b) => b.count - a.count);
+          if (sorted.length > 0) {
+            const fmt = (h: number) =>
+              h === 0 ? "12 AM" : h === 12 ? "12 PM" : h > 12 ? `${h - 12} PM` : `${h} AM`;
+            peakHours = sorted
+              .slice(0, 2)
+              .map((h) => fmt(h.hour))
+              .join(" & ");
+          }
+        }
+
+        /* ── feature usage ── */
+        const featureCounts = new Map<string, number>();
+        for (const e of ev24 || []) {
+          if (e.event_name !== "page_view" || !e.screen) continue;
+          const s = (e.screen as string).replace(/\/$/, "") || "/";
+          let feature = "Other";
+          if (s === "/" || s === "") feature = "Home Feed";
+          else if (s.startsWith("/watch")) feature = "Watch";
+          else if (s.startsWith("/map")) feature = "Map";
+          else if (s.startsWith("/create")) feature = "Create Post";
+          else if (s.startsWith("/sos")) feature = "SOS";
+          else if (s.startsWith("/messages")) feature = "Messages";
+          else if (s.startsWith("/notifications")) feature = "Notifications";
+          else if (s.startsWith("/profile")) feature = "Profile";
+          else if (s.startsWith("/search")) feature = "Search";
+          else if (s.startsWith("/settings")) feature = "Settings";
+          else if (s.startsWith("/post")) feature = "Post Detail";
+          else if (s.startsWith("/admin")) feature = "Admin";
+          else if (s.startsWith("/guardian")) feature = "Guardian";
+          else feature = "Other";
+          featureCounts.set(feature, (featureCounts.get(feature) || 0) + 1);
+        }
+        const totalFeatureViews = [...featureCounts.values()].reduce((a, b) => a + b, 0);
+        const topFeaturesArr = [...featureCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 8)
+          .map(([name, count]) => ({
+            name,
+            count,
+            pct: totalFeatureViews > 0 ? Math.round((count / totalFeatureViews) * 100) : 0,
+          }));
+        setTopFeatures(topFeaturesArr);
 
         /* ── hotspots ── */
         const { data: locPosts } = await supabase
@@ -768,6 +1199,11 @@ const res = await fetch("/api/sos-helpers", {
           pageViews24h,
           postOpens24h,
           watchOpens24h,
+           usersWhoPosted,
+          usersWhoSOS,
+          confirmedPosts,
+          totalConfirmations,
+          peakHours,
         });
       } catch {
         /* silent */
@@ -1523,48 +1959,96 @@ const res = await fetch("/api/sos-helpers", {
           </div>
         </HudPanel>
 
-        <HudPanel
+         <HudPanel
           className="relative overflow-hidden"
-          title="Hourly Events (24h)"
-          subtitle="Interaction volume by hour"
+          title="Export Reports"
+          subtitle="Download platform data as PDF"
+          right={
+            <div className="pill pill-purple flex items-center gap-1.5">
+              <Download className="w-3 h-3" />
+              PDF
+            </div>
+          }
         >
-          <div className="h-[220px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hourlyData}>
-                <CartesianGrid
-                  stroke="rgba(255,255,255,0.04)"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="hour"
-                  stroke="rgba(255,255,255,0.2)"
-                  tick={{ fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="rgba(255,255,255,0.2)"
-                  tick={{ fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
-                  allowDecimals={false}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "#13111C",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    borderRadius: 12,
-                  }}
-                />
-                <Bar
-                  dataKey="count"
-                  fill="#8b5cf6"
-                  fillOpacity={0.7}
-                  radius={[4, 4, 0, 0]}
-                  barSize={14}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="space-y-4">
+            {/* Range selector */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: "today", label: "Today" },
+                { value: "week", label: "7 Days" },
+                { value: "month", label: "30 Days" },
+                { value: "all", label: "All Time" },
+                { value: "custom", label: "Custom" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setReportRange(opt.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                    reportRange === opt.value
+                      ? "bg-primary-600/20 text-primary-300 border-primary-500/30"
+                      : "bg-white/5 text-dark-400 border-white/10 hover:bg-white/10"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom date inputs */}
+            {reportRange === "custom" && (
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-[10px] text-dark-500 uppercase tracking-wider font-bold mb-1 block">From</label>
+                  <input
+                    type="date"
+                    value={customDateFrom}
+                    onChange={(e) => setCustomDateFrom(e.target.value)}
+                    className="w-full h-9 px-3 bg-dark-800 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-primary-500/50"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] text-dark-500 uppercase tracking-wider font-bold mb-1 block">To</label>
+                  <input
+                    type="date"
+                    value={customDateTo}
+                    onChange={(e) => setCustomDateTo(e.target.value)}
+                    className="w-full h-9 px-3 bg-dark-800 border border-white/10 rounded-lg text-xs text-white focus:outline-none focus:border-primary-500/50"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* What's included */}
+            <div className="p-3 rounded-lg bg-white/5 border border-white/5">
+              <p className="text-[10px] text-dark-500 uppercase tracking-wider font-bold mb-2">Report includes</p>
+              <div className="flex flex-wrap gap-1.5">
+                {["Incidents", "SOS Alerts", "Helpers", "Flags", "New Users"].map((item) => (
+                  <span key={item} className="text-[10px] text-dark-300 bg-white/5 px-2 py-0.5 rounded border border-white/5">
+                    {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Download button */}
+            <button
+              onClick={generateReport}
+              disabled={reportLoading}
+              className="w-full py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
+              style={{
+                background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                boxShadow: "0 4px 15px rgba(124,58,237,0.3)",
+              }}
+            >
+              {reportLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Generate & Download PDF
+                </>
+              )}
+            </button>
           </div>
         </HudPanel>
       </div>
@@ -1590,6 +2074,188 @@ const res = await fetch("/api/sos-helpers", {
           tone="green"
         />
       </div>
+
+            {/* ═══════════ ACTIVITY LOG ═══════════ */}
+      <HudPanel
+        className="relative overflow-hidden mb-6"
+        title="Platform Activity Log"
+        subtitle={`${activityLog.length} events recorded`}
+        right={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={fetchActivityLog}
+              disabled={activityLoading}
+              className="p-2 rounded-lg bg-white/5 border border-white/10 text-dark-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${activityLoading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+        }
+      >
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {[
+            { value: "all", label: "All Events", icon: Activity },
+            { value: "incident", label: "Incidents", icon: Zap },
+            { value: "sos", label: "SOS & Helpers", icon: AlertTriangle },
+            { value: "flag", label: "Flags", icon: Flag },
+            { value: "new_user", label: "New Users", icon: UserPlus },
+          ].map((f) => (
+            <button
+              key={f.value}
+              onClick={() => { setActivityFilter(f.value); setActivityPage(1); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                activityFilter === f.value
+                  ? "bg-primary-600/20 text-primary-300 border-primary-500/30"
+                  : "bg-white/5 text-dark-400 border-white/10 hover:bg-white/10"
+              }`}
+            >
+              <f.icon className="w-3 h-3" />
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Event list */}
+        <div className="space-y-1.5 max-h-[600px] overflow-y-auto scrollbar-hide">
+          {activityLoading && activityLog.length === 0 ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
+            </div>
+          ) : (() => {
+            const filtered = activityLog.filter((e) => {
+              if (activityFilter === "all") return true;
+              if (activityFilter === "sos")
+                return ["sos", "sos_resolved", "helper_dispatched", "helper_arrived"].includes(e.type);
+              if (activityFilter === "incident") return e.type === "incident";
+              if (activityFilter === "flag") return e.type === "flag";
+              if (activityFilter === "new_user") return e.type === "new_user";
+              return true;
+            });
+            const paginated = filtered.slice(0, activityPage * 30);
+            const hasMore = paginated.length < filtered.length;
+
+            if (filtered.length === 0) {
+              return (
+                <div className="text-center py-12 text-dark-500">
+                  <Activity className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No events found</p>
+                </div>
+              );
+            }
+
+            const typeConfig: Record<string, { icon: any; color: string; bg: string }> = {
+              incident: { icon: Zap, color: "text-purple-400", bg: "bg-purple-500/15 border-purple-500/25" },
+              sos: { icon: AlertTriangle, color: "text-red-400", bg: "bg-red-500/15 border-red-500/25" },
+              sos_resolved: { icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/15 border-green-500/25" },
+              helper_dispatched: { icon: Navigation, color: "text-blue-400", bg: "bg-blue-500/15 border-blue-500/25" },
+              helper_arrived: { icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/15 border-green-500/25" },
+              flag: { icon: Flag, color: "text-orange-400", bg: "bg-orange-500/15 border-orange-500/25" },
+              new_user: { icon: UserPlus, color: "text-emerald-400", bg: "bg-emerald-500/15 border-emerald-500/25" },
+            };
+
+            return (
+              <>
+                {paginated.map((event) => {
+                  const config = typeConfig[event.type] || typeConfig.incident;
+                  const Icon = config.icon;
+                  const cat = event.category ? CATEGORIES.find((c) => c.id === event.category) : null;
+
+                  return (
+                    <div
+                      key={event.id}
+                      className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] transition-colors group"
+                    >
+                      {/* Type icon */}
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${config.bg}`}>
+                        <Icon className={`w-3.5 h-3.5 ${config.color}`} />
+                      </div>
+
+                      {/* Content */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-xs font-bold ${config.color}`}>
+                            {event.title}
+                          </span>
+                          {cat && (
+                            <span className="text-[10px] text-dark-500 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">
+                              {cat.name}
+                            </span>
+                          )}
+                          {event.metadata?.status && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                              event.metadata.status === "live" || event.metadata.status === "active"
+                                ? "text-red-400 bg-red-500/10"
+                                : event.metadata.status === "resolved"
+                                ? "text-green-400 bg-green-500/10"
+                                : "text-dark-400 bg-white/5"
+                            }`}>
+                              {event.metadata.status}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-dark-300 mt-0.5 line-clamp-1">
+                          {event.description}
+                        </p>
+
+                        {event.metadata?.address && (
+                          <p className="text-[11px] text-dark-500 mt-0.5 flex items-center gap-1">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{event.metadata.address}</span>
+                          </p>
+                        )}
+
+                        {/* User row - clickable */}
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <div className="w-5 h-5 rounded-full overflow-hidden border border-white/10 shrink-0 bg-dark-800">
+                            {event.userAvatar ? (
+                              <img src={event.userAvatar} alt="" className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-[8px] text-dark-500 font-bold">
+                                {event.userName?.[0] || "?"}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (event.userId) {
+                                router.push(`/admin/users?highlight=${event.userId}`);
+                              }
+                            }}
+                            className="text-[11px] text-dark-300 hover:text-primary-300 transition-colors font-medium flex items-center gap-1 group/user"
+                          >
+                            {event.userName}
+                            <ExternalLink className="w-2.5 h-2.5 opacity-0 group-hover/user:opacity-100 transition-opacity" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Timestamp */}
+                      <div className="text-[10px] text-dark-500 whitespace-nowrap shrink-0 text-right">
+                        <p>{formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}</p>
+                        <p className="mt-0.5 opacity-60">
+                          {new Date(event.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {hasMore && (
+                  <button
+                    onClick={() => setActivityPage((p) => p + 1)}
+                    className="w-full py-3 rounded-xl text-xs font-medium text-primary-400 bg-primary-500/5 border border-primary-500/10 hover:bg-primary-500/10 transition-colors mt-2"
+                  >
+                    Load more ({filtered.length - paginated.length} remaining)
+                  </button>
+                )}
+              </>
+            );
+          })()}
+        </div>
+      </HudPanel>
 
       {/* ═══════════ INCIDENT HOTSPOTS ═══════════ */}
       <CollapsibleSection
@@ -1690,64 +2356,193 @@ const res = await fetch("/api/sos-helpers", {
         )}
       </CollapsibleSection>
 
-      {/* ═══════════ COLLAPSIBLE TOP SCREENS + EVENTS ═══════════ */}
-      <div className="grid lg:grid-cols-2 gap-4 mt-4">
-        <CollapsibleSection title="Top Screens" badge="24 HOURS">
-          {topScreens.length === 0 && (
-            <p className="text-sm text-dark-500">No data yet</p>
-          )}
-          {topScreens.map((s, i) => (
-            <div
-              key={s.screen}
-              className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors"
-            >
-              <span className="text-sm text-dark-200 font-medium flex items-center gap-3">
-                <span
-                  className={`text-xs font-bold w-6 h-6 rounded flex items-center justify-center ${
-                    i < 3
-                      ? "bg-primary-500/20 text-primary-300"
-                      : "bg-dark-800 text-dark-500"
-                  }`}
-                >
-                  #{i + 1}
-                </span>
-                {s.screen}
-              </span>
-              <span className="text-xs font-mono font-bold text-white">
-                {s.count}
-              </span>
+      {/* ═══════════ PLATFORM HEALTH ═══════════ */}
+      <HudPanel
+        className="relative overflow-hidden mt-4"
+        title="Platform Health & Engagement"
+        subtitle="User adoption, content outcomes & feature usage"
+        right={<div className="pill pill-green">Health</div>}
+      >
+        <div className="space-y-6">
+          {/* ── Engagement Funnel ── */}
+          <div>
+            <p className="text-[10px] text-dark-500 uppercase tracking-widest font-bold mb-3">
+              User Engagement Funnel
+            </p>
+            <div className="space-y-3">
+              {[
+                {
+                  label: "Registered Users",
+                  value: stats.totalUsers,
+                  pct: 100,
+                  color: "#8b5cf6",
+                  sub: "Total signups",
+                },
+                {
+                  label: "Active This Week",
+                  value: stats.wau,
+                  pct: stats.totalUsers > 0 ? Math.round((stats.wau / stats.totalUsers) * 100) : 0,
+                  color: "#3b82f6",
+                  sub: "Opened app in last 7 days",
+                },
+                {
+                  label: "Created a Post",
+                  value: stats.usersWhoPosted,
+                  pct: stats.totalUsers > 0 ? Math.round((stats.usersWhoPosted / stats.totalUsers) * 100) : 0,
+                  color: "#22c55e",
+                  sub: "Users who reported an incident",
+                },
+                {
+                  label: "Used SOS",
+                  value: stats.usersWhoSOS,
+                  pct: stats.totalUsers > 0 ? Math.round((stats.usersWhoSOS / stats.totalUsers) * 100) : 0,
+                  color: "#ef4444",
+                  sub: "Users who triggered emergency",
+                },
+              ].map((item) => (
+                <div key={item.label}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-dark-200">{item.label}</span>
+                      <span className="text-xs text-dark-500">— {item.sub}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-white">{item.value.toLocaleString()}</span>
+                      <span
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                        style={{
+                          color: item.color,
+                          background: `${item.color}15`,
+                        }}
+                      >
+                        {item.pct}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="h-2 bg-dark-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-700"
+                      style={{
+                        width: `${Math.max(item.pct, item.value > 0 ? 3 : 0)}%`,
+                        background: item.color,
+                        opacity: 0.75,
+                        boxShadow: `0 0 8px ${item.color}40`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </CollapsibleSection>
+          </div>
 
-        <CollapsibleSection title="Top Events" badge="24 HOURS">
-          {topEvents.length === 0 && (
-            <p className="text-sm text-dark-500">No data yet</p>
-          )}
-          {topEvents.map((e, i) => (
-            <div
-              key={e.event_name}
-              className="flex justify-between items-center p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors"
-            >
-              <span className="text-sm text-dark-200 font-medium flex items-center gap-3">
-                <span
-                  className={`text-xs font-bold w-6 h-6 rounded flex items-center justify-center ${
-                    i < 3
-                      ? "bg-blue-500/20 text-blue-300"
-                      : "bg-dark-800 text-dark-500"
-                  }`}
-                >
-                  #{i + 1}
-                </span>
-                {e.event_name}
-              </span>
-              <span className="text-xs font-mono font-bold text-blue-300">
-                {e.count}
-              </span>
+          {/* Divider */}
+          <div className="border-t border-white/5" />
+
+          {/* ── Health Metrics ── */}
+          <div>
+            <p className="text-[10px] text-dark-500 uppercase tracking-widest font-bold mb-3">
+              Content & Response Health
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* Confirmation Rate */}
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5">
+                <p className="text-2xl font-bold text-white leading-none mb-1">
+                  {stats.totalPosts > 0
+                    ? `${Math.round((stats.confirmedPosts / stats.totalPosts) * 100)}%`
+                    : "—"}
+                </p>
+                <p className="text-[10px] text-dark-500 uppercase tracking-wider font-bold">Confirmed Rate</p>
+                <p className="text-[10px] text-dark-600 mt-0.5">
+                  {stats.confirmedPosts} of {stats.totalPosts} confirmed • {stats.totalConfirmations} total confirms
+                </p>
+              </div>
+
+              {/* Peak Activity */}
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5">
+                <p className="text-lg font-bold text-white leading-none mb-1">
+                  {stats.peakHours}
+                </p>
+                <p className="text-[10px] text-dark-500 uppercase tracking-wider font-bold">Peak Hours</p>
+                <p className="text-[10px] text-dark-600 mt-0.5">Most user activity</p>
+              </div>
+
+              {/* Guardian Coverage */}
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5">
+                <p className="text-2xl font-bold text-white leading-none mb-1">
+                  {stats.totalUsers > 0
+                    ? `${Math.round((stats.totalGuardians / stats.totalUsers) * 100)}%`
+                    : "—"}
+                </p>
+                <p className="text-[10px] text-dark-500 uppercase tracking-wider font-bold">Guardian Coverage</p>
+                <p className="text-[10px] text-dark-600 mt-0.5">
+                  {stats.totalGuardians} guardian{stats.totalGuardians !== 1 ? "s" : ""} for {stats.totalUsers} users
+                </p>
+              </div>
+
+              {/* Content Live Rate */}
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/5">
+                <p className="text-2xl font-bold text-white leading-none mb-1">
+                  {stats.totalPosts > 0
+                    ? `${Math.round((stats.livePosts / stats.totalPosts) * 100)}%`
+                    : "—"}
+                </p>
+                <p className="text-[10px] text-dark-500 uppercase tracking-wider font-bold">Live Posts</p>
+                <p className="text-[10px] text-dark-600 mt-0.5">
+                  {stats.livePosts} currently active
+                </p>
+              </div>
             </div>
-          ))}
-        </CollapsibleSection>
-      </div>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-white/5" />
+
+          {/* ── Feature Usage ── */}
+          <div>
+            <p className="text-[10px] text-dark-500 uppercase tracking-widest font-bold mb-3">
+              Feature Usage (24h)
+            </p>
+            {topFeatures.length === 0 ? (
+              <div className="text-center py-6 text-dark-500">
+                <Activity className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                <p className="text-xs">Gathering usage data…</p>
+                <p className="text-[10px] mt-1">Feature breakdown will appear as users interact with the app</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {topFeatures.map((f, i) => {
+                  const colors = [
+                    "#8b5cf6", "#3b82f6", "#22c55e", "#eab308",
+                    "#f97316", "#ef4444", "#ec4899", "#6366f1",
+                  ];
+                  const color = colors[i % colors.length];
+                  return (
+                    <div key={f.name} className="flex items-center gap-3">
+                      <span className="text-xs text-dark-300 font-medium w-28 shrink-0 truncate">
+                        {f.name}
+                      </span>
+                      <div className="flex-1 h-2 bg-dark-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.max(f.pct, 3)}%`,
+                            background: color,
+                            opacity: 0.7,
+                          }}
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-xs font-bold text-white w-8 text-right">{f.count}</span>
+                        <span className="text-[10px] text-dark-500 w-8 text-right">{f.pct}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </HudPanel>
     </HudShell>
   );
 }

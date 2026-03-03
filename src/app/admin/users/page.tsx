@@ -11,6 +11,8 @@ import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
 import { ChevronDown } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+
 
 interface AdminUser {
   id: string;
@@ -27,6 +29,8 @@ interface AdminUser {
 
 export default function AdminUsersPage() {
   useScrollRestore("admin:users");
+  const searchParams = useSearchParams();           
+  const highlightHandled = useRef(false);            
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -35,6 +39,28 @@ export default function AdminUsersPage() {
   const { session } = useAuth();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+    useEffect(() => {
+    const highlightId = searchParams.get("highlight");
+    if (!highlightId || highlightHandled.current || loading) return;
+    highlightHandled.current = true;
+
+    router.replace("/admin/users", { scroll: false });
+
+    setTimeout(() => {
+      const el = document.getElementById(`user-row-${highlightId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.style.transition = "box-shadow 0.3s, border-color 0.3s";
+        el.style.boxShadow = "0 0 20px rgba(124,58,237,0.3)";
+        el.style.borderColor = "rgba(124,58,237,0.5)";
+        setTimeout(() => {
+          el.style.boxShadow = "";
+          el.style.borderColor = "";
+        }, 3000);
+      }
+    }, 500);
+  }, [loading, searchParams, router]);
 
   useEffect(() => {
     fetchUsers();
@@ -215,6 +241,7 @@ try {
               {filteredUsers.map((user) => (
                 <div
                   key={user.id}
+                   id={`user-row-${user.id}`}   
                   onClick={() => router.push(`/admin/users/${user.id}`)}
                   className="group flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer hover:shadow-lg hover:shadow-black/20"
                 >
