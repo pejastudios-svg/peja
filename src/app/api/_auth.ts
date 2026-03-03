@@ -1,5 +1,7 @@
+// src/app/api/_auth.ts
 import { NextRequest } from "next/server";
 import { getSupabaseAdmin } from "./_supabaseAdmin";
+import { verifySessionToken, ADMIN_COOKIE_NAME } from "@/lib/adminSession";
 
 export async function requireUser(req: NextRequest) {
   const auth = req.headers.get("authorization") || "";
@@ -15,6 +17,7 @@ export async function requireUser(req: NextRequest) {
   return { user: data.user };
 }
 
+// DB-only admin check (used by verify-pin — before cookie exists)
 export async function requireAdmin(req: NextRequest) {
   const { user } = await requireUser(req);
   const supabaseAdmin = getSupabaseAdmin();
@@ -26,5 +29,18 @@ export async function requireAdmin(req: NextRequest) {
     .single();
 
   if (error || !data?.is_admin) throw new Error("Admin required");
+  return { user };
+}
+
+// Full admin check: Supabase auth + DB is_admin + PIN session cookie
+// ➜ Use this for ALL admin API routes (except verify-pin itself)
+export async function requireAdminSession(req: NextRequest) {
+  const { user } = await requireAdmin(req);
+
+  const cookie = req.cookies.get(ADMIN_COOKIE_NAME);
+  if (!cookie?.value || !verifySessionToken(cookie.value)) {
+    throw new Error("Admin PIN session expired — re-enter PIN");
+  }
+
   return { user };
 }

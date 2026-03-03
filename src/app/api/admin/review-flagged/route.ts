@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "../../_auth";
+import { requireAdminSession } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 
 export const runtime = "nodejs";
@@ -9,7 +9,7 @@ type Action = (typeof ALLOWED)[number];
 
 export async function POST(req: NextRequest) {
   try {
-    const { user } = await requireAdmin(req);
+    const { user } = await requireAdminSession(req);
 
     const { flaggedId, action } = await req.json();
 

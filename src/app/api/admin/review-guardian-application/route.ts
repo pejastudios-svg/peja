@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "../../_auth";
+import { requireAdminSession } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    const { user } = await requireAdmin(req);
+    const { user } = await requireAdminSession(req);
     const { applicationId, action } = await req.json();
 
     if (!applicationId || !["approve", "reject"].includes(action)) {

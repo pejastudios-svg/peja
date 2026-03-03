@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "../../_auth";
+import { requireAdminSession } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    await requireAdminSession(req);
 
     const { postId } = await req.json();
     if (!postId) {
