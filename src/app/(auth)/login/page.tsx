@@ -1,3 +1,4 @@
+// src/app/(auth)/login/page.tsx
 "use client";
 
 import { useState } from "react";
@@ -47,7 +48,6 @@ export default function LoginPage() {
         return;
       }
 
-      // Success - redirect to home
       router.push("/");
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
@@ -84,35 +84,40 @@ export default function LoginPage() {
               disabled={loading}
             />
 
-            <Input
-              type={showPassword ? "text" : "password"}
-              label="Password"
-              placeholder="Enter your password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setError("");
-              }}
-              leftIcon={<Lock className="w-4 h-4" />}
-              disabled={loading}
-              rightIcon={
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="hover:text-dark-200"
+            <div>
+              <Input
+                type={showPassword ? "text" : "password"}
+                label="Password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError("");
+                }}
+                leftIcon={<Lock className="w-4 h-4" />}
+                disabled={loading}
+                rightIcon={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="hover:text-dark-200"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                }
+              />
+              <div className="text-right mt-1.5">
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-primary-400 hover:text-primary-300"
                 >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              }
-            />
+                  Forgot password?
+                </Link>
+              </div>
+            </div>
           </div>
 
-          <Button
-            type="submit"
-            variant="primary"
-            className="w-full mt-6"
-            disabled={loading}
-          >
+          <Button type="submit" variant="primary" className="w-full mt-6" disabled={loading}>
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />

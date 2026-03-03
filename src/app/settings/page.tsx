@@ -1,3 +1,4 @@
+// src/app/settings/page.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -7,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { NIGERIAN_STATES } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStrength";
 import {
   ArrowLeft,
   Bell,
@@ -15,7 +17,6 @@ import {
   FileText,
   LogOut,
   ChevronRight,
-  Smartphone,
   Clock,
   Check,
   X,
@@ -25,12 +26,18 @@ import {
   Save,
   MapPin,
   AlertTriangle,
+  Lock,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Copy,
+  ShieldCheck,
 } from "lucide-react";
 
 export default function SettingsPage() {
   useScrollRestore("settings");
   const router = useRouter();
-  const { user, signOut, loading: authLoading } = useAuth();
+  const { user, session, signOut, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -59,8 +66,25 @@ export default function SettingsPage() {
 
   // Debug info
   const [debugInfo, setDebugInfo] = useState<string>("");
-useScrollRestore("settings");
-    useEffect(() => {
+
+  // ─── Change Password State ───
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [pwStep, setPwStep] = useState<1 | 2>(1);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [pwCode, setPwCode] = useState("");
+  const [pwCodeDisplay, setPwCodeDisplay] = useState<string | null>(null);
+  const [pwCopied, setPwCopied] = useState(false);
+  const [showPwOld, setShowPwOld] = useState(false);
+  const [showPwNew, setShowPwNew] = useState(false);
+  const [pwLoading, setPwLoading] = useState(false);
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState(false);
+
+  useScrollRestore("settings");
+
+  useEffect(() => {
     if (authLoading) return;
     if (user) {
       loadSettings();
@@ -79,13 +103,11 @@ useScrollRestore("settings");
     }
 
     try {
-      
       const { data: settings, error } = await supabase
         .from("user_settings")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
-
 
       if (error && error.code !== "PGRST116") {
         setDebugInfo(`Load error: ${error.message}`);
@@ -104,8 +126,9 @@ useScrollRestore("settings");
         setQuietHoursEnabled(settings.quiet_hours_enabled ?? false);
         setQuietHoursStart(settings.quiet_hours_start ?? "23:00");
         setQuietHoursEnd(settings.quiet_hours_end ?? "07:00");
-        
-        setDebugInfo(`Loaded: zone=${settings.alert_zone_type}, states=${JSON.stringify(settings.selected_states)}`);
+        setDebugInfo(
+          `Loaded: zone=${settings.alert_zone_type}, states=${JSON.stringify(settings.selected_states)}`
+        );
       } else {
         setDebugInfo("No settings found, using defaults");
       }
@@ -142,12 +165,9 @@ useScrollRestore("settings");
       updated_at: new Date().toISOString(),
     };
 
-
     try {
       let result;
-      
       if (settingsId) {
-        // Update existing
         result = await supabase
           .from("user_settings")
           .update(settingsData)
@@ -155,27 +175,18 @@ useScrollRestore("settings");
           .select()
           .single();
       } else {
-        // Insert new
-        result = await supabase
-          .from("user_settings")
-          .insert(settingsData)
-          .select()
-          .single();
+        result = await supabase.from("user_settings").insert(settingsData).select().single();
       }
-
 
       if (result.error) {
         setSaveError(`Failed to save: ${result.error.message}`);
-        setDebugInfo(`Save error: ${result.error.message}`);
       } else {
         setSettingsId(result.data.id);
         setSaveSuccess(true);
-        setDebugInfo(`Saved! zone=${result.data.alert_zone_type}, states=${JSON.stringify(result.data.selected_states)}`);
         setTimeout(() => setSaveSuccess(false), 3000);
       }
     } catch (error: any) {
       setSaveError(`Error: ${error.message}`);
-      setDebugInfo(`Exception: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -192,18 +203,180 @@ useScrollRestore("settings");
     );
   };
 
-  const ToggleSwitch = ({ enabled, onChange }: { enabled: boolean; onChange: (value: boolean) => void }) => (
+  // ─── Change Password Handlers ───
+  const handleRequestCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwError("");
+
+    if (!oldPassword) {
+      setPwError("Enter your current password");
+      return;
+    }
+
+    if (!isPasswordStrong(newPassword)) {
+      setPwError("New password doesn't meet requirements");
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setPwError("Passwords don't match");
+      return;
+    }
+
+    setPwLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/request-password-change", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ oldPassword }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setPwError(data.error || "Something went wrong");
+        setPwLoading(false);
+        return;
+      }
+
+      // Show code from response + notification
+      if (data.code) {
+        setPwCodeDisplay(data.code);
+      }
+      setPwStep(2);
+    } catch {
+      setPwError("Connection error. Try again.");
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  const handleConfirmChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwError("");
+
+    if (!pwCode.trim()) {
+      setPwError("Enter the verification code");
+      return;
+    }
+
+    setPwLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/confirm-password-change", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ code: pwCode.trim(), newPassword }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setPwError(data.error || "Something went wrong");
+        setPwLoading(false);
+        return;
+      }
+
+      setPwSuccess(true);
+      setTimeout(() => {
+        setShowChangePassword(false);
+        setPwStep(1);
+        setOldPassword("");
+        setNewPassword("");
+        setConfirmNewPassword("");
+        setPwCode("");
+        setPwCodeDisplay(null);
+        setPwSuccess(false);
+      }, 2500);
+    } catch {
+      setPwError("Connection error. Try again.");
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  const copyCode = async () => {
+    if (!pwCodeDisplay) return;
+    try {
+      await navigator.clipboard.writeText(pwCodeDisplay);
+      setPwCopied(true);
+      setTimeout(() => setPwCopied(false), 2000);
+    } catch {
+      // Fallback
+      const ta = document.createElement("textarea");
+      ta.value = pwCodeDisplay;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      setPwCopied(true);
+      setTimeout(() => setPwCopied(false), 2000);
+    }
+  };
+
+  const resetPasswordModal = () => {
+    setShowChangePassword(false);
+    setPwStep(1);
+    setOldPassword("");
+    setNewPassword("");
+    setConfirmNewPassword("");
+    setPwCode("");
+    setPwCodeDisplay(null);
+    setPwError("");
+    setPwSuccess(false);
+    setPwCopied(false);
+  };
+
+  const ToggleSwitch = ({
+    enabled,
+    onChange,
+  }: {
+    enabled: boolean;
+    onChange: (value: boolean) => void;
+  }) => (
     <button
       type="button"
       onClick={() => onChange(!enabled)}
-      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${enabled ? "bg-primary-600" : "bg-dark-600"}`}
+      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
+        enabled ? "bg-primary-600" : "bg-dark-600"
+      }`}
     >
-      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition duration-200 ease-in-out ${enabled ? "translate-x-5" : "translate-x-0"}`} />
+      <span
+        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg transition duration-200 ease-in-out ${
+          enabled ? "translate-x-5" : "translate-x-0"
+        }`}
+      />
     </button>
   );
 
-  const SettingRow = ({ icon: Icon, label, description, children, onClick, danger }: { icon: any; label: string; description?: string; children?: React.ReactNode; onClick?: () => void; danger?: boolean }) => (
-    <div className={`flex items-center justify-between py-4 px-2 rounded-lg ${onClick ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : ""} transition-colors`} onClick={onClick}>
+  const SettingRow = ({
+    icon: Icon,
+    label,
+    description,
+    children,
+    onClick,
+    danger,
+  }: {
+    icon: any;
+    label: string;
+    description?: string;
+    children?: React.ReactNode;
+    onClick?: () => void;
+    danger?: boolean;
+  }) => (
+    <div
+      className={`flex items-center justify-between py-4 px-2 rounded-lg ${
+        onClick ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : ""
+      } transition-colors`}
+      onClick={onClick}
+    >
       <div className="flex items-center gap-3">
         <div className={`p-2 rounded-lg ${danger ? "bg-red-500/10" : "bg-dark-700"}`}>
           <Icon className={`w-5 h-5 ${danger ? "text-red-500" : "text-primary-400"}`} />
@@ -217,33 +390,35 @@ useScrollRestore("settings");
     </div>
   );
 
-if (loading) {
-  return (
-    <div className="min-h-screen pb-20">
-      <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <Skeleton className="h-9 w-9 rounded-lg" />
-          <Skeleton className="h-4 w-24" />
-          <Skeleton className="h-9 w-20 rounded-lg" />
-        </div>
-      </header>
-
-      <main className="pt-14 max-w-2xl mx-auto px-4 py-6 space-y-4">
-        <Skeleton className="h-16 w-full rounded-2xl" />
-        <Skeleton className="h-56 w-full rounded-2xl" />
-        <Skeleton className="h-56 w-full rounded-2xl" />
-        <Skeleton className="h-40 w-full rounded-2xl" />
-      </main>
-    </div>
-  );
-}
+  if (loading) {
+    return (
+      <div className="min-h-screen pb-20">
+        <header className="fixed top-0 left-0 right-0 z-50 glass-header">
+          <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
+            <Skeleton className="h-9 w-9 rounded-lg" />
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-9 w-20 rounded-lg" />
+          </div>
+        </header>
+        <main className="pt-14 max-w-2xl mx-auto px-4 py-6 space-y-4">
+          <Skeleton className="h-16 w-full rounded-2xl" />
+          <Skeleton className="h-56 w-full rounded-2xl" />
+          <Skeleton className="h-56 w-full rounded-2xl" />
+          <Skeleton className="h-40 w-full rounded-2xl" />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen pb-20">
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 glass-header">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg transition-colors">
+          <button
+            onClick={() => router.back()}
+            className="p-2 -ml-2 hover:bg-white/10 rounded-lg transition-colors"
+          >
             <ArrowLeft className="w-5 h-5 text-dark-200" />
           </button>
           <h1 className="text-lg font-semibold text-dark-100">Settings</h1>
@@ -251,8 +426,8 @@ if (loading) {
             onClick={saveSettings}
             disabled={saving}
             className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
-              saveSuccess 
-                ? "bg-green-500/20 text-green-400" 
+              saveSuccess
+                ? "bg-green-500/20 text-green-400"
                 : "bg-primary-600 text-white hover:bg-primary-700"
             }`}
           >
@@ -274,17 +449,15 @@ if (loading) {
       </header>
 
       <main className="pt-14 max-w-2xl mx-auto px-4">
-        {/* Debug Info */}
         {debugInfo && (
           <div className="mt-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
             <p className="text-xs text-blue-400 font-mono">{debugInfo}</p>
           </div>
         )}
 
-        {/* Save feedback */}
         {saveSuccess && (
           <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-            <p className="text-sm text-green-400 text-center">✓ Settings saved successfully!</p>
+            <p className="text-sm text-green-400 text-center">Settings saved successfully!</p>
           </div>
         )}
 
@@ -295,82 +468,94 @@ if (loading) {
         )}
 
         {/* Notifications Section */}
-<section className="py-6 border-b border-white/5">
-  <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Notifications</h2>
+        <section className="py-6 border-b border-white/5">
+          <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Notifications</h2>
 
-  <SettingRow icon={Bell} label="Push Notifications" description="Receive alerts on your device">
-    <ToggleSwitch enabled={pushEnabled} onChange={setPushEnabled} />
-  </SettingRow>
+          <SettingRow
+            icon={Bell}
+            label="Push Notifications"
+            description="Receive alerts on your device"
+          >
+            <ToggleSwitch enabled={pushEnabled} onChange={setPushEnabled} />
+          </SettingRow>
 
-  {pushEnabled && (
-    <div className="ml-4 mt-2 space-y-4 p-4 glass-sm rounded-xl">
-      {/* 🔴 DANGER ALERTS */}
-<div>
-  <div className="flex items-center justify-between mb-2">
-    <div>
-      <p className="text-dark-100 font-medium">🔴 Danger Alerts</p>
-      <p className="text-xs text-dark-400">Crime/Theft, Fire, Kidnapping, Terrorist Attack</p>
-    </div>
-    <ToggleSwitch enabled={dangerAlerts} onChange={setDangerAlerts} />
-  </div>
-</div>
+          {pushEnabled && (
+            <div className="ml-4 mt-2 space-y-4 p-4 glass-sm rounded-xl">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <p className="text-dark-100 font-medium">Danger Alerts</p>
+                    <p className="text-xs text-dark-400">
+                      Crime/Theft, Fire, Kidnapping, Terrorist Attack
+                    </p>
+                  </div>
+                  <ToggleSwitch enabled={dangerAlerts} onChange={setDangerAlerts} />
+                </div>
+              </div>
 
-{/* 🟠 CAUTION ALERTS - Remove or hide this section */}
-{/* You can remove the Caution section entirely since there are no caution categories */}
+              <div className="pt-3 border-t border-white/5">
+                <div className="flex items-center justify-between mb-2">
+                  <div>
+                    <p className="text-dark-100 font-medium">Info Alerts</p>
+                    <p className="text-xs text-dark-400">General Alert</p>
+                  </div>
+                  <ToggleSwitch enabled={infoAlerts} onChange={setInfoAlerts} />
+                </div>
+              </div>
 
-{/* 🟡 AWARENESS ALERTS - Remove or hide this section */}
-{/* You can remove the Awareness section entirely since there are no awareness categories */}
-
-{/* 🔵 INFO ALERTS */}
-<div className="pt-3 border-t border-white/5">
-  <div className="flex items-center justify-between mb-2">
-    <div>
-      <p className="text-dark-100 font-medium">🔵 Info Alerts</p>
-      <p className="text-xs text-dark-400">General Alert</p>
-    </div>
-    <ToggleSwitch enabled={infoAlerts} onChange={setInfoAlerts} />
-  </div>
-</div>
-
-      {/* Info message about defaults */}
-      <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-        <p className="text-xs text-blue-400">
-          💡 Danger and Caution alerts are enabled by default for your safety
-        </p>
-      </div>
-    </div>
-  )}
-</section>
+              <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                <p className="text-xs text-blue-400">
+                  Danger and Caution alerts are enabled by default for your safety
+                </p>
+              </div>
+            </div>
+          )}
+        </section>
 
         {/* Alert Zone Section */}
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Alert Zone</h2>
-          <p className="text-sm text-dark-400 mb-4">Choose where you want to receive incident alerts from</p>
+          <p className="text-sm text-dark-400 mb-4">
+            Choose where you want to receive incident alerts from
+          </p>
 
-          {/* Current Selection Display */}
           <div className="mb-4 p-3 glass-sm rounded-xl">
             <div className="flex items-center gap-2 text-sm">
               <MapPin className="w-4 h-4 text-primary-400" />
               <span className="text-dark-200">Current:</span>
               <span className="text-primary-400 font-medium">
                 {alertZoneType === "all_nigeria" && "All of Nigeria"}
-                {alertZoneType === "states" && (selectedStates.length > 0 ? selectedStates.join(", ") : "No states selected")}
+                {alertZoneType === "states" &&
+                  (selectedStates.length > 0
+                    ? selectedStates.join(", ")
+                    : "No states selected")}
                 {alertZoneType === "radius" && `${alertRadius}km radius`}
               </span>
             </div>
           </div>
 
           <div className="space-y-3">
-            {/* All of Nigeria */}
-            <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${alertZoneType === "all_nigeria" ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-              <input 
-                type="radio" 
-                name="alertZone" 
-                checked={alertZoneType === "all_nigeria"} 
-                onChange={() => setAlertZoneType("all_nigeria")} 
-                className="sr-only" 
+            <label
+              className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${
+                alertZoneType === "all_nigeria"
+                  ? "bg-primary-600/20 border border-primary-500/50"
+                  : "glass-sm hover:bg-white/5"
+              }`}
+            >
+              <input
+                type="radio"
+                name="alertZone"
+                checked={alertZoneType === "all_nigeria"}
+                onChange={() => setAlertZoneType("all_nigeria")}
+                className="sr-only"
               />
-              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${alertZoneType === "all_nigeria" ? "border-primary-500 bg-primary-500" : "border-dark-500"}`}>
+              <div
+                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  alertZoneType === "all_nigeria"
+                    ? "border-primary-500 bg-primary-500"
+                    : "border-dark-500"
+                }`}
+              >
                 {alertZoneType === "all_nigeria" && <Check className="w-3 h-3 text-white" />}
               </div>
               <div>
@@ -379,16 +564,27 @@ if (loading) {
               </div>
             </label>
 
-            {/* Custom Radius */}
-            <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${alertZoneType === "radius" ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-              <input 
-                type="radio" 
-                name="alertZone" 
-                checked={alertZoneType === "radius"} 
-                onChange={() => setAlertZoneType("radius")} 
-                className="sr-only" 
+            <label
+              className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${
+                alertZoneType === "radius"
+                  ? "bg-primary-600/20 border border-primary-500/50"
+                  : "glass-sm hover:bg-white/5"
+              }`}
+            >
+              <input
+                type="radio"
+                name="alertZone"
+                checked={alertZoneType === "radius"}
+                onChange={() => setAlertZoneType("radius")}
+                className="sr-only"
               />
-              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${alertZoneType === "radius" ? "border-primary-500 bg-primary-500" : "border-dark-500"}`}>
+              <div
+                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  alertZoneType === "radius"
+                    ? "border-primary-500 bg-primary-500"
+                    : "border-dark-500"
+                }`}
+              >
                 {alertZoneType === "radius" && <Check className="w-3 h-3 text-white" />}
               </div>
               <div className="flex-1">
@@ -403,14 +599,14 @@ if (loading) {
                   <span className="text-sm text-dark-400">Radius</span>
                   <span className="text-primary-400 font-medium">{alertRadius} km</span>
                 </div>
-                <input 
-                  type="range" 
-                  min="1" 
-                  max="50" 
-                  step="1" 
-                  value={alertRadius} 
-                  onChange={(e) => setAlertRadius(Number(e.target.value))} 
-                  className="w-full accent-primary-500" 
+                <input
+                  type="range"
+                  min="1"
+                  max="50"
+                  step="1"
+                  value={alertRadius}
+                  onChange={(e) => setAlertRadius(Number(e.target.value))}
+                  className="w-full accent-primary-500"
                 />
                 <div className="flex justify-between text-xs text-dark-500 mt-1">
                   <span>1 km</span>
@@ -420,32 +616,45 @@ if (loading) {
               </div>
             )}
 
-            {/* Selected States */}
-            <label className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${alertZoneType === "states" ? "bg-primary-600/20 border border-primary-500/50" : "glass-sm hover:bg-white/5"}`}>
-              <input 
-                type="radio" 
-                name="alertZone" 
-                checked={alertZoneType === "states"} 
-                onChange={() => setAlertZoneType("states")} 
-                className="sr-only" 
+            <label
+              className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${
+                alertZoneType === "states"
+                  ? "bg-primary-600/20 border border-primary-500/50"
+                  : "glass-sm hover:bg-white/5"
+              }`}
+            >
+              <input
+                type="radio"
+                name="alertZone"
+                checked={alertZoneType === "states"}
+                onChange={() => setAlertZoneType("states")}
+                className="sr-only"
               />
-              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${alertZoneType === "states" ? "border-primary-500 bg-primary-500" : "border-dark-500"}`}>
+              <div
+                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  alertZoneType === "states"
+                    ? "border-primary-500 bg-primary-500"
+                    : "border-dark-500"
+                }`}
+              >
                 {alertZoneType === "states" && <Check className="w-3 h-3 text-white" />}
               </div>
               <div className="flex-1">
                 <p className="text-dark-100 font-medium">Selected States</p>
                 <p className="text-sm text-dark-400">
-                  {selectedStates.length > 0 ? `${selectedStates.length} states selected` : "Choose specific states"}
+                  {selectedStates.length > 0
+                    ? `${selectedStates.length} states selected`
+                    : "Choose specific states"}
                 </p>
               </div>
               {alertZoneType === "states" && (
-                <button 
-                  type="button" 
-                  onClick={(e) => { 
-                    e.preventDefault(); 
-                    e.stopPropagation(); 
-                    setShowStatesModal(true); 
-                  }} 
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowStatesModal(true);
+                  }}
                   className="text-primary-400 text-sm px-3 py-1 rounded-lg hover:bg-white/10"
                 >
                   Edit
@@ -453,13 +662,15 @@ if (loading) {
               )}
             </label>
 
-            {/* Show selected states */}
             {alertZoneType === "states" && selectedStates.length > 0 && (
               <div className="ml-8 p-4 glass-sm rounded-xl">
                 <p className="text-xs text-dark-400 mb-2">Selected states:</p>
                 <div className="flex flex-wrap gap-2">
                   {selectedStates.map((state) => (
-                    <span key={state} className="px-2 py-1 bg-primary-600/20 text-primary-400 text-xs rounded-lg">
+                    <span
+                      key={state}
+                      className="px-2 py-1 bg-primary-600/20 text-primary-400 text-xs rounded-lg"
+                    >
                       {state}
                     </span>
                   ))}
@@ -480,7 +691,11 @@ if (loading) {
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Quiet Hours</h2>
 
-          <SettingRow icon={Clock} label="Enable Quiet Hours" description="Only Danger alerts during set hours">
+          <SettingRow
+            icon={Clock}
+            label="Enable Quiet Hours"
+            description="Only Danger alerts during set hours"
+          >
             <ToggleSwitch enabled={quietHoursEnabled} onChange={setQuietHoursEnabled} />
           </SettingRow>
 
@@ -488,33 +703,61 @@ if (loading) {
             <div className="ml-4 mt-2 p-4 glass-sm rounded-xl flex gap-4">
               <div className="flex-1">
                 <label className="text-xs text-dark-400 block mb-1">Start Time</label>
-                <input 
-                  type="time" 
-                  value={quietHoursStart} 
-                  onChange={(e) => setQuietHoursStart(e.target.value)} 
-                  className="w-full px-3 py-2 glass-input text-base" 
+                <input
+                  type="time"
+                  value={quietHoursStart}
+                  onChange={(e) => setQuietHoursStart(e.target.value)}
+                  className="w-full px-3 py-2 glass-input text-base"
                 />
               </div>
               <div className="flex-1">
                 <label className="text-xs text-dark-400 block mb-1">End Time</label>
-                <input 
-                  type="time" 
-                  value={quietHoursEnd} 
-                  onChange={(e) => setQuietHoursEnd(e.target.value)} 
-                  className="w-full px-3 py-2 glass-input text-base" 
+                <input
+                  type="time"
+                  value={quietHoursEnd}
+                  onChange={(e) => setQuietHoursEnd(e.target.value)}
+                  className="w-full px-3 py-2 glass-input text-base"
                 />
               </div>
             </div>
           )}
         </section>
 
+        {/* Security Section — NEW */}
+        <section className="py-6 border-b border-white/5">
+          <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Security</h2>
+          <SettingRow
+            icon={KeyRound}
+            label="Change Password"
+            description="Update your account password"
+            onClick={() => setShowChangePassword(true)}
+          />
+        </section>
+
         {/* Support */}
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Support</h2>
-          <SettingRow icon={Users} label="Emergency Contacts" description="Manage SOS contacts" onClick={() => router.push("/emergency-contacts")} />
-          <SettingRow icon={Shield} label="Privacy Policy" onClick={() => router.push("/privacy")} />
-          <SettingRow icon={HelpCircle} label="Help & Support" onClick={() => router.push("/help")} />
-          <SettingRow icon={FileText} label="Terms of Service" onClick={() => router.push("/terms")} />
+          <SettingRow
+            icon={Users}
+            label="Emergency Contacts"
+            description="Manage SOS contacts"
+            onClick={() => router.push("/emergency-contacts")}
+          />
+          <SettingRow
+            icon={Shield}
+            label="Privacy Policy"
+            onClick={() => router.push("/privacy")}
+          />
+          <SettingRow
+            icon={HelpCircle}
+            label="Help & Support"
+            onClick={() => router.push("/help")}
+          />
+          <SettingRow
+            icon={FileText}
+            label="Terms of Service"
+            onClick={() => router.push("/terms")}
+          />
         </section>
 
         {/* Account */}
@@ -523,18 +766,260 @@ if (loading) {
           <SettingRow icon={LogOut} label="Log Out" onClick={handleLogout} danger />
         </section>
 
-        <p className="text-center text-sm text-dark-500 py-4">Peja v1.0.0 • Made with ❤️ in Nigeria</p>
+        <p className="text-center text-sm text-dark-500 py-4">Peja v1.0.0</p>
       </main>
+
+      {/* ─── Change Password Modal ─── */}
+      {showChangePassword && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            onClick={resetPasswordModal}
+          />
+          <div className="fixed inset-4 z-50 max-w-md mx-auto my-auto max-h-[85vh] overflow-y-auto">
+            <div className="glass-card">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-primary-600/20">
+                    <Lock className="w-5 h-5 text-primary-400" />
+                  </div>
+                  <h2 className="text-lg font-semibold text-dark-100">Change Password</h2>
+                </div>
+                <button
+                  onClick={resetPasswordModal}
+                  className="p-1 hover:bg-white/10 rounded-lg"
+                >
+                  <X className="w-5 h-5 text-dark-400" />
+                </button>
+              </div>
+
+              {pwSuccess ? (
+                <div className="text-center py-8">
+                  <ShieldCheck className="w-14 h-14 text-green-400 mx-auto mb-4" />
+                  <p className="text-green-400 font-semibold text-lg">Password Changed!</p>
+                  <p className="text-dark-400 text-sm mt-2">
+                    Your password has been updated successfully.
+                  </p>
+                </div>
+              ) : pwStep === 1 ? (
+                <form onSubmit={handleRequestCode} className="space-y-4">
+                  {pwError && (
+                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                      <p className="text-sm text-red-400">{pwError}</p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-dark-200 mb-1.5">
+                      Current Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
+                      <input
+                        type={showPwOld ? "text" : "password"}
+                        value={oldPassword}
+                        onChange={(e) => {
+                          setOldPassword(e.target.value);
+                          setPwError("");
+                        }}
+                        placeholder="Enter current password"
+                        className="w-full pl-10 pr-10 py-3 glass-input"
+                        disabled={pwLoading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPwOld(!showPwOld)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2"
+                      >
+                        {showPwOld ? (
+                          <EyeOff className="w-4 h-4 text-dark-500" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-dark-500" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-dark-200 mb-1.5">
+                      New Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
+                      <input
+                        type={showPwNew ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value);
+                          setPwError("");
+                        }}
+                        placeholder="Create new password"
+                        className="w-full pl-10 pr-10 py-3 glass-input"
+                        disabled={pwLoading}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPwNew(!showPwNew)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2"
+                      >
+                        {showPwNew ? (
+                          <EyeOff className="w-4 h-4 text-dark-500" />
+                        ) : (
+                          <Eye className="w-4 h-4 text-dark-500" />
+                        )}
+                      </button>
+                    </div>
+                    <PasswordStrength password={newPassword} />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-dark-200 mb-1.5">
+                      Confirm New Password
+                    </label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
+                      <input
+                        type={showPwNew ? "text" : "password"}
+                        value={confirmNewPassword}
+                        onChange={(e) => {
+                          setConfirmNewPassword(e.target.value);
+                          setPwError("");
+                        }}
+                        placeholder="Confirm new password"
+                        className="w-full pl-10 pr-10 py-3 glass-input"
+                        disabled={pwLoading}
+                      />
+                    </div>
+                    {confirmNewPassword && confirmNewPassword !== newPassword && (
+                      <p className="text-xs text-red-400 mt-1">Passwords don't match</p>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={pwLoading || !oldPassword || !newPassword || !confirmNewPassword}
+                    className="w-full py-3 bg-primary-600 text-white rounded-xl font-semibold disabled:opacity-50 hover:bg-primary-500 transition-colors flex items-center justify-center gap-2"
+                  >
+                    {pwLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Verifying...
+                      </>
+                    ) : (
+                      "Send Verification Code"
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleConfirmChange} className="space-y-4">
+                  {pwError && (
+                    <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                      <p className="text-sm text-red-400">{pwError}</p>
+                    </div>
+                  )}
+
+                  {/* Code display with copy button */}
+                  {pwCodeDisplay && (
+                    <div className="p-4 rounded-xl bg-primary-600/10 border border-primary-500/30">
+                      <p className="text-xs text-dark-400 mb-2 text-center">
+                        Your verification code
+                      </p>
+                      <div className="flex items-center justify-center gap-3">
+                        <span className="text-2xl font-mono font-bold text-primary-400 tracking-[0.3em]">
+                          {pwCodeDisplay}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={copyCode}
+                          className={`p-2 rounded-lg transition-colors ${
+                            pwCopied
+                              ? "bg-green-500/20 text-green-400"
+                              : "bg-white/5 text-dark-400 hover:bg-white/10"
+                          }`}
+                        >
+                          {pwCopied ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                      <p className="text-xs text-dark-500 mt-2 text-center">
+                        Also sent to your notifications. Expires in 5 minutes.
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-dark-200 mb-1.5">
+                      Enter Verification Code
+                    </label>
+                    <input
+                      type="text"
+                      value={pwCode}
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+                        setPwCode(v);
+                        setPwError("");
+                      }}
+                      placeholder="Enter 6-digit code"
+                      className="w-full px-4 py-3 glass-input text-xl tracking-[0.4em] text-center font-mono"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      disabled={pwLoading}
+                      autoFocus
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={pwLoading || pwCode.length < 6}
+                    className="w-full py-3 bg-primary-600 text-white rounded-xl font-semibold disabled:opacity-50 hover:bg-primary-500 transition-colors flex items-center justify-center gap-2"
+                  >
+                    {pwLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Changing...
+                      </>
+                    ) : (
+                      "Confirm Password Change"
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPwStep(1);
+                      setPwCode("");
+                      setPwCodeDisplay(null);
+                      setPwError("");
+                    }}
+                    className="w-full text-sm text-dark-400 hover:text-dark-200 py-2"
+                  >
+                    Go back
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* States Selection Modal */}
       {showStatesModal && (
         <>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={() => setShowStatesModal(false)} />
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+            onClick={() => setShowStatesModal(false)}
+          />
           <div className="fixed inset-4 z-50 max-w-md mx-auto my-auto max-h-[80vh] overflow-hidden flex flex-col">
             <div className="glass-card flex flex-col h-full">
               <div className="flex items-center justify-between mb-4 shrink-0">
                 <h2 className="text-lg font-semibold text-dark-100">Select States</h2>
-                <button onClick={() => setShowStatesModal(false)} className="p-1 hover:bg-white/10 rounded-lg">
+                <button
+                  onClick={() => setShowStatesModal(false)}
+                  className="p-1 hover:bg-white/10 rounded-lg"
+                >
                   <X className="w-5 h-5 text-dark-400" />
                 </button>
               </div>
@@ -547,8 +1032,8 @@ if (loading) {
                       type="button"
                       onClick={() => toggleState(state)}
                       className={`p-3 rounded-lg text-left text-sm transition-colors ${
-                        selectedStates.includes(state) 
-                          ? "bg-primary-600/20 text-primary-400 border border-primary-500/50" 
+                        selectedStates.includes(state)
+                          ? "bg-primary-600/20 text-primary-400 border border-primary-500/50"
                           : "glass-sm text-dark-300 hover:bg-white/5"
                       }`}
                     >
@@ -559,9 +1044,9 @@ if (loading) {
               </div>
 
               <div className="pt-4 mt-4 border-t border-white/5 shrink-0">
-                <button 
-                  type="button" 
-                  onClick={() => setShowStatesModal(false)} 
+                <button
+                  type="button"
+                  onClick={() => setShowStatesModal(false)}
                   className="w-full py-3 bg-primary-600 text-white rounded-xl font-medium"
                 >
                   Done ({selectedStates.length} selected)

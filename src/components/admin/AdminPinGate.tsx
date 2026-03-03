@@ -323,7 +323,7 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
               className="w-full pl-12 pr-12 py-4 glass-input text-lg tracking-[0.3em] text-center font-mono"
               disabled={loading || (!!lockedUntil && Date.now() < lockedUntil)}
               autoComplete="off"
-              inputMode="numeric"
+              inputMode="text"
             />
             <button type="button" onClick={() => setShowPin(!showPin)} className="absolute right-4 top-1/2 -translate-y-1/2 p-1">
               {showPin ? <EyeOff className="w-5 h-5 text-dark-500" /> : <Eye className="w-5 h-5 text-dark-500" />}

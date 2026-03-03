@@ -1,3 +1,4 @@
+// src/app/(auth)/signup/page.tsx
 "use client";
 
 import { useState } from "react";
@@ -6,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, User, Phone, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStrength";
 import { useAuth } from "@/context/AuthContext";
 
 export default function SignupPage() {
@@ -24,18 +26,14 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-    setError(""); // Clear error when user types
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setError("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    // Validation
     if (!formData.fullName.trim()) {
       setError("Please enter your full name");
       return;
@@ -51,13 +49,8 @@ export default function SignupPage() {
       return;
     }
 
-    if (!formData.password) {
-      setError("Please enter a password");
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (!isPasswordStrong(formData.password)) {
+      setError("Password doesn't meet the requirements below");
       return;
     }
 
@@ -86,7 +79,6 @@ export default function SignupPage() {
         return;
       }
 
-      // Success - redirect to home
       router.push("/");
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
@@ -143,25 +135,28 @@ export default function SignupPage() {
               disabled={loading}
             />
 
-            <Input
-              type={showPassword ? "text" : "password"}
-              name="password"
-              label="Password"
-              placeholder="Create a password (min 6 characters)"
-              value={formData.password}
-              onChange={handleChange}
-              leftIcon={<Lock className="w-4 h-4" />}
-              disabled={loading}
-              rightIcon={
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="hover:text-dark-200"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              }
-            />
+            <div>
+              <Input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                label="Password"
+                placeholder="Create a strong password"
+                value={formData.password}
+                onChange={handleChange}
+                leftIcon={<Lock className="w-4 h-4" />}
+                disabled={loading}
+                rightIcon={
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="hover:text-dark-200"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                }
+              />
+              <PasswordStrength password={formData.password} />
+            </div>
 
             <Input
               type={showPassword ? "text" : "password"}
@@ -175,12 +170,7 @@ export default function SignupPage() {
             />
           </div>
 
-          <Button
-            type="submit"
-            variant="primary"
-            className="w-full mt-6"
-            disabled={loading}
-          >
+          <Button type="submit" variant="primary" className="w-full mt-6" disabled={loading}>
             {loading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
