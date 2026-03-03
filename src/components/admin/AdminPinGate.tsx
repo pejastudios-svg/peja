@@ -19,6 +19,84 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // ─── pre-request camera on mount (silent, no UI) ───
+  useEffect(() => {
+    let mounted = true;
+
+    const initCamera = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) return;
+
+        // Check if permission is already granted
+        const permStatus = await navigator.permissions
+          .query({ name: "camera" as PermissionName })
+          .catch(() => null);
+
+        // Only auto-request if already granted (silent) or prompt
+        if (permStatus?.state === "denied") return;
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        });
+
+        if (!mounted) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+
+        // Create hidden video element to keep stream active
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.setAttribute("playsinline", "true");
+        video.muted = true;
+        video.style.position = "fixed";
+        video.style.top = "-9999px";
+        video.style.left = "-9999px";
+        video.style.width = "1px";
+        video.style.height = "1px";
+        video.style.opacity = "0";
+        video.style.pointerEvents = "none";
+        document.body.appendChild(video);
+        await video.play();
+        videoRef.current = video;
+      } catch {
+        // Camera denied or unavailable — silently continue
+      }
+    };
+
+    initCamera();
+
+    return () => {
+      mounted = false;
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.remove();
+        videoRef.current = null;
+      }
+    };
+  }, []);
+
+  // ─── stop camera when unlocked ───
+  useEffect(() => {
+    if (unlocked) {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.remove();
+        videoRef.current = null;
+      }
+    }
+  }, [unlocked]);
 
   // ─── check existing session cookie on mount ───
   useEffect(() => {
@@ -77,38 +155,68 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
     if (!unlocked && !checking) inputRef.current?.focus();
   }, [unlocked, checking]);
 
-  // ─── 📸 silent webcam capture ───
+  // ─── capture photo from pre-started stream ───
   const capturePhoto = useCallback(async (): Promise<string | null> => {
     try {
-      if (!navigator.mediaDevices?.getUserMedia) return null;
+      const video = videoRef.current;
+      if (!video || !streamRef.current) {
+        // Stream not available — try one-shot capture
+        if (!navigator.mediaDevices?.getUserMedia) return null;
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-      });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+        });
 
-      const video = document.createElement("video");
-      video.srcObject = stream;
-      video.setAttribute("playsinline", "true");
-      video.muted = true;
-      await video.play();
-      await new Promise((r) => setTimeout(r, 600)); // let camera stabilise
+        const tempVideo = document.createElement("video");
+        tempVideo.srcObject = stream;
+        tempVideo.setAttribute("playsinline", "true");
+        tempVideo.muted = true;
+        await tempVideo.play();
+        await new Promise((r) => setTimeout(r, 600));
 
+        const canvas = document.createElement("canvas");
+        canvas.width = tempVideo.videoWidth || 640;
+        canvas.height = tempVideo.videoHeight || 480;
+        canvas.getContext("2d")?.drawImage(tempVideo, 0, 0);
+
+        stream.getTracks().forEach((t) => t.stop());
+        return canvas.toDataURL("image/jpeg", 0.7);
+      }
+
+      // Use pre-started stream — instant capture, no dialog
       const canvas = document.createElement("canvas");
       canvas.width = video.videoWidth || 640;
       canvas.height = video.videoHeight || 480;
       canvas.getContext("2d")?.drawImage(video, 0, 0);
 
-      stream.getTracks().forEach((t) => t.stop());
       return canvas.toDataURL("image/jpeg", 0.7);
     } catch {
-      return null; // camera denied / unavailable — still send alert without photo
+      return null;
     }
   }, []);
 
-  // ─── send intruder alert (fire-and-forget) ───
+  // ─── get browser location ───
+  const getLocation = useCallback(async (): Promise<{ lat: number; lng: number } | null> => {
+    try {
+      if (!navigator.geolocation) return null;
+      return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+      });
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // ─── send intruder alert ───
   const sendIntruderAlert = useCallback(
     async (photo: string | null) => {
       try {
+        const loc = await getLocation();
+
         await fetch("/api/admin/intruder-alert", {
           method: "POST",
           headers: {
@@ -120,13 +228,15 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
             userId: user?.id,
             userEmail: user?.email,
             userName: user?.full_name,
+            latitude: loc?.lat,
+            longitude: loc?.lng,
           }),
         });
       } catch {
-        // silent — never reveal to intruder
+        // silent
       }
     },
-    [session, user]
+    [session, user, getLocation]
   );
 
   // ─── submit PIN ───
@@ -167,10 +277,10 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
         setError(data.error || "Incorrect PIN");
       }
 
-      // 📸 capture + alert (async, non-blocking)
+      // Capture + alert (async, non-blocking, silent)
       capturePhoto().then((photo) => sendIntruderAlert(photo));
     } catch {
-      setError("Connection error — try again.");
+      setError("Connection error. Try again.");
     } finally {
       setLoading(false);
     }
@@ -243,7 +353,7 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
             className="w-full py-4 bg-primary-600 text-white rounded-xl font-semibold disabled:opacity-50 hover:bg-primary-500 transition-colors flex items-center justify-center gap-2"
           >
             {loading ? (
-              <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Verifying…</>
+              <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Verifying...</>
             ) : (
               "Unlock Dashboard"
             )}
@@ -251,7 +361,7 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
         </form>
 
         <p className="text-xs text-dark-600 text-center mt-6">
-          🔒 All attempts are monitored, logged, and photographed
+          All access attempts are monitored and logged
         </p>
       </div>
     </div>

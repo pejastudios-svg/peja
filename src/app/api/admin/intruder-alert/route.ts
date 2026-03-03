@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
   }
 
-  const { photo, userId, userEmail, userName } = body;
+  const { photo, userId, userEmail, userName, latitude, longitude } = body;
 
   // ── upload photo to Cloudinary ──
   let photoUrl: string | null = null;
@@ -83,20 +83,42 @@ export async function POST(req: NextRequest) {
     errors.push("No photo provided (camera may have been denied)");
   }
 
-  // ── IP geolocation ──
+  // ── Location: use browser coords if available, fall back to IP ──
   let geo = "Unknown";
-  try {
-    const g = await fetch(
-      `http://ip-api.com/json/${ip}?fields=status,country,regionName,city,isp`
-    );
-    if (g.ok) {
-      const d = await g.json();
-      if (d.status === "success") {
-        geo = `${d.city}, ${d.regionName}, ${d.country} (${d.isp})`;
+  let googleMapsLink = "";
+
+  if (latitude && longitude) {
+    // Reverse geocode from browser coordinates (accurate)
+    googleMapsLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
+    try {
+      const g = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
+        { headers: { "User-Agent": "Peja Security" } }
+      );
+      if (g.ok) {
+        const d = await g.json();
+        if (d?.display_name) {
+          geo = d.display_name;
+        }
       }
+    } catch {
+      geo = `${latitude}, ${longitude}`;
     }
-  } catch {
-    errors.push("Geolocation lookup failed");
+  } else {
+    // Fallback: IP-based (rough)
+    try {
+      const g = await fetch(
+        `http://ip-api.com/json/${ip}?fields=status,country,regionName,city,isp`
+      );
+      if (g.ok) {
+        const d = await g.json();
+        if (d.status === "success") {
+          geo = `${d.city}, ${d.regionName}, ${d.country} (${d.isp})`;
+        }
+      }
+    } catch {
+      errors.push("Geolocation lookup failed");
+    }
   }
 
   // ── log to DB ──
@@ -106,7 +128,15 @@ export async function POST(req: NextRequest) {
       action: "intruder_alert_sent",
       ip_address: ip,
       user_agent: ua,
-      metadata: { photo_url: photoUrl, geo, user_email: userEmail, user_name: userName, errors },
+      metadata: {
+        photo_url: photoUrl,
+        geo,
+        latitude,
+        longitude,
+        user_email: userEmail,
+        user_name: userName,
+        errors,
+      },
     });
   } catch (e: any) {
     errors.push(`DB log failed: ${e.message}`);
@@ -132,7 +162,7 @@ export async function POST(req: NextRequest) {
     const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
   <div style="background:#dc2626;color:#fff;padding:20px;border-radius:12px 12px 0 0;text-align:center">
-    <h1 style="margin:0;font-size:22px">🚨 ADMIN INTRUSION ALERT</h1>
+    <h1 style="margin:0;font-size:22px">ADMIN INTRUSION ALERT</h1>
     <p style="margin:4px 0 0;opacity:.9">Failed Admin PIN Attempt</p>
   </div>
   <div style="background:#1a1a2e;color:#e0e0e0;padding:20px;border:1px solid #333">
@@ -140,15 +170,16 @@ export async function POST(req: NextRequest) {
       <tr><td style="padding:8px 0;color:#888;width:120px">Time</td><td>${now}</td></tr>
       <tr><td style="padding:8px 0;color:#888">IP Address</td><td>${ip}</td></tr>
       <tr><td style="padding:8px 0;color:#888">Location</td><td>${geo}</td></tr>
+      ${googleMapsLink ? `<tr><td style="padding:8px 0;color:#888">Map</td><td><a href="${googleMapsLink}" style="color:#a78bfa">View on Google Maps</a></td></tr>` : ""}
       <tr><td style="padding:8px 0;color:#888">User</td><td>${userName || "Unknown"} (${userEmail || "N/A"})</td></tr>
       <tr><td style="padding:8px 0;color:#888">User ID</td><td style="font-size:11px">${userId || "N/A"}</td></tr>
       <tr><td style="padding:8px 0;color:#888">Browser</td><td style="font-size:11px">${ua}</td></tr>
     </table>
     ${
       photoUrl
-        ? `<h3 style="color:#ff6b6b;margin-top:20px">📸 Captured Photo:</h3>
+        ? `<h3 style="color:#ff6b6b;margin-top:20px">Captured Photo:</h3>
            <img src="${photoUrl}" style="max-width:100%;border-radius:8px;border:2px solid #ff6b6b" />`
-        : `<p style="color:#888;margin-top:20px">📸 Camera was unavailable or denied.</p>`
+        : `<p style="color:#888;margin-top:20px">Camera was unavailable or denied.</p>`
     }
   </div>
   <div style="background:#111;color:#555;padding:12px;border-radius:0 0 12px 12px;text-align:center;font-size:11px">
@@ -163,7 +194,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           secret: webhookSecret,
           to: alertEmail,
-          subject: `🚨 INTRUSION ALERT — ${now}`,
+          subject: `INTRUSION ALERT - ${now}`,
           html,
         }),
       });
