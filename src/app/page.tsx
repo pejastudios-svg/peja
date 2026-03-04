@@ -623,7 +623,7 @@ export default function Home() {
             className="w-full flex items-center gap-3 px-4 py-3 glass-sm rounded-xl mb-4 text-dark-400 hover:bg-white/5 transition-colors"
           >
             <Search className="w-5 h-5" />
-            <span>Search incidents, #tags, locations...</span>
+            <span>Search incidents, #tags, or locations...</span>
           </button>
 
           <div className="flex items-center gap-2 mb-4">

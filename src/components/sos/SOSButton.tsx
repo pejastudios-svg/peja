@@ -11,8 +11,9 @@ import { supabase } from "@/lib/supabase";
 import { 
   AlertTriangle, X, Phone, Loader2, CheckCircle, Users, 
   ArrowLeft, Scan, MapPin, Radio, Shield, Send,
-  Siren, Car, UserX, Flame,
+  Siren, Car, UserX, Flame, MapPinned, Ban,
 } from "lucide-react";
+
 // =====================================================
 // SOS TAG DEFINITIONS WITH ICONS & COLORS
 // =====================================================
@@ -22,12 +23,15 @@ const SOS_TAGS = [
   { id: "kidnapping", label: "Kidnapping", icon: UserX, color: "#dc2626", suggestion: "EXTREME DANGER: Do NOT approach. Contact police immediately. Do not attempt rescue alone." },
   { id: "fire", label: "Fire", icon: Flame, color: "#f97316", suggestion: "Call fire service. Evacuate the area immediately. Do not enter burning buildings." },
 ];
+
 type SOSTagId = typeof SOS_TAGS[number]["id"];
+
 interface LoadingStep {
   icon: React.ReactNode;
   text: string;
   status: "pending" | "active" | "done";
 }
+
 export function SOSButton({ className = "" }: { className?: string }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -51,19 +55,27 @@ export function SOSButton({ className = "" }: { className?: string }) {
   const [showActivePopup, setShowActivePopup] = useState(false);
   const [selectedTag, setSelectedTag] = useState<SOSTagId | null>(null);
   const [textMessage, setTextMessage] = useState("");
+
+  // =====================================================
+  // DISCLOSURE STATE
+  // =====================================================
+  const [showDisclosure, setShowDisclosure] = useState(false);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
+
   // Loading animation states
   const [showLoadingAnimation, setShowLoadingAnimation] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [loadingComplete, setLoadingComplete] = useState(false);
   const [loadingFailed, setLoadingFailed] = useState(false);
   const [showNotifiedCard, setShowNotifiedCard] = useState(false);
+
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const toast = useToast();
 
-    // Register SOS modals with back button system
+  // Register SOS modals with back button system
   useEffect(() => {
-    if (showOptions || showActivePopup || showLoadingAnimation) {
+    if (showOptions || showActivePopup || showLoadingAnimation || showDisclosure) {
       (window as any).__pejaSosModalOpen = true;
     } else {
       (window as any).__pejaSosModalOpen = false;
@@ -71,7 +83,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
     return () => {
       (window as any).__pejaSosModalOpen = false;
     };
-  }, [showOptions, showActivePopup, showLoadingAnimation]);
+  }, [showOptions, showActivePopup, showLoadingAnimation, showDisclosure]);
 
   // Listen for back button close event
   useEffect(() => {
@@ -79,19 +91,21 @@ export function SOSButton({ className = "" }: { className?: string }) {
       if (showLoadingAnimation && loadingComplete) {
         handleLoadingContinue();
       } else if (showLoadingAnimation) {
-        // Don't close during loading animation
         return;
       } else if (showActivePopup) {
         setShowActivePopup(false);
       } else if (showOptions) {
         closeOptions();
+      } else if (showDisclosure) {
+        setShowDisclosure(false);
       }
     };
     window.addEventListener("peja-close-sos-modal", handleBackClose);
     return () => window.removeEventListener("peja-close-sos-modal", handleBackClose);
-  }, [showOptions, showActivePopup, showLoadingAnimation, loadingComplete]);
+  }, [showOptions, showActivePopup, showLoadingAnimation, loadingComplete, showDisclosure]);
   
   const HOLD_DURATION = 3000;
+
   const loadingSteps: LoadingStep[] = [
     { icon: <Scan className="w-6 h-6" />, text: "Analyzing SOS request...", status: "pending" },
     { icon: <MapPin className="w-6 h-6" />, text: "Pinpointing your location...", status: "pending" },
@@ -100,13 +114,16 @@ export function SOSButton({ className = "" }: { className?: string }) {
     { icon: <Shield className="w-6 h-6" />, text: "Notifying emergency contacts...", status: "pending" },
     { icon: <Send className="w-6 h-6" />, text: "Sending help now...", status: "pending" },
   ];
+
   useEffect(() => {
     if (user) checkActiveSOS();
     return () => cleanup();
   }, [user]);
+
   useEffect(() => {
     sosIdRef.current = sosId;
   }, [sosId]);
+
   useEffect(() => {
     if (!sosActive || !sosId) return;
     if (!navigator.geolocation) return;
@@ -125,6 +142,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
           if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) {
             bearing = pos.coords.heading;
           }
+
           await supabase
             .from("sos_alerts")
             .update({
@@ -135,21 +153,21 @@ export function SOSButton({ className = "" }: { className?: string }) {
               last_updated: new Date().toISOString(),
             })
             .eq("id", sosId);
-        } catch (err) {
-        }
+        } catch (err) {}
       },
-      (err) => {
-      },
+      (err) => {},
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
     );
     return () => {
       navigator.geolocation.clearWatch(watchId);
     };
   }, [sosActive, sosId]);
+
   const cleanup = () => {
     if (holdTimer.current) clearTimeout(holdTimer.current);
     if (progressInterval.current) clearInterval(progressInterval.current);
   };
+
   const checkActiveSOS = async () => {
     if (!user) return;
     const { data } = await supabase
@@ -181,6 +199,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
       }
     }
   };
+
   const getAddress = async (lat: number, lng: number): Promise<string> => {
     try {
       const res = await fetch(
@@ -193,6 +212,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
       return "Unknown location";
     }
   };
+
   const notifyContacts = async (
     userName: string,
     address: string,
@@ -213,6 +233,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
       .eq("user_id", user.id)
       .not("contact_user_id", "is", null);
     if (!contacts?.length) return 0;
+
     let notifiedCount = 0;
     for (const contact of contacts) {
       if (contact.contact_user_id) {
@@ -235,6 +256,10 @@ export function SOSButton({ className = "" }: { className?: string }) {
     }
     return notifiedCount;
   };
+
+  // =====================================================
+  // BUTTON TAP — NOW SHOWS DISCLOSURE FIRST
+  // =====================================================
   const handleButtonTap = () => {
     if (user?.status === "suspended") {
       toast.warning("Your account is suspended. SOS is disabled.");
@@ -245,13 +270,30 @@ export function SOSButton({ className = "" }: { className?: string }) {
       return; 
     }
     if (loading) return;
+
     if (sosActive || sosIdRef.current) {
       setSosActive(true);
       setShowActivePopup(true);
       return;
     }
+
+    // Check if user has dismissed the disclosure before
+    const dismissed = localStorage.getItem("peja-sos-disclosure-dismissed");
+    if (dismissed === "true") {
+      setShowOptions(true);
+    } else {
+      setShowDisclosure(true);
+    }
+  };
+
+  const handleDisclosureAccept = () => {
+    if (dontShowAgain) {
+      localStorage.setItem("peja-sos-disclosure-dismissed", "true");
+    }
+    setShowDisclosure(false);
     setShowOptions(true);
   };
+
   const handleHoldStart = () => {
     setIsHolding(true);
     setHoldProgress(0);
@@ -265,18 +307,21 @@ export function SOSButton({ className = "" }: { className?: string }) {
     }, 50);
     holdTimer.current = setTimeout(triggerSOS, HOLD_DURATION);
   };
+
   const handleHoldEnd = () => {
     if (holdTimer.current) clearTimeout(holdTimer.current);
     if (progressInterval.current) clearInterval(progressInterval.current);
     setIsHolding(false);
     setHoldProgress(0);
   };
+
   const runLoadingAnimation = async (): Promise<void> => {
     for (let i = 0; i < loadingSteps.length; i++) {
       setCurrentStep(i);
       await new Promise(resolve => setTimeout(resolve, 600));
     }
   };
+
   const triggerSOS = async () => {
     if (!user) return;
     setLoading(true);
@@ -302,14 +347,16 @@ export function SOSButton({ className = "" }: { className?: string }) {
         lat = pos.coords.latitude;
         lng = pos.coords.longitude;
         address = await getAddress(lat, lng);
-      } catch (locErr) {
-      }
+      } catch (locErr) {}
+
       const { data: userData } = await supabase
         .from("users")
         .select("full_name")
         .eq("id", user.id)
         .single();
+
       const userName = userData?.full_name || "Someone";
+
       const { data: sosData, error } = await supabase
         .from("sos_alerts")
         .insert({
@@ -323,14 +370,17 @@ export function SOSButton({ className = "" }: { className?: string }) {
         })
         .select()
         .single();
+
       if (error) throw error;
+
       setSosId(sosData.id);
       sosIdRef.current = sosData.id;
       setSosActive(true);
+
       supabase.auth.getSession().then(({ data: auth }) => {
         const token = auth.session?.access_token;
         if (!token) return;
-                fetch(apiUrl("/api/sos/send-emails"), {
+        fetch(apiUrl("/api/sos/send-emails"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -339,22 +389,25 @@ export function SOSButton({ className = "" }: { className?: string }) {
           body: JSON.stringify({ sosId: sosData.id }),
         }).catch(() => {});
       });
+
       const contactsNotified = await notifyContacts(userName, address, sosData.id, {
         tag: selectedTag,
         message: textMessage || null,
         latitude: lat,
         longitude: lng,
       });
+
       const { data: nearby, error: nearbyErr } = await supabase.rpc("users_within_radius", {
         lat,
         lng,
         radius_m: 5000,
         max_results: 200,
       });
-      if (nearbyErr) { /* skip */ }
+
       const nearbyIds = (nearby || [])
         .map((r: any) => r.id)
         .filter((id: string) => id && id !== user.id);
+
       const tagInfo = selectedTag ? SOS_TAGS.find(t => t.id === selectedTag) : null;
       let nearbyNotified = 0;
       for (const uid of nearbyIds) {
@@ -374,13 +427,16 @@ export function SOSButton({ className = "" }: { className?: string }) {
         });
         if (success) nearbyNotified++;
       }
+
       await animationPromise;
+
       const newStatus = { contacts: contactsNotified, nearby: nearbyNotified };
       setNotifyStatus(newStatus);
       try {
         localStorage.setItem('peja-sos-notify-status', JSON.stringify(newStatus));
       } catch {}
-            // Start native background location tracking
+
+      // Start native background location tracking
       try {
         const isCapacitor = typeof (window as any).Capacitor !== 'undefined';
         if (isCapacitor) {
@@ -396,8 +452,8 @@ export function SOSButton({ className = "" }: { className?: string }) {
             });
           }
         }
-      } catch (e) {
-      }
+      } catch (e) {}
+
       setLoadingComplete(true);
       
       setTimeout(() => {
@@ -410,17 +466,18 @@ export function SOSButton({ className = "" }: { className?: string }) {
       setLoading(false);
     }
   };
+
   const handleLoadingContinue = () => {
     if (sosIdRef.current) {
       setSosActive(true);
       setSosId(sosIdRef.current);
     }
-    
     setShowLoadingAnimation(false);
     setShowNotifiedCard(false);
     setLoadingComplete(false);
     setCurrentStep(0);
   };
+
   const cancelSOS = async () => {
     if (!sosId && !sosIdRef.current) return;
     const idToCancel = sosId || sosIdRef.current;
@@ -431,14 +488,14 @@ export function SOSButton({ className = "" }: { className?: string }) {
         .from("sos_alerts")
         .update({ status: "cancelled", resolved_at: new Date().toISOString() })
         .eq("id", idToCancel);
-              // Stop native background tracking
+
       try {
         const isCapacitor = typeof (window as any).Capacitor !== 'undefined';
         if (isCapacitor) {
           await SOSLocation.stopTracking();
         }
-      } catch (e) {
-      }
+      } catch (e) {}
+
       setSosActive(false);
       setSosId(null);
       sosIdRef.current = null;
@@ -454,15 +511,158 @@ export function SOSButton({ className = "" }: { className?: string }) {
       setLoading(false);
     }
   };
+
   const closeOptions = () => {
     setShowOptions(false);
     setSelectedTag(null);
     setTextMessage("");
   };
+
+  // =====================================================
+  // DISCLOSURE MODAL — SHOWN BEFORE SOS OPTIONS
+  // =====================================================
+  if (showDisclosure) {
+    return (
+      <Portal>
+        <div className="fixed inset-0 z-[25000] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={() => setShowDisclosure(false)} />
+          
+          <div
+            className="relative w-full max-w-md rounded-2xl overflow-hidden select-none"
+            style={{
+              background: "rgba(12, 8, 24, 0.98)",
+              border: "1px solid rgba(239, 68, 68, 0.15)",
+              boxShadow: "0 0 80px rgba(239, 68, 68, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
+              maxHeight: "calc(100dvh - 64px)",
+              overflowY: "auto",
+            }}
+          >
+            {/* Header */}
+            <div
+              className="px-5 py-4 flex items-center gap-3"
+              style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+            >
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
+                style={{
+                  background: "rgba(239, 68, 68, 0.15)",
+                  border: "2px solid rgba(239, 68, 68, 0.3)",
+                }}
+              >
+                <Shield className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Before You Continue</h3>
+                <p className="text-xs text-dark-500">Please read carefully</p>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Location Disclosure */}
+              <div
+                className="p-4 rounded-xl space-y-3"
+                style={{
+                  background: "rgba(59, 130, 246, 0.06)",
+                  border: "1px solid rgba(59, 130, 246, 0.15)",
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <MapPinned className="w-5 h-5 text-blue-400 shrink-0" />
+                  <h4 className="font-semibold text-blue-300 text-sm">Location Sharing</h4>
+                </div>
+                <p className="text-sm text-dark-300 leading-relaxed">
+                  When you activate SOS, Peja will <strong className="text-white">continuously track and share your real-time location</strong> with your emergency contacts and nearby users - even when the app is in the background or your screen is off.
+                </p>
+                <p className="text-sm text-dark-400 leading-relaxed">
+                  This allows helpers to find you during an emergency. Location sharing stops only when you cancel the SOS alert.
+                </p>
+              </div>
+
+              {/* Misuse Warning */}
+              <div
+                className="p-4 rounded-xl space-y-3"
+                style={{
+                  background: "rgba(239, 68, 68, 0.06)",
+                  border: "1px solid rgba(239, 68, 68, 0.15)",
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <Ban className="w-5 h-5 text-red-400 shrink-0" />
+                  <h4 className="font-semibold text-red-300 text-sm">Misuse Warning</h4>
+                </div>
+                <p className="text-sm text-dark-300 leading-relaxed">
+                  The SOS feature is <strong className="text-white">strictly for genuine emergencies</strong> where you or someone nearby is in serious personal danger.
+                </p>
+                <p className="text-sm text-red-400/90 leading-relaxed font-medium">
+                  Misuse of the SOS feature - including false alerts, pranks, or non-emergency use - will result in a permanent ban from Peja with no appeal.
+                </p>
+              </div>
+
+              {/* Don't show again */}
+              <label
+                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors hover:bg-white/[0.02]"
+                style={{
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <div
+                  className="w-5 h-5 rounded flex items-center justify-center shrink-0 transition-all"
+                  style={{
+                    background: dontShowAgain
+                      ? "rgba(139, 92, 246, 0.8)"
+                      : "rgba(255,255,255,0.06)",
+                    border: dontShowAgain
+                      ? "1px solid rgba(139, 92, 246, 0.9)"
+                      : "1px solid rgba(255,255,255,0.15)",
+                  }}
+                >
+                  {dontShowAgain && (
+                    <CheckCircle className="w-3.5 h-3.5 text-white" />
+                  )}
+                </div>
+                <input
+                  type="checkbox"
+                  checked={dontShowAgain}
+                  onChange={(e) => setDontShowAgain(e.target.checked)}
+                  className="sr-only"
+                />
+                <span className="text-sm text-dark-300">Don&apos;t show this again</span>
+              </label>
+
+              {/* Buttons */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setShowDisclosure(false)}
+                  className="flex-1 py-3 rounded-xl font-medium text-dark-400 transition-all hover:bg-white/5 active:scale-[0.98]"
+                  style={{
+                    background: "rgba(255,255,255,0.02)",
+                    border: "1px solid rgba(255,255,255,0.06)",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDisclosureAccept}
+                  className="flex-1 py-3 rounded-xl font-bold text-white transition-all active:scale-[0.98]"
+                  style={{
+                    background: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
+                    boxShadow: "0 4px 20px rgba(239,68,68,0.3)",
+                  }}
+                >
+                  I Understand
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Portal>
+    );
+  }
+
   // =====================================================
   // LOADING ANIMATION MODAL
   // =====================================================
-if (showLoadingAnimation) {
+  if (showLoadingAnimation) {
     return (
       <Portal>
         <div className="fixed inset-0 z-[25000] flex items-center justify-center p-4">
@@ -497,6 +697,7 @@ if (showLoadingAnimation) {
                 </div>
               </>
             )}
+
             {loadingComplete && showNotifiedCard && (
               <div className="sos-notified-card text-center">
                 <div className="flex justify-center mb-4">
@@ -527,6 +728,7 @@ if (showLoadingAnimation) {
                 </button>
               </div>
             )}
+
             {loadingFailed && (
               <div className="text-center">
                 <div className="flex justify-center mb-4">
@@ -565,10 +767,11 @@ if (showLoadingAnimation) {
       </Portal>
     );
   }
+
   // =====================================================
-  // OPTIONS MODAL — REDESIGNED
+  // OPTIONS MODAL
   // =====================================================
- if (showOptions) {
+  if (showOptions) {
     return (
       <Portal>
         <div className="fixed inset-0 z-[25000] flex items-end sm:items-center justify-center cap-status-pad">
@@ -605,6 +808,7 @@ if (showLoadingAnimation) {
               </div>
               <div className="w-9" />
             </div>
+
             <div className="p-5 space-y-5">
               {/* Situation Tags */}
               <div>
@@ -660,6 +864,7 @@ if (showLoadingAnimation) {
                   })}
                 </div>
               </div>
+
               {/* Message */}
               <div>
                 <label className="block text-xs font-semibold text-dark-400 uppercase tracking-wider mb-2">
@@ -674,6 +879,7 @@ if (showLoadingAnimation) {
                   style={{ background: "rgba(20, 12, 36, 0.8)" }}
                 />
               </div>
+
               {/* Hold Button */}
               <div className="pt-2 pb-2">
                 <p className="text-center text-xs text-dark-500 mb-3 select-none">
@@ -724,10 +930,11 @@ if (showLoadingAnimation) {
       </Portal>
     );
   }
+
   // =====================================================
-  // ACTIVE SOS POPUP — REDESIGNED
+  // ACTIVE SOS POPUP
   // =====================================================
- if (showActivePopup && sosActive) {
+  if (showActivePopup && sosActive) {
     const tagInfo = selectedTag ? SOS_TAGS.find(t => t.id === selectedTag) : null;
     return (
       <Portal>
@@ -754,7 +961,6 @@ if (showLoadingAnimation) {
               className="relative px-5 py-4"
               style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
             >
-              {/* Red glow strip at top */}
               <div
                 className="absolute top-0 left-0 right-0 h-[2px]"
                 style={{
@@ -790,8 +996,8 @@ if (showLoadingAnimation) {
                 </button>
               </div>
             </div>
+
             <div className="p-5 space-y-4">
-              {/* Tag info */}
               {tagInfo && (
                 <div
                   className="flex items-center gap-3 p-3 rounded-xl"
@@ -809,7 +1015,7 @@ if (showLoadingAnimation) {
                   <span className="font-semibold text-dark-100">{tagInfo.label}</span>
                 </div>
               )}
-              {/* Message */}
+
               {textMessage && (
                 <div
                   className="p-3 rounded-xl"
@@ -822,7 +1028,7 @@ if (showLoadingAnimation) {
                   <p className="text-dark-200 text-sm break-words whitespace-pre-wrap">{textMessage}</p>
                 </div>
               )}
-              {/* Notified count */}
+
               <div
                 className="flex items-center gap-3 p-3 rounded-xl"
                 style={{
@@ -843,7 +1049,7 @@ if (showLoadingAnimation) {
                   <span className="text-dark-400 text-sm ml-1.5">people notified</span>
                 </div>
               </div>
-              {/* Emergency Call Buttons */}
+
               <div className="flex gap-2">
                 <a
                   href="tel:112"
@@ -868,7 +1074,7 @@ if (showLoadingAnimation) {
                   <Phone className="w-4 h-4" /> Call 767
                 </a>
               </div>
-              {/* Cancel Button */}
+
               <button
                 onClick={cancelSOS}
                 disabled={loading}
@@ -893,6 +1099,7 @@ if (showLoadingAnimation) {
       </Portal>
     );
   }
+
   // =====================================================
   // MAIN BUTTON
   // =====================================================
