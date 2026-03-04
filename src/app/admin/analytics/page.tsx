@@ -2393,7 +2393,7 @@ const res = await fetch("/api/sos-helpers", {
                   sub: "Users who reported an incident",
                 },
                 {
-                  label: "Used SOS",
+                  label: "User SOS",
                   value: stats.usersWhoSOS,
                   pct: stats.totalUsers > 0 ? Math.round((stats.usersWhoSOS / stats.totalUsers) * 100) : 0,
                   color: "#ef4444",
@@ -2404,7 +2404,7 @@ const res = await fetch("/api/sos-helpers", {
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-dark-200">{item.label}</span>
-                      <span className="text-xs text-dark-500">— {item.sub}</span>
+                      <span className="text-xs text-dark-500">- {item.sub}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-white">{item.value.toLocaleString()}</span>
