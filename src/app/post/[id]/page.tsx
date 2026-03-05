@@ -40,7 +40,6 @@ import {
   Trash2,
   User,
   MoreVertical,
-  Image as ImageIcon,
   X,
   Heart,
   ChevronDown,
@@ -271,7 +270,6 @@ export default function PostDetailPage() {
   const sourceKey = searchParams.get("sourceKey");
   const { user } = useAuth();
   const postId = params.id as string;
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const commentInputRef = useRef<HTMLInputElement>(null);
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
@@ -288,7 +286,6 @@ export default function PostDetailPage() {
     return () => {
       isMounted.current = false;
       if (abortController.current) abortController.current.abort();
-      commentMediaPreviews.forEach(p => URL.revokeObjectURL(p.url));
       
       // Resume background videos when leaving
       window.dispatchEvent(new Event("peja-modal-close"));
@@ -298,7 +295,7 @@ export default function PostDetailPage() {
   
   // CRITICAL: Track ongoing like operations to prevent double-clicks
   const likingInProgress = useRef<Set<string>>(new Set());
-
+  const likeNotifiedRef = useRef<Set<string>>(new Set());
   // Post state
   const [post, setPost] = useState<Post | null>(null);
   const [loading, setLoading] = useState(true);
@@ -318,9 +315,6 @@ export default function PostDetailPage() {
   const [newComment, setNewComment] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string; parentId: string | null } | null>(null);
-  const [commentMedia, setCommentMedia] = useState<File[]>([]);
-  const [commentMediaPreviews, setCommentMediaPreviews] = useState<{ url: string; type: string }[]>([]);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [expandedThreads, setExpandedThreads] = useState<Set<string>>(new Set());
   const [visibleReplyCounts, setVisibleReplyCounts] = useState<Record<string, number>>({});
   const [sortBy, setSortBy] = useState<"top" | "recent">("top");
@@ -364,9 +358,7 @@ export default function PostDetailPage() {
       isMounted.current = false;
       if (abortController.current) {
         abortController.current.abort();
-      }
-      commentMediaPreviews.forEach(p => URL.revokeObjectURL(p.url));
-    };
+      }   };
   }, []);
 
   // Fetch post
@@ -662,9 +654,10 @@ setLikeBusy(prev => {
         }
         return c;
       }));
-
-      // Send notification only if we liked (not unliked) and it's not our own comment
-      if (serverLiked && comment.user_id !== user.id) {
+      // Send notification only on first like — not on re-likes after unlike
+      const notifKey = `${commentId}:${user.id}`;
+      if (serverLiked && comment.user_id !== user.id && !likeNotifiedRef.current.has(notifKey)) {
+        likeNotifiedRef.current.add(notifKey);
         notifyCommentLiked(postId, comment.user_id, user.full_name || "Someone");
       }
     }
@@ -689,53 +682,16 @@ setLikeBusy(prev => {
   }
 };
 
-  // Handle media select - IMAGES ONLY
-  const handleMediaSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    const imageFiles = files.filter(f => f.type.startsWith("image/"));
-    
-    if (imageFiles.length !== files.length) {
-      alert("Only images are allowed in comments");
-    }
-    
-    if (imageFiles.length + commentMedia.length > 4) {
-      alert("Maximum 4 images per comment");
-      return;
-    }
 
-    for (const file of imageFiles) {
-      if (file.size > 10 * 1024 * 1024) {
-        alert(`${file.name} is too large. Max 10MB.`);
-        return;
-      }
-    }
-
-    const previews = imageFiles.map(f => ({
-      url: URL.createObjectURL(f),
-      type: "image",
-    }));
-    
-    setCommentMedia(prev => [...prev, ...imageFiles]);
-    setCommentMediaPreviews(prev => [...prev, ...previews]);
-    e.target.value = "";
-  };
-
-  const removeMedia = (index: number) => {
-    URL.revokeObjectURL(commentMediaPreviews[index].url);
-    setCommentMedia(prev => prev.filter((_, i) => i !== index));
-    setCommentMediaPreviews(prev => prev.filter((_, i) => i !== index));
-  };
 
   // Submit comment
   const handleSubmitComment = async () => {
-
     if (user?.status === "suspended") {
- toastApi.warning("Your account is suspended. You cannot perform this action.");
-  return;
-}
+      toastApi.warning("Your account is suspended. You cannot perform this action.");
+      return;
+    }
 
-    if (!newComment.trim() && commentMedia.length === 0) {
-      alert("Please add a comment or media");
+    if (!newComment.trim()) {
       return;
     }
 
@@ -746,9 +702,7 @@ setLikeBusy(prev => {
 
     const tempId = `temp-${Date.now()}`;
     const commentContent = newComment.trim();
-    const mediaFiles = [...commentMedia];
-    const mediaPreviews = [...commentMediaPreviews];
-    
+
     let parentId: string | null = null;
     let replyToId: string | null = null;
     let replyToName: string | null = null;
@@ -777,11 +731,7 @@ setLikeBusy(prev => {
       user_avatar: user.avatar_url,
       reply_to_name: replyToName || undefined,
       reply_to_id: replyToId || undefined,
-      media: mediaPreviews.map((p, i) => ({
-        id: `temp-media-${i}`,
-        url: p.url,
-        media_type: p.type === "video" ? "video" : "photo",
-      })),
+      media: [],
       isLiked: false,
       isPending: true,
     };
@@ -795,10 +745,7 @@ setLikeBusy(prev => {
 
     setNewComment("");
     setReplyingTo(null);
-    setCommentMedia([]);
-    setCommentMediaPreviews([]);
     setSubmittingComment(true);
-    setUploadProgress(0);
 
     try {
       const { data: newCommentData, error: insertError } = await supabase
@@ -816,99 +763,36 @@ setLikeBusy(prev => {
         .select("id")
         .single();
 
-      if (insertError) {
-        throw new Error(insertError.message);
-      }
-
-      const uploadedMedia: CommentMedia[] = [];
-      
-      if (mediaFiles.length > 0) {
-        for (let i = 0; i < mediaFiles.length; i++) {
-          const file = mediaFiles[i];
-          const ext = file.name.split(".").pop()?.toLowerCase() || "jpg";
-          const fileName = `comments/${newCommentData.id}/${Date.now()}_${i}.${ext}`;
-
-          const { error: uploadError } = await supabase.storage
-            .from("media")
-            .upload(fileName, file, { cacheControl: "3600", upsert: false });
-
-          if (uploadError) {
-            continue;
-          }
-
-          const { data: urlData } = supabase.storage.from("media").getPublicUrl(fileName);
-
-          const mediaType = file.type.startsWith("video/") ? "video" : "photo";
-          
-          await supabase.from("comment_media").insert({
-            comment_id: newCommentData.id,
-            url: urlData.publicUrl,
-            media_type: mediaType,
-          });
-
-          uploadedMedia.push({
-            id: `media-${i}`,
-            url: urlData.publicUrl,
-            media_type: mediaType,
-          });
-
-          setUploadProgress(Math.round(((i + 1) / mediaFiles.length) * 100));
-        }
-      }
+      if (insertError) throw new Error(insertError.message);
 
       setAllComments(prev => prev.map(c => {
         if (c.id === tempId) {
-          return {
-            ...c,
-            id: newCommentData.id,
-            media: uploadedMedia.length > 0 ? uploadedMedia : c.media.map(m => ({
-              ...m,
-              id: m.id.replace('temp-', ''),
-            })),
-            isPending: false,
-          };
+          return { ...c, id: newCommentData.id, isPending: false };
         }
         return c;
       }));
 
-      await supabase.from("posts").update({ 
-        comment_count: (post?.comment_count || 0) + 1 
+      await supabase.from("posts").update({
+        comment_count: (post?.comment_count || 0) + 1,
       }).eq("id", postId);
-
-            const previewText =
-        commentContent ||
-        (mediaFiles.length > 0 ? "Sent an image" : "");
 
       const postOwnerId = post?.user_id || null;
 
-      // Notify the post owner (but avoid double-notify if the post owner is the same as reply target)
-      if (
-        postOwnerId &&
-        postOwnerId !== user.id &&
-        postOwnerId !== replyToUserId &&
-        previewText
-      ) {
-        notifyPostComment(postId, postOwnerId, user.full_name || "Someone", previewText);
+      if (postOwnerId && postOwnerId !== user.id && postOwnerId !== replyToUserId && commentContent) {
+        notifyPostComment(postId, postOwnerId, user.full_name || "Someone", commentContent);
       }
 
-      // Notify the comment owner that someone replied to them
-      if (replyToUserId && replyToUserId !== user.id && previewText) {
-        notifyCommentReply(postId, replyToUserId, user.full_name || "Someone", previewText);
+      if (replyToUserId && replyToUserId !== user.id && commentContent) {
+        notifyCommentReply(postId, replyToUserId, user.full_name || "Someone", commentContent);
       }
 
     } catch (err: any) {
-      
       setAllComments(prev => prev.filter(c => c.id !== tempId));
       setPost(p => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
-      
       setNewComment(commentContent);
-      setCommentMedia(mediaFiles);
-      setCommentMediaPreviews(mediaPreviews);
-      
       alert(err.message || "Failed to post comment");
     } finally {
       setSubmittingComment(false);
-      setUploadProgress(0);
     }
   };
 
@@ -1648,10 +1532,10 @@ if (error || !post) {
       </main>
 
       {/* Comment Input - Fixed Bottom */}
-<div 
-  className="fixed bottom-0 inset-x-0 z-50 bg-dark-950/95 backdrop-blur-lg border-t border-white/10"
-  style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
->
+      <div
+        className="fixed bottom-0 inset-x-0 z-50 bg-dark-950/95 backdrop-blur-lg border-t border-white/10"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
         <div className="max-w-2xl mx-auto p-3 w-full">
           {replyingTo && (
             <div className="flex items-center justify-between mb-2 px-1">
@@ -1662,46 +1546,7 @@ if (error || !post) {
             </div>
           )}
 
-          {commentMediaPreviews.length > 0 && (
-            <div className="flex gap-2 mb-2 overflow-x-auto pb-1">
-              {commentMediaPreviews.map((p, i) => (
-                <div key={i} className="relative w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-dark-800">
-                  <img src={p.url} alt="" className="w-full h-full object-cover" />
-                  <button 
-                    onClick={() => removeMedia(i)} 
-                    className="absolute top-0.5 right-0.5 w-5 h-5 bg-black/80 rounded-full flex items-center justify-center"
-                  >
-                    <X className="w-3 h-3 text-white" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {uploadProgress > 0 && uploadProgress < 100 && (
-            <div className="mb-2">
-              <div className="h-1 bg-dark-700 rounded-full overflow-hidden">
-                <div className="h-full bg-primary-500 transition-all" style={{ width: `${uploadProgress}%` }} />
-              </div>
-            </div>
-          )}
-
           <div className="flex items-center gap-2">
-            <button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="p-2 hover:bg-white/10 rounded-lg text-dark-400 shrink-0"
-            >
-              <ImageIcon className="w-5 h-5" />
-            </button>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleMediaSelect} 
-              accept="image/*" 
-              multiple 
-              className="hidden" 
-            />
-
             <input
               ref={commentInputRef}
               type="text"
@@ -1720,7 +1565,7 @@ if (error || !post) {
 
             <button
               onClick={handleSubmitComment}
-              disabled={submittingComment || (!newComment.trim() && commentMedia.length === 0)}
+              disabled={submittingComment || !newComment.trim()}
               className="p-2.5 bg-primary-600 rounded-xl text-white disabled:opacity-50 shrink-0"
             >
               {submittingComment ? (

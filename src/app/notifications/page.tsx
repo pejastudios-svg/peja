@@ -11,6 +11,9 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { SOS_TAGS } from "@/lib/types";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
+import { useToast } from "@/context/ToastContext";
 import {
   Bell,
   AlertTriangle,
@@ -22,6 +25,11 @@ import {
   Trash2,
   Check,
   Heart,
+  UserPlus,
+  UserCheck,
+  UserX,
+  User,
+  X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -33,6 +41,14 @@ interface Notification {
   data: any;
   is_read: boolean;
   created_at: string;
+}
+
+interface InviteModalData {
+  contactId: string;
+  requesterName: string;
+  requesterAvatar?: string;
+  relationship?: string;
+  notificationId: string;
 }
 
 function NotificationRowSkeleton() {
@@ -52,15 +68,11 @@ function NotificationRowSkeleton() {
 }
 
 export default function NotificationsPage() {
-  // ============================================================
-  // ALL HOOKS — no early returns above this section
-  // ============================================================
-
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const feedCache = useFeedCache();
+  const toast = useToast();
 
-  // --- INSTANT CACHE INITIALIZATION ---
   const [notifications, setNotifications] = useState<Notification[]>(() => {
     if (typeof window !== "undefined") {
       const cached = feedCache.get("notifications:list");
@@ -77,7 +89,10 @@ export default function NotificationsPage() {
     return true;
   });
 
-  // --- SAVE SCROLL ---
+  // Emergency contact invite modal state
+  const [inviteModal, setInviteModal] = useState<InviteModalData | null>(null);
+  const [responding, setResponding] = useState<"accept" | "decline" | null>(null);
+
   useEffect(() => {
     const save = () => {
       if (window.scrollY > 0) {
@@ -88,14 +103,12 @@ export default function NotificationsPage() {
     return () => window.removeEventListener("scroll", save);
   }, [feedCache]);
 
-  // Prefetch routes
   useEffect(() => {
     router.prefetch("/map");
     router.prefetch("/notifications");
     router.prefetch("/profile");
   }, [router]);
 
-  // Fetch + realtime
   useEffect(() => {
     if (!authLoading && user) {
       fetchNotifications();
@@ -109,13 +122,11 @@ export default function NotificationsPage() {
   const fetchNotifications = async () => {
     if (!user) return;
 
-    // Only show loading if we have NO cached data
     if (notifications.length === 0) setLoading(true);
 
     try {
       const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
 
-      // Delete old SOS notifications
       await supabase
         .from("notifications")
         .delete()
@@ -123,7 +134,6 @@ export default function NotificationsPage() {
         .eq("type", "sos_alert")
         .lt("created_at", fiveHoursAgo);
 
-      // Fetch remaining
       const { data, error } = await supabase
         .from("notifications")
         .select("*")
@@ -136,6 +146,7 @@ export default function NotificationsPage() {
       setNotifications(list);
       feedCache.setPosts("notifications:list", list as unknown as any[]);
     } catch (error) {
+      console.error("Error fetching notifications:", error);
     } finally {
       setLoading(false);
     }
@@ -183,18 +194,15 @@ export default function NotificationsPage() {
   const handleMarkAsRead = async (notificationId: string) => {
     try {
       await supabase.from("notifications").update({ is_read: true }).eq("id", notificationId);
-
       setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n)));
     } catch (error) {
+      console.error("Error marking as read:", error);
     }
   };
 
   const handleMarkAllAsRead = async () => {
     if (!user) return;
-
-    // Optimistic update
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-
     const success = await markAllAsRead(user.id);
     if (!success) {
       fetchNotifications();
@@ -207,19 +215,116 @@ export default function NotificationsPage() {
 
     try {
       await supabase.from("notifications").delete().eq("id", notificationId);
-
       setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
     } catch (error) {
+      console.error("Error deleting notification:", error);
     }
   };
 
-  const handleNotificationClick = (notification: Notification) => {
+  // Handle responding to emergency contact invite
+  const handleInviteResponse = async (accept: boolean) => {
+    if (!inviteModal || !user) return;
+
+    setResponding(accept ? "accept" : "decline");
+
+    try {
+      const newStatus = accept ? "accepted" : "declined";
+
+      const { error } = await supabase
+        .from("emergency_contacts")
+        .update({ status: newStatus })
+        .eq("id", inviteModal.contactId);
+
+      if (error) throw error;
+
+      // Get the requester's user_id to send notification back
+      const { data: contactData } = await supabase
+        .from("emergency_contacts")
+        .select("user_id")
+        .eq("id", inviteModal.contactId)
+        .single();
+
+      if (contactData) {
+        await supabase.from("notifications").insert({
+          user_id: contactData.user_id,
+          type: "system",
+          title: accept ? "Emergency Contact Accepted" : "Emergency Contact Declined",
+          body: accept
+            ? `${user.full_name || "Someone"} accepted your emergency contact request.`
+            : `${user.full_name || "Someone"} declined your emergency contact request.`,
+          data: {
+            type: "emergency_contact_response",
+            accepted: accept,
+            responder_name: user.full_name,
+            responder_avatar: user.avatar_url,
+          },
+          is_read: false,
+        });
+      }
+
+      // Mark the notification as read
+      await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", inviteModal.notificationId);
+
+      // Update local state
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === inviteModal.notificationId ? { ...n, is_read: true } : n))
+      );
+
+      toast.success(
+        accept ? "Accepted! You're now their emergency contact." : "Request declined."
+      );
+
+      setInviteModal(null);
+    } catch (err) {
+      console.error("Failed to respond:", err);
+      toast.danger("Failed to respond. Please try again.");
+    } finally {
+      setResponding(null);
+    }
+  };
+
+  const handleNotificationClick = async (notification: Notification) => {
     // Mark as read first
     if (!notification.is_read) {
       handleMarkAsRead(notification.id);
     }
 
     const data = notification.data || {};
+
+    // Handle emergency contact invite - show modal directly
+    if (data.type === "emergency_contact_invite") {
+      // Check if the invite is still pending
+      const { data: contactData } = await supabase
+        .from("emergency_contacts")
+        .select("id, status, relationship")
+        .eq("id", data.contact_id)
+        .single();
+
+      if (contactData && contactData.status === "pending") {
+        // Show the modal
+        setInviteModal({
+          contactId: data.contact_id,
+          requesterName: data.requester_name || "Someone",
+          requesterAvatar: data.requester_avatar,
+          relationship: data.relationship || contactData.relationship,
+          notificationId: notification.id,
+        });
+        return;
+      } else {
+        // Already handled
+        toast.info("This request has already been handled.");
+        return;
+      }
+    }
+
+    // Handle emergency contact response
+    if (data.type === "emergency_contact_response") {
+      router.push("/emergency-contacts");
+      return;
+    }
 
     switch (notification.type) {
       case "sos_alert": {
@@ -269,7 +374,21 @@ export default function NotificationsPage() {
     }
   };
 
-  const getNotificationIcon = (type: string) => {
+  const getNotificationIcon = (notification: Notification) => {
+    const type = notification.type;
+    const data = notification.data || {};
+
+    if (data.type === "emergency_contact_invite") {
+      return <UserPlus className="w-5 h-5 text-yellow-400" />;
+    }
+    if (data.type === "emergency_contact_response") {
+      return data.accepted ? (
+        <UserCheck className="w-5 h-5 text-green-400" />
+      ) : (
+        <UserX className="w-5 h-5 text-red-400" />
+      );
+    }
+
     switch (type) {
       case "sos_alert":
         return <AlertTriangle className="w-5 h-5 text-red-400" />;
@@ -288,137 +407,222 @@ export default function NotificationsPage() {
     }
   };
 
-  // ============================================================
-  // ALL HOOKS ARE DONE — early returns are now safe
-  // ============================================================
+  const getNotificationBgColor = (notification: Notification) => {
+    const type = notification.type;
+    const data = notification.data || {};
+
+    if (data.type === "emergency_contact_invite") {
+      return "bg-yellow-500/20";
+    }
+    if (data.type === "emergency_contact_response") {
+      return data.accepted ? "bg-green-500/20" : "bg-red-500/20";
+    }
+    if (type === "sos_alert") {
+      return "bg-red-500/20";
+    }
+    return "bg-dark-700";
+  };
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   return (
     <PullToRefresh onRefresh={async () => { await fetchNotifications(); }}>
-    <div className="min-h-screen pb-20 lg:pb-0">
-      <Header variant="back" title="Notifications" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
+      <div className="min-h-screen pb-20 lg:pb-0">
+        <Header variant="back" title="Notifications" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
 
-      <main className="pt-16 lg:pl-64">
-        <div className="max-w-2xl mx-auto px-4 py-4">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-xl font-bold text-dark-100">Notifications</h1>
-              {unreadCount > 0 && <p className="text-sm text-dark-400">{unreadCount} unread</p>}
-            </div>
-            {unreadCount > 0 && (
-              <button
-                onClick={handleMarkAllAsRead}
-                className="flex items-center gap-1 text-sm text-primary-400 hover:text-primary-300 py-2 px-3 rounded-lg active:bg-white/10"
-              >
-                <Check className="w-4 h-4" />
-                Mark all read
-              </button>
-            )}
-          </div>
-
-          {/* Notifications List */}
-          {loading && notifications.length === 0 ? (
-            <div className="space-y-2">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <NotificationRowSkeleton key={i} />
-              ))}
-            </div>
-          ) : notifications.length === 0 ? (
-            <div className="text-center py-12">
-              <Bell className="w-12 h-12 text-dark-600 mx-auto mb-4" />
-              <p className="text-dark-400 mb-2">No notifications yet</p>
-              <p className="text-sm text-dark-500">You'll be notified about incidents near you</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {/* Background refresh indicator */}
-              {loading && (
-                <div className="flex justify-center py-2">
-                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
-                </div>
-              )}
-              {notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  onClick={() => handleNotificationClick(notification)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      handleNotificationClick(notification);
-                    }
-                  }}
-                  className={`glass-card p-4 cursor-pointer transition-all active:scale-[0.98] active:bg-white/10 hover:bg-white/5 select-none ${
-                    !notification.is_read ? "border-l-4 border-l-primary-500" : ""
-                  }`}
-                  style={{ WebkitTapHighlightColor: "transparent" }}
+        <main className="pt-16 lg:pl-64">
+          <div className="max-w-2xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h1 className="text-xl font-bold text-dark-100">Notifications</h1>
+                {unreadCount > 0 && <p className="text-sm text-dark-400">{unreadCount} unread</p>}
+              </div>
+              {unreadCount > 0 && (
+                <button
+                  onClick={handleMarkAllAsRead}
+                  className="flex items-center gap-1 text-sm text-primary-400 hover:text-primary-300 py-2 px-3 rounded-lg active:bg-white/10"
                 >
-                  <div className="flex gap-3">
-                    {/* Icon */}
-                    <div
-                      className={`p-2 rounded-lg shrink-0 ${
-                        notification.type === "sos_alert" ? "bg-red-500/20" : "bg-dark-700"
-                      }`}
-                    >
-                      {getNotificationIcon(notification.type)}
-                    </div>
+                  <Check className="w-4 h-4" />
+                  Mark all read
+                </button>
+              )}
+            </div>
 
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className={`font-medium ${notification.is_read ? "text-dark-300" : "text-dark-100"}`}>
-                            {notification.title}
-                          </p>
-                          {notification.body && (
-                            <p className="text-sm text-dark-400 mt-0.5 line-clamp-2">{notification.body}</p>
-                          )}
-                        </div>
-                        {notification.type === "sos_alert" && (
-                          <div className="mt-2 space-y-2">
-                            {notification.data?.tag && (
-                              <p className="text-xs text-red-300">
-                                {SOS_TAGS.find((t) => t.id === notification.data.tag)?.label || "Emergency"}
-                              </p>
-                            )}
-
-                            {notification.data?.message && (
-                              <p className="text-sm text-dark-300">{notification.data.message}</p>
-                            )}
-
-                            {notification.data?.voice_note_url && (
-                              <audio src={notification.data.voice_note_url} controls className="w-full" />
-                            )}
-                          </div>
-                        )}
-
-                        <button
-                          onClick={(e) => handleDeleteNotification(e, notification.id)}
-                          className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-400 active:bg-white/20 shrink-0"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+            {loading && notifications.length === 0 ? (
+              <div className="space-y-2">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <NotificationRowSkeleton key={i} />
+                ))}
+              </div>
+            ) : notifications.length === 0 ? (
+              <div className="text-center py-12">
+                <Bell className="w-12 h-12 text-dark-600 mx-auto mb-4" />
+                <p className="text-dark-400 mb-2">No notifications yet</p>
+                <p className="text-sm text-dark-500">You'll be notified about incidents near you</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {loading && (
+                  <div className="flex justify-center py-2">
+                    <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                  </div>
+                )}
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    onClick={() => handleNotificationClick(notification)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        handleNotificationClick(notification);
+                      }
+                    }}
+                    className={`glass-card p-4 cursor-pointer transition-all active:scale-[0.98] active:bg-white/10 hover:bg-white/5 select-none ${
+                      !notification.is_read ? "border-l-4 border-l-primary-500" : ""
+                    }`}
+                    style={{ WebkitTapHighlightColor: "transparent" }}
+                  >
+                    <div className="flex gap-3">
+                      <div className={`p-2 rounded-lg shrink-0 ${getNotificationBgColor(notification)}`}>
+                        {getNotificationIcon(notification)}
                       </div>
 
-                      <div className="flex items-center gap-2 mt-2 text-xs text-dark-500">
-                        <Clock className="w-3 h-3" />
-                        {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className={`font-medium ${notification.is_read ? "text-dark-300" : "text-dark-100"}`}>
+                              {notification.title}
+                            </p>
+                            {notification.body && (
+                              <p className="text-sm text-dark-400 mt-0.5 line-clamp-2">{notification.body}</p>
+                            )}
 
-                        {!notification.is_read && <span className="w-2 h-2 bg-primary-500 rounded-full" />}
+                            {notification.data?.type === "emergency_contact_invite" && !notification.is_read && (
+                              <p className="text-xs text-yellow-400 mt-1 font-medium">
+                                Tap to accept or decline
+                              </p>
+                            )}
+                          </div>
+
+                          {notification.type === "sos_alert" && (
+                            <div className="mt-2 space-y-2">
+                              {notification.data?.tag && (
+                                <p className="text-xs text-red-300">
+                                  {SOS_TAGS.find((t) => t.id === notification.data.tag)?.label || "Emergency"}
+                                </p>
+                              )}
+                              {notification.data?.message && (
+                                <p className="text-sm text-dark-300">{notification.data.message}</p>
+                              )}
+                              {notification.data?.voice_note_url && (
+                                <audio src={notification.data.voice_note_url} controls className="w-full" />
+                              )}
+                            </div>
+                          )}
+
+                          <button
+                            onClick={(e) => handleDeleteNotification(e, notification.id)}
+                            className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-400 active:bg-white/20 shrink-0"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-2 text-xs text-dark-500">
+                          <Clock className="w-3 h-3" />
+                          {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                          {!notification.is_read && <span className="w-2 h-2 bg-primary-500 rounded-full" />}
+                        </div>
                       </div>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </main>
+
+        <BottomNav />
+
+        {/* Emergency Contact Invite Modal */}
+        <Modal
+          isOpen={!!inviteModal}
+          onClose={() => !responding && setInviteModal(null)}
+          title="Emergency Contact Request"
+        >
+          {inviteModal && (
+            <div className="space-y-4">
+              {/* Requester Info */}
+              <div className="flex items-center gap-4 p-4 glass-sm rounded-xl">
+                <div className="w-14 h-14 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden">
+                  {inviteModal.requesterAvatar ? (
+                    <img
+                      src={inviteModal.requesterAvatar}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User className="w-7 h-7 text-yellow-400" />
+                  )}
                 </div>
-              ))}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-dark-100 text-lg">
+                    {inviteModal.requesterName}
+                  </p>
+                  {inviteModal.relationship && (
+                    <p className="text-sm text-dark-400">
+                      Wants to add you as: <span className="text-dark-200 font-medium">{inviteModal.relationship}</span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Explanation */}
+              <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 flex gap-3">
+                <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-orange-300">
+                  If you accept, you'll receive notifications and emails when this person triggers an SOS alert.
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => handleInviteResponse(false)}
+                  disabled={responding !== null}
+                  leftIcon={
+                    responding === "decline" ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <X className="w-4 h-4" />
+                    )
+                  }
+                >
+                  Decline
+                </Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  onClick={() => handleInviteResponse(true)}
+                  disabled={responding !== null}
+                  leftIcon={
+                    responding === "accept" ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )
+                  }
+                >
+                  Accept
+                </Button>
+              </div>
             </div>
           )}
-        </div>
-      </main>
-
-      <BottomNav />
-    </div>
+        </Modal>
+      </div>
     </PullToRefresh>
   );
 }

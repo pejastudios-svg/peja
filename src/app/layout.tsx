@@ -62,7 +62,6 @@ export default function RootLayout({
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 
-        {/* Preconnect to critical origins — saves 200-400ms per connection */}
         <link rel="preconnect" href="https://ojtuqatuohxyxdxiqmsn.supabase.co" />
         <link rel="preconnect" href="https://res.cloudinary.com" />
         <link rel="dns-prefetch" href="https://ojtuqatuohxyxdxiqmsn.supabase.co" />

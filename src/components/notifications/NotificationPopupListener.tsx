@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { playNotificationSound } from "@/lib/notificationSound";
-import { X, Flag, Bell, AlertTriangle, MessageCircle } from "lucide-react";
+import { X, Flag, Bell, AlertTriangle, MessageCircle, UserPlus, UserCheck } from "lucide-react";
 
 type NotifRow = {
   id: string;
@@ -53,8 +53,6 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
       return;
     }
 
-
-    // Cleanup existing
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
@@ -73,10 +71,8 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
           filter: `${userColumn}=eq.${userId}`,
         },
         (payload) => {
-
           const row = payload.new as NotifRow;
 
-          // Suppress completely if user is currently in the chat this DM belongs to
           if (
             (row.type === "dm_message" || row.type === "dm_reaction") &&
             row.data?.conversation_id
@@ -94,10 +90,11 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
           }
 
           setPopup(row);
-          
+
           try {
             playNotificationSound();
           } catch (e) {
+            console.error("Error playing sound:", e);
           }
 
           onNotification?.();
@@ -109,7 +106,9 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
         }
       )
       .subscribe((status, err) => {
-        if (err) { /* error */ }
+        if (err) {
+          console.error("Subscription error:", err);
+        }
       });
 
     channelRef.current = channel;
@@ -123,47 +122,49 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
     };
   }, [userId, table, userColumn, onNotification]);
 
-  // Debug when popup changes
-  useEffect(() => {
-    if (popup) {
-    } else {
-    }
-  }, [popup, table]);
-
   if (!popup) return null;
 
   const getRoute = (): string | null => {
-  const data = popup.data || {};
+    const data = popup.data || {};
 
-  if (table === "admin_notifications") {
-    if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
-      return `/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`;
+    if (table === "admin_notifications") {
+      if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
+        return `/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`;
+      }
+      if (popup.type === "escalated_post" || popup.type === "escalated_comment") {
+        return `/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`;
+      }
+      if (popup.type === "guardian_application") {
+        return `/admin/guardians?app=${encodeURIComponent(data.application_id || "")}`;
+      }
+      return "/admin/notifications";
     }
-    // Add escalated types
-    if (popup.type === "escalated_post" || popup.type === "escalated_comment") {
-      return `/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`;
-    }
-    if (popup.type === "guardian_application") {
-      return `/admin/guardians?app=${encodeURIComponent(data.application_id || "")}`;
-    }
-    return "/admin/notifications";
-  }
 
-  if (table === "guardian_notifications") {
-    if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
-      return `/guardian/queue?review=${encodeURIComponent(data.flagged_id || "")}`;
+    if (table === "guardian_notifications") {
+      if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
+        return `/guardian/queue?review=${encodeURIComponent(data.flagged_id || "")}`;
+      }
+      return "/guardian/notifications";
     }
-    return "/guardian/notifications";
-  }
 
-  if (popup.type === "sos_alert") {
-    return data.sos_id ? `/map?sos=${encodeURIComponent(data.sos_id)}` : "/map";
-  }
-  if (data.post_id) {
-    return `/post/${encodeURIComponent(data.post_id)}`;
-  }
-  return "/notifications";
-};
+    // Emergency contact invite - go to notifications page where popup will show
+    if (data.type === "emergency_contact_invite") {
+      return "/notifications";
+    }
+
+    // Emergency contact response
+    if (data.type === "emergency_contact_response") {
+      return "/emergency-contacts";
+    }
+
+    if (popup.type === "sos_alert") {
+      return data.sos_id ? `/map?sos=${encodeURIComponent(data.sos_id)}` : "/map";
+    }
+    if (data.post_id) {
+      return `/post/${encodeURIComponent(data.post_id)}`;
+    }
+    return "/notifications";
+  };
 
   const handleClick = async () => {
     try {
@@ -174,6 +175,7 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
 
       onNotification?.();
     } catch (e) {
+      console.error("Error marking as read:", e);
     }
 
     setPopup(null);
@@ -181,10 +183,8 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
     const route = getRoute();
     if (!route) return;
 
-    // Close any open modals/overlays before navigating
     if ((window as any).__pejaPostModalOpen) {
       window.dispatchEvent(new Event("peja-close-post"));
-      // Wait for the modal close animation to finish before navigating
       setTimeout(() => {
         router.push(route);
       }, 350);
@@ -203,21 +203,37 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
   };
 
   const getIcon = () => {
-  if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
-    return <Flag className="w-5 h-5 text-red-400" />;
-  }
-  // Add escalated types with orange color
-  if (popup.type === "escalated_post" || popup.type === "escalated_comment") {
-    return <AlertTriangle className="w-5 h-5 text-orange-400" />;
-  }
-  if (popup.type === "sos_alert") {
-    return <AlertTriangle className="w-5 h-5 text-red-400" />;
-  }
-  if (popup.type === "post_comment" || popup.type === "comment_reply") {
-    return <MessageCircle className="w-5 h-5 text-blue-400" />;
-  }
-  return <Bell className="w-5 h-5 text-primary-400" />;
-};
+    const data = popup.data || {};
+
+    if (data.type === "emergency_contact_invite") {
+      return <UserPlus className="w-5 h-5 text-yellow-400" />;
+    }
+    if (data.type === "emergency_contact_response") {
+      return <UserCheck className="w-5 h-5 text-green-400" />;
+    }
+
+    if (popup.type === "flagged_post" || popup.type === "flagged_comment") {
+      return <Flag className="w-5 h-5 text-red-400" />;
+    }
+    if (popup.type === "escalated_post" || popup.type === "escalated_comment") {
+      return <AlertTriangle className="w-5 h-5 text-orange-400" />;
+    }
+    if (popup.type === "sos_alert") {
+      return <AlertTriangle className="w-5 h-5 text-red-400" />;
+    }
+    if (popup.type === "post_comment" || popup.type === "comment_reply") {
+      return <MessageCircle className="w-5 h-5 text-blue-400" />;
+    }
+    return <Bell className="w-5 h-5 text-primary-400" />;
+  };
+
+  const getActionText = () => {
+    const data = popup.data || {};
+    if (data.type === "emergency_contact_invite") {
+      return "Tap to respond";
+    }
+    return "Click to open";
+  };
 
   return (
     <div className="fixed bottom-4 right-4 z-[100000] max-w-sm animate-[slideUp_200ms_ease-out]">
@@ -228,7 +244,7 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
           <button type="button" onClick={handleClick} className="flex-1 min-w-0 text-left">
             <p className="text-sm font-semibold text-white">{popup.title}</p>
             {popup.body && <p className="text-xs text-dark-300 mt-1 line-clamp-2">{popup.body}</p>}
-            <p className="text-[11px] text-primary-400 mt-2">Click to open</p>
+            <p className="text-[11px] text-primary-400 mt-2">{getActionText()}</p>
           </button>
 
           <button

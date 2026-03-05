@@ -39,7 +39,8 @@ export async function POST(req: NextRequest) {
     const { data: contacts } = await supabaseAdmin
       .from("emergency_contacts")
       .select("contact_user_id")
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .eq("status", "accepted");
 
     const contactIds = (contacts || []).map((c: any) => c.contact_user_id).filter(Boolean);
 
