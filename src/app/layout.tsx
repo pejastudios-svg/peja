@@ -11,6 +11,7 @@ import { VideoHandoffProvider } from "@/context/VideoHandoffContext";
 import { PageCacheProvider } from "@/context/PageCacheContext";
 import RoutePrefetcher from "@/components/navigation/RoutePrefetcher";
 import HistorySyncGuard from "@/components/navigation/HistorySyncGuard";
+import { IOSSwipeBack } from "@/components/navigation/IOSSwipeBack";
 import InAppNotificationToasts from "@/components/notifications/InAppNotificationToasts";
 import UserGestureAudioUnlocker from "@/components/notifications/UserGestureAudioUnlocker";
 import AccountStatusBanner from "@/components/system/AccountStatusBanner";
@@ -95,6 +96,7 @@ export default function RootLayout({
                         <AccountStatusBanner />
                         <CapacitorInit />
                         <CapacitorBackButton />
+                        <IOSSwipeBack />
                         <CapacitorPushNotifications />
                         <ScrollRestorer />
                         <CapacitorKeyboardHandler />

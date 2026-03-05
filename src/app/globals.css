@@ -28,6 +28,11 @@
   --color-dark-950: #020617;
 }
 
+html,
+html body {
+  background-color: #0c0818 !important;
+}
+
 body {
   background: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e1033 100%);
   min-height: 100vh;

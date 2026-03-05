@@ -9,45 +9,29 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         
-        // Enable swipe-back gesture — try multiple times to ensure bridge is ready
-        enableSwipeBack(attempts: 0)
+        // Set dark background on window
+        let darkColor = UIColor(red: 12/255, green: 8/255, blue: 24/255, alpha: 1.0)
+        window?.backgroundColor = darkColor
+        
+        // Disable native swipe-back (we handle it in JS)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.configureWebView()
+        }
         
         return true
     }
     
-    private func enableSwipeBack(attempts: Int) {
-        guard attempts < 10 else { return }
+    private func configureWebView() {
+        guard let rootVC = window?.rootViewController else { return }
         
-        let delay = attempts == 0 ? 0.5 : 1.0
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self = self else { return }
+        if let webView = findWebView(in: rootVC.view) {
+            webView.allowsBackForwardNavigationGestures = false
             
-            // Try to find the web view through the view hierarchy
-            if let rootVC = self.window?.rootViewController {
-                if let bridgeVC = rootVC as? CAPBridgeViewController,
-                   let webView = bridgeVC.bridge?.webView {
-                    webView.allowsBackForwardNavigationGestures = true
-                    return
-                }
-                
-                // Search child view controllers
-                for child in rootVC.children {
-                    if let bridgeVC = child as? CAPBridgeViewController,
-                       let webView = bridgeVC.bridge?.webView {
-                        webView.allowsBackForwardNavigationGestures = true
-                        return
-                    }
-                }
-                
-                // Search for WKWebView in view hierarchy
-                if let webView = self.findWebView(in: rootVC.view) {
-                    webView.allowsBackForwardNavigationGestures = true
-                    return
-                }
-            }
-            
-            // Retry if not found yet
-            self.enableSwipeBack(attempts: attempts + 1)
+            let darkColor = UIColor(red: 12/255, green: 8/255, blue: 24/255, alpha: 1.0)
+            webView.isOpaque = false
+            webView.backgroundColor = darkColor
+            webView.scrollView.backgroundColor = darkColor
+            webView.superview?.backgroundColor = darkColor
         }
     }
     
