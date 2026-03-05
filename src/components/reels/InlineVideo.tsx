@@ -269,8 +269,10 @@ export function InlineVideo({
           userPausedRef.current = false;
           const v = videoRef.current;
           if (v && !v.paused) v.pause();
-          } else if (ratio >= 0.9) {
+        } else if (ratio >= 0.5) {
           preloadVideoChunk(optimizedSrc);
+        }
+        if (ratio >= 0.9) {
           if (blockedRef.current) return;
           if (userPausedRef.current) return;
           const v = videoRef.current;
@@ -338,7 +340,7 @@ export function InlineVideo({
         src={optimizedSrc}
         className={`${className} ${!videoReady ? "opacity-0" : "opacity-100"}`}
         playsInline
-        preload="metadata"
+        preload="auto"
         muted
         loop
         onTimeUpdate={handleTimeUpdate}

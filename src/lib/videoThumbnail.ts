@@ -44,7 +44,6 @@ export function getOptimizedVideoUrl(videoUrl: string): string {
   if (!videoUrl) return videoUrl;
 
   if (
-    !isMobile ||
     !videoUrl.includes("res.cloudinary.com") ||
     !videoUrl.includes("/video/upload/")
   ) {
@@ -58,14 +57,15 @@ export function getOptimizedVideoUrl(videoUrl: string): string {
     const base = parts[0];
     const rest = parts[1];
 
-    // Find the version segment (v followed by digits)
     const versionMatch = rest.match(/(v\d+\/.+)/);
     if (!versionMatch) return videoUrl;
 
     const pathWithVersion = versionMatch[1];
 
-    // Mobile: 640px wide, auto height, h264, good quality, fast-start mp4
-    return `${base}/video/upload/w_640,c_limit,q_auto:good,vc_h264,ac_aac,f_mp4,fl_streaming_attachment/${pathWithVersion}`;
+    // Fast-start MP4: moov atom at beginning, h264 baseline for fast decode,
+    // lower resolution on mobile for instant playback
+    const width = isMobile ? 480 : 720;
+    return `${base}/video/upload/w_${width},c_limit,q_auto:low,vc_h264:baseline,ac_aac,f_mp4,fl_fast_start/${pathWithVersion}`;
   } catch {
     return videoUrl;
   }
@@ -79,8 +79,9 @@ export function preloadVideoChunk(videoUrl: string): void {
   if (typeof window === "undefined") return;
 
   try {
+    // Preload 2MB — enough for first 10-15 seconds of video
     fetch(videoUrl, {
-      headers: { Range: "bytes=0-500000" }, // ~500KB — enough for moov atom + first frames
+      headers: { Range: "bytes=0-2000000" },
       mode: "cors",
       credentials: "omit",
     }).catch(() => {});

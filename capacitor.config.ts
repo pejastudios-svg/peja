@@ -19,6 +19,7 @@ const config: CapacitorConfig = {
     contentInset: "automatic",
     scrollEnabled: true,
     backgroundColor: "#0c0818",
+    allowsLinkPreview: false,
   },
   plugins: {
     SplashScreen: {

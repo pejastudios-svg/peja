@@ -9,18 +9,19 @@ const nextConfig = {
   images: {
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: '**.supabase.co',
+        protocol: "https",
+        hostname: "**.supabase.co",
       },
     ],
     unoptimized: true,
   },
   compiler: {
-    removeConsole: process.env.NODE_ENV === 'production',
+    removeConsole: process.env.NODE_ENV === "production",
   },
   trailingSlash: true,
   async headers() {
     return [
+      // Security headers for all routes
       {
         source: "/(.*)",
         headers: [
@@ -31,6 +32,40 @@ const nextConfig = {
           {
             key: "Permissions-Policy",
             value: "camera=(self), microphone=(self), geolocation=(self)",
+          },
+        ],
+      },
+      // Cache static assets aggressively (JS, CSS, fonts, images)
+      {
+        source: "/_next/static/(.*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+      // Cache public assets
+      {
+        source: "/(.*\\.(?:ico|png|jpg|jpeg|svg|webp|woff2?))",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, stale-while-revalidate=604800",
+          },
+        ],
+      },
+      // Service worker — never cache
+      {
+        source: "/sw.js",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+          {
+            key: "Service-Worker-Allowed",
+            value: "/",
           },
         ],
       },

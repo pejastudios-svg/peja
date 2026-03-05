@@ -453,17 +453,23 @@ if (animPhase === "enter") {
           <video
           ref={videoRef}
           src={videoUrl ? getOptimizedVideoUrl(videoUrl) : undefined}
-          className={`max-w-full max-h-full object-contain pointer-events-none transition-opacity duration-150 ${
+          className={`max-w-full max-h-full object-contain pointer-events-none transition-opacity duration-100 ${
             showPoster ? "opacity-0" : "opacity-100"
           }`}
           playsInline
           autoPlay
-          preload="metadata"
+          preload="auto"
           loop
           muted={!soundEnabled}
           onTimeUpdate={handleTimeUpdate}
-          onCanPlay={handleVideoCanPlay}
-          onPlaying={handleVideoCanPlay}
+          onCanPlay={() => {
+            setVideoBuffering(false);
+            requestAnimationFrame(() => setShowPoster(false));
+          }}
+          onPlaying={() => {
+            setVideoBuffering(false);
+            requestAnimationFrame(() => setShowPoster(false));
+          }}
           onWaiting={() => setVideoBuffering(true)}
           onEnded={() => setIsPlaying(false)}
           onLoadedData={() => {

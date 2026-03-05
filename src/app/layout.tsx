@@ -22,11 +22,13 @@ import { CapacitorPushNotifications } from "@/components/notifications/Capacitor
 import { ScrollRestorer } from "@/components/navigation/ScrollRestorer";
 import { CapacitorKeyboardHandler } from "@/components/navigation/CapacitorKeyboardHandler";
 import { MessageCacheProvider } from "@/context/MessageCacheContext";
+import { ServiceWorkerRegistrar } from "@/components/navigation/ServiceWorkerRegistrar";
 
 const poppins = Poppins({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
   variable: "--font-poppins",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -58,6 +60,14 @@ export default function RootLayout({
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+        {/* Preconnect to critical origins — saves 200-400ms per connection */}
+        <link rel="preconnect" href="https://ojtuqatuohxyxdxiqmsn.supabase.co" />
+        <link rel="preconnect" href="https://res.cloudinary.com" />
+        <link rel="dns-prefetch" href="https://ojtuqatuohxyxdxiqmsn.supabase.co" />
+        <link rel="dns-prefetch" href="https://res.cloudinary.com" />
+        <link rel="dns-prefetch" href="https://unpkg.com" />
+
         <link
           rel="stylesheet"
           href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -66,38 +76,39 @@ export default function RootLayout({
         />
       </head>
       <body className={`${poppins.variable} font-sans antialiased`}>
-          <ToastProvider>
+        <ToastProvider>
           <AuthProvider>
-  <ConfirmProvider>
-    <AudioProvider>
-      <VideoHandoffProvider>
-        <PageCacheProvider>
-          <FeedProvider>
-            <MessageCacheProvider>
-                  <AnalyticsTracker />
-                  <RoutePrefetcher />
-                  <GlobalScrollManager />
-                  <Suspense fallback={null}>
-                    <HistorySyncGuard />
-                  </Suspense>
-                  <UserGestureAudioUnlocker />
-                  <InAppNotificationToasts />
-                  <AccountStatusBanner />
-                  <CapacitorInit />
-                  <CapacitorBackButton />
-                  <CapacitorPushNotifications />
-                  <ScrollRestorer />
-                  <CapacitorKeyboardHandler />
-                  {children}
-                  {overlay}
-                  {modal}
-                </MessageCacheProvider>
-              </FeedProvider>
-            </PageCacheProvider>
-          </VideoHandoffProvider>
-        </AudioProvider>
-      </ConfirmProvider>
-    </AuthProvider>
+            <ConfirmProvider>
+              <AudioProvider>
+                <VideoHandoffProvider>
+                  <PageCacheProvider>
+                    <FeedProvider>
+                      <MessageCacheProvider>
+                        <AnalyticsTracker />
+                        <RoutePrefetcher />
+                        <GlobalScrollManager />
+                        <Suspense fallback={null}>
+                          <HistorySyncGuard />
+                        </Suspense>
+                        <UserGestureAudioUnlocker />
+                        <InAppNotificationToasts />
+                        <AccountStatusBanner />
+                        <CapacitorInit />
+                        <CapacitorBackButton />
+                        <CapacitorPushNotifications />
+                        <ScrollRestorer />
+                        <CapacitorKeyboardHandler />
+                        <ServiceWorkerRegistrar />
+                        {children}
+                        {overlay}
+                        {modal}
+                      </MessageCacheProvider>
+                    </FeedProvider>
+                  </PageCacheProvider>
+                </VideoHandoffProvider>
+              </AudioProvider>
+            </ConfirmProvider>
+          </AuthProvider>
         </ToastProvider>
       </body>
     </html>
