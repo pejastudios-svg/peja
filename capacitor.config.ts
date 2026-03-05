@@ -2,12 +2,13 @@ import type { CapacitorConfig } from "@capacitor/cli";
 import { KeyboardResize } from "@capacitor/keyboard";
 
 const config: CapacitorConfig = {
-appId: "com.peja.app",
+  appId: "com.peja.app",
   appName: "Peja",
   webDir: "out",
-server: {
+  server: {
     url: "https://peja.vercel.app",
     cleartext: true,
+    errorPath: "offline.html",
   },
   android: {
     webContentsDebuggingEnabled: false,
@@ -21,8 +22,8 @@ server: {
   },
   plugins: {
     SplashScreen: {
-      launchAutoHide: true,
-      launchShowDuration: 2000,
+      launchAutoHide: false,
+      launchShowDuration: 0,
       backgroundColor: "#0c0818",
       showSpinner: false,
     },

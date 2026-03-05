@@ -18,6 +18,10 @@ export function CapacitorInit() {
     if (!isAndroidWebView && !isCapacitorBridge) return;
 
     setIsCapacitor(true);
+    // Hide splash screen now that the app has loaded
+import("@capacitor/splash-screen")
+  .then(({ SplashScreen }) => SplashScreen.hide({ fadeOutDuration: 300 }))
+  .catch(() => {});
 
     // Mark the document for CSS targeting
     document.documentElement.classList.add("capacitor-native");

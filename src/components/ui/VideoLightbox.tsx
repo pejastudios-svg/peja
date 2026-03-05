@@ -38,6 +38,7 @@ export function VideoLightbox({
   const [progress, setProgress] = useState(0);
   const [showPoster, setShowPoster] = useState(true);
     const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
+    const cachedPosterRef = useRef<string | null>(null);
   const [videoBuffering, setVideoBuffering] = useState(true);
   const [animPhase, setAnimPhase] = useState<"idle" | "enter" | "open" | "exit">("idle");
   const exitTransformRef = useRef("scale(0.88)");
@@ -75,21 +76,32 @@ export function VideoLightbox({
   };
 
   // Get effective start data from handoff
- const getEffectiveStartData = () => {
-    const handoffData = handoff.getHandoff();
-    if (handoffData && videoUrl && handoffData.src === videoUrl) {
-      return {
-        effectiveStartTime: handoffData.currentTime,
-        effectivePoster: handoffData.posterDataUrl || posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null) || generatedPoster,
-        effectiveSourceRect: handoffData.sourceRect || sourceRect || null,
-      };
-    }
+const getEffectiveStartData = () => {
+  const handoffData = handoff.getHandoff();
+  if (handoffData && videoUrl && handoffData.src === videoUrl) {
+    const poster =
+      handoffData.posterDataUrl ||
+      posterUrl ||
+      (videoUrl ? getVideoThumbnailUrl(videoUrl) : null) ||
+      generatedPoster;
+    if (poster) cachedPosterRef.current = poster;
     return {
-      effectiveStartTime: startTime,
-      effectivePoster: posterUrl || (videoUrl ? getVideoThumbnailUrl(videoUrl) : null) || generatedPoster,
-      effectiveSourceRect: sourceRect || null,
+      effectiveStartTime: handoffData.currentTime,
+      effectivePoster: poster || cachedPosterRef.current,
+      effectiveSourceRect: handoffData.sourceRect || sourceRect || null,
     };
+  }
+  const poster =
+    posterUrl ||
+    (videoUrl ? getVideoThumbnailUrl(videoUrl) : null) ||
+    generatedPoster;
+  if (poster) cachedPosterRef.current = poster;
+  return {
+    effectiveStartTime: startTime,
+    effectivePoster: poster || cachedPosterRef.current,
+    effectiveSourceRect: sourceRect || null,
   };
+};
 
   const { effectiveStartTime, effectivePoster, effectiveSourceRect } = isOpen
     ? getEffectiveStartData()
@@ -148,6 +160,7 @@ export function VideoLightbox({
       setShowPoster(true);
       setVideoBuffering(true);
       setGeneratedPoster(null);
+      cachedPosterRef.current = null;
       setAnimPhase("idle");
       animSourceRectRef.current = null;
 
@@ -306,9 +319,9 @@ export function VideoLightbox({
     if (animPhase === "exit") {
       return { opacity: 0, transition: "opacity 280ms ease" };
     }
-    if (animPhase === "enter") {
-      return { opacity: 0, transition: "none" };
-    }
+if (animPhase === "enter") {
+  return { opacity: 0.6, transition: "none" };
+}
     return {
       opacity: bgOpacity,
       transition: isDragging ? "opacity 100ms ease-linear" : "opacity 300ms ease",
@@ -342,7 +355,7 @@ export function VideoLightbox({
       }
       return {
         transform,
-        opacity: 0.3,
+        opacity: 1,
         borderRadius: "16px",
         overflow: "hidden",
         transition: "none",
@@ -420,10 +433,10 @@ export function VideoLightbox({
           <div className="absolute inset-0 z-[2] pointer-events-none">
             {effectivePoster ? (
               <img
-                src={effectivePoster}
-                alt=""
-                className="w-full h-full object-contain"
-              />
+              src={effectivePoster}
+              alt=""
+              className="absolute inset-0 w-full h-full object-contain"
+            />
             ) : (
               <div className="w-full h-full bg-black" />
             )}
@@ -431,7 +444,7 @@ export function VideoLightbox({
         )}
 
         {/* Loading spinner */}
-        {videoBuffering && (
+        {videoBuffering && !effectivePoster && (
           <div className="absolute inset-0 flex items-center justify-center z-[3] pointer-events-none">
             <PejaSpinner className="w-14 h-14" />
           </div>
@@ -440,7 +453,7 @@ export function VideoLightbox({
           <video
           ref={videoRef}
           src={videoUrl ? getOptimizedVideoUrl(videoUrl) : undefined}
-          className={`max-w-full max-h-full w-full h-full object-contain pointer-events-none transition-opacity duration-150 ${
+          className={`max-w-full max-h-full object-contain pointer-events-none transition-opacity duration-150 ${
             showPoster ? "opacity-0" : "opacity-100"
           }`}
           playsInline

@@ -444,25 +444,102 @@ const setActiveConversation = useCallback((id: string | null) => {
       channelRef.current = null;
     }
 
+        // ── Fetch a single new conversation and add it to the list ──
+    const fetchNewConversation = async (
+      conversationId: string,
+      triggerMsg?: any
+    ) => {
+      const userId = userIdRef.current;
+      if (!userId) return;
+      if (conversationsRef.current.some((c) => c.id === conversationId)) return;
+
+      try {
+        const [convRes, otherPartRes] = await Promise.all([
+          supabase
+            .from("conversations")
+            .select("*")
+            .eq("id", conversationId)
+            .single(),
+          supabase
+            .from("conversation_participants")
+            .select("user_id, last_read_at")
+            .eq("conversation_id", conversationId)
+            .neq("user_id", userId),
+        ]);
+
+        if (!convRes.data || !otherPartRes.data?.[0]) return;
+
+        const otherId = otherPartRes.data[0].user_id;
+        const { data: otherUser } = await supabase
+          .from("users")
+          .select(
+            "id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status"
+          )
+          .eq("id", otherId)
+          .single();
+
+        if (!otherUser) return;
+
+        const isViewing = activeConvRef.current === conversationId;
+        const isFromMe = triggerMsg?.sender_id === userId;
+
+        const newConv: ConversationWithUser = {
+          ...convRes.data,
+          other_user: otherUser as VIPUser,
+          unread_count: isViewing || isFromMe ? 0 : 1,
+          last_message_seen: false,
+        };
+
+        setConversations((prev) => {
+          if (prev.some((c) => c.id === conversationId)) return prev;
+          const updated = sortByLastMessage([...prev, newConv]);
+          idbSave(updated);
+          return updated;
+        });
+      } catch {}
+    };
+
     const channel = supabase
       .channel(`dm-rt-${user.id}-${Date.now()}`)
 
-      // ---- NEW MESSAGE ----
+        // ---- NEW MESSAGE ----
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
-        (payload) => {
+        async (payload) => {
           const msg = payload.new as any;
           if (!msg.conversation_id) return;
 
           const userId = userIdRef.current;
           if (!userId) return;
 
-          // Only process messages for conversations we're part of
-          const isOurs = conversationsRef.current.some((c) => c.id === msg.conversation_id);
+          const isOurs = conversationsRef.current.some(
+            (c) => c.id === msg.conversation_id
+          );
           const isFromMe = msg.sender_id === userId;
-          if (!isOurs && !isFromMe) return;
 
+          // ── NEW CONVERSATION: not in our list yet ──
+          if (!isOurs) {
+            if (!isFromMe) {
+              // Verify we're a participant before fetching
+              try {
+                const { data: part } = await supabase
+                  .from("conversation_participants")
+                  .select("id")
+                  .eq("conversation_id", msg.conversation_id)
+                  .eq("user_id", userId)
+                  .maybeSingle();
+                if (!part) return;
+              } catch {
+                return;
+              }
+            }
+            await fetchNewConversation(msg.conversation_id, msg);
+            dispatch(msg.conversation_id, (l) => l.onMessageInsert(msg));
+            return;
+          }
+
+          // ── EXISTING CONVERSATION ──
           // Dispatch to chat page listener
           dispatch(msg.conversation_id, (l) => l.onMessageInsert(msg));
 
@@ -476,13 +553,15 @@ const setActiveConversation = useCallback((id: string | null) => {
               found = true;
 
               // Dedup check
-              if (c.last_message_at && new Date(c.last_message_at).getTime() >= new Date(msg.created_at).getTime()) {
+              if (
+                c.last_message_at &&
+                new Date(c.last_message_at).getTime() >=
+                  new Date(msg.created_at).getTime()
+              ) {
                 return c;
               }
 
-              // THE ONLY PLACE unread_count increments:
-              // - Message is from someone else
-              // - We are NOT viewing that chat right now
+              // THE ONLY PLACE unread_count increments
               let newUnread = c.unread_count || 0;
               if (!isFromMe && !isViewing) {
                 newUnread = newUnread + 1;
@@ -490,7 +569,11 @@ const setActiveConversation = useCallback((id: string | null) => {
 
               return {
                 ...c,
-                last_message_text: msg.content?.slice(0, 100) || (msg.content_type === "media" ? "Sent an attachment" : "New message"),
+                last_message_text:
+                  msg.content?.slice(0, 100) ||
+                  (msg.content_type === "media"
+                    ? "Sent an attachment"
+                    : "New message"),
                 last_message_at: msg.created_at,
                 last_message_sender_id: msg.sender_id,
                 last_message_seen: false,
@@ -518,7 +601,11 @@ const setActiveConversation = useCallback((id: string | null) => {
             supabase
               .from("message_reads")
               .upsert(
-                { message_id: msg.id, user_id: userId, read_at: new Date().toISOString() },
+                {
+                  message_id: msg.id,
+                  user_id: userId,
+                  read_at: new Date().toISOString(),
+                },
                 { onConflict: "message_id,user_id" }
               )
               .then(() => {});
@@ -529,8 +616,15 @@ const setActiveConversation = useCallback((id: string | null) => {
             const key = `peja-chat-cache-${msg.conversation_id}`;
             let msgs: any[] = [];
             const raw = localStorage.getItem(key);
-            if (raw) { try { msgs = JSON.parse(raw); } catch {} }
-            if (Array.isArray(msgs) && !msgs.find((m: any) => m.id === msg.id)) {
+            if (raw) {
+              try {
+                msgs = JSON.parse(raw);
+              } catch {}
+            }
+            if (
+              Array.isArray(msgs) &&
+              !msgs.find((m: any) => m.id === msg.id)
+            ) {
               msgs.push({
                 ...msg,
                 media: [],
