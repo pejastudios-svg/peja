@@ -8,9 +8,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
-import { Trash2, Flag, Bell, Users } from "lucide-react";
+import { Trash2, Flag, Bell, Users, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { AlertTriangle } from "lucide-react";
 
 type AdminNotification = {
   id: string;
@@ -44,43 +43,40 @@ export default function AdminNotificationsPage() {
   const [items, setItems] = useState<AdminNotification[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchingRef = useRef(false);
   const debounceRef = useRef<any>(null);
   const channelRef = useRef<any>(null);
-
-  const uid = user?.id || null;
 
   const unread = useMemo(() => items.filter((x) => x.is_read !== true), [items]);
   const read = useMemo(() => items.filter((x) => x.is_read === true), [items]);
   const unreadCount = unread.length;
 
   const typeTone = (t: string) => {
-  if (t === "flagged_post" || t === "flagged_comment") return "border-red-500/35 bg-red-500/10";
-  if (t === "escalated_post" || t === "escalated_comment") return "border-orange-500/35 bg-orange-500/10";
-  if (t === "guardian_application") return "border-primary-500/35 bg-primary-500/10";
-  return "border-white/10 bg-white/5";
-};
+    if (t === "flagged_post" || t === "flagged_comment") return "border-red-500/35 bg-red-500/10";
+    if (t === "escalated_post" || t === "escalated_comment") return "border-orange-500/35 bg-orange-500/10";
+    if (t === "guardian_application") return "border-primary-500/35 bg-primary-500/10";
+    return "border-white/10 bg-white/5";
+  };
 
   const getIcon = (t: string) => {
-  if (t === "flagged_post" || t === "flagged_comment") return <Flag className="w-4 h-4 text-red-400" />;
-  if (t === "escalated_post" || t === "escalated_comment") return <AlertTriangle className="w-4 h-4 text-orange-400" />;
-  if (t === "guardian_application") return <Users className="w-4 h-4 text-primary-400" />;
-  return <Bell className="w-4 h-4 text-primary-400" />;
-};
+    if (t === "flagged_post" || t === "flagged_comment") return <Flag className="w-4 h-4 text-red-400" />;
+    if (t === "escalated_post" || t === "escalated_comment") return <AlertTriangle className="w-4 h-4 text-orange-400" />;
+    if (t === "guardian_application") return <Users className="w-4 h-4 text-primary-400" />;
+    return <Bell className="w-4 h-4 text-primary-400" />;
+  };
 
-  // Dispatch event to refresh sidebar badge
   const refreshBadge = () => {
     window.dispatchEvent(new Event("admin-badge-refresh"));
   };
 
-  const fetchItems = async (silent = false) => {
+  useEffect(() => {
+    const uid = user?.id;
     if (!uid) return;
-    if (fetchingRef.current) return;
 
-    fetchingRef.current = true;
-    if (!silent) setLoading(true);
+    let mounted = true;
 
-    try {
+    const fetchItems = async () => {
+      console.log("[Admin Notifications] fetchItems called, uid:", uid);
+
       const { data, error } = await supabase
         .from("admin_notifications")
         .select("*")
@@ -88,31 +84,35 @@ export default function AdminNotificationsPage() {
         .order("created_at", { ascending: false })
         .limit(80);
 
-      if (error)      setItems((data || []) as any);
-    } finally {
-      fetchingRef.current = false;
-      if (!silent) setLoading(false);
-    }
-  };
+      console.log("[Admin Notifications] Query result:", {
+        dataLength: data?.length,
+        error,
+        firstItem: data?.[0],
+      });
 
-  useEffect(() => {
-    if (!uid) return;
+      if (mounted) {
+        setItems((data || []) as AdminNotification[]);
+        setLoading(false);
+      }
+    };
 
-    fetchItems(false);
+    fetchItems();
 
-    // Cleanup existing channel
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
     }
 
     const channel = supabase
-      .channel(`admin-notifications-page-${uid}-${Date.now()}`)
+      .channel(`admin-notif-page-${uid}-${Date.now()}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "admin_notifications", filter: `recipient_id=eq.${uid}` },
         () => {
           if (debounceRef.current) clearTimeout(debounceRef.current);
-          debounceRef.current = setTimeout(() => fetchItems(true), 250);
+          debounceRef.current = setTimeout(() => {
+            console.log("[Admin Notifications] Realtime event, refetching...");
+            fetchItems();
+          }, 250);
         }
       )
       .subscribe();
@@ -120,70 +120,61 @@ export default function AdminNotificationsPage() {
     channelRef.current = channel;
 
     return () => {
+      mounted = false;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
-  }, [uid]);
+  }, [user?.id]);
 
   const markAllRead = async () => {
-    if (!uid) return;
+    if (!user?.id) return;
 
-    // Optimistic update
     setItems((prev) => prev.map((x) => ({ ...x, is_read: true })));
 
     await supabase
       .from("admin_notifications")
       .update({ is_read: true })
-      .eq("recipient_id", uid)
+      .eq("recipient_id", user.id)
       .eq("is_read", false);
 
-    // Refresh badge
     refreshBadge();
   };
 
   const markRead = async (id: string) => {
-    // Optimistic update
     setItems((prev) => prev.map((x) => (x.id === id ? { ...x, is_read: true } : x)));
-    
     await supabase.from("admin_notifications").update({ is_read: true }).eq("id", id);
-    
-    // Refresh badge
     refreshBadge();
   };
 
   const removeOne = async (id: string) => {
-    const wasUnread = items.find(x => x.id === id)?.is_read !== true;
-    
-    // Optimistic update
+    const wasUnread = items.find((x) => x.id === id)?.is_read !== true;
     setItems((prev) => prev.filter((x) => x.id !== id));
-    
     await supabase.from("admin_notifications").delete().eq("id", id);
-    
-    // Refresh badge if it was unread
     if (wasUnread) refreshBadge();
   };
 
   const openNotification = async (n: AdminNotification) => {
-  if (n.is_read !== true) await markRead(n.id);
+    if (n.is_read !== true) await markRead(n.id);
 
-  if (n.type === "flagged_post" || n.type === "flagged_comment") {
-    router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
-    return;
-  }
+    if (n.type === "flagged_post" || n.type === "flagged_comment") {
+      router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
+      return;
+    }
 
-  // Add escalated types - route to flagged page
-  if (n.type === "escalated_post" || n.type === "escalated_comment") {
-    router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
-    return;
-  }
+    if (n.type === "escalated_post" || n.type === "escalated_comment") {
+      router.push(`/admin/flagged?open=${encodeURIComponent(n.data?.flagged_id || "")}`);
+      return;
+    }
 
-  if (n.type === "guardian_application") {
-    router.push(`/admin/guardians?app=${encodeURIComponent(n.data?.application_id || "")}`);
-    return;
-  }
+    if (n.type === "guardian_application") {
+      router.push(`/admin/guardians?app=${encodeURIComponent(n.data?.application_id || "")}`);
+      return;
+    }
 
-  router.push("/admin/notifications");
-};
+    router.push("/admin/notifications");
+  };
+
+  console.log("[Admin Notifications] Render - items:", items.length, "loading:", loading);
 
   return (
     <HudShell
@@ -244,7 +235,6 @@ export default function AdminNotificationsPage() {
                           removeOne(n.id);
                         }}
                         className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-300"
-                        aria-label="Delete notification"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -283,7 +273,6 @@ export default function AdminNotificationsPage() {
                                 removeOne(n.id);
                               }}
                               className="p-2 hover:bg-white/10 rounded-lg text-dark-600 hover:text-red-300"
-                              aria-label="Delete notification"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>

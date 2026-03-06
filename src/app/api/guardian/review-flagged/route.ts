@@ -11,9 +11,8 @@ export async function POST(req: NextRequest) {
   try {
     const { user } = await requireUser(req);
 
-    // Verify user is a guardian
     const supabaseAdmin = getSupabaseAdmin();
-    
+
     const { data: userData, error: userErr } = await supabaseAdmin
       .from("users")
       .select("is_guardian, is_admin")
@@ -33,7 +32,7 @@ export async function POST(req: NextRequest) {
     // Fetch flagged row
     const { data: flagged, error: flagErr } = await supabaseAdmin
       .from("flagged_content")
-      .select("id, post_id, comment_id, reason")
+      .select("id, post_id, comment_id, reason, status")
       .eq("id", flaggedId)
       .single();
 
@@ -41,10 +40,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Flag not found" }, { status: 404 });
     }
 
+    // Prevent double review
+    if (flagged.status !== "pending" && flagged.status !== "escalated") {
+      return NextResponse.json(
+        { ok: false, error: "Already reviewed by another moderator" },
+        { status: 409 }
+      );
+    }
+
     const isComment = !!flagged.comment_id;
 
     const newStatus =
       action === "approve" ? "approved" :
+      action === "blur" ? "blurred" :
       action === "escalate" ? "escalated" :
       "removed";
 
@@ -63,7 +71,6 @@ export async function POST(req: NextRequest) {
     // Handle comment actions
     if (isComment && flagged.comment_id) {
       if (action === "remove") {
-        // Get comment details
         const { data: comment } = await supabaseAdmin
           .from("post_comments")
           .select("user_id, post_id")
@@ -71,18 +78,12 @@ export async function POST(req: NextRequest) {
           .single();
 
         if (comment) {
-          // Delete related data
           await supabaseAdmin.from("comment_likes").delete().eq("comment_id", flagged.comment_id);
           await supabaseAdmin.from("comment_media").delete().eq("comment_id", flagged.comment_id);
           await supabaseAdmin.from("comment_reports").delete().eq("comment_id", flagged.comment_id);
-          
-          // Delete the comment
           await supabaseAdmin.from("post_comments").delete().eq("id", flagged.comment_id);
-
-          // Decrement comment count
           await supabaseAdmin.rpc("decrement_comment_count", { post_id: comment.post_id });
 
-          // Notify the comment owner
           await supabaseAdmin.from("notifications").insert({
             user_id: comment.user_id,
             type: "system",
@@ -98,7 +99,6 @@ export async function POST(req: NextRequest) {
     // Handle post actions
     if (!isComment && flagged.post_id) {
       if (action === "remove") {
-        // Get post owner
         const { data: post } = await supabaseAdmin
           .from("posts")
           .select("user_id")
@@ -107,7 +107,6 @@ export async function POST(req: NextRequest) {
 
         await supabaseAdmin.from("posts").update({ status: "archived" }).eq("id", flagged.post_id);
 
-        // Notify the post owner
         if (post) {
           await supabaseAdmin.from("notifications").insert({
             user_id: post.user_id,
@@ -128,7 +127,6 @@ export async function POST(req: NextRequest) {
 
     // Notify admins when guardian escalates
     if (action === "escalate") {
-      // Get content preview
       let preview = "";
       if (isComment && flagged.comment_id) {
         const { data: comment } = await supabaseAdmin
@@ -146,7 +144,6 @@ export async function POST(req: NextRequest) {
         preview = post?.comment?.slice(0, 60) || "";
       }
 
-      // Fetch all admins
       const { data: admins } = await supabaseAdmin
         .from("users")
         .select("id")
@@ -161,7 +158,7 @@ export async function POST(req: NextRequest) {
           recipient_id: admin.id,
           type: `escalated_${contentType}`,
           title: `🚨 Escalated ${contentType}`,
-          body: preview 
+          body: preview
             ? `"${preview}${preview.length >= 60 ? "..." : ""}" — Reason: ${flagged.reason}`
             : `Reason: ${flagged.reason}`,
           data: {
@@ -176,13 +173,34 @@ export async function POST(req: NextRequest) {
           created_at: new Date().toISOString(),
         }));
 
-        const { error: notifErr } = await supabaseAdmin
-          .from("admin_notifications")
-          .insert(adminNotifications);
+        await supabaseAdmin.from("admin_notifications").insert(adminNotifications);
+      }
+    }
 
-        if (notifErr) {
-        } else {
-        }
+    // ============================================================
+    // CLEAN UP NOTIFICATIONS (fixes badge issue)
+    // ============================================================
+
+    // Delete ALL guardian notifications referencing this flagged item
+    // This clears the badge for ALL guardians
+    try {
+      await supabaseAdmin
+        .from("guardian_notifications")
+        .delete()
+        .contains("data", { flagged_id: flaggedId });
+    } catch (e) {
+      console.error("[review-flagged] Failed to cleanup guardian notifications:", e);
+    }
+
+    // For non-escalate actions, mark admin notifications as read (keeps history)
+    if (action !== "escalate") {
+      try {
+        await supabaseAdmin
+          .from("admin_notifications")
+          .update({ is_read: true })
+          .contains("data", { flagged_id: flaggedId });
+      } catch (e) {
+        console.error("[review-flagged] Failed to mark admin notifications as read:", e);
       }
     }
 
@@ -196,6 +214,7 @@ export async function POST(req: NextRequest) {
         reason: flagged.reason,
       });
     } catch (e) {
+      console.error("[review-flagged] Failed to log guardian action:", e);
     }
 
     return NextResponse.json({ ok: true });

@@ -283,47 +283,54 @@ export default function GuardianQueuePage() {
     }
   };
 
- const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") => {
-  if (!selectedItem || !user) return;
+const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") => {
+    if (!selectedItem || !user) return;
 
-  setActionLoading(true);
-  try {
-    const { data: auth } = await supabase.auth.getSession();
-    const token = auth.session?.access_token;
-    
-    if (!token) {
-      throw new Error("Session expired");
+    setActionLoading(true);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth.session?.access_token;
+
+      if (!token) {
+        throw new Error("Session expired");
+      }
+
+      const res = await fetch(apiUrl("/api/guardian/review-flagged"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          flaggedId: selectedItem.id,
+          action,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (res.status === 409) {
+        alert("This item was already reviewed by another guardian.");
+        setItems(items.filter((i) => i.id !== selectedItem.id));
+        setShowReviewModal(false);
+        setSelectedItem(null);
+        return;
+      }
+
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to complete action");
+      }
+
+      // Remove from local state
+      setItems(items.filter((i) => i.id !== selectedItem.id));
+      setShowReviewModal(false);
+      setSelectedItem(null);
+    } catch (error: any) {
+      alert(error.message || "Failed to complete action");
+    } finally {
+      setActionLoading(false);
     }
-
-        const res = await fetch(apiUrl("/api/guardian/review-flagged"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ 
-        flaggedId: selectedItem.id, 
-        action 
-      }),
-    });
-
-    const json = await res.json();
-    
-    if (!res.ok || !json.ok) {
-      throw new Error(json.error || "Failed to complete action");
-    }
-
-    // Remove from local state
-    setItems(items.filter(i => i.id !== selectedItem.id));
-    setShowReviewModal(false);
-    setSelectedItem(null);
-
-  } catch (error: any) {
-    alert(error.message || "Failed to complete action");
-  } finally {
-    setActionLoading(false);
-  }
-};
+  };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {

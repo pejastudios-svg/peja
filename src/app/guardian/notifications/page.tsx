@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Bell, Check, Trash2, Flag, Users } from "lucide-react";
+import { Loader2, Bell, Check, Trash2, Flag } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/Button";
 import { useRouter } from "next/navigation";
@@ -36,88 +36,97 @@ function GuardianNotifSkeletonRow() {
 
 export default function GuardianNotificationsPage() {
   useScrollRestore("guardian:notifications");
-  
+
   const [items, setItems] = useState<GuardianNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const channelRef = useRef<any>(null);
 
-  // Dispatch event to refresh sidebar badge
   const refreshBadge = () => {
     window.dispatchEvent(new Event("guardian-badge-refresh"));
   };
 
-  const fetchItems = async (silent = false) => {
-    if (!silent) setLoading(true);
-    
-    const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user?.id;
-    if (!uid) {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("guardian_notifications")
-      .select("*")
-      .eq("recipient_id", uid)
-      .order("created_at", { ascending: false })
-      .limit(80);
-
-    if (error)    setItems((data || []) as any);
-    if (!silent) setLoading(false);
-  };
-
   useEffect(() => {
-  fetchItems();
+    let mounted = true;
 
-  const setupRealtime = async () => {
-    const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user?.id;
-    if (!uid) return;
+    const fetchItems = async () => {
+      console.log("[Guardian Notifications] fetchItems called");
 
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current);
-    }
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      console.log("[Guardian Notifications] uid:", uid);
 
-    // Use unique channel name with timestamp
-    const channelName = `guardian-notifications-page-${uid}-${Date.now()}`;
-
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        "postgres_changes",
-        { 
-          event: "*", 
-          schema: "public", 
-          table: "guardian_notifications", 
-          filter: `recipient_id=eq.${uid}` 
-        },
-        (payload) => {
-          fetchItems(true);
+      if (!uid) {
+        console.log("[Guardian Notifications] No uid, setting empty");
+        if (mounted) {
+          setItems([]);
+          setLoading(false);
         }
-      )
-      .subscribe((status) => {
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("guardian_notifications")
+        .select("*")
+        .eq("recipient_id", uid)
+        .order("created_at", { ascending: false })
+        .limit(80);
+
+      console.log("[Guardian Notifications] Query result:", {
+        data: data?.length,
+        error,
+        firstItem: data?.[0],
       });
 
-    channelRef.current = channel;
-  };
+      if (mounted) {
+        setItems((data || []) as GuardianNotification[]);
+        setLoading(false);
+      }
+    };
 
-  setupRealtime();
+    const setupRealtime = async () => {
+      const { data: auth } = await supabase.auth.getUser();
+      const uid = auth.user?.id;
+      if (!uid) return;
 
-  // Also listen for flagged content changes
-  const handleFlaggedChange = () => {
-    fetchItems(true);
-  };
-  
-  window.addEventListener("guardian-badge-refresh", handleFlaggedChange);
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+      }
 
-  return () => {
-    if (channelRef.current) supabase.removeChannel(channelRef.current);
-    window.removeEventListener("guardian-badge-refresh", handleFlaggedChange);
-  };
-}, []);
+      const channel = supabase
+        .channel(`guardian-notif-page-${uid}-${Date.now()}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "guardian_notifications",
+            filter: `recipient_id=eq.${uid}`,
+          },
+          () => {
+            console.log("[Guardian Notifications] Realtime event, refetching...");
+            fetchItems();
+          }
+        )
+        .subscribe();
+
+      channelRef.current = channel;
+    };
+
+    fetchItems();
+    setupRealtime();
+
+    const handleBadgeRefresh = () => {
+      fetchItems();
+    };
+    window.addEventListener("guardian-badge-refresh", handleBadgeRefresh);
+
+    return () => {
+      mounted = false;
+      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      window.removeEventListener("guardian-badge-refresh", handleBadgeRefresh);
+    };
+  }, []);
 
   const unreadCount = items.filter((x) => !x.is_read).length;
 
@@ -144,7 +153,7 @@ export default function GuardianNotificationsPage() {
   };
 
   const removeOne = async (id: string) => {
-    const wasUnread = items.find(x => x.id === id)?.is_read !== true;
+    const wasUnread = items.find((x) => x.id === id)?.is_read !== true;
     setItems((prev) => prev.filter((x) => x.id !== id));
     await supabase.from("guardian_notifications").delete().eq("id", id);
     if (wasUnread) refreshBadge();
@@ -165,6 +174,8 @@ export default function GuardianNotificationsPage() {
       return;
     }
   };
+
+  console.log("[Guardian Notifications] Render - items:", items.length, "loading:", loading);
 
   return (
     <div className="p-6">
@@ -196,11 +207,6 @@ export default function GuardianNotificationsPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {loading && (
-            <div className="flex justify-center py-2">
-              <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
-            </div>
-          )}
           {items.map((n) => (
             <div
               key={n.id}
