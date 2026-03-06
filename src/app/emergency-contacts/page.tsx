@@ -116,6 +116,16 @@ export default function EmergencyContactsPage() {
     return () => clearTimeout(t);
   }, [searchQuery, user?.id]);
 
+  // Listen for responses from notification page
+  useEffect(() => {
+    const handleRefresh = () => {
+      fetchContacts();
+      fetchPendingInvites();
+    };
+    window.addEventListener("peja-emergency-contact-responded", handleRefresh);
+    return () => window.removeEventListener("peja-emergency-contact-responded", handleRefresh);
+  }, []);
+
   const fetchContacts = async () => {
     if (!user) return;
     try {
@@ -165,85 +175,108 @@ export default function EmergencyContactsPage() {
     } catch {}
   };
 
- const handleAddContact = async () => {
-  if (!selectedUser) { setError("Please select a user"); return; }
-  if (!relationship) { setError("Please select a relationship"); return; }
-  if (contacts.length >= 5) { setError("Maximum 5 emergency contacts allowed"); return; }
-  if (contacts.some(c => c.contact_user_id === selectedUser.id)) {
-    setError("This person is already in your emergency contacts"); return;
-  }
+  const handleAddContact = async () => {
+    if (!selectedUser) { setError("Please select a user"); return; }
+    if (!relationship) { setError("Please select a relationship"); return; }
+    if (contacts.length >= 5) { setError("Maximum 5 emergency contacts allowed"); return; }
 
-  setSaving(true);
-  setError("");
+    // Check if already in active contacts (pending or accepted)
+    const existing = contacts.find(c => c.contact_user_id === selectedUser.id);
+    if (existing && (existing.status === "pending" || existing.status === "accepted")) {
+      setError("This person is already in your emergency contacts");
+      return;
+    }
 
-  try {
-    const { data, error: insertError } = await supabase
-      .from("emergency_contacts")
-      .insert({
-        user_id: user?.id,
-        contact_user_id: selectedUser.id,
-        relationship,
-        status: "pending",
-      })
-      .select()
-      .single();
+    setSaving(true);
+    setError("");
 
-    if (insertError) throw insertError;
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
 
-    // Send notification to the contact with all necessary data
-    await supabase.from("notifications").insert({
-      user_id: selectedUser.id,
-      type: "system",
-      title: "Emergency Contact Request",
-      body: `${user?.full_name || "Someone"} wants to add you as their emergency contact (${relationship}).`,
-      data: { 
-        type: "emergency_contact_invite", 
-        contact_id: data.id, 
-        requester_name: user?.full_name,
-        requester_avatar: user?.avatar_url,  // Include avatar
-        relationship: relationship,           // Include relationship
-      },
-      is_read: false,
-    });
+      // If there's a declined entry, delete it first via API
+      if (existing && existing.status === "declined") {
+        await fetch("/api/sos/delete-emergency-contact", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ contactId: existing.id }),
+        });
+        setContacts(prev => prev.filter(c => c.id !== existing.id));
+      }
 
-    setContacts(prev => [...prev, { ...data, contact_user: selectedUser }]);
-    toast.success("Invite sent! Waiting for acceptance.");
-    handleCloseModal();
-  } catch {
-    setError("Failed to add contact. Please try again.");
-  } finally {
-    setSaving(false);
-  }
-};
+      const { data, error: insertError } = await supabase
+        .from("emergency_contacts")
+        .insert({
+          user_id: user?.id,
+          contact_user_id: selectedUser.id,
+          relationship,
+          status: "pending",
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      // Send notification to the contact
+      await supabase.from("notifications").insert({
+        user_id: selectedUser.id,
+        type: "system",
+        title: "Emergency Contact Request",
+        body: `${user?.full_name || "Someone"} wants to add you as their emergency contact (${relationship}).`,
+        data: {
+          type: "emergency_contact_invite",
+          contact_id: data.id,
+          requester_name: user?.full_name,
+          requester_avatar: user?.avatar_url,
+          relationship: relationship,
+        },
+        is_read: false,
+      });
+
+      setContacts(prev => [...prev, { ...data, contact_user: selectedUser }]);
+      toast.success("Invite sent! Waiting for acceptance.");
+      handleCloseModal();
+    } catch (err) {
+      console.error("Add contact error:", err);
+      setError("Failed to add contact. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleRespondToInvite = async (inviteId: string, accept: boolean) => {
     setRespondingId(inviteId);
     try {
-      const newStatus = accept ? "accepted" : "declined";
-      const { error } = await supabase
-        .from("emergency_contacts")
-        .update({ status: newStatus })
-        .eq("id", inviteId);
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
 
-      if (error) throw error;
+      const res = await fetch("/api/sos/respond-emergency-contact", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ contactId: inviteId, accept }),
+      });
 
-      // Notify the requester
-      const invite = pendingInvites.find(i => i.id === inviteId);
-      if (invite) {
-        await supabase.from("notifications").insert({
-          user_id: invite.user_id,
-          type: "system",
-          title: accept ? "Emergency Contact Accepted" : "Emergency Contact Declined",
-          body: accept
-            ? `${user?.full_name || "Someone"} accepted your emergency contact request.`
-            : `${user?.full_name || "Someone"} declined your emergency contact request.`,
-          data: { type: "emergency_contact_response", accepted: accept },
-          is_read: false,
-        });
+      const result = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 409) {
+          toast.info(`This request was already ${result.status || "handled"}.`);
+        } else {
+          toast.danger(result.error || "Failed to respond. Try again.");
+        }
+        setPendingInvites(prev => prev.filter(i => i.id !== inviteId));
+        return;
       }
 
       setPendingInvites(prev => prev.filter(i => i.id !== inviteId));
       toast.success(accept ? "Accepted! You're now their emergency contact." : "Declined.");
+      window.dispatchEvent(new Event("peja-emergency-contact-responded"));
     } catch {
       toast.danger("Failed to respond. Try again.");
     } finally {
@@ -255,10 +288,33 @@ export default function EmergencyContactsPage() {
     if (!deleteId) return;
     setDeleting(true);
     try {
-      await supabase.from("emergency_contacts").delete().eq("id", deleteId);
+      const { data: session } = await supabase.auth.getSession();
+      const token = session?.session?.access_token;
+
+      const res = await fetch("/api/sos/delete-emergency-contact", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ contactId: deleteId }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        toast.danger(result.error || "Failed to remove contact.");
+        return;
+      }
+
       setContacts(prev => prev.filter(c => c.id !== deleteId));
       setDeleteId(null);
-    } catch {} finally { setDeleting(false); }
+      toast.success("Contact removed.");
+    } catch {
+      toast.danger("Failed to remove contact.");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleCloseModal = () => {
@@ -490,7 +546,7 @@ export default function EmergencyContactsPage() {
 
       <Modal isOpen={!!deleteId} onClose={() => setDeleteId(null)} title="Remove Contact">
         <div className="space-y-4">
-          <p className="text-dark-300">Remove this emergency contact?</p>
+          <p className="text-dark-300">Remove this emergency contact? They will no longer receive your SOS alerts. You can re-add them later.</p>
           <div className="flex gap-3 pt-4">
             <Button variant="secondary" className="flex-1" onClick={() => setDeleteId(null)}>Cancel</Button>
             <Button variant="danger" className="flex-1" onClick={handleDeleteContact} isLoading={deleting}>Remove</Button>

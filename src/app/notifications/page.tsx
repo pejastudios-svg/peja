@@ -89,7 +89,6 @@ export default function NotificationsPage() {
     return true;
   });
 
-  // Emergency contact invite modal state
   const [inviteModal, setInviteModal] = useState<InviteModalData | null>(null);
   const [responding, setResponding] = useState<"accept" | "decline" | null>(null);
 
@@ -221,72 +220,69 @@ export default function NotificationsPage() {
     }
   };
 
-  // Handle responding to emergency contact invite
   const handleInviteResponse = async (accept: boolean) => {
-    if (!inviteModal || !user) return;
+  if (!inviteModal || !user) return;
 
-    setResponding(accept ? "accept" : "decline");
+  setResponding(accept ? "accept" : "decline");
 
-    try {
-      const newStatus = accept ? "accepted" : "declined";
+  try {
+    const { data: session } = await supabase.auth.getSession();
+    const token = session?.session?.access_token;
 
-      const { error } = await supabase
-        .from("emergency_contacts")
-        .update({ status: newStatus })
-        .eq("id", inviteModal.contactId);
+    const res = await fetch("/api/sos/respond-emergency-contact", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        contactId: inviteModal.contactId,
+        accept,
+      }),
+    });
 
-      if (error) throw error;
+    const result = await res.json();
+    console.log("[InviteResponse] API result:", res.status, result);
 
-      // Get the requester's user_id to send notification back
-      const { data: contactData } = await supabase
-        .from("emergency_contacts")
-        .select("user_id")
-        .eq("id", inviteModal.contactId)
-        .single();
-
-      if (contactData) {
-        await supabase.from("notifications").insert({
-          user_id: contactData.user_id,
-          type: "system",
-          title: accept ? "Emergency Contact Accepted" : "Emergency Contact Declined",
-          body: accept
-            ? `${user.full_name || "Someone"} accepted your emergency contact request.`
-            : `${user.full_name || "Someone"} declined your emergency contact request.`,
-          data: {
-            type: "emergency_contact_response",
-            accepted: accept,
-            responder_name: user.full_name,
-            responder_avatar: user.avatar_url,
-          },
-          is_read: false,
-        });
+    if (!res.ok) {
+      if (res.status === 404) {
+        toast.info("This request no longer exists. It may have been deleted.");
+      } else if (res.status === 409) {
+        toast.info(`This request was already ${result.status || "handled"}.`);
+      } else {
+        toast.danger(result.error || "Failed to respond. Please try again.");
       }
-
-      // Mark the notification as read
-      await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("id", inviteModal.notificationId);
-
-      // Update local state
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === inviteModal.notificationId ? { ...n, is_read: true } : n))
-      );
-
-      toast.success(
-        accept ? "Accepted! You're now their emergency contact." : "Request declined."
-      );
-
       setInviteModal(null);
-    } catch (err) {
-      console.error("Failed to respond:", err);
-      toast.danger("Failed to respond. Please try again.");
-    } finally {
-      setResponding(null);
+      return;
     }
-  };
 
-  const handleNotificationClick = async (notification: Notification) => {
+    // Mark notification as read
+    await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", inviteModal.notificationId);
+
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === inviteModal.notificationId ? { ...n, is_read: true } : n))
+    );
+
+    toast.success(
+      accept ? "Accepted! You're now their emergency contact." : "Request declined."
+    );
+
+    setInviteModal(null);
+  } catch (err) {
+    console.error("Failed to respond:", err);
+    toast.danger("Failed to respond. Please try again.");
+  } finally {
+    setResponding(null);
+  }
+};
+
+ const handleNotificationClick = (notification: Notification) => {
+    console.log("=== NOTIFICATION CLICKED ===");
+    console.log("notification.data:", JSON.stringify(notification.data));
+
     // Mark as read first
     if (!notification.is_read) {
       handleMarkAsRead(notification.id);
@@ -294,30 +290,19 @@ export default function NotificationsPage() {
 
     const data = notification.data || {};
 
-    // Handle emergency contact invite - show modal directly
-    if (data.type === "emergency_contact_invite") {
-      // Check if the invite is still pending
-      const { data: contactData } = await supabase
-        .from("emergency_contacts")
-        .select("id, status, relationship")
-        .eq("id", data.contact_id)
-        .single();
+    console.log("data.type:", data.type);
 
-      if (contactData && contactData.status === "pending") {
-        // Show the modal
-        setInviteModal({
-          contactId: data.contact_id,
-          requesterName: data.requester_name || "Someone",
-          requesterAvatar: data.requester_avatar,
-          relationship: data.relationship || contactData.relationship,
-          notificationId: notification.id,
-        });
-        return;
-      } else {
-        // Already handled
-        toast.info("This request has already been handled.");
-        return;
-      }
+    // Handle emergency contact invite - show modal directly, NO database check
+    if (data.type === "emergency_contact_invite") {
+      console.log("SHOWING INVITE MODAL with contactId:", data.contact_id);
+      setInviteModal({
+        contactId: data.contact_id,
+        requesterName: data.requester_name || "Someone",
+        requesterAvatar: data.requester_avatar,
+        relationship: data.relationship,
+        notificationId: notification.id,
+      });
+      return;
     }
 
     // Handle emergency contact response
@@ -375,7 +360,6 @@ export default function NotificationsPage() {
   };
 
   const getNotificationIcon = (notification: Notification) => {
-    const type = notification.type;
     const data = notification.data || {};
 
     if (data.type === "emergency_contact_invite") {
@@ -389,7 +373,7 @@ export default function NotificationsPage() {
       );
     }
 
-    switch (type) {
+    switch (notification.type) {
       case "sos_alert":
         return <AlertTriangle className="w-5 h-5 text-red-400" />;
       case "nearby_incident":
@@ -408,18 +392,13 @@ export default function NotificationsPage() {
   };
 
   const getNotificationBgColor = (notification: Notification) => {
-    const type = notification.type;
     const data = notification.data || {};
 
-    if (data.type === "emergency_contact_invite") {
-      return "bg-yellow-500/20";
-    }
+    if (data.type === "emergency_contact_invite") return "bg-yellow-500/20";
     if (data.type === "emergency_contact_response") {
       return data.accepted ? "bg-green-500/20" : "bg-red-500/20";
     }
-    if (type === "sos_alert") {
-      return "bg-red-500/20";
-    }
+    if (notification.type === "sos_alert") return "bg-red-500/20";
     return "bg-dark-700";
   };
 
@@ -497,8 +476,7 @@ export default function NotificationsPage() {
                             {notification.body && (
                               <p className="text-sm text-dark-400 mt-0.5 line-clamp-2">{notification.body}</p>
                             )}
-
-                            {notification.data?.type === "emergency_contact_invite" && !notification.is_read && (
+                            {notification.data?.type === "emergency_contact_invite" && (
                               <p className="text-xs text-yellow-400 mt-1 font-medium">
                                 Tap to accept or decline
                               </p>
@@ -548,12 +526,13 @@ export default function NotificationsPage() {
         {/* Emergency Contact Invite Modal */}
         <Modal
           isOpen={!!inviteModal}
-          onClose={() => !responding && setInviteModal(null)}
+          onClose={() => {
+            if (!responding) setInviteModal(null);
+          }}
           title="Emergency Contact Request"
         >
           {inviteModal && (
             <div className="space-y-4">
-              {/* Requester Info */}
               <div className="flex items-center gap-4 p-4 glass-sm rounded-xl">
                 <div className="w-14 h-14 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden">
                   {inviteModal.requesterAvatar ? (
@@ -572,13 +551,13 @@ export default function NotificationsPage() {
                   </p>
                   {inviteModal.relationship && (
                     <p className="text-sm text-dark-400">
-                      Wants to add you as: <span className="text-dark-200 font-medium">{inviteModal.relationship}</span>
+                      Wants to add you as:{" "}
+                      <span className="text-dark-200 font-medium">{inviteModal.relationship}</span>
                     </p>
                   )}
                 </div>
               </div>
 
-              {/* Explanation */}
               <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 flex gap-3">
                 <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
                 <p className="text-sm text-orange-300">
@@ -586,7 +565,6 @@ export default function NotificationsPage() {
                 </p>
               </div>
 
-              {/* Actions */}
               <div className="flex gap-3 pt-2">
                 <Button
                   variant="secondary"
