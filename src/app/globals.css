@@ -1376,12 +1376,13 @@ body.modal-open {
   height: 28px;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
 }
-
 .peja-logo-text {
   position: absolute;
   left: 0;
+  right: 0;
+  text-align: center;
   background: linear-gradient(135deg, #c4b5fd 0%, #8b5cf6 50%, #7c3aed 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -1393,6 +1394,9 @@ body.modal-open {
 .peja-logo-youtube {
   position: absolute;
   left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: 18px;
   color: #ff0000;
   opacity: 0;
   transform: scale(0.8) rotate(-10deg);
@@ -1416,7 +1420,6 @@ body.modal-open {
     transform: scale(0.8) translateY(-4px);
   }
 }
-
 @keyframes peja-glow-text {
   0%, 100% {
     filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.3));
@@ -1466,7 +1469,7 @@ body.modal-open {
 
 .peja-logo-morph:hover .peja-logo-text {
   opacity: 1;
-  transform: scale(1.05);
+  transform: scale(1.05) translateY(0);
 }
 
 .peja-logo-morph:hover .peja-logo-youtube {
@@ -2398,6 +2401,35 @@ body.keyboard-open .post-detail-messages {
     opacity: 1;
   }
 }
+
+/* ===== LIQUID GLASS ADDITIONS ===== */
+/* Add these to your globals.css */
+
+/* Smooth spring-like transition for the nav indicator */
+.duration-400 {
+  transition-duration: 400ms;
+}
+
+/* Liquid glass nav bar */
+.liquid-nav {
+  background: rgba(18, 10, 35, 0.55);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* Liquid glass header */
+.liquid-header {
+  background: rgba(18, 10, 35, 0.55);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
+}
+
 
 /* =====================================================
    SUPPRESS NATIVE VIDEO CONTROLS (Android WebView + iOS)
