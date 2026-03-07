@@ -207,8 +207,7 @@ export function Header({
           )}
 
           {/* Notifications */}
-          <Link
-            href="/notifications"
+          <Link href="/notifications" data-tutorial="header-notifications"
             className={`relative p-2 rounded-xl transition-colors active:bg-white/10 ${
               pathname === "/notifications" ? "bg-white/10" : ""
             }`}
@@ -238,8 +237,7 @@ export function Header({
           </Link>
 
           {/* Profile */}
-          <Link
-            href="/profile"
+          <Link href="/profile" data-tutorial="header-profile" 
             className={`p-1.5 rounded-xl transition-colors active:bg-white/10 ${
               pathname === "/profile" ? "bg-white/10" : ""
             }`}

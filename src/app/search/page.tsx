@@ -252,13 +252,13 @@ function SearchContent() {
     };
   }, [feedKey, feedCache]);
 
-  useEffect(() => {
+useEffect(() => {
     const debounce = setTimeout(() => {
       performSearch();
     }, 300);
 
     return () => clearTimeout(debounce);
-  }, [performSearch]);
+  }, [query, selectedCategory, dateRange]);
 
   // ============================================================
   // ALL HOOKS ARE DONE
@@ -438,15 +438,13 @@ function SearchContent() {
             </div>
           )}
 
-          {/* Results */}
-          {loading && posts.length === 0 ? (
-            <div className="space-y-4">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <PostCardSkeleton key={i} />
-              ))}
+{/* Results */}
+          {posts.length === 0 && !loading ? (
+            <div className="text-center py-12 text-dark-400">No posts yet.</div>
+          ) : posts.length === 0 && loading ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
             </div>
-          ) : posts.length === 0 ? (
-            <div className="text-center py-12">No posts yet.</div>
           ) : (
             <div className="space-y-4">
               {loading && (

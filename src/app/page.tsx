@@ -623,7 +623,7 @@ export default function Home() {
             className="w-full flex items-center gap-3 px-4 py-3 glass-sm rounded-xl mb-4 text-dark-400 hover:bg-white/5 transition-colors"
           >
             <Search className="w-5 h-5" />
-            <span>Search incidents, #tags, or locations...</span>
+            <span>Search incidents, #tags, locations...</span>
           </button>
 
           <div className="flex items-center gap-2 mb-4">
@@ -652,7 +652,7 @@ export default function Home() {
           </div>
 
           {loading && posts.length === 0 ? (
-            <div className="space-y-4">
+            <div className="space-y-4" data-tutorial="home-feed">
               {Array.from({ length: 5 }).map((_, i) => (
                 <PostCardSkeleton key={i} />
               ))}
@@ -660,7 +660,7 @@ export default function Home() {
           ) : posts.length === 0 ? (
             <div className="text-center py-12">No posts yet.</div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-4" data-tutorial="home-feed">
               {refreshing && (
                 <div className="flex justify-center py-2">
                   <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />

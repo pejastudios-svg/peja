@@ -9,6 +9,7 @@ import { NIGERIAN_STATES } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStrength";
+import { resetTutorial } from "@/components/tutorial/TutorialOverlay";
 import {
   ArrowLeft,
   Bell,
@@ -758,6 +759,20 @@ export default function SettingsPage() {
             label="Terms of Service"
             onClick={() => router.push("/terms")}
           />
+                <button
+  onClick={() => {
+    resetTutorial();
+    window.dispatchEvent(new Event("peja-start-tutorial"));
+    router.push("/");
+  }}
+  className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
+>
+  <div className="flex items-center gap-3">
+    <HelpCircle className="w-5 h-5 text-dark-400" />
+    <span className="text-sm text-dark-200">App Tutorial</span>
+  </div>
+  <ChevronRight className="w-4 h-4 text-dark-500" />
+</button>
         </section>
 
         {/* Account */}
@@ -1004,6 +1019,8 @@ export default function SettingsPage() {
           </div>
         </>
       )}
+
+
 
       {/* States Selection Modal */}
       {showStatesModal && (

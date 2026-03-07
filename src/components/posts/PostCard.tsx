@@ -403,8 +403,7 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
 
       {/* Actions */}
       <div className="flex gap-2 pt-3 border-t border-white/5">
-        <button
-  onClick={handleConfirmClick}
+<button onClick={handleConfirmClick} data-tutorial="post-confirm" 
   className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95 ${
     isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"
   }`}

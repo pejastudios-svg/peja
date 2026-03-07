@@ -265,7 +265,7 @@ const activeIndex = useMemo(() => {
                 );
               }
 
-              return (
+return (
                 <Link
                   key={item.href}
                   href={item.href}
@@ -273,6 +273,12 @@ const activeIndex = useMemo(() => {
                   ref={(el) => {
                     itemRefs.current[index] = el;
                   }}
+                  data-tutorial={
+                    item.href === "/map" ? "nav-map" :
+                    item.href === "/create" ? "nav-report" :
+                    item.href === "/search" ? "nav-search" :
+                    undefined
+                  }
                   className="relative z-10 flex flex-col items-center justify-center py-1.5 px-3"
                 >
                   {inner}
@@ -282,7 +288,8 @@ const activeIndex = useMemo(() => {
           </div>
 
           {/* ── SOS pill (25%) ── */}
-          <div
+            <div
+            data-tutorial="nav-sos"
             className="flex flex-col items-center justify-center h-14"
             style={{
               ...GLASS_SOS,
