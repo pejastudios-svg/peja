@@ -30,12 +30,12 @@ export interface TutorialStep {
 }
 
 export const TUTORIAL_STEPS: TutorialStep[] = [
-  {
+{
     id: "home-feed",
-    target: "home-feed",
+    target: "home-nearby",
     title: "Your Safety Feed",
     description:
-      "This is where you see real-time incidents reported by your community. Scroll to stay updated on what is happening around you.",
+      "This is where you see real-time incidents reported by your community. Use Nearby to see what is close to you, or Trending for the most active reports.",
     icon: <Home className="w-5 h-5" />,
     position: "bottom",
   },
@@ -242,9 +242,31 @@ function SpotlightOverlay({
       return;
     }
 
+    // Scroll element into view first
     const rect = el.getBoundingClientRect();
-    const padding = 6;
+    const isVisible =
+      rect.top >= 0 &&
+      rect.bottom <= window.innerHeight &&
+      rect.left >= 0 &&
+      rect.right <= window.innerWidth;
 
+    if (!isVisible) {
+      el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      // Re-measure after scroll settles
+      setTimeout(() => {
+        const newRect = el.getBoundingClientRect();
+        const padding = 6;
+        setSpotlight({
+          top: newRect.top - padding,
+          left: newRect.left - padding,
+          width: newRect.width + padding * 2,
+          height: newRect.height + padding * 2,
+        });
+      }, 400);
+      return;
+    }
+
+    const padding = 6;
     setSpotlight({
       top: rect.top - padding,
       left: rect.left - padding,
@@ -459,9 +481,12 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("peja-start-tutorial", handleTrigger);
   }, []);
 
-  const handleStart = useCallback(() => {
-    setCurrentStep(0);
-    setPhase("spotlight");
+const handleStart = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => {
+      setCurrentStep(0);
+      setPhase("spotlight");
+    }, 500);
   }, []);
 
   const handleSkip = useCallback(() => {

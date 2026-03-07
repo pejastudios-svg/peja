@@ -626,7 +626,7 @@ export default function Home() {
             <span>Search incidents, #tags, locations...</span>
           </button>
 
-          <div className="flex items-center gap-2 mb-4">
+<div className="flex items-center gap-2 mb-4" data-tutorial="home-nearby">
             <Button
               variant={activeTab === "nearby" ? "primary" : "secondary"}
               size="sm"
