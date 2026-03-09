@@ -303,14 +303,6 @@ const getEffectiveStartData = () => {
     resetFadeTimer();
   };
 
-  // Hide poster once video has actual frames to show
-  const handleVideoCanPlay = () => {
-    setVideoBuffering(false);
-    // Small delay to ensure frame is rendered
-    setTimeout(() => {
-      setShowPoster(false);
-    }, 50);
-  };
 
   // =====================================================
   // ANIMATION STYLE HELPERS

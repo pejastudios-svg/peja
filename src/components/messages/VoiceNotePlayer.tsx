@@ -14,40 +14,6 @@ function generateFallbackWaveform(count: number): number[] {
   });
 }
 
-// Extract waveform peaks from audio data
-async function extractWaveform(url: string, numBars: number): Promise<number[]> {
-  try {
-    const response = await fetch(url);
-    const arrayBuffer = await response.arrayBuffer();
-    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    const audioContext = new AudioCtx();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-    const channelData = audioBuffer.getChannelData(0);
-    const samplesPerBar = Math.floor(channelData.length / numBars);
-    const peaks: number[] = [];
-
-    for (let i = 0; i < numBars; i++) {
-      const start = i * samplesPerBar;
-      const end = Math.min(start + samplesPerBar, channelData.length);
-      let peak = 0;
-      for (let j = start; j < end; j++) {
-        const abs = Math.abs(channelData[j]);
-        if (abs > peak) peak = abs;
-      }
-      peaks.push(peak);
-    }
-
-    const maxPeak = Math.max(...peaks, 0.01);
-    const normalized = peaks.map((p) => Math.max(0.1, p / maxPeak));
-
-    audioContext.close().catch(() => {});
-    return normalized;
-  } catch (e) {
-    return generateFallbackWaveform(numBars);
-  }
-}
-
 interface VoiceNotePlayerProps {
   src: string;
   duration?: number; // Duration in seconds if known
@@ -139,6 +105,7 @@ export function VoiceNotePlayer({
     };
 
     const handleError = () => {
+      console.error("[VoiceNotePlayer] Error loading audio:", src);
       setError(true);
       setIsLoading(false);
       setIsPlaying(false);
@@ -235,6 +202,7 @@ export function VoiceNotePlayer({
         setIsLoading(false);
       }
     } catch (e) {
+      console.error("[VoiceNotePlayer] Play error:", e);
       setError(true);
       setIsLoading(false);
     }
