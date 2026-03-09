@@ -25,6 +25,7 @@ import { CapacitorKeyboardHandler } from "@/components/navigation/CapacitorKeybo
 import { MessageCacheProvider } from "@/context/MessageCacheContext";
 import { ServiceWorkerRegistrar } from "@/components/navigation/ServiceWorkerRegistrar";
 import { TutorialProvider } from "@/components/tutorial/TutorialOverlay";
+import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -101,6 +102,7 @@ export default function RootLayout({
                         <ScrollRestorer />
                         <CapacitorKeyboardHandler />
                         <ServiceWorkerRegistrar />
+                        <ServiceWorkerRegistration />
                         <TutorialProvider>
                         {children}
                         {overlay}
