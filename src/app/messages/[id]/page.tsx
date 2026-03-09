@@ -23,6 +23,7 @@ import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
 import { VoiceNoteRecorder } from "@/components/messages/VoiceNoteRecorder";
 import { useMessageCache } from "@/context/MessageCacheContext";
 import { DocumentViewer } from "@/components/messages/DocumentViewer";
+import { CATEGORIES } from "@/lib/types";
 import {
   ArrowLeft,
   Send,
@@ -95,6 +96,112 @@ function getDocIcon(fileName: string | null): string {
   };
   return map[ext] || "📄";
 }
+
+// =====================================================
+// POST LINK PREVIEW CARD
+// =====================================================
+function PostLinkPreview({ postId, onTap }: { postId: string; onTap: () => void }) {
+  const [post, setPost] = useState<{
+    category: string;
+    comment: string | null;
+    address: string | null;
+    media_url: string | null;
+    media_type: string | null;
+  } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetch = async () => {
+      try {
+        const { data } = await supabase
+          .from("posts")
+          .select("category, comment, address, post_media(url, media_type, thumbnail_url)")
+          .eq("id", postId)
+          .single();
+
+        if (cancelled || !data) { setLoading(false); return; }
+
+        const firstMedia = (data as any).post_media?.[0];
+        setPost({
+          category: data.category,
+          comment: data.comment,
+          address: data.address,
+          media_url: firstMedia?.thumbnail_url || firstMedia?.url || null,
+          media_type: firstMedia?.media_type || null,
+        });
+      } catch {}
+      setLoading(false);
+    };
+    fetch();
+    return () => { cancelled = true; };
+  }, [postId]);
+
+  if (loading) {
+    return (
+      <div className="w-full p-3 rounded-xl border border-white/10 bg-white/5 animate-pulse">
+        <div className="flex gap-3">
+          <div className="w-14 h-14 rounded-lg bg-white/10 shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="h-3 w-20 bg-white/10 rounded" />
+            <div className="h-3 w-full bg-white/10 rounded" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!post) {
+    return (
+      <button
+        onClick={(e) => { e.stopPropagation(); onTap(); }}
+        className="text-primary-400 underline text-sm"
+      >
+        View post
+      </button>
+    );
+  }
+
+  const categoryName = CATEGORIES.find((c) => c.id === post.category)?.name || post.category;
+  const categoryColor = CATEGORIES.find((c) => c.id === post.category)?.color;
+  const borderColor =
+    categoryColor === "danger" ? "border-red-500/25" :
+    categoryColor === "warning" ? "border-orange-500/25" :
+    "border-primary-500/25";
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onTap(); }}
+      className={`w-full rounded-xl border ${borderColor} bg-white/5 overflow-hidden text-left active:scale-[0.98] transition-transform`}
+    >
+      <div className="flex gap-3 p-3">
+        {post.media_url && (
+          <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-dark-800">
+            <img src={post.media_url} alt="" className="w-full h-full object-cover" />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <span
+            className={`text-[10px] font-bold uppercase tracking-wider ${
+              categoryColor === "danger" ? "text-red-400" :
+              categoryColor === "warning" ? "text-orange-400" :
+              "text-primary-400"
+            }`}
+          >
+            {categoryName}
+          </span>
+          {post.comment && (
+            <p className="text-sm text-dark-200 line-clamp-2 mt-0.5">{post.comment}</p>
+          )}
+          {post.address && (
+            <p className="text-[11px] text-dark-500 mt-1 truncate">📍 {post.address}</p>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
 // =====================================================
 // MAIN COMPONENT
 // =====================================================
@@ -1152,53 +1259,166 @@ useEffect(() => {
     if (!el) return true;
     return el.innerText.trim().length === 0;
   }, []);
+  
 
   // =====================================================
   // RENDER MESSAGE CONTENT (with clickable links)
   // =====================================================
-  const renderContent = useCallback((content: string | null) => {
+ const renderContent = useCallback((content: string | null) => {
     if (!content) return null;
 
-    let html = content
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+    // Check for peja.life post links and extract them
+    const pejaPostRegex = /https?:\/\/(?:www\.)?peja\.life\/post\/([a-zA-Z0-9\-]+)\/?/g;
+    const pejaMapRegex = /https?:\/\/(?:www\.)?peja\.life\/map\?([^\s<)]+)/g;
+    const pejaLinkRegex = /https?:\/\/(?:www\.)?peja\.life(\/[^\s<)]*)?/g;
 
-    // Links FIRST (before other formatting so we don't break URLs)
-    html = html.replace(
-      /(?<!href=["'])(?<!>)(https?:\/\/[^\s<)]+)/g,
-      '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline hover:text-primary-300 break-all">$1</a>'
-    );
+    // Split content into parts: peja post links become cards, rest is formatted text
+    const parts: { type: "text" | "post-link" | "map-link" | "peja-link"; value: string; id?: string }[] = [];
+    let lastIndex = 0;
+    const allPejaLinks = [...content.matchAll(/https?:\/\/(?:www\.)?peja\.life(\/[^\s<)]*)?/g)];
 
-    html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-    html = html.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
-    html = html.replace(
-      /`(.*?)`/g,
-      '<code class="px-1 py-0.5 rounded bg-white/10 text-xs font-mono">$1</code>'
-    );
-    html = html.replace(
-      /^[-•]\s+(.+)$/gm,
-      '<div class="flex gap-2 items-start"><span class="text-primary-400 mt-0.5">•</span><span>$1</span></div>'
-    );
-    html = html.replace(
-      /^(\d+)\.\s+(.+)$/gm,
-      '<div class="flex gap-2 items-start"><span class="text-primary-400 font-medium min-w-[1.2em]">$1.</span><span>$2</span></div>'
-    );
+    if (allPejaLinks.length === 0) {
+      parts.push({ type: "text", value: content });
+    } else {
+      for (const match of allPejaLinks) {
+        const matchStart = match.index!;
+        const matchEnd = matchStart + match[0].length;
+
+        // Add text before this link
+        if (matchStart > lastIndex) {
+          parts.push({ type: "text", value: content.slice(lastIndex, matchStart) });
+        }
+
+        const url = match[0];
+        const postMatch = url.match(/\/post\/([a-zA-Z0-9\-]+)/);
+        const mapMatch = url.match(/\/map\?(.+)/);
+
+        if (postMatch) {
+          parts.push({ type: "post-link", value: url, id: postMatch[1] });
+        } else if (mapMatch) {
+          parts.push({ type: "map-link", value: url });
+        } else {
+          parts.push({ type: "peja-link", value: url });
+        }
+
+        lastIndex = matchEnd;
+      }
+      // Add remaining text
+      if (lastIndex < content.length) {
+        parts.push({ type: "text", value: content.slice(lastIndex) });
+      }
+    }
+
+    const formatText = (text: string) => {
+      let html = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      html = html.replace(
+        /(?<!href=["'])(?<!>)(https?:\/\/[^\s<)]+)/g,
+        '<a href="$1" data-peja-link target="_blank" rel="noopener noreferrer" class="text-primary-400 underline hover:text-primary-300 break-all">$1</a>'
+      );
+      html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
+      html = html.replace(
+        /`(.*?)`/g,
+        '<code class="px-1 py-0.5 rounded bg-white/10 text-xs font-mono">$1</code>'
+      );
+      html = html.replace(
+        /^[-•]\s+(.+)$/gm,
+        '<div class="flex gap-2 items-start"><span class="text-primary-400 mt-0.5">•</span><span>$1</span></div>'
+      );
+      html = html.replace(
+        /^(\d+)\.\s+(.+)$/gm,
+        '<div class="flex gap-2 items-start"><span class="text-primary-400 font-medium min-w-[1.2em]">$1.</span><span>$2</span></div>'
+      );
+      return html;
+    };
+
+    const handleLinkClick = (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const anchor = target.closest("a");
+      if (!anchor) return;
+
+      const href = anchor.getAttribute("href") || "";
+
+      // Intercept peja.life links and navigate in-app
+      const pejaMatch = href.match(/https?:\/\/(?:www\.)?peja\.life(\/[^\s]*)?/);
+      if (pejaMatch) {
+        e.preventDefault();
+        e.stopPropagation();
+        const path = pejaMatch[1] || "/";
+        router.push(path);
+        return;
+      }
+
+      e.stopPropagation();
+    };
 
     return (
-      <div
-        className="text-sm whitespace-pre-wrap break-words leading-relaxed [&_a]:text-primary-400 [&_a]:underline [&_strong]:font-bold [&_em]:italic"
-        dangerouslySetInnerHTML={{ __html: html }}
-        onClick={(e) => {
-          // Allow link clicks to propagate without triggering parent handlers
-          const target = e.target as HTMLElement;
-          if (target.tagName === "A") {
-            e.stopPropagation();
+      <div className="space-y-1.5">
+        {parts.map((part, i) => {
+          if (part.type === "post-link" && part.id) {
+            return (
+              <PostLinkPreview
+                key={`post-${i}-${part.id}`}
+                postId={part.id}
+                onTap={() => router.push(`/post/${part.id}`)}
+              />
+            );
           }
-        }}
-      />
+          if (part.type === "map-link") {
+            return (
+              <button
+                key={`map-${i}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const url = new URL(part.value);
+                  router.push(`/map${url.search}`);
+                }}
+                className="w-full p-3 rounded-xl border border-red-500/20 bg-red-500/10 text-left active:scale-[0.98] transition-transform"
+              >
+                <p className="text-xs font-medium text-red-400 mb-1">🚨 SOS Live Location</p>
+                <p className="text-sm text-dark-200">Tap to track on map</p>
+              </button>
+            );
+          }
+          if (part.type === "peja-link") {
+            return (
+              <button
+                key={`link-${i}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  try {
+                    const url = new URL(part.value);
+                    router.push(url.pathname + url.search);
+                  } catch {
+                    router.push("/");
+                  }
+                }}
+                className="text-primary-400 underline text-sm break-all text-left"
+              >
+                {part.value}
+              </button>
+            );
+          }
+          // Regular text
+          const trimmed = part.value.trim();
+          if (!trimmed) return null;
+          return (
+            <div
+              key={`text-${i}`}
+              className="text-sm whitespace-pre-wrap break-words leading-relaxed [&_a]:text-primary-400 [&_a]:underline [&_strong]:font-bold [&_em]:italic"
+              dangerouslySetInnerHTML={{ __html: formatText(part.value) }}
+              onClick={handleLinkClick}
+            />
+          );
+        })}
+      </div>
     );
-  }, []);
+  }, [router]);
+
+  
 
   // =====================================================
   // HTML TO MARKDOWN
