@@ -84,11 +84,14 @@ const incrementView = async (id: string) => {
       const nextIndex = Math.min(Math.max(initialIndex, 0), Math.max(0, mediaItems.length - 1));
       setIndex(nextIndex);
 
+ // Double rAF to ensure DOM is fully laid out
       requestAnimationFrame(() => {
-        const el = scrollerRef.current;
-        if (!el) return;
-        const w = el.clientWidth || 1;
-        el.scrollLeft = w * nextIndex;
+        requestAnimationFrame(() => {
+          const el = scrollerRef.current;
+          if (!el) return;
+          const w = el.clientWidth || 1;
+          el.scrollTo({ left: w * nextIndex, behavior: "instant" });
+        });
       });
     }
     

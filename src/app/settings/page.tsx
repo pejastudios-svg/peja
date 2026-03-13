@@ -450,11 +450,6 @@ export default function SettingsPage() {
       </header>
 
       <main className="pt-14 max-w-2xl mx-auto px-4">
-        {debugInfo && (
-          <div className="mt-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <p className="text-xs text-blue-400 font-mono">{debugInfo}</p>
-          </div>
-        )}
 
         {saveSuccess && (
           <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">

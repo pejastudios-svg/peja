@@ -23,6 +23,9 @@ import { useToast } from "@/context/ToastContext";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { apiUrl } from "@/lib/api";
+import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
+import { shareUrl } from "@/lib/share";
+
 import {
   ArrowLeft,
   MapPin,
@@ -308,7 +311,7 @@ export default function PostDetailPage() {
 
   // Confirmation
   const [confirmLoading, setConfirmLoading] = useState(false);
-
+const [confettiTrigger, setConfettiTrigger] = useState(false);
   // Comments
   const [allComments, setAllComments] = useState<Comment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
@@ -572,15 +575,16 @@ const handleConfirm = async () => {
     return;
   }
 
-  setConfirmLoading(true);
+  const wasConfirmed = confirmCtx.isConfirmed(postId);
+
+  if (!wasConfirmed) {
+    setConfettiTrigger(false);
+    requestAnimationFrame(() => setConfettiTrigger(true));
+  }
+
   try {
-    const res = await confirmCtx.toggle(postId, post?.confirmations || 0);
-
-    // notify owner only when confirming (not unconfirm)
-
+    await confirmCtx.toggle(postId, post?.confirmations || 0);
   } catch (err) {
-  } finally {
-    setConfirmLoading(false);
   }
 };
 
@@ -830,24 +834,15 @@ setLikeBusy(prev => {
   };
 
   // Share
-  const handleShare = async () => {
-const url = `https://peja.life/post/${postId}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Peja Alert",
-          text: "Check out this incident on Peja",
-          url,
-        });
-      } catch {}
-    } else {
-      try {
-        await navigator.clipboard.writeText(url);
-        toastApi.success("Link copied!");
-      } catch {
-        // Fallback for older browsers
-        prompt("Copy this link:", url);
-      }
+const handleShare = async () => {
+    const url = `https://peja.life/post/${postId}`;
+    const result = await shareUrl({
+      title: "Peja Alert",
+      text: "Check out this incident on Peja",
+      url,
+    });
+    if (result === "copied") {
+      toastApi.success("Link copied!");
     }
   };
 
@@ -1453,18 +1448,14 @@ if (error || !post) {
             )}
 
             <div className="flex gap-2 pt-2">
-              <button
+                <button
                 onClick={handleConfirm}
-                disabled={confirmLoading}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all active:scale-95 ${
                   isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"
                 }`}
               >
-                {confirmLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <CheckCircle className={`w-4 h-4 ${isConfirmed ? "fill-current" : ""}`} />
-                )}
+                <ConfirmConfetti trigger={confettiTrigger} />
+                <CheckCircle className={`w-4 h-4 ${isConfirmed ? "fill-current" : ""}`} />
                 {isConfirmed ? "Confirmed" : "Confirm"} ({confirmCount})
               </button>
               <button onClick={handleShare} className="p-2.5 rounded-xl glass-sm text-dark-300 hover:bg-white/10">

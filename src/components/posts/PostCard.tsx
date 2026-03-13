@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, memo } from "react";
+import { useState, useEffect, useRef, memo } from "react";
 import { useRouter } from "next/navigation";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
@@ -10,6 +10,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useFeedCache } from "@/context/FeedContext";
 import { useToast } from "@/context/ToastContext";
 import { getVideoThumbnailUrl, preloadVideoChunk } from "@/lib/videoThumbnail";
+import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
+import { shareUrl } from "@/lib/share";
 
 import {
   MapPin,
@@ -62,6 +64,8 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   // Optimistic local state for instant UI feedback
 const [optimisticConfirmed, setOptimisticConfirmed] = useState<boolean | null>(null);
 const [optimisticCount, setOptimisticCount] = useState<number | null>(null);
+const [confettiTrigger, setConfettiTrigger] = useState(false);
+const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   const { user } = useAuth();
   const confirm = useConfirm();
@@ -70,8 +74,9 @@ const [optimisticCount, setOptimisticCount] = useState<number | null>(null);
 const isConfirmed = optimisticConfirmed ?? confirm.isConfirmed(post.id);
 const confirmations = optimisticCount ?? confirm.getCount(post.id, post.confirmations || 0);
 
-  useEffect(() => {
+useEffect(() => {
     confirm.hydrateCounts([{ postId: post.id, confirmations: post.confirmations || 0 }]);
+    confirm.loadConfirmedFor([post.id]);
   }, [post.id]);
 
   // Preload first video chunk when card mounts (for faster playback)
@@ -99,7 +104,10 @@ const handleConfirmClick = async (e: React.MouseEvent) => {
   // Optimistic update - instant UI change
   setOptimisticConfirmed(!wasConfirmed);
   setOptimisticCount(wasConfirmed ? Math.max(0, currentCount - 1) : currentCount + 1);
-
+if (!wasConfirmed) {
+    setConfettiTrigger(false);
+    requestAnimationFrame(() => setConfettiTrigger(true));
+  }
   try {
     const res = await confirm.toggle(post.id, post.confirmations || 0);
 
@@ -169,45 +177,18 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
   };
 
  const handleShareClick = async (e: React.MouseEvent) => {
-  e.stopPropagation();
-  
- const url = `https://peja.life/post/${post.id}`;
-  
-  // Try native share first (mobile)
-  if (navigator.share) {
-    try {
-      await navigator.share({ 
-        title: "Peja Alert", 
-        text: post.comment || category?.name || "Check out this incident",
-        url 
-      });
-      return;
-    } catch (err) {
-      // User cancelled or share failed, fall through to clipboard
-      if ((err as Error).name === 'AbortError') return;
+    e.stopPropagation();
+    const url = `https://peja.life/post/${post.id}`;
+    const result = await shareUrl({
+      title: "Peja Alert",
+      text: post.comment || category?.name || "Check out this incident",
+      url,
+    });
+    if (result === "copied") {
+      toast.success("Link copied!");
     }
-  }
-  
-  // Fallback: copy to clipboard
-  try {
-    await navigator.clipboard.writeText(url);
-    toast.success("Link copied to clipboard!");
-  } catch {
-    // Final fallback for older browsers
-    const textArea = document.createElement("textarea");
-    textArea.value = url;
-    textArea.style.position = "fixed";
-    textArea.style.left = "-999999px";
-    document.body.appendChild(textArea);
-    textArea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textArea);
-    toast.success("Link copied to clipboard!");
-  }
-  
-  // Still call onShare if provided (for analytics, etc.)
-  onShare?.(post);
-};
+    onShare?.(post);
+  };
 
   const currentMedia = post.media?.[currentMediaIndex];
   const commentText = post.comment || "";
@@ -318,13 +299,13 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
                 <>
                   <button
                     onClick={handlePrevMedia}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
+                    className="absolute left-1 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center active:bg-black/70 z-10"
                   >
                     <ChevronLeft className="w-5 h-5 text-white" />
                   </button>
                   <button
                     onClick={handleNextMedia}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 flex items-center justify-center"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 flex items-center justify-center active:bg-black/70 z-10"
                   >
                     <ChevronRight className="w-5 h-5 text-white" />
                   </button>
@@ -403,11 +384,15 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
 
       {/* Actions */}
       <div className="flex gap-2 pt-3 border-t border-white/5">
-<button onClick={handleConfirmClick} data-tutorial="post-confirm" 
-  className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95 ${
+<button
+  ref={confirmBtnRef}
+  onClick={handleConfirmClick}
+  data-tutorial="post-confirm"
+  className={`relative flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95 ${
     isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"
   }`}
 >
+  <ConfirmConfetti trigger={confettiTrigger} />
   <CheckCircle className={`w-4 h-4 ${isConfirmed ? "fill-current" : ""}`} />
   <span>{isConfirmed ? "Confirmed" : "Confirm"}</span>
 </button>
