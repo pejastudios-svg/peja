@@ -602,7 +602,7 @@ export default function Home() {
       <Header onCreateClick={() => router.push("/create")} />
 
       <PullToRefresh onRefresh={handleRefresh}>
-      <main className="pt-14">
+      <main className="pt-12">
         {user && !user.occupation && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
             <div className="glass-card p-4 flex items-center justify-between">

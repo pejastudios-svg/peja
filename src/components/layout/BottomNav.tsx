@@ -45,10 +45,10 @@ export function BottomNav() {
     pathname.startsWith("/post/") || !!pathname.match(/^\/messages\/[^/]+$/);
 
 const activeIndex = useMemo(() => {
-    if (pathname === "/") return 0;
+    if (pathname === "/" || pathname === "") return 0;
     if (pathname.startsWith("/map")) return 1;
-    if (pathname === "/create") return 2;
-    if (pathname === "/search") return 3;
+    if (pathname.startsWith("/create")) return 2;
+    if (pathname.startsWith("/search")) return 3;
     return -1;
   }, [pathname]);
 
@@ -191,7 +191,7 @@ const activeIndex = useMemo(() => {
           {/* ── Nav pill (75%) ── */}
           <div
             ref={navRef}
-            className="relative flex items-center justify-around h-14 overflow-hidden"
+            className="relative flex items-center justify-around h-14"
              style={{
               ...GLASS,
               borderRadius: "20px",

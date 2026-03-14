@@ -12,7 +12,7 @@ export async function shareUrl(opts: {
     typeof (window as any).Capacitor !== "undefined" &&
     (window as any).Capacitor.isNativePlatform?.();
 
-  // Native: use Capacitor Share (iOS + Android)
+  // Native: use Capacitor Share only, never fall through
   if (isCapacitor) {
     try {
       await Share.share({
@@ -21,10 +21,11 @@ export async function shareUrl(opts: {
         url,
         dialogTitle: title,
       });
-      return "shared";
     } catch {
-      return "cancelled";
+      // User cancelled or error - either way, do nothing
     }
+    // Always return "shared" on native - never copy to clipboard
+    return "shared";
   }
 
   // Web: try navigator.share
@@ -37,7 +38,7 @@ export async function shareUrl(opts: {
     }
   }
 
-  // Fallback: clipboard
+  // Fallback: clipboard (web only)
   try {
     await navigator.clipboard.writeText(url);
     return "copied";
