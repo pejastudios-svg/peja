@@ -180,42 +180,25 @@ const activeIndex = useMemo(() => {
         {/* ── Full nav ── */}
         <div
           className="flex items-center gap-2"
-          style={{
+            style={{
             opacity: minimized ? 0 : 1,
-            transform: `translateY(${minimized ? "20px" : "0"}) scale(${minimized ? 0.9 : 1})`,
+            transform: `translateY(${minimized ? "20px" : "0"})`,
             pointerEvents: minimized ? "none" : "auto",
-            transition:
-              "opacity 0.3s cubic-bezier(0.32, 0.72, 0, 1), transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+            transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+            willChange: "transform, opacity",
           }}
         >
           {/* ── Nav pill (75%) ── */}
           <div
             ref={navRef}
             className="relative flex items-center justify-around h-14 overflow-hidden"
-            style={{
+             style={{
               ...GLASS,
               borderRadius: "20px",
               flex: "3",
+              willChange: "transform",
             }}
           >
-{/* Sliding indicator */}
-            <div
-              className="absolute pointer-events-none"
-              style={{
-                left: indicatorStyle.left,
-                width: indicatorStyle.width,
-                top: "7px",
-                height: "42px",
-                borderRadius: "14px",
-                background: "rgba(139, 92, 246, 0.18)",
-                border: "1px solid rgba(139, 92, 246, 0.2)",
-                boxShadow:
-                  "0 0 12px rgba(139, 92, 246, 0.1), inset 0 0.5px 0 rgba(255,255,255,0.06)",
-                transition:
-                  "left 0.4s cubic-bezier(0.32, 0.72, 0, 1), width 0.3s ease, opacity 0.3s ease",
-                opacity: activeIndex >= 0 ? 1 : 0,
-              }}
-            />
 
             {navItems.map((item, index) => {
               const isActive = index === activeIndex;
@@ -226,17 +209,17 @@ const activeIndex = useMemo(() => {
                   <Icon
                     className="w-[22px] h-[22px] transition-all duration-300"
                     style={{
-                      color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.35)",
+                      color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.55)",
                       filter: isActive
                         ? "drop-shadow(0 0 6px rgba(167,139,250,0.4))"
                         : "none",
                     }}
-                    strokeWidth={isActive ? 2.5 : 2}
+                    strokeWidth={2.5}
                   />
                   <span
                     className="text-[10px] mt-0.5 font-semibold transition-all duration-300"
                     style={{
-                      color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.28)",
+                    color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.45)",
                     }}
                   >
                     {item.label}

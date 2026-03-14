@@ -1,11 +1,5 @@
 import { Share } from "@capacitor/share";
 
-/**
- * Share a URL using native share sheet on mobile (Capacitor)
- * or navigator.share on web, with clipboard fallback.
- *
- * Returns: "shared" | "copied" | "cancelled"
- */
 export async function shareUrl(opts: {
   title: string;
   text?: string;
@@ -13,12 +7,12 @@ export async function shareUrl(opts: {
 }): Promise<"shared" | "copied" | "cancelled"> {
   const { title, text, url } = opts;
 
-  // Try Capacitor native share first (works on iOS + Android)
   const isCapacitor =
     typeof window !== "undefined" &&
     typeof (window as any).Capacitor !== "undefined" &&
     (window as any).Capacitor.isNativePlatform?.();
 
+  // Native: use Capacitor Share (iOS + Android)
   if (isCapacitor) {
     try {
       await Share.share({
@@ -28,12 +22,8 @@ export async function shareUrl(opts: {
         dialogTitle: title,
       });
       return "shared";
-    } catch (err: any) {
-      // User cancelled
-      if (err?.message?.includes("cancel") || err?.message?.includes("dismiss")) {
-        return "cancelled";
-      }
-      // Fall through to web share
+    } catch {
+      return "cancelled";
     }
   }
 
@@ -44,7 +34,6 @@ export async function shareUrl(opts: {
       return "shared";
     } catch (err: any) {
       if (err?.name === "AbortError") return "cancelled";
-      // Fall through to clipboard
     }
   }
 
@@ -53,7 +42,6 @@ export async function shareUrl(opts: {
     await navigator.clipboard.writeText(url);
     return "copied";
   } catch {
-    // Final fallback
     const ta = document.createElement("textarea");
     ta.value = url;
     ta.style.position = "fixed";
