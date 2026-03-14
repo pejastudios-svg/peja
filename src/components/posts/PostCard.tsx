@@ -176,7 +176,7 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
     router.push(`/post/${post.id}${sk}`, { scroll: false });
   };
 
- const handleShareClick = async (e: React.MouseEvent) => {
+const handleShareClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const url = `https://peja.life/post/${post.id}`;
     const result = await shareUrl({
@@ -187,7 +187,6 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
     if (result === "copied") {
       toast.success("Link copied!");
     }
-    onShare?.(post);
   };
 
   const currentMedia = post.media?.[currentMediaIndex];

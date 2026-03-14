@@ -15,12 +15,14 @@ const navItems = [
 ];
 
 const GLASS: React.CSSProperties = {
-  background: "rgba(40, 30, 60, 0.45)",
-  backdropFilter: "blur(50px) saturate(180%)",
-  WebkitBackdropFilter: "blur(50px) saturate(180%)",
-  border: "1px solid rgba(255, 255, 255, 0.12)",
+  background: "rgba(30, 20, 50, 0.75)",
+  backdropFilter: "blur(40px) saturate(180%)",
+  WebkitBackdropFilter: "blur(40px) saturate(180%)",
+  border: "1px solid rgba(255, 255, 255, 0.1)",
   boxShadow:
-    "0 2px 20px rgba(0, 0, 0, 0.25), inset 0 0.5px 0 rgba(255, 255, 255, 0.1)",
+    "0 2px 20px rgba(0, 0, 0, 0.3), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)",
+  transform: "translateZ(0)",
+  WebkitTransform: "translateZ(0)",
 };
 
 const GLASS_SOS: React.CSSProperties = {
@@ -180,23 +182,20 @@ const activeIndex = useMemo(() => {
         {/* ── Full nav ── */}
         <div
           className="flex items-center gap-2"
-            style={{
+style={{
             opacity: minimized ? 0 : 1,
-            transform: `translateY(${minimized ? "20px" : "0"})`,
             pointerEvents: minimized ? "none" : "auto",
-            transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
-            willChange: "transform, opacity",
+            transition: "opacity 0.3s ease",
           }}
         >
           {/* ── Nav pill (75%) ── */}
           <div
             ref={navRef}
             className="relative flex items-center justify-around h-14"
-             style={{
+style={{
               ...GLASS,
               borderRadius: "20px",
               flex: "3",
-              willChange: "transform",
             }}
           >
 

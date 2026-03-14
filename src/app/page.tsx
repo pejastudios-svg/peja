@@ -665,7 +665,7 @@ export default function Home() {
                   post={post}
                   sourceKey={feedKey}
                   onConfirm={() => {}}
-                  onShare={handleSharePost}
+                  onShare={() => {}}
                 />
               ))}
             </div>
