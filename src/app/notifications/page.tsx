@@ -242,7 +242,6 @@ export default function NotificationsPage() {
     });
 
     const result = await res.json();
-    console.log("[InviteResponse] API result:", res.status, result);
 
     if (!res.ok) {
       if (res.status === 404) {
@@ -280,8 +279,6 @@ export default function NotificationsPage() {
 };
 
  const handleNotificationClick = (notification: Notification) => {
-    console.log("=== NOTIFICATION CLICKED ===");
-    console.log("notification.data:", JSON.stringify(notification.data));
 
     // Mark as read first
     if (!notification.is_read) {
@@ -290,11 +287,9 @@ export default function NotificationsPage() {
 
     const data = notification.data || {};
 
-    console.log("data.type:", data.type);
 
     // Handle emergency contact invite - show modal directly, NO database check
     if (data.type === "emergency_contact_invite") {
-      console.log("SHOWING INVITE MODAL with contactId:", data.contact_id);
       setInviteModal({
         contactId: data.contact_id,
         requesterName: data.requester_name || "Someone",

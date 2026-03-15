@@ -75,7 +75,6 @@ export default function AdminNotificationsPage() {
     let mounted = true;
 
     const fetchItems = async () => {
-      console.log("[Admin Notifications] fetchItems called, uid:", uid);
 
       const { data, error } = await supabase
         .from("admin_notifications")
@@ -84,7 +83,6 @@ export default function AdminNotificationsPage() {
         .order("created_at", { ascending: false })
         .limit(80);
 
-      console.log("[Admin Notifications] Query result:", {
         dataLength: data?.length,
         error,
         firstItem: data?.[0],
@@ -110,7 +108,6 @@ export default function AdminNotificationsPage() {
         () => {
           if (debounceRef.current) clearTimeout(debounceRef.current);
           debounceRef.current = setTimeout(() => {
-            console.log("[Admin Notifications] Realtime event, refetching...");
             fetchItems();
           }, 250);
         }
@@ -174,7 +171,6 @@ export default function AdminNotificationsPage() {
     router.push("/admin/notifications");
   };
 
-  console.log("[Admin Notifications] Render - items:", items.length, "loading:", loading);
 
   return (
     <HudShell

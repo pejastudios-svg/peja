@@ -33,6 +33,7 @@ const navItems = [
   { href: "/admin/guardians", icon: Shield, label: "Guardians", badge: false },
   { href: "/admin/vips", icon: Crown, label: "VIPs", badge: false }, 
   { href: "/admin/analytics", icon: BarChart3, label: "Analytics", badge: false },
+  { href: "/admin/security", icon: Shield, label: "Security" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

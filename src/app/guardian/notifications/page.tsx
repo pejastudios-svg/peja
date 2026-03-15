@@ -50,14 +50,11 @@ export default function GuardianNotificationsPage() {
     let mounted = true;
 
     const fetchItems = async () => {
-      console.log("[Guardian Notifications] fetchItems called");
 
       const { data: auth } = await supabase.auth.getUser();
       const uid = auth.user?.id;
-      console.log("[Guardian Notifications] uid:", uid);
 
       if (!uid) {
-        console.log("[Guardian Notifications] No uid, setting empty");
         if (mounted) {
           setItems([]);
           setLoading(false);
@@ -72,7 +69,6 @@ export default function GuardianNotificationsPage() {
         .order("created_at", { ascending: false })
         .limit(80);
 
-      console.log("[Guardian Notifications] Query result:", {
         data: data?.length,
         error,
         firstItem: data?.[0],
@@ -104,7 +100,6 @@ export default function GuardianNotificationsPage() {
             filter: `recipient_id=eq.${uid}`,
           },
           () => {
-            console.log("[Guardian Notifications] Realtime event, refetching...");
             fetchItems();
           }
         )
@@ -175,7 +170,6 @@ export default function GuardianNotificationsPage() {
     }
   };
 
-  console.log("[Guardian Notifications] Render - items:", items.length, "loading:", loading);
 
   return (
     <div className="p-6">

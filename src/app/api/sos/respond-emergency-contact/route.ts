@@ -9,7 +9,6 @@ export async function POST(req: NextRequest) {
     const { user } = await requireUser(req);
     const { contactId, accept } = await req.json();
 
-    console.log("[respond-emergency-contact] contactId:", contactId, "accept:", accept, "user:", user.id);
 
     if (!contactId || typeof accept !== "boolean") {
       return NextResponse.json({ ok: false, error: "Missing contactId or accept" }, { status: 400 });
@@ -24,7 +23,6 @@ export async function POST(req: NextRequest) {
       .eq("id", contactId)
       .single();
 
-    console.log("[respond-emergency-contact] found contact:", contact, "error:", fetchErr);
 
     if (fetchErr || !contact) {
       return NextResponse.json(
@@ -56,7 +54,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Failed to update" }, { status: 500 });
     }
 
-    console.log("[respond-emergency-contact] updated to:", newStatus);
 
     // Get responder name
     const { data: currentUser } = await supabaseAdmin
