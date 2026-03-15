@@ -1,22 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "../_supabaseAdmin";
+import { getSupabaseAdmin } from "../../_supabaseAdmin";
+import { requireUser } from "../../_auth";
 
-export async function DELETE(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const token = authHeader.replace("Bearer ", "");
+    const { user } = await requireUser(req);
     const supabaseAdmin = getSupabaseAdmin();
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
 
-    if (authError || !user) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    // Verify caller is admin
+    const { data: adminCheck } = await supabaseAdmin
+      .from("users")
+      .select("is_admin")
+      .eq("id", user.id)
+      .single();
+
+    if (!adminCheck?.is_admin) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const userId = user.id;
+    const { userId } = await req.json();
+    if (!userId) {
+      return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+    }
+
+    if (userId === user.id) {
+      return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
+    }
 
     // Helper: silently ignore errors from missing tables/columns
     const safeDelete = async (table: string, column: string, value: string) => {
@@ -49,6 +58,7 @@ export async function DELETE(req: NextRequest) {
     const postIds = (userPosts || []).map((p: any) => p.id);
 
     if (postIds.length > 0) {
+      // Get all comments on user's posts
       const { data: postComments } = await supabaseAdmin
         .from("post_comments")
         .select("id")
@@ -108,6 +118,7 @@ export async function DELETE(req: NextRequest) {
 
     if (convIds.length > 0) {
       for (const convId of convIds) {
+        // Get all message IDs in conversation
         const { data: convMsgs } = await supabaseAdmin
           .from("messages")
           .select("id")
@@ -126,6 +137,7 @@ export async function DELETE(req: NextRequest) {
         await safeDelete("typing_indicators", "conversation_id", convId);
         await safeDelete("conversation_participants", "conversation_id", convId);
 
+        // Delete conversation itself
         try {
           await supabaseAdmin.from("conversations").delete().eq("id", convId);
         } catch {}
@@ -133,6 +145,8 @@ export async function DELETE(req: NextRequest) {
     }
 
     await safeDeleteOr("dm_blocks", `blocker_id.eq.${userId},blocked_id.eq.${userId}`);
+
+    // Clean up any remaining message data
     await safeDelete("message_reactions", "user_id", userId);
     await safeDelete("message_read_receipts", "user_id", userId);
     await safeDelete("message_reads", "user_id", userId);
@@ -181,10 +195,10 @@ export async function DELETE(req: NextRequest) {
       await supabaseAdmin.auth.admin.deleteUser(userId);
     } catch {}
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ ok: true });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Failed to delete account" },
+      { ok: false, error: error.message || "Server error" },
       { status: 500 }
     );
   }

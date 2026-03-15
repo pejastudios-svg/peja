@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Search, Phone, Mail, Shield, Ban, CheckCircle } from "lucide-react";
+import { Loader2, Search, Phone, Mail, Shield, Ban, CheckCircle, Trash2, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
@@ -39,6 +39,9 @@ export default function AdminUsersPage() {
   const { session } = useAuth();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
     const highlightId = searchParams.get("highlight");
@@ -171,6 +174,64 @@ try {
     setActionLoading(null);
   }
 };
+
+const deleteUser = async (userId: string, userName: string) => {
+    if (!confirm(`Permanently delete ${userName || "this user"} and ALL their data? This cannot be undone.`)) return;
+    if (!confirm("Are you absolutely sure? This deletes posts, comments, messages, SOS alerts, everything.")) return;
+
+    setActionLoading(userId);
+    try {
+      const res = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ userId }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to delete user");
+      }
+
+      await fetchUsers();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete user");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget || deleteConfirmText !== "DELETE") return;
+
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/admin/delete-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ userId: deleteTarget.id }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || "Failed to delete user");
+      }
+
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+      await fetchUsers();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete user");
+    } finally {
+      setDeleting(false);
+    }
+  };
+  
 
   return (
     <HudShell
@@ -336,6 +397,13 @@ try {
                           <Ban className="w-3.5 h-3.5" />
                         </button>
                       )}
+<button
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: user.id, name: user.full_name || user.email || "Unknown" }); setDeleteConfirmText(""); }}
+                        className="p-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-colors"
+                        title="Delete User"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -344,6 +412,87 @@ try {
           )}
         </HudPanel>
       </div>
+      {/* Delete User Modal */}
+      {deleteTarget && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50"
+            onClick={() => { setDeleteTarget(null); setDeleteConfirmText(""); }}
+          />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="w-full max-w-md rounded-2xl p-6"
+              style={{
+                background: "rgba(18, 12, 36, 0.98)",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
+                boxShadow: "0 25px 60px rgba(0,0,0,0.6), 0 0 40px rgba(239,68,68,0.08)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-bold text-white">Delete User</h3>
+                <button
+                  onClick={() => { setDeleteTarget(null); setDeleteConfirmText(""); }}
+                  className="p-1.5 rounded-lg hover:bg-white/10"
+                >
+                  <X className="w-5 h-5 text-dark-400" />
+                </button>
+              </div>
+
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 mb-4">
+                <p className="text-sm text-red-400 font-medium">This action is permanent and cannot be undone.</p>
+                <p className="text-xs text-red-400/70 mt-1">
+                  All posts, comments, messages, SOS alerts, and account data for this user will be permanently deleted.
+                </p>
+              </div>
+
+              <p className="text-sm text-dark-300 mb-4">
+                You are about to delete <span className="text-white font-semibold">{deleteTarget.name}</span>
+              </p>
+
+              <div className="mb-4">
+                <label className="text-xs text-dark-400 block mb-1.5">
+                  Type <span className="text-red-400 font-bold">DELETE</span> to confirm
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder="Type DELETE"
+                  className="w-full px-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-red-500/50"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setDeleteTarget(null); setDeleteConfirmText(""); }}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteUser}
+                  disabled={deleteConfirmText !== "DELETE" || deleting}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-600 text-white disabled:opacity-40 hover:bg-red-500 transition-colors flex items-center justify-center gap-2"
+                >
+                  {deleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      Delete Forever
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </HudShell>
   );
 }
