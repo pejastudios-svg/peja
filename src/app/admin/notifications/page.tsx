@@ -81,12 +81,7 @@ export default function AdminNotificationsPage() {
         .select("*")
         .eq("recipient_id", uid)
         .order("created_at", { ascending: false })
-        .limit(80);
-
-        dataLength: data?.length,
-        error,
-        firstItem: data?.[0],
-      });
+.limit(80);
 
       if (mounted) {
         setItems((data || []) as AdminNotification[]);

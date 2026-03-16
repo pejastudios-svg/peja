@@ -69,11 +69,6 @@ export default function GuardianNotificationsPage() {
         .order("created_at", { ascending: false })
         .limit(80);
 
-        data: data?.length,
-        error,
-        firstItem: data?.[0],
-      });
-
       if (mounted) {
         setItems((data || []) as GuardianNotification[]);
         setLoading(false);
