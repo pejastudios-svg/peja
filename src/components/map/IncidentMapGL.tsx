@@ -147,6 +147,7 @@ export default function IncidentMapGL({
     bearing: 0,
     pitch: 0,
   });
+  const [followUser, setFollowUser] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [bearing, setBearing] = useState(0);
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
@@ -344,16 +345,28 @@ export default function IncidentMapGL({
   }, []);
 
 
-  // Center on user when requested
+// Center on user when requested (one-time)
   useEffect(() => {
     if (centerOnUser && mapRef.current && userLocation) {
+      setFollowUser(true);
       mapRef.current.flyTo({
         center: [userLocation.lng, userLocation.lat],
         zoom: 16,
         duration: 1000,
       });
     }
-  }, [centerOnUser, userLocation]);
+  }, [centerOnUser]);
+
+  // Follow user location continuously
+  useEffect(() => {
+    if (!followUser || !mapRef.current || !userLocation) return;
+    if (isUserInteracting.current) return;
+
+    mapRef.current.easeTo({
+      center: [userLocation.lng, userLocation.lat],
+      duration: 600,
+    });
+  }, [followUser, userLocation]);
   // Center on coords when requested
   useEffect(() => {
     if (centerOnCoords && mapRef.current) {
@@ -826,6 +839,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
   }, []);
   const handleInteractionStart = useCallback(() => {
     isUserInteracting.current = true;
+    setFollowUser(false);
     if (interactionTimeout.current) clearTimeout(interactionTimeout.current);
   }, []);
   const handleInteractionEnd = useCallback(() => {
