@@ -871,13 +871,6 @@ export default function IncidentMapGL({
       setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ${formatETA(eta).full}, arriving ~${formatETA(eta).arrivalTime}`);
       setTimeout(() => setToast(null), 3000);
       setSelectedSOS(null);
-      // Clear route when no longer helping
-  useEffect(() => {
-    if (helpedSOSIds.size === 0) {
-      setRouteGeoJSON(null);
-      setRouteInfo(null);
-    }
-  }, [helpedSOSIds]);
     } catch (err) {
       setToast("Failed to notify. Please try again.");
       setTimeout(() => setToast(null), 3000);
@@ -885,6 +878,13 @@ export default function IncidentMapGL({
       setSendingHelp(false);
     }
   };
+  // Clear route when no longer helping
+  useEffect(() => {
+    if (helpedSOSIds.size === 0) {
+      setRouteGeoJSON(null);
+      setRouteInfo(null);
+    }
+  }, [helpedSOSIds]);
   // =====================================================================
   // RESTART HELPER TRACKING ON PAGE LOAD (for helper's device)
   // Runs ONCE on mount. Does NOT depend on userLocation.
