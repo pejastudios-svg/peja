@@ -26,6 +26,7 @@ import { MessageCacheProvider } from "@/context/MessageCacheContext";
 import { ServiceWorkerRegistrar } from "@/components/navigation/ServiceWorkerRegistrar";
 import { TutorialProvider } from "@/components/tutorial/TutorialOverlay";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
+import { CheckInMonitor } from "@/components/safety/CheckInMonitor";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -102,6 +103,7 @@ export default function RootLayout({
                         <ScrollRestorer />
                         <CapacitorKeyboardHandler />
                         <ServiceWorkerRegistrar />
+                        <CheckInMonitor />
                         <ServiceWorkerRegistration />
                         <TutorialProvider>
                         {children}

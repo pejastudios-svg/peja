@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/context/ToastContext";
+import { SafetyCheckIn } from "@/components/safety/SafetyCheckIn";
 import {
   ArrowLeft,
   Plus,
@@ -178,7 +179,7 @@ export default function EmergencyContactsPage() {
   const handleAddContact = async () => {
     if (!selectedUser) { setError("Please select a user"); return; }
     if (!relationship) { setError("Please select a relationship"); return; }
-    if (contacts.length >= 5) { setError("Maximum 5 emergency contacts allowed"); return; }
+    if (contacts.length >= 10) { setError("Maximum 10 emergency contacts allowed"); return; }
 
     // Check if already in active contacts (pending or accepted)
     const existing = contacts.find(c => c.contact_user_id === selectedUser.id);
@@ -384,7 +385,10 @@ export default function EmergencyContactsPage() {
           <p className="text-dark-200 text-sm">
             These Peja users will be notified when you trigger an SOS alert. They must accept your invite to receive notifications.
           </p>
-        </div>
+</div>
+
+        {/* Safety Check-In */}
+        <SafetyCheckIn contacts={contacts} />
 
         {/* Pending Invites Received */}
         {pendingInvites.length > 0 && (
@@ -459,12 +463,12 @@ export default function EmergencyContactsPage() {
           )}
         </div>
 
-        {contacts.length < 5 && (
+        {contacts.length < 10 && (
           <Button variant="primary" className="w-full" onClick={() => setShowAddModal(true)} leftIcon={<Plus className="w-4 h-4" />}>
             Add Emergency Contact
           </Button>
         )}
-        {contacts.length >= 5 && <p className="text-center text-sm text-dark-500">Maximum 5 contacts reached</p>}
+        {contacts.length >= 10 && <p className="text-center text-sm text-dark-500">Maximum 10 contacts reached</p>}
       </main>
 
       {/* Add Modal */}

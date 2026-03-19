@@ -306,6 +306,19 @@ export default function NotificationsPage() {
       return;
     }
 
+    // Handle safety check-in notifications
+    if (
+      data.type === "safety_checkin_started" ||
+      data.type === "safety_checkin_missed" ||
+      data.type === "safety_checkin_confirmed" ||
+      data.type === "safety_checkin_ended" ||
+      data.type === "safety_checkin_self_expired" ||
+      data.type === "safety_checkin_warning"
+    ) {
+      router.push("/emergency-contacts");
+      return;
+    }
+
     switch (notification.type) {
       case "sos_alert": {
         const id = data.sos_id;

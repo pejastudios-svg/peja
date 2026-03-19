@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import MapGL, { Marker, NavigationControl, MapRef } from "react-map-gl/maplibre";
+import MapGL, { Marker, NavigationControl, MapRef, Source, Layer } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Post, CATEGORIES, SOSAlert, SOS_TAGS } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
@@ -98,6 +98,31 @@ function formatETA(minutes: number): { short: string; full: string; arrivalTime:
   };
 }
 
+async function fetchRoute(
+  fromLat: number, fromLng: number, toLat: number, toLng: number
+): Promise<{ geojson: any; distanceKm: number; durationMin: number } | null> {
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson&steps=true`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.code !== "Ok" || !data.routes?.[0]) return null;
+
+    const route = data.routes[0];
+    return {
+      geojson: {
+        type: "Feature",
+        geometry: route.geometry,
+        properties: {},
+      },
+      distanceKm: route.distance / 1000,
+      durationMin: route.duration / 60,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function getCategoryColor(categoryId: string): string {
   const category = CATEGORIES.find(c => c.id === categoryId);
   switch (category?.color) {
@@ -184,6 +209,8 @@ export default function IncidentMapGL({
   const [bearing, setBearing] = useState(0);
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
   const [sendingHelp, setSendingHelp] = useState(false);
+  const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
+  const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [toast, setToast] = useState<string | null>(null);
   // Helpers state — initialized from localStorage
@@ -530,6 +557,34 @@ export default function IncidentMapGL({
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
+
+  // Update route when helper moves
+  useEffect(() => {
+    if (!routeGeoJSON || !userLocation) return;
+
+    // Find the SOS we're helping
+    const helpedId = [...helpedSOSIds][0]; // most recent
+    if (!helpedId) return;
+
+    const sos = liveSOSAlerts.find(s => s.id === helpedId);
+    if (!sos) { setRouteGeoJSON(null); setRouteInfo(null); return; }
+
+    const updateRoute = async () => {
+      const route = await fetchRoute(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
+      if (route) {
+        setRouteGeoJSON(route.geojson);
+        const distStr = route.distanceKm < 1
+          ? `${Math.round(route.distanceKm * 1000)}m`
+          : `${route.distanceKm.toFixed(1)}km`;
+        setRouteInfo({ distance: distStr, duration: formatETA(route.durationMin).short });
+      }
+    };
+
+    // Debounce route updates to every 15 seconds
+    const timer = setTimeout(updateRoute, 15000);
+    return () => clearTimeout(timer);
+  }, [userLocation, helpedSOSIds, liveSOSAlerts, routeGeoJSON]);
+
   // =====================================================================
   // LISTEN FOR HELPER NOTIFICATIONS (SOS activator receives these)
   // This handles BOTH new helpers AND location updates from existing helpers
@@ -791,9 +846,38 @@ export default function IncidentMapGL({
         }
       } catch (e) {
       }
+
+      // Fetch and display route
+      const route = await fetchRoute(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
+      if (route) {
+        setRouteGeoJSON(route.geojson);
+        const distStr = route.distanceKm < 1
+          ? `${Math.round(route.distanceKm * 1000)}m`
+          : `${route.distanceKm.toFixed(1)}km`;
+        setRouteInfo({ distance: distStr, duration: formatETA(route.durationMin).short });
+
+        // Fit map to show entire route
+        if (mapRef.current) {
+          const coords = route.geojson.geometry.coordinates;
+          const lngs = coords.map((c: number[]) => c[0]);
+          const lats = coords.map((c: number[]) => c[1]);
+          mapRef.current.fitBounds(
+            [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+            { padding: 80, duration: 1000 }
+          );
+        }
+      }
+
       setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ${formatETA(eta).full}, arriving ~${formatETA(eta).arrivalTime}`);
       setTimeout(() => setToast(null), 3000);
       setSelectedSOS(null);
+      // Clear route when no longer helping
+  useEffect(() => {
+    if (helpedSOSIds.size === 0) {
+      setRouteGeoJSON(null);
+      setRouteInfo(null);
+    }
+  }, [helpedSOSIds]);
     } catch (err) {
       setToast("Failed to notify. Please try again.");
       setTimeout(() => setToast(null), 3000);
@@ -890,22 +974,9 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
   const isOwnSOS = selectedSOS && myUserId && selectedSOS.user_id === myUserId;
   const tagInfo = selectedSOS?.tag ? SOS_TAGS.find(t => t.id === selectedSOS.tag) : null;
   
-  const MAP_STYLE = useMemo(() => ({
-  version: 8 as const,
-  sources: {
-    osm: {
-      type: "raster" as const,
-      tiles: [
-        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    },
-  },
-  layers: [{ id: "osm", type: "raster" as const, source: "osm" }],
-}), []);
+  const MAP_STYLE = useMemo(() => 
+    `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_KEY}`
+  , []);
 
   return (
     <>
@@ -1134,6 +1205,45 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
               />
             </div>
           </Marker>
+        )}
+     {/* Route line */}
+        {routeGeoJSON && (
+          <Source id="route" type="geojson" data={routeGeoJSON}>
+            <Layer
+              id="route-line-shadow"
+              type="line"
+              paint={{
+                "line-color": "#000000",
+                "line-width": 8,
+                "line-opacity": 0.3,
+                "line-blur": 3,
+              }}
+            />
+            <Layer
+              id="route-line"
+              type="line"
+              paint={{
+                "line-color": "#22c55e",
+                "line-width": 5,
+                "line-opacity": 0.9,
+              }}
+              layout={{
+                "line-join": "round",
+                "line-cap": "round",
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Route info badge */}
+        {routeInfo && routeGeoJSON && (
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20">
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-600 text-white text-sm font-medium shadow-lg">
+              <span>{routeInfo.distance}</span>
+              <span className="w-1 h-1 rounded-full bg-white/50" />
+              <span>{routeInfo.duration}</span>
+            </div>
+          </div>
         )}
       </>}
       </MapGL>
