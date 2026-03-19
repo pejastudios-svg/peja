@@ -66,6 +66,38 @@ function calculateETA(fromLat: number, fromLng: number, toLat: number, toLng: nu
   const distance = getDistanceKm(fromLat, fromLng, toLat, toLng);
   return Math.max(1, Math.round((distance / 30) * 60));
 }
+
+function formatETA(minutes: number): { short: string; full: string; arrivalTime: string } {
+  const now = new Date();
+  const arrival = new Date(now.getTime() + minutes * 60000);
+  const arrivalTime = arrival.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+  if (minutes < 1) {
+    return { short: "<1 min", full: "Less than a minute away", arrivalTime };
+  }
+  if (minutes < 60) {
+    const m = Math.round(minutes);
+    return { short: `${m} min`, full: `${m} minute${m !== 1 ? "s" : ""} away`, arrivalTime };
+  }
+
+  const hours = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+
+  if (mins === 0) {
+    return {
+      short: `${hours}h`,
+      full: `${hours} hour${hours !== 1 ? "s" : ""} away`,
+      arrivalTime,
+    };
+  }
+
+  return {
+    short: `${hours}h ${mins}m`,
+    full: `${hours} hour${hours !== 1 ? "s" : ""} ${mins} min away`,
+    arrivalTime,
+  };
+}
+
 function getCategoryColor(categoryId: string): string {
   const category = CATEGORIES.find(c => c.id === categoryId);
   switch (category?.color) {
@@ -631,13 +663,13 @@ export default function IncidentMapGL({
                 notificationBody = `${helperName} is less than a minute away`;
               } else if (milestone <= 2) {
                 notificationTitle = "Helper is very close!";
-                notificationBody = `${helperName} is about ${milestone} minutes away`;
+                notificationBody = `${helperName} is about ${formatETA(milestone).full}`;
               } else if (milestone <= 5) {
                 notificationTitle = "Helper is almost there!";
-                notificationBody = `${helperName} is about ${milestone} minutes away`;
+                notificationBody = `${helperName} is about ${formatETA(milestone).full}`;
               } else {
                 notificationTitle = "Helper getting closer!";
-                notificationBody = `${helperName} is about ${milestone} minutes away`;
+                notificationBody = `${helperName} is about ${formatETA(milestone).full}`;
               }
               break; // Fire only the most relevant milestone
             }
@@ -718,7 +750,7 @@ export default function IncidentMapGL({
         userId: sos.user_id,
         type: "sos_alert",
         title: "Help is on the way!",
-        body: `${helperName} is coming to help you. ETA: ${eta} minutes`,
+        body: `${helperName} is coming to help you. ${formatETA(eta).full}, arriving ~${formatETA(eta).arrivalTime}`,
         data: {
           sos_id: sos.id,
           helper_id: user.id,
@@ -759,7 +791,7 @@ export default function IncidentMapGL({
         }
       } catch (e) {
       }
-      setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ETA: ${eta} minutes.`);
+      setToast(`Thank you! ${sos.user?.full_name || "The person"} has been notified. ${formatETA(eta).full}, arriving ~${formatETA(eta).arrivalTime}`);
       setTimeout(() => setToast(null), 3000);
       setSelectedSOS(null);
     } catch (err) {
@@ -1198,12 +1230,13 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
                           <p className="text-sm font-medium text-white truncate">{helper.name}</p>
                           <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                            <p className="text-xs text-green-400">ETA: {helper.eta} min</p>
+                            <p className="text-xs text-green-400">{formatETA(helper.eta).full}</p>
+                            <p className="text-[10px] text-dark-500">Arriving ~{formatETA(helper.eta).arrivalTime}</p>
                           </div>
                         </div>
                         <div className="text-right">
-                          <p className="text-lg font-bold text-green-400">{helper.eta}</p>
-                          <p className="text-xs text-dark-500">min</p>
+                          <p className="text-lg font-bold text-green-400">{formatETA(helper.eta).short}</p>
+                          <p className="text-[10px] text-dark-500">~{formatETA(helper.eta).arrivalTime}</p>
                         </div>
                       </div>
                     ))}
