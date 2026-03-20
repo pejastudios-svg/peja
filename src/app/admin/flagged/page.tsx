@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { usePageCache } from "@/context/PageCacheContext";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
@@ -96,12 +97,16 @@ export default function AdminFlaggedPage() {
   const [viewMode, setViewMode] = useState<"queue" | "history">("queue");
 
   // Queue state
-  const [items, setItems] = useState<FlagRow[]>([]);
-  const [loading, setLoading] = useState(true);
+const pageCache = usePageCache();
+  const cachedQueue = pageCache.get<FlagRow[]>("admin:flagged:queue");
+  const cachedHistory = pageCache.get<FlagRow[]>("admin:flagged:history");
+
+  const [items, setItems] = useState<FlagRow[]>(cachedQueue || []);
+  const [loading, setLoading] = useState(cachedQueue === null);
   const [refreshing, setRefreshing] = useState(false);
 
   // History state
-  const [historyItems, setHistoryItems] = useState<FlagRow[]>([]);
+  const [historyItems, setHistoryItems] = useState<FlagRow[]>(cachedHistory || []);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // Review modal state
@@ -133,6 +138,7 @@ export default function AdminFlaggedPage() {
       const rows = (flags || []) as any[];
       const merged = await enrichFlaggedRows(rows);
       setItems(merged);
+      pageCache.set("admin:flagged:queue", merged);
 
       if (openId) {
         const match = merged.find((x) => x.id === openId);
@@ -169,6 +175,7 @@ export default function AdminFlaggedPage() {
       const rows = (flags || []) as any[];
       const merged = await enrichFlaggedRows(rows, true);
       setHistoryItems(merged);
+      pageCache.set("admin:flagged:history", merged);
     } catch (e) {
       setHistoryItems([]);
     } finally {
@@ -261,16 +268,26 @@ export default function AdminFlaggedPage() {
   };
 
   // Initial fetch
-  useEffect(() => {
-    fetchFlagged();
-  }, [fetchFlagged]);
+useEffect(() => {
+    if (cachedQueue) {
+      fetchFlagged(true); // revalidate in background
+    } else {
+      fetchFlagged();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch history when tab changes
-  useEffect(() => {
-    if (viewMode === "history" && historyItems.length === 0) {
-      fetchHistory();
+useEffect(() => {
+    if (viewMode === "history") {
+      if (historyItems.length === 0 && !cachedHistory) {
+        fetchHistory();
+      } else {
+        fetchHistory(); // silent revalidate since we already have data
+      }
     }
-  }, [viewMode, fetchHistory]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
 
   const handleRefresh = () => {
     if (viewMode === "queue") fetchFlagged(true);
@@ -280,10 +297,17 @@ export default function AdminFlaggedPage() {
   // ============================================================
   // REVIEW ACTION
   // ============================================================
-  const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
+const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
     if (!selected) return;
 
-    setActionLoading(true);
+    const selectedItem = selected;
+    
+    // Optimistic: remove from queue immediately
+    setItems((prev) => prev.filter((x) => x.id !== selectedItem.id));
+    pageCache.set("admin:flagged:queue", items.filter((x) => x.id !== selectedItem.id));
+    setShowModal(false);
+    setSelected(null);
+
     try {
       const { data: auth } = await supabase.auth.getSession();
       const token = auth.session?.access_token;
@@ -295,42 +319,33 @@ export default function AdminFlaggedPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ flaggedId: selected.id, action }),
+        body: JSON.stringify({ flaggedId: selectedItem.id, action }),
       });
 
       const json = await res.json();
 
       if (res.status === 409) {
-        alert("This item was already reviewed by another moderator.");
-        setItems((prev) => prev.filter((x) => x.id !== selected.id));
-        setShowModal(false);
-        setSelected(null);
+        // Already reviewed, our optimistic removal was correct
         return;
       }
 
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
 
-      // Remove from queue
-      setItems((prev) => prev.filter((x) => x.id !== selected.id));
-
       // Notify other pages
-      if (action === "remove" && selected.post_id) {
+      if (action === "remove" && selectedItem.post_id) {
         window.dispatchEvent(new CustomEvent("peja-post-archived", {
-          detail: { postId: selected.post_id }
+          detail: { postId: selectedItem.post_id }
         }));
       }
 
-      // Refresh history if it was loaded
+      // Refresh history if loaded
       if (historyItems.length > 0) {
         fetchHistory();
       }
-
-      setShowModal(false);
-      setSelected(null);
     } catch (e: any) {
-      alert(e?.message || "Failed");
-    } finally {
-      setActionLoading(false);
+      // Revert on failure
+      setItems((prev) => [...prev, selectedItem]);
+      alert(e?.message || "Failed to review. Item restored to queue.");
     }
   };
 

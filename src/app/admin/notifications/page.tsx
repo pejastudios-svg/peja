@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { usePageCache } from "@/context/PageCacheContext";
 import { useAuth } from "@/context/AuthContext";
 import { Skeleton } from "@/components/ui/Skeleton";
 import HudShell from "@/components/dashboard/HudShell";
@@ -40,8 +41,11 @@ export default function AdminNotificationsPage() {
   const router = useRouter();
   const { user } = useAuth();
 
-  const [items, setItems] = useState<AdminNotification[]>([]);
-  const [loading, setLoading] = useState(true);
+const pageCache = usePageCache();
+  const cachedItems = pageCache.get<AdminNotification[]>("admin:notifications");
+
+  const [items, setItems] = useState<AdminNotification[]>(cachedItems || []);
+  const [loading, setLoading] = useState(cachedItems === null);
 
   const debounceRef = useRef<any>(null);
   const channelRef = useRef<any>(null);
@@ -84,7 +88,9 @@ export default function AdminNotificationsPage() {
 .limit(80);
 
       if (mounted) {
-        setItems((data || []) as AdminNotification[]);
+        const fetched = (data || []) as AdminNotification[];
+        setItems(fetched);
+        pageCache.set("admin:notifications", fetched);
         setLoading(false);
       }
     };
@@ -122,6 +128,7 @@ export default function AdminNotificationsPage() {
     if (!user?.id) return;
 
     setItems((prev) => prev.map((x) => ({ ...x, is_read: true })));
+    pageCache.set("admin:notifications", items.map((x) => ({ ...x, is_read: true })));
 
     await supabase
       .from("admin_notifications")
@@ -141,6 +148,7 @@ export default function AdminNotificationsPage() {
   const removeOne = async (id: string) => {
     const wasUnread = items.find((x) => x.id === id)?.is_read !== true;
     setItems((prev) => prev.filter((x) => x.id !== id));
+    pageCache.set("admin:notifications", items.filter((x) => x.id !== id));
     await supabase.from("admin_notifications").delete().eq("id", id);
     if (wasUnread) refreshBadge();
   };

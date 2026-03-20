@@ -20,6 +20,7 @@ interface HandoffData {
   posterDataUrl: string | null;
   sourceRect: { x: number; y: number; width: number; height: number } | null;
   timestamp: number;
+  videoElement: HTMLVideoElement | null;
 }
 
 interface ReturnData {
@@ -29,7 +30,7 @@ interface ReturnData {
 }
 
 interface VideoHandoffContextType {
-  beginExpand: (src: string, currentTime: number, posterDataUrl: string | null, sourceRect?: { x: number; y: number; width: number; height: number } | null) => void;
+  beginExpand: (src: string, currentTime: number, posterDataUrl: string | null, sourceRect?: { x: number; y: number; width: number; height: number } | null, videoElement?: HTMLVideoElement | null) => void;
   getHandoff: () => HandoffData | null;
   clearHandoff: () => void;
   returnTime: (src: string, currentTime: number) => void;
@@ -43,14 +44,15 @@ export function VideoHandoffProvider({ children }: { children: React.ReactNode }
   const handoffRef = useRef<HandoffData | null>(null);
   const returnRef = useRef<ReturnData | null>(null);
 
-  const beginExpand = useCallback(
-    (src: string, currentTime: number, posterDataUrl: string | null, sourceRect?: { x: number; y: number; width: number; height: number } | null) => {
+const beginExpand = useCallback(
+    (src: string, currentTime: number, posterDataUrl: string | null, sourceRect?: { x: number; y: number; width: number; height: number } | null, videoElement?: HTMLVideoElement | null) => {
       handoffRef.current = {
         src,
         currentTime,
         posterDataUrl,
         sourceRect: sourceRect || null,
         timestamp: Date.now(),
+        videoElement: videoElement || null,
       };
     },
     []

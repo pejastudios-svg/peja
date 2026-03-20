@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { usePageCache } from "@/context/PageCacheContext";
 import { CATEGORIES } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -53,13 +54,13 @@ export default function AdminPostsPage() {
   const toast = useToast();
    const router = useRouter();             
   const searchParams = useSearchParams();      
-  const [posts, setPosts] = useState<PostData[]>([]);
+const [posts, setPosts] = useState<PostData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
   
   const [selectedPost, setSelectedPost] = useState<PostData | null>(null);
   const [showPostModal, setShowPostModal] = useState(false);
@@ -80,6 +81,17 @@ export default function AdminPostsPage() {
   const isSearchMode = searchQuery.trim().length > 0;
   const searchInputRef = useRef<HTMLInputElement>(null);
   const pageSize = 20;
+  const pageCache = usePageCache();
+  const cacheKey = `admin:posts:${statusFilter}:${categoryFilter}:${page}`;
+  // Initialize from cache on mount
+  useEffect(() => {
+    const cached = pageCache.get<{ posts: PostData[]; count: number }>(cacheKey);
+    if (cached) {
+      setPosts(cached.posts);
+      setTotalCount(cached.count);
+      setLoading(false);
+    }
+  }, []); // Only on mount
 
     const autoOpenHandled = useRef(false);
 
@@ -153,11 +165,21 @@ export default function AdminPostsPage() {
   useEffect(() => {
     setSelectedIds(new Set());
   }, [page, statusFilter, categoryFilter]);
-  useEffect(() => {
+useEffect(() => {
     if (isSearchMode) {
       handleSearch();
     } else {
-      fetchPosts();
+      // Check cache first
+      const cached = pageCache.get<{ posts: PostData[]; count: number }>(cacheKey);
+      if (cached) {
+        setPosts(cached.posts);
+        setTotalCount(cached.count);
+        setLoading(false);
+        // Revalidate in background
+        fetchPosts(true);
+      } else {
+        fetchPosts();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, statusFilter, categoryFilter, searchQuery]);
@@ -165,10 +187,10 @@ export default function AdminPostsPage() {
     let t: any = null;
     const refresh = () => {
       if (t) clearTimeout(t);
-      t = setTimeout(() => {
+t = setTimeout(() => {
         const q = searchQuery.trim();
         if (q) handleSearch();
-        else fetchPosts();
+        else fetchPosts(true);
       }, 600);
     };
     const ch = supabase
@@ -195,8 +217,8 @@ export default function AdminPostsPage() {
       </div>
     );
   }
-  const fetchPosts = async () => {
-    setLoading(true);
+const fetchPosts = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       let query = supabase
         .from("posts")
@@ -237,8 +259,9 @@ export default function AdminPostsPage() {
         users: usersMap[p.user_id] || undefined,
         post_media: mediaMap[p.id] || [],
       }));
-      setPosts(merged);
+setPosts(merged);
       setTotalCount(count || 0);
+      pageCache.set(cacheKey, { posts: merged, count: count || 0 });
     } catch (e) {
       setPosts([]);
     } finally {
@@ -338,28 +361,29 @@ export default function AdminPostsPage() {
   // =====================================================
   // SINGLE DELETE (with in-app confirmation)
   // =====================================================
-  const handleDeletePost = async (postId: string) => {
-    setActionLoading(true);
+const handleDeletePost = async (postId: string) => {
+    // Optimistic
+    const prev = posts;
+    setPosts(posts.filter(p => p.id !== postId));
+    setSelectedIds(prev2 => {
+      const next = new Set(prev2);
+      next.delete(postId);
+      return next;
+    });
+    setShowPostModal(false);
+    setSelectedPost(null);
+    setConfirmDeleteId(null);
+    toast.success("Post deleted successfully");
+
     try {
       const success = await deletePostViaAPI(postId);
       if (!success) {
+        setPosts(prev);
         toast.danger("Failed to delete post");
-        return;
       }
-      setPosts(prev => prev.filter(p => p.id !== postId));
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        next.delete(postId);
-        return next;
-      });
-      setShowPostModal(false);
-      setSelectedPost(null);
-      setConfirmDeleteId(null);
-      toast.success("Post deleted successfully");
-    } catch (error) {
+    } catch {
+      setPosts(prev);
       toast.danger("Failed to delete post");
-    } finally {
-      setActionLoading(false);
     }
   };
   // =====================================================
@@ -406,22 +430,22 @@ export default function AdminPostsPage() {
       setActionLoading(false);
     }
   };
-  const handleStatusChange = async (postId: string, newStatus: string) => {
-    setActionLoading(true);
+const handleStatusChange = async (postId: string, newStatus: string) => {
+    // Optimistic
+    const prev = posts;
+    setPosts(posts.map(p => p.id === postId ? { ...p, status: newStatus } : p));
+    if (selectedPost?.id === postId) {
+      setSelectedPost({ ...selectedPost, status: newStatus });
+    }
+    toast.success(`Post status changed to ${newStatus}`);
+
     try {
       const patch: any = { status: newStatus };
       if (newStatus === "live") patch.created_at = new Date().toISOString();
       await supabase.from("posts").update(patch).eq("id", postId);
-      
-      setPosts(posts.map(p => p.id === postId ? { ...p, status: newStatus } : p));
-      if (selectedPost?.id === postId) {
-        setSelectedPost({ ...selectedPost, status: newStatus });
-      }
-      toast.success(`Post status changed to ${newStatus}`);
-    } catch (error) {
+    } catch {
+      setPosts(prev);
       toast.danger("Failed to update status");
-    } finally {
-      setActionLoading(false);
     }
   };
   // Multi-select helpers
@@ -515,7 +539,7 @@ export default function AdminPostsPage() {
         </div>
         <div className="lg:col-span-1">
           <Button variant="primary" onClick={handleSearch} className="w-full h-11 bg-primary-600 hover:bg-primary-500 shadow-lg border-none">
-            Go
+            Reload
           </Button>
         </div>
       </div>

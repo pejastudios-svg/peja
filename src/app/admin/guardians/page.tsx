@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { usePageCache } from "@/context/PageCacheContext";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
@@ -118,8 +119,13 @@ export default function AdminGuardiansPage() {
 
   // Applications
   const [appFilter, setAppFilter] = useState<"pending" | "approved" | "rejected" | "all">("pending");
-  const [items, setItems] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(true);
+const pageCache = usePageCache();
+  const cachedApps = pageCache.get<Application[]>("admin:guardians:apps");
+  const cachedGuardians = pageCache.get<GuardianUser[]>("admin:guardians:list");
+  const cachedActions = pageCache.get<GuardianAction[]>("admin:guardians:actions");
+
+  const [items, setItems] = useState<Application[]>(cachedApps || []);
+  const [loading, setLoading] = useState(cachedApps === null);
 
   const [selected, setSelected] = useState<Application | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -130,12 +136,12 @@ export default function AdminGuardiansPage() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   // Active guardians
-  const [guardians, setGuardians] = useState<GuardianUser[]>([]);
+const [guardians, setGuardians] = useState<GuardianUser[]>(cachedGuardians || []);
   const [guardiansLoading, setGuardiansLoading] = useState(false);
   const [guardianSearch, setGuardianSearch] = useState("");
 
   // Guardian Activity
-  const [actions, setActions] = useState<GuardianAction[]>([]);
+const [actions, setActions] = useState<GuardianAction[]>(cachedActions || []);
   const [actionsLoading, setActionsLoading] = useState(false);
   const [actionFilter, setActionFilter] = useState<"all" | "approve" | "remove" | "blur" | "escalate">("all");
 
@@ -235,6 +241,7 @@ export default function AdminGuardiansPage() {
       }));
 
       setItems(merged);
+      pageCache.set("admin:guardians:apps", merged);
     } catch (e) {
       setItems([]);
     } finally {
@@ -253,7 +260,9 @@ export default function AdminGuardiansPage() {
         .limit(500);
 
       if (error) throw error;
-      setGuardians((data || []) as any);
+     const list = (data || []) as GuardianUser[];
+      setGuardians(list);
+      pageCache.set("admin:guardians:list", list);
     } catch (e) {
       setGuardians([]);
     } finally {
@@ -310,6 +319,7 @@ export default function AdminGuardiansPage() {
       }));
 
       setActions(merged);
+      pageCache.set("admin:guardians:actions", merged);
     } catch (e) {
       setActions([]);
     } finally {
@@ -317,11 +327,11 @@ export default function AdminGuardiansPage() {
     }
   };
 
-  // Load all lists initially
+// Load all lists initially (silent if cached)
   useEffect(() => {
-    fetchApps();
-    fetchGuardians();
-    fetchActions();
+    if (cachedApps) { setLoading(false); fetchApps(); } else { fetchApps(); }
+    if (!cachedGuardians) fetchGuardians();
+    if (!cachedActions) fetchActions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -397,62 +407,62 @@ export default function AdminGuardiansPage() {
     }
   }, [openAppId, items, router]);
 
-  const handleDecision = async (action: "approve" | "reject") => {
+const handleDecision = async (action: "approve" | "reject") => {
     if (!selected) return;
-    setActionLoading(true);
+    const selectedItem = selected;
+
+    // Optimistic: remove from list and close modal
+    setItems((prev) => prev.filter((x) => x.id !== selectedItem.id));
+    setModalOpen(false);
+    setSelected(null);
 
     try {
       const { data: auth } = await supabase.auth.getSession();
       const token = auth.session?.access_token;
       if (!token) throw new Error("Session expired. Please sign in again.");
 
-         const res = await fetch(apiUrl("/api/admin/review-guardian-application"), {
+      const res = await fetch(apiUrl("/api/admin/review-guardian-application"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ applicationId: selected.id, action }),
+        body: JSON.stringify({ applicationId: selectedItem.id, action }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
 
-      setModalOpen(false);
-      setSelected(null);
-
-      await fetchApps();
-      await fetchGuardians();
+      fetchGuardians(); // Refresh guardians list in background
     } catch (e: any) {
+      // Revert
+      setItems((prev) => [...prev, selectedItem]);
       alert(e?.message || "Failed");
-    } finally {
-      setActionLoading(false);
     }
   };
 
-  const deleteApplication = async () => {
+const deleteApplication = async () => {
     if (!selected) return;
-    if (!confirm("Delete this application permanently?")) return;
+    const selectedItem = selected;
 
-    setActionLoading(true);
+    // Optimistic
+    setItems((prev) => prev.filter((x) => x.id !== selectedItem.id));
+    setModalOpen(false);
+    setSelected(null);
+
     try {
       const { data: auth } = await supabase.auth.getSession();
       const token = auth.session?.access_token;
       if (!token) throw new Error("Session expired. Please sign in again.");
 
-            const res = await fetch(apiUrl("/api/admin/delete-guardian-application"), {
+      const res = await fetch(apiUrl("/api/admin/delete-guardian-application"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ applicationId: selected.id }),
+        body: JSON.stringify({ applicationId: selectedItem.id }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
-
-      setModalOpen(false);
-      setSelected(null);
-      await fetchApps();
     } catch (e: any) {
+      setItems((prev) => [...prev, selectedItem]);
       alert(e?.message || "Failed to delete");
-    } finally {
-      setActionLoading(false);
     }
   };
 
@@ -461,39 +471,38 @@ export default function AdminGuardiansPage() {
     setRevokeModalOpen(true);
   };
 
-  const confirmRevokeGuardian = async () => {
+const confirmRevokeGuardian = async () => {
     if (!revokeTarget?.id) return;
+    const target = revokeTarget;
 
-    setActionLoading(true);
+    // Optimistic
+    setGuardians((prev) => prev.filter((g) => g.id !== target.id));
+    setRevokeModalOpen(false);
+    setRevokeTarget(null);
+    setToast(`Guardian access removed: ${target.full_name || "User"}`);
+    setTimeout(() => setToast(null), 2500);
+
     try {
       const { data: auth } = await supabase.auth.getSession();
       const token = auth.session?.access_token;
       if (!token) throw new Error("Session expired. Please sign in again.");
 
-            const res = await fetch(apiUrl("/api/admin/set-user-role"), {
+      const res = await fetch(apiUrl("/api/admin/set-user-role"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ userId: revokeTarget.id, role: "guardian", value: false }),
+        body: JSON.stringify({ userId: target.id, role: "guardian", value: false }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
-
-      setRevokeModalOpen(false);
-      setRevokeTarget(null);
-
-      await fetchGuardians();
-
-      setToast(`Guardian access removed: ${json.user?.full_name || "User"} ✓`);
-      setTimeout(() => setToast(null), 2500);
     } catch (e: any) {
+      // Revert
+      setGuardians((prev) => [...prev, target]);
       setToast(e?.message || "Failed to remove guardian");
       setTimeout(() => setToast(null), 3000);
-    } finally {
-      setActionLoading(false);
     }
   };
 

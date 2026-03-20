@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { usePageCache } from "@/context/PageCacheContext";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
@@ -69,8 +70,11 @@ export default function AdminVIPsPage() {
   const router = useRouter();
 
   // VIP list
-  const [vips, setVips] = useState<VIPUser[]>([]);
-  const [vipsLoading, setVipsLoading] = useState(true);
+const pageCache = usePageCache();
+  const cachedVips = pageCache.get<VIPUser[]>("admin:vips");
+
+  const [vips, setVips] = useState<VIPUser[]>(cachedVips || []);
+  const [vipsLoading, setVipsLoading] = useState(cachedVips === null);
   const [vipSearch, setVipSearch] = useState("");
 
   // Add VIP modal
@@ -111,7 +115,9 @@ export default function AdminVIPsPage() {
         .limit(500);
 
       if (error) throw error;
-      setVips((data || []) as VIPUser[]);
+      const list = (data || []) as VIPUser[];
+      setVips(list);
+      pageCache.set("admin:vips", list);
     } catch (e) {
       setVips([]);
     } finally {
@@ -119,8 +125,14 @@ export default function AdminVIPsPage() {
     }
   };
 
-  useEffect(() => {
-    fetchVIPs();
+useEffect(() => {
+    if (cachedVips) {
+      setVipsLoading(false);
+      fetchVIPs(); // revalidate in background
+    } else {
+      fetchVIPs();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Realtime updates
@@ -186,8 +198,12 @@ export default function AdminVIPsPage() {
   // =====================================================
   // GRANT VIP
   // =====================================================
-  const grantVIP = async (userId: string, userName: string) => {
-    setActionLoading(userId);
+ const grantVIP = async (userId: string, userName: string) => {
+    // Optimistic: update search results immediately
+    setSearchResults((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, is_vip: true } : u))
+    );
+
     try {
       const { data: auth } = await supabase.auth.getSession();
       const token = auth.session?.access_token;
@@ -205,14 +221,13 @@ export default function AdminVIPsPage() {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
 
-      // Update search results to reflect change
-      setSearchResults((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, is_vip: true } : u))
-      );
-
       await fetchVIPs();
-      showToast(`✓ VIP granted to ${userName}`);
+      showToast(`VIP granted to ${userName}`);
     } catch (e: any) {
+      // Revert search results
+      setSearchResults((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, is_vip: false } : u))
+      );
       showToast(e?.message || "Failed to grant VIP");
     } finally {
       setActionLoading(null);
@@ -227,10 +242,16 @@ export default function AdminVIPsPage() {
     setRevokeModalOpen(true);
   };
 
-  const confirmRevokeVIP = async () => {
+ const confirmRevokeVIP = async () => {
     if (!revokeTarget?.id) return;
+    const target = revokeTarget;
 
-    setActionLoading(revokeTarget.id);
+    // Optimistic
+    setVips((prev) => prev.filter((v) => v.id !== target.id));
+    setRevokeModalOpen(false);
+    setRevokeTarget(null);
+    showToast(`VIP revoked from ${target.full_name || "User"}`);
+
     try {
       const { data: auth } = await supabase.auth.getSession();
       const token = auth.session?.access_token;
@@ -242,18 +263,14 @@ export default function AdminVIPsPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ userId: revokeTarget.id, value: false }),
+        body: JSON.stringify({ userId: target.id, value: false }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
-
-      setRevokeModalOpen(false);
-      setRevokeTarget(null);
-
-      await fetchVIPs();
-      showToast(`✓ VIP revoked from ${revokeTarget.full_name || "User"}`);
     } catch (e: any) {
+      // Revert
+      setVips((prev) => [...prev, target]);
       showToast(e?.message || "Failed to revoke VIP");
     } finally {
       setActionLoading(null);

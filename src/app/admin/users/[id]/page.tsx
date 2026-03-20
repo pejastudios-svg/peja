@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { usePageCache } from "@/context/PageCacheContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
@@ -50,17 +51,20 @@ export default function AdminUserDetailPage() {
 
   useScrollRestore(`admin:user:${userId}`);
 
-  const [loading, setLoading] = useState(true);
-  const [u, setU] = useState<AdminUserFull | null>(null);
+const pageCache = usePageCache();
+  const cachedData = pageCache.get<{ user: AdminUserFull; posts: Post[]; contacts: AdminEmergencyContact[] }>(`admin:user:${userId}`);
 
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [postsLoading, setPostsLoading] = useState(true);
+  const [loading, setLoading] = useState(cachedData === null);
+  const [u, setU] = useState<AdminUserFull | null>(cachedData?.user || null);
+
+  const [posts, setPosts] = useState<Post[]>(cachedData?.posts || []);
+  const [postsLoading, setPostsLoading] = useState(cachedData === null);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
-    const [contacts, setContacts] = useState<AdminEmergencyContact[]>([]);
-  const [contactsLoading, setContactsLoading] = useState(true);
+const [contacts, setContacts] = useState<AdminEmergencyContact[]>(cachedData?.contacts || []);
+  const [contactsLoading, setContactsLoading] = useState(cachedData === null);
 
   const fetchEmergencyContacts = async () => {
     setContactsLoading(true);
@@ -182,18 +186,17 @@ export default function AdminUserDetailPage() {
     }
   };
 
-  useEffect(() => {
+useEffect(() => {
     const load = async () => {
-      setLoading(true);
+      if (!cachedData) setLoading(true);
       try {
-        // Fetch all data in parallel for speed
         await Promise.all([
           fetchUser(),
           fetchEmergencyContacts(),
           fetchUserPosts()
         ]);
       } catch (e) {
-        setU(null);
+        if (!cachedData) setU(null);
       } finally {
         setLoading(false);
       }
@@ -201,6 +204,14 @@ export default function AdminUserDetailPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
+
+  // Cache user detail for instant revisits
+  useEffect(() => {
+    if (u && !loading) {
+      pageCache.set(`admin:user:${userId}`, { user: u, posts, contacts });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [u, posts, contacts, loading]);
 
   const deletePost = async (postId: string) => {
     // optimistic remove

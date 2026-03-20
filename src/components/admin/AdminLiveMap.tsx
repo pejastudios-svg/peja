@@ -14,6 +14,9 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
+import { Maximize2, Play } from "lucide-react";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { VideoLightbox } from "@/components/ui/VideoLightbox";
 
 /* ── types ── */
 interface MapPost {
@@ -160,21 +163,7 @@ const CONNECTION_LINE_PAINT: Record<string, any> = {
 };
 
 /* ── MAP STYLE — module-level constant ── */
-const MAP_STYLE = {
-  version: 8 as const,
-  sources: {
-    osm: {
-      type: "raster" as const,
-      tiles: [
-        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution: "&copy; OpenStreetMap",
-    },
-  },
-  layers: [{ id: "osm", type: "raster" as const, source: "osm" }],
-};
+const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_KEY}`;
 
 /* ══════════════════════════════════════════
    COMPONENT
@@ -194,7 +183,25 @@ export default function AdminLiveMap({
   const [mapLoaded, setMapLoaded] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showPins, setShowPins] = useState(true);
-  const [selectedPost, setSelectedPost] = useState<MapPost | null>(null);
+const [selectedPost, setSelectedPost] = useState<MapPost | null>(null);
+  const [selectedPostMedia, setSelectedPostMedia] = useState<{ url: string; media_type: string; thumbnail_url?: string } | null>(null);
+const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Fetch media for selected post
+  useEffect(() => {
+    if (!selectedPost) { setSelectedPostMedia(null); return; }
+    (async () => {
+      const { data } = await supabase
+        .from("post_media")
+        .select("url, media_type, thumbnail_url")
+        .eq("post_id", selectedPost.id)
+        .limit(1)
+        .maybeSingle();
+      setSelectedPostMedia(data || null);
+    })();
+  }, [selectedPost?.id]);
 
   /* ── initial data ── */
   useEffect(() => {
@@ -435,7 +442,7 @@ export default function AdminLiveMap({
     return { total: heatmapPosts.length, last24h, last7d };
   }, [heatmapPosts]);
 
-  return (
+return (
     <div
       className={`relative w-full h-full rounded-xl overflow-hidden border border-white/10 ${className}`}
     >
@@ -482,6 +489,16 @@ export default function AdminLiveMap({
         {mapLoaded && (
           <>
             <NavigationControl position="top-right" showCompass={false} />
+            {/* Fullscreen toggle */}
+            <div className="absolute top-2 left-2 z-10">
+             <button
+                onClick={() => router.push("/admin/map")}
+                className="p-2 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 text-white hover:bg-black/80 transition-colors"
+                title="Expand map"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+            </div>
 
             {/* ── Heatmap layer ── */}
             {showHeatmap && heatmapPosts.length > 0 && (
@@ -637,7 +654,62 @@ export default function AdminLiveMap({
                       </span>
                     )}
                   </div>
-
+{/* Media preview */}
+                  {selectedPostMedia && (
+<div
+                      style={{
+                        position: "relative",
+                        width: "100%",
+                        aspectRatio: "16/9",
+                        background: "#0c0818",
+                        cursor: "pointer",
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (selectedPostMedia) {
+                          setLightboxUrl(selectedPostMedia.url);
+                          if (selectedPostMedia.media_type === "video") {
+                            setVideoLightboxOpen(true);
+                          } else {
+                            setLightboxOpen(true);
+                          }
+                        }
+                      }}
+                    >
+                      <img
+                        src={selectedPostMedia.thumbnail_url || selectedPostMedia.url}
+                        alt=""
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                      {selectedPostMedia.media_type === "video" && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            background: "rgba(0,0,0,0.3)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: "50%",
+                              background: "rgba(0,0,0,0.6)",
+                              border: "2px solid white",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <Play style={{ width: 20, height: 20, color: "white", marginLeft: 2 }} />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {/* Content */}
                   <div style={{ padding: "10px 14px" }}>
                     {selectedPost.address && (
@@ -922,6 +994,18 @@ export default function AdminLiveMap({
           </div>
         )}
       </div>
-    </div>
+      {/* Lightboxes */}
+      <ImageLightbox
+        isOpen={lightboxOpen}
+        onClose={() => { setLightboxOpen(false); setLightboxUrl(null); }}
+        imageUrl={lightboxUrl}
+      />
+      <VideoLightbox
+        isOpen={videoLightboxOpen}
+        onClose={() => { setVideoLightboxOpen(false); setLightboxUrl(null); }}
+        videoUrl={lightboxUrl}
+        postId={selectedPost?.id}
+      />
+</div>
   );
 }

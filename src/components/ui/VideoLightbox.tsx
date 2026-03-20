@@ -40,6 +40,8 @@ export function VideoLightbox({
     const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
     const cachedPosterRef = useRef<string | null>(null);
   const [videoBuffering, setVideoBuffering] = useState(true);
+  const [adoptedVideo, setAdoptedVideo] = useState<HTMLVideoElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [animPhase, setAnimPhase] = useState<"idle" | "enter" | "open" | "exit">("idle");
   const exitTransformRef = useRef("scale(0.88)");
   const animSourceRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -119,11 +121,8 @@ const getEffectiveStartData = () => {
   useEffect(() => {
     let expandTimer: NodeJS.Timeout | null = null;
 
-    if (isOpen) {
-      setShowPoster(true);
+ if (isOpen) {
       setShowControls(true);
-      setIsPlaying(true);
-      setVideoBuffering(true);
       closingRef.current = false;
       hasAppliedHandoffRef.current = false;
       resetFadeTimer();
@@ -134,27 +133,63 @@ const getEffectiveStartData = () => {
         incrementView(postId);
       }
 
-      // Apply start time
-      const v = videoRef.current;
-      if (v && effectiveStartTime > 0) {
-        const setTime = () => {
-          v.currentTime = effectiveStartTime;
-          v.removeEventListener("loadedmetadata", setTime);
-        };
-        if (v.readyState >= 1) {
-          v.currentTime = effectiveStartTime;
-        } else {
-          v.addEventListener("loadedmetadata", setTime);
+      // Check if we have a live video element from handoff
+      const handoffData = handoff.getHandoff();
+      if (handoffData?.videoElement && handoffData.src === videoUrl) {
+        const liveVideo = handoffData.videoElement;
+        
+        // Style it for fullscreen
+        liveVideo.className = "max-w-full max-h-full object-contain pointer-events-none";
+        liveVideo.style.opacity = "1";
+        liveVideo.loop = true;
+        liveVideo.muted = !soundEnabled;
+        
+        // Attach event listeners
+        liveVideo.ontimeupdate = handleTimeUpdate;
+        liveVideo.onwaiting = () => setVideoBuffering(true);
+        liveVideo.onplaying = () => { setVideoBuffering(false); setShowPoster(false); };
+        liveVideo.oncanplay = () => { setVideoBuffering(false); setShowPoster(false); };
+        liveVideo.onended = () => setIsPlaying(false);
+        
+        setAdoptedVideo(liveVideo);
+        setShowPoster(false);
+        setVideoBuffering(false);
+        setIsPlaying(!liveVideo.paused);
+
+        // Move element to lightbox container after render
+        requestAnimationFrame(() => {
+          if (containerRef.current) {
+            containerRef.current.appendChild(liveVideo);
+            liveVideo.play().catch(() => {});
+          }
+        });
+      } else {
+        // No handoff - fall back to creating new video
+        setAdoptedVideo(null);
+        setShowPoster(true);
+        setVideoBuffering(true);
+        setIsPlaying(true);
+
+        const v = videoRef.current;
+        if (v && effectiveStartTime > 0) {
+          const setTime = () => {
+            v.currentTime = effectiveStartTime;
+            v.removeEventListener("loadedmetadata", setTime);
+          };
+          if (v.readyState >= 1) {
+            v.currentTime = effectiveStartTime;
+          } else {
+            v.addEventListener("loadedmetadata", setTime);
+          }
         }
       }
 
-      // Clear handoff after using it
       handoff.clearHandoff();
 
       // Start expand animation
       setAnimPhase("enter");
       expandTimer = setTimeout(() => setAnimPhase("open"), 30);
-    } else {
+} else {
       document.body.style.overflow = "";
       setDragOffset({ x: 0, y: 0 });
       setShowPoster(true);
@@ -163,6 +198,7 @@ const getEffectiveStartData = () => {
       cachedPosterRef.current = null;
       setAnimPhase("idle");
       animSourceRectRef.current = null;
+      setAdoptedVideo(null);
 
       if (videoRef.current) {
         videoRef.current.pause();
@@ -192,12 +228,12 @@ const getEffectiveStartData = () => {
   }, [videoUrl, isOpen, posterUrl]);
 
   // Sync video muted state with global audio context
-  useEffect(() => {
-    const v = videoRef.current;
+useEffect(() => {
+    const v = adoptedVideo || videoRef.current;
     if (v) {
       v.muted = !soundEnabled;
     }
-  }, [soundEnabled]);
+  }, [soundEnabled, adoptedVideo]);
 
   const resetFadeTimer = () => {
     if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
@@ -207,14 +243,24 @@ const getEffectiveStartData = () => {
     }, 4000);
   };
 
-  const handleClose = () => {
+const handleClose = () => {
     if (closingRef.current) return;
     closingRef.current = true;
 
-    const v = videoRef.current;
+    const v = adoptedVideo || videoRef.current;
     if (v && videoUrl) {
       handoff.returnTime(videoUrl, v.currentTime);
       v.pause();
+    }
+
+    // Clean up adopted video
+    if (adoptedVideo) {
+      adoptedVideo.ontimeupdate = null;
+      adoptedVideo.onwaiting = null;
+      adoptedVideo.onplaying = null;
+      adoptedVideo.oncanplay = null;
+      adoptedVideo.onended = null;
+      setAdoptedVideo(null);
     }
 
     // Compute exit transform — continue in drag direction if dragging
@@ -270,9 +316,9 @@ const getEffectiveStartData = () => {
   const dragDistance = Math.sqrt(dragOffset.x ** 2 + dragOffset.y ** 2);
   const bgOpacity = Math.max(0, 1 - dragDistance / 400);
 
-  const togglePlay = (e?: React.MouseEvent) => {
+const togglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const v = videoRef.current;
+    const v = adoptedVideo || videoRef.current;
     if (!v) return;
     if (v.paused) {
       v.play();
@@ -286,15 +332,15 @@ const getEffectiveStartData = () => {
     }
   };
 
-  const handleTimeUpdate = () => {
-    const v = videoRef.current;
+const handleTimeUpdate = () => {
+    const v = adoptedVideo || videoRef.current;
     if (!v || !v.duration) return;
     const p = (v.currentTime / v.duration) * 100;
     setProgress(isNaN(p) ? 0 : p);
   };
 
-  const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = videoRef.current;
+const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = adoptedVideo || videoRef.current;
     if (v) {
       const time = (parseFloat(e.target.value) / 100) * v.duration;
       v.currentTime = time;
@@ -417,6 +463,7 @@ if (animPhase === "enter") {
       <div className="absolute inset-0 z-5" onClick={handleScreenTap} />
 
       <div
+ref={containerRef}
         className="relative z-1 w-full h-full flex items-center justify-center"
         style={getVideoContainerStyle()}
       >
@@ -442,6 +489,7 @@ if (animPhase === "enter") {
           </div>
         )}
 
+  {!adoptedVideo && (
           <video
           ref={videoRef}
           src={videoUrl ? getOptimizedVideoUrl(videoUrl) : undefined}
@@ -474,6 +522,7 @@ if (animPhase === "enter") {
             }
           }}
         />
+        )}
       </div>
 
       <div

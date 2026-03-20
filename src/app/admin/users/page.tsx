@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useAdminCache } from "@/hooks/useAdminCache";
 import { supabase } from "@/lib/supabase";
 import { Loader2, Search, Phone, Mail, Shield, Ban, CheckCircle, Trash2, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -31,8 +32,6 @@ export default function AdminUsersPage() {
   useScrollRestore("admin:users");
   const searchParams = useSearchParams();           
   const highlightHandled = useRef(false);            
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "suspended" | "banned">("all");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -42,6 +41,28 @@ export default function AdminUsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const fetchUsersFn = useCallback(async () => {
+    let query = supabase
+      .from("users")
+      .select("id, full_name, email, phone, avatar_url, occupation, status, is_guardian, is_admin, created_at")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (statusFilter !== "all") {
+      query = query.eq("status", statusFilter);
+    }
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []) as AdminUser[];
+  }, [statusFilter]);
+
+  const { data: usersData, loading, refresh: refreshUsers, setData: setUsersData } = useAdminCache<AdminUser[]>(
+    "admin:users",
+    fetchUsersFn,
+    { deps: [statusFilter] }
+  );
+    const users = usersData || [];
+  const setUsers = setUsersData;
+  
 
     useEffect(() => {
     const highlightId = searchParams.get("highlight");
@@ -65,10 +86,6 @@ export default function AdminUsersPage() {
     }, 500);
   }, [loading, searchParams, router]);
 
-  useEffect(() => {
-    fetchUsers();
-  }, [statusFilter]);
-
  function AdminUserRowSkeleton() {
   return (
     <div className="glass-card flex items-center justify-between gap-3 overflow-hidden">
@@ -85,43 +102,16 @@ export default function AdminUsersPage() {
   );
 }
 
-  const fetchUsers = async () => {
-    setLoading(true);
-    try {
-      let query = supabase
-        .from("users")
-        .select("id, full_name, email, phone, avatar_url, occupation, status, is_guardian, is_admin, created_at")
-        .order("created_at", { ascending: false })
-        .limit(200);
-
-      if (statusFilter !== "all") {
-        query = query.eq("status", statusFilter);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      setUsers(data || []);
-    } catch (err) {
-      setUsers([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
+useEffect(() => {
   let t: any = null;
-
   const schedule = () => {
     if (t) clearTimeout(t);
-    t = setTimeout(() => fetchUsers(), 500);
+    t = setTimeout(() => refreshUsers(), 500);
   };
-
   const ch = supabase
     .channel("admin-users-rt")
     .on("postgres_changes", { event: "*", schema: "public", table: "users" }, schedule)
     .subscribe();
-
   return () => {
     if (t) clearTimeout(t);
     supabase.removeChannel(ch);
@@ -140,12 +130,11 @@ export default function AdminUsersPage() {
   });
 
  const updateStatus = async (userId: string, newStatus: "active" | "suspended" | "banned") => {
-  setActionLoading(userId);
+  const prev = users;
+  setUsers(users.map((u) => u.id === userId ? { ...u, status: newStatus } : u));
 
   try {
-    if (!session?.access_token) {
-      throw new Error("No session token. Please sign in again.");
-    }
+    if (!session?.access_token) throw new Error("No session");
 
     const res = await fetch("/api/admin/set-user-status", {
       method: "POST",
@@ -156,22 +145,12 @@ export default function AdminUsersPage() {
       body: JSON.stringify({ userId, status: newStatus }),
     });
 
-const text = await res.text();
-let json: any;
-try {
-  json = JSON.parse(text);
-} catch {
-  throw new Error("API crashed (non-JSON). Check terminal logs + service role env.");
-}
-    if (!res.ok || !json.ok) {
-      throw new Error(json.error || `Request failed (${res.status})`);
-    }
-
-  await fetchUsers();
-  } catch (err) {
-    alert("Failed to update user status");
-  } finally {
-    setActionLoading(null);
+    const text = await res.text();
+    let json: any;
+    try { json = JSON.parse(text); } catch { throw new Error("API error"); }
+    if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
+  } catch {
+    setUsers(prev);
   }
 };
 
@@ -195,7 +174,7 @@ const deleteUser = async (userId: string, userName: string) => {
         throw new Error(json.error || "Failed to delete user");
       }
 
-      await fetchUsers();
+      refreshUsers();
     } catch (err: any) {
       alert(err.message || "Failed to delete user");
     } finally {
@@ -203,10 +182,13 @@ const deleteUser = async (userId: string, userName: string) => {
     }
   };
 
-  const handleDeleteUser = async () => {
+ const handleDeleteUser = async () => {
     if (!deleteTarget || deleteConfirmText !== "DELETE") return;
 
     setDeleting(true);
+    const prev = users;
+    setUsers(users.filter((u) => u.id !== deleteTarget.id));
+
     try {
       const res = await fetch("/api/admin/delete-user", {
         method: "POST",
@@ -218,15 +200,13 @@ const deleteUser = async (userId: string, userName: string) => {
       });
 
       const json = await res.json();
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || "Failed to delete user");
-      }
+      if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
 
       setDeleteTarget(null);
       setDeleteConfirmText("");
-      await fetchUsers();
     } catch (err: any) {
       alert(err.message || "Failed to delete user");
+      setUsers(prev);
     } finally {
       setDeleting(false);
     }
@@ -240,7 +220,7 @@ const deleteUser = async (userId: string, userName: string) => {
       right={
         <div className="flex items-center gap-2">
           <span className="pill pill-purple">{filteredUsers.length} Users</span>
-          <GlowButton onClick={fetchUsers}>Refresh</GlowButton>
+          <GlowButton onClick={refreshUsers}>Refresh</GlowButton>
         </div>
       }
     >

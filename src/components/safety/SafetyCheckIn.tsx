@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import {
   MapPin,
   Clock,
@@ -66,7 +67,6 @@ export function SafetyCheckIn({
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [timeLeft, setTimeLeft] = useState("");
   const [isOverdue, setIsOverdue] = useState(false);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationRef = useRef<number | null>(null);
 const getWarned = () => typeof window !== "undefined" && sessionStorage.getItem("peja-checkin-warned") === "true";
   const setWarned = (v: boolean) => { if (typeof window !== "undefined") sessionStorage.setItem("peja-checkin-warned", String(v)); };
@@ -111,13 +111,35 @@ if (data.active && data.checkin) {
     setCheckingStatus(false);
   }, [headers]);
 
+// Only fetch once on mount, global CheckInMonitor handles polling
   useEffect(() => {
     checkStatus();
-    pollingRef.current = setInterval(checkStatus, 30000);
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
   }, [checkStatus]);
+
+  // Realtime subscription for instant updates
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel("checkin-self-realtime")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "safety_checkins", filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          const updated = payload.new as any;
+          if (updated.status === "cancelled") {
+            setActiveCheckIn(null);
+            setIsOverdue(false);
+          } else if (updated.status === "active" || updated.status === "missed") {
+            setActiveCheckIn(updated);
+            setIsOverdue(updated.status === "missed");
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
 
  // Countdown timer + 5-minute warning
   useEffect(() => {
@@ -318,7 +340,18 @@ if (diff <= 0) {
     }
   };
 
-  if (checkingStatus) return null;
+if (checkingStatus) {
+    return (
+      <div
+        className="w-full mb-6 p-4 rounded-2xl animate-pulse"
+        style={{
+          background: "rgba(139, 92, 246, 0.05)",
+          border: "1px solid rgba(139, 92, 246, 0.1)",
+          height: 72,
+        }}
+      />
+    );
+  }
 
   // Active check-in banner
   if (activeCheckIn) {

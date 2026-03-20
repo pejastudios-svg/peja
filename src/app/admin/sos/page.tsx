@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { usePageCache } from "@/context/PageCacheContext";
 import { useAuth } from "@/context/AuthContext";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -44,8 +45,11 @@ interface SOSData {
 export default function AdminSOSPage() {
   useScrollRestore("admin:sos");
     const router = useRouter();
-  const [sosAlerts, setSOSAlerts] = useState<SOSData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const pageCache = usePageCache();
+  const cachedSOS = pageCache.get<SOSData[]>("admin:sos");
+
+  const [sosAlerts, setSOSAlerts] = useState<SOSData[]>(cachedSOS || []);
+  const [loading, setLoading] = useState(cachedSOS === null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedSOS, setSelectedSOS] = useState<SOSData | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -77,8 +81,13 @@ export default function AdminSOSPage() {
   };
   const { session } = useAuth();
 
-  useEffect(() => {
-    fetchSOS();
+useEffect(() => {
+    if (cachedSOS && statusFilter === "all") {
+      setLoading(false);
+      fetchSOS(); // silent revalidate
+    } else {
+      fetchSOS();
+    }
 
     // Real-time updates
     const channel = supabase
@@ -91,6 +100,7 @@ export default function AdminSOSPage() {
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
   function AdminSOSRowSkeleton() {
@@ -144,7 +154,9 @@ export default function AdminSOSPage() {
     const usersMap: Record<string, any> = {};
     (usersData || []).forEach((u: any) => (usersMap[u.id] = u));
 
-    setSOSAlerts(rows.map((s) => ({ ...s, users: usersMap[s.user_id] })));
+ const merged = rows.map((s) => ({ ...s, users: usersMap[s.user_id] }));
+    setSOSAlerts(merged);
+    pageCache.set("admin:sos", merged);
   } catch (e) {
     setSOSAlerts([]);
   } finally {
@@ -159,7 +171,12 @@ const handleDeleteSOS = async (sosId: string) => {
   }
   if (!confirm("Delete this SOS permanently?")) return;
 
-  setActionLoading(true);
+  // Optimistic
+  const prev = sosAlerts;
+  setSOSAlerts(sosAlerts.filter(s => s.id !== sosId));
+  setShowModal(false);
+  setSelectedSOS(null);
+
   try {
     const res = await fetch("/api/admin/sos/delete", {
       method: "POST",
@@ -172,14 +189,9 @@ const handleDeleteSOS = async (sosId: string) => {
 
     const json = await res.json();
     if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
-
-    await fetchSOS();
-    setShowModal(false);
-    setSelectedSOS(null);
   } catch (e: any) {
+    setSOSAlerts(prev);
     alert(e.message || "Failed");
-  } finally {
-    setActionLoading(false);
   }
 };
 
@@ -188,8 +200,14 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
   e.preventDefault();
   e.stopPropagation();
 
+  // Optimistic
+  const prev = sosAlerts;
+  setSOSAlerts(sosAlerts.filter(s => s.id !== sosId));
+  if (selectedSOS?.id === sosId) {
+    setShowModal(false);
+    setSelectedSOS(null);
+  }
 
-  setActionLoading(true);
   try {
     const { data: auth } = await supabase.auth.getSession();
     const token = auth.session?.access_token;
@@ -206,49 +224,41 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
 
     const json = await res.json();
     if (!res.ok || !json.ok) throw new Error(json.error || "Failed to delete SOS");
-
-    // remove from UI
-    setSOSAlerts((prev) => prev.filter((x) => x.id !== sosId));
-    if (selectedSOS?.id === sosId) {
-      setShowModal(false);
-      setSelectedSOS(null);
-    }
-  } catch (err) {
+  } catch {
+    setSOSAlerts(prev);
     alert("Failed to delete SOS");
-  } finally {
-    setActionLoading(false);
   }
 };
 
-  const handleStatusChange = async (sosId: string, newStatus: string) => {
-  if (!session?.access_token) {
-    alert("No session token. Please sign in again.");
-    return;
-  }
+ const handleStatusChange = async (sosId: string, newStatus: string) => {
+    if (!session?.access_token) {
+      alert("No session token. Please sign in again.");
+      return;
+    }
 
-  setActionLoading(true);
-  try {
-    const res = await fetch("/api/admin/sos/set-status", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: JSON.stringify({ sosId, status: newStatus }),
-    });
-
-    const json = await res.json();
-    if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
-
-    await fetchSOS();
+    // Optimistic
+    const prev = sosAlerts;
+    setSOSAlerts(sosAlerts.map(s => s.id === sosId ? { ...s, status: newStatus } : s));
     setShowModal(false);
     setSelectedSOS(null);
-  } catch (e: any) {
-    alert(e.message || "Failed");
-  } finally {
-    setActionLoading(false);
-  }
-};
+
+    try {
+      const res = await fetch("/api/admin/sos/set-status", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ sosId, status: newStatus }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || "Failed");
+    } catch (e: any) {
+      setSOSAlerts(prev);
+      alert(e.message || "Failed");
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
+import { usePageCache } from "@/context/PageCacheContext";
 import { CATEGORIES, SOS_TAGS } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -295,6 +296,7 @@ function CollapsibleSection({
    ══════════════════════════════════════════════ */
 export default function AdminAnalyticsPage() {
   useScrollRestore("admin:analytics");
+  const pageCache = usePageCache();
 
   const [loading, setLoading] = useState(true);
   const [flashFields, setFlashFields] = useState<Record<string, boolean>>({});
@@ -321,9 +323,9 @@ export default function AdminAnalyticsPage() {
     usersWhoSOS: 0,
     confirmedPosts: 0,
     totalConfirmations: 0,
-    peakHours: "No data yet",
+peakHours: "No data yet",
   });
-
+  type Stats = typeof stats;
   /* ── chart state ── */
   const [streamData, setStreamData] = useState<StreamPoint[]>(() =>
     makeStreamSeed(60)
@@ -751,6 +753,30 @@ export default function AdminAnalyticsPage() {
       setReportLoading(false);
     }
   }, [reportRange, customDateFrom, customDateTo]);
+
+  // Restore from cache for instant revisits
+  useEffect(() => {
+    const cached = pageCache.get<any>("admin:analytics:all");
+    if (cached) {
+      if (cached.stats) setStats(cached.stats);
+      if (cached.streamData) setStreamData(cached.streamData);
+      if (cached.seriesData) setSeriesData(cached.seriesData);
+      if (cached.categoryData) setCategoryData(cached.categoryData);
+      if (cached.topFeatures) setTopFeatures(cached.topFeatures);
+      if (cached.hotspots) setHotspots(cached.hotspots);
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Cache analytics data after load
+  useEffect(() => {
+    if (loading) return;
+    pageCache.set("admin:analytics:all", {
+      stats, streamData, seriesData, categoryData, topFeatures, hotspots,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, stats, seriesData, categoryData, topFeatures, hotspots]);
 
     useEffect(() => {
     if (!loading) fetchActivityLog();
@@ -1226,7 +1252,7 @@ const res = await fetch("/api/sos-helpers", {
         { event: "INSERT", schema: "public", table: "posts" },
         (payload) => {
           const p = payload.new as any;
-          setStats((s) => ({
+          setStats((s: Stats) => ({
             ...s,
             totalPosts: s.totalPosts + 1,
             livePosts: s.livePosts + 1,
@@ -1242,7 +1268,7 @@ const res = await fetch("/api/sos-helpers", {
           });
           const cat = CATEGORIES.find((c) => c.id === p.category);
           if (cat) {
-            setCategoryData((prev) => {
+            setCategoryData((prev: { name: string; count: number; color: string }[]) => {
               const idx = prev.findIndex((c) => c.name === cat.name);
               if (idx !== -1) {
                 const next = [...prev];
@@ -1277,7 +1303,7 @@ const res = await fetch("/api/sos-helpers", {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "sos_alerts" },
         () => {
-          setStats((s) => ({ ...s, activeSOS: s.activeSOS + 1 }));
+          setStats((s: Stats) => ({ ...s, activeSOS: s.activeSOS + 1 }));
           flash("sos");
           setStreamData((prev) => {
             const next = [...prev];
@@ -1297,7 +1323,7 @@ const res = await fetch("/api/sos-helpers", {
         (payload) => {
           const s = payload.new as any;
           if (s.status !== "active") {
-            setStats((st) => ({
+            setStats((st: Stats) => ({
               ...st,
               activeSOS: Math.max(0, st.activeSOS - 1),
             }));
@@ -1317,7 +1343,7 @@ const res = await fetch("/api/sos-helpers", {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "flagged_content" },
         () => {
-          setStats((s) => ({ ...s, pendingFlags: s.pendingFlags + 1 }));
+          setStats((s: Stats) => ({ ...s, pendingFlags: s.pendingFlags + 1 }));
           flash("flags");
           setStreamData((prev) => {
             const next = [...prev];
@@ -1336,7 +1362,7 @@ const res = await fetch("/api/sos-helpers", {
         (payload) => {
           const f = payload.new as any;
           if (f.status !== "pending")
-            setStats((s) => ({
+            setStats((s: Stats) => ({
               ...s,
               pendingFlags: Math.max(0, s.pendingFlags - 1),
             }));
@@ -1350,7 +1376,7 @@ const res = await fetch("/api/sos-helpers", {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "users" },
         () => {
-          setStats((s) => ({
+          setStats((s: Stats) => ({
             ...s,
             totalUsers: s.totalUsers + 1,
             activeUsers: s.activeUsers + 1,
@@ -1918,12 +1944,12 @@ const res = await fetch("/api/sos-helpers", {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={categoryData} layout="vertical">
                   <CartesianGrid
-                    stroke="rgba(255,255,255,0.04)"
+                    stroke="rgba(255, 255, 255, 0.04)"
                     horizontal={false}
                   />
                   <XAxis
                     type="number"
-                    stroke="rgba(255,255,255,0.2)"
+                    stroke="rgba(255, 255, 255, 0.2)"
                     tick={{ fontSize: 10 }}
                     axisLine={false}
                     tickLine={false}
@@ -1937,15 +1963,18 @@ const res = await fetch("/api/sos-helpers", {
                     tickLine={false}
                     width={100}
                   />
-                  <Tooltip
+<Tooltip
                     contentStyle={{
-                      background: "#13111C",
+                      background: "#1a111c",
                       border: "1px solid rgba(255,255,255,0.1)",
                       borderRadius: 12,
                     }}
+                    labelStyle={{ color: "#ffffff", fontWeight: 600 }}
+                    itemStyle={{ color: "#e2e8f0" }}
+                    cursor={{ fill: "rgba(255,255,255,0.05)" }}
                   />
                   <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={18}>
-                    {categoryData.map((entry, idx) => (
+                    {categoryData.map((entry: { name: string; count: number; color: string }, idx: number) => (
                       <Cell
                         key={idx}
                         fill={entry.color}
@@ -2510,7 +2539,7 @@ const res = await fetch("/api/sos-helpers", {
               </div>
             ) : (
               <div className="space-y-2">
-                {topFeatures.map((f, i) => {
+                {topFeatures.map((f: { name: string; count: number; pct: number }, i: number) => {
                   const colors = [
                     "#8b5cf6", "#3b82f6", "#22c55e", "#eab308",
                     "#f97316", "#ef4444", "#ec4899", "#6366f1",
