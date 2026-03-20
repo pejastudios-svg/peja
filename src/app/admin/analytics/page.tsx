@@ -296,13 +296,14 @@ function CollapsibleSection({
    ══════════════════════════════════════════════ */
 export default function AdminAnalyticsPage() {
   useScrollRestore("admin:analytics");
-  const pageCache = usePageCache();
+const pageCache = usePageCache();
+  const _cached = pageCache.get<any>("admin:analytics:all");
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!_cached);
   const [flashFields, setFlashFields] = useState<Record<string, boolean>>({});
 
   /* ── core stats ── */
-  const [stats, setStats] = useState({
+const [stats, setStats] = useState(_cached?.stats || {
     totalUsers: 0,
     activeUsers: 0,
     totalPosts: 0,
@@ -327,24 +328,22 @@ peakHours: "No data yet",
   });
   type Stats = typeof stats;
   /* ── chart state ── */
-  const [streamData, setStreamData] = useState<StreamPoint[]>(() =>
-    makeStreamSeed(60)
+/* ── chart state ── */
+  const [streamData, setStreamData] = useState<StreamPoint[]>(
+    _cached?.streamData || makeStreamSeed(60)
   );
-  const [seriesData, setSeriesData] = useState<
-    { day: string; posts: number; sos: number; flags: number }[]
-  >([]);
-
-  const [categoryData, setCategoryData] = useState<
-    { name: string; count: number; color: string }[]
-  >([]);
-
+  const [seriesData, setSeriesData] = useState(
+    (_cached?.seriesData || []) as { day: string; posts: number; sos: number; flags: number }[]
+  );
+  const [categoryData, setCategoryData] = useState(
+    (_cached?.categoryData || []) as { name: string; count: number; color: string }[]
+  );
   /* ── tables ── */
-  const [topFeatures, setTopFeatures] = useState<
-    { name: string; count: number; pct: number }[]
-  >([]);
-
+  const [topFeatures, setTopFeatures] = useState(
+    (_cached?.topFeatures || []) as { name: string; count: number; pct: number }[]
+  );
   /* ── hotspots ── */
-  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
+  const [hotspots, setHotspots] = useState<Hotspot[]>(_cached?.hotspots || []);
 
   /* ── live feed ── */
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
@@ -753,21 +752,6 @@ peakHours: "No data yet",
       setReportLoading(false);
     }
   }, [reportRange, customDateFrom, customDateTo]);
-
-  // Restore from cache for instant revisits
-  useEffect(() => {
-    const cached = pageCache.get<any>("admin:analytics:all");
-    if (cached) {
-      if (cached.stats) setStats(cached.stats);
-      if (cached.streamData) setStreamData(cached.streamData);
-      if (cached.seriesData) setSeriesData(cached.seriesData);
-      if (cached.categoryData) setCategoryData(cached.categoryData);
-      if (cached.topFeatures) setTopFeatures(cached.topFeatures);
-      if (cached.hotspots) setHotspots(cached.hotspots);
-      setLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Cache analytics data after load
   useEffect(() => {
