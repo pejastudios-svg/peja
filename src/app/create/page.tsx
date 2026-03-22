@@ -642,7 +642,6 @@ export default function CreatePostPage() {
 
         {/* Media Upload */}
         <div className="glass-card mb-4">
-          <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*,video/*" multiple className="hidden" />
           <input type="file" ref={cameraInputRef} onChange={handleFileSelect} accept="image/*" capture="environment" className="hidden" />
           <input type="file" ref={videoInputRef} onChange={handleFileSelect} accept="video/*" capture="environment" className="hidden" />
 
@@ -688,7 +687,7 @@ export default function CreatePostPage() {
           )}
 
           {/* Upload buttons */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => cameraInputRef.current?.click()}
@@ -717,21 +716,6 @@ export default function CreatePostPage() {
                 <Video className="w-5 h-5 text-primary-400" />
               </div>
               <span className="text-[10px] text-dark-400 font-medium">Video</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
-              style={{
-                background: "rgba(139, 92, 246, 0.08)",
-                border: "1px dashed rgba(139, 92, 246, 0.3)",
-              }}
-            >
-              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(139, 92, 246, 0.15)" }}>
-                <ImageIcon className="w-5 h-5 text-primary-400" />
-              </div>
-              <span className="text-[10px] text-dark-400 font-medium">Gallery</span>
             </button>
           </div>
         </div>
@@ -783,7 +767,7 @@ export default function CreatePostPage() {
             <span className="text-sm font-medium text-dark-200">Threat Level *</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {CATEGORIES.map((cat) => {
+            {CATEGORIES.filter((cat) => cat.id !== "crime" && cat.id !== "fire").map((cat) => {
               const colors = CATEGORY_COLORS[cat.id] || CATEGORY_COLORS.general;
               const icon = CATEGORY_ICONS[cat.id] || <Info className="w-5 h-5" />;
               const isSelected = category === cat.id;
