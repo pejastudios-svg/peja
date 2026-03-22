@@ -68,6 +68,7 @@ export function SafetyCheckIn({
   const [timeLeft, setTimeLeft] = useState("");
   const [isOverdue, setIsOverdue] = useState(false);
   const locationRef = useRef<number | null>(null);
+  const cancellingRef = useRef(false);
 const getWarned = () => typeof window !== "undefined" && sessionStorage.getItem("peja-checkin-warned") === "true";
   const setWarned = (v: boolean) => { if (typeof window !== "undefined") sessionStorage.setItem("peja-checkin-warned", String(v)); };
   const getExpired = () => typeof window !== "undefined" && sessionStorage.getItem("peja-checkin-expired") === "true";
@@ -95,6 +96,7 @@ const getWarned = () => typeof window !== "undefined" && sessionStorage.getItem(
       const data = await res.json();
 
 if (data.active && data.checkin) {
+        if (cancellingRef.current) return;
         setActiveCheckIn(prev => {
           // Only update if something actually changed
           if (!prev || prev.id !== data.checkin.id || prev.status !== data.checkin.status || prev.next_check_in_at !== data.checkin.next_check_in_at) {
@@ -103,8 +105,8 @@ if (data.active && data.checkin) {
           return prev;
         });
         setIsOverdue(data.isOverdue);
-      } else if (!data.active) {
-        setActiveCheckIn(null);
+} else if (!data.active) {
+        if (!cancellingRef.current) setActiveCheckIn(null);
         setIsOverdue(false);
       }
     } catch {}
@@ -125,7 +127,8 @@ if (data.active && data.checkin) {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "safety_checkins", filter: `user_id=eq.${user.id}` },
-        (payload) => {
+(payload) => {
+          if (cancellingRef.current) return;
           const updated = payload.new as any;
           if (updated.status === "cancelled") {
             setActiveCheckIn(null);
@@ -304,8 +307,9 @@ if (diff <= 0) {
     } catch {}
   };
 
- const handleCancel = async () => {
-    // Optimistic: clear UI immediately
+const handleCancel = async () => {
+    // Block any updates from realtime/polling during cancel
+    cancellingRef.current = true;
     const prevCheckIn = activeCheckIn;
     setActiveCheckIn(null);
     setShowCancelConfirm(false);
@@ -317,11 +321,15 @@ if (diff <= 0) {
         method: "POST",
         headers: headers(),
       });
-    } catch {
+} catch {
       // Revert if failed
+      cancellingRef.current = false;
       setActiveCheckIn(prevCheckIn);
       toast.danger("Failed to cancel. Try again.");
+      return;
     }
+    // Keep blocking for 3 seconds to prevent flash from realtime/polling
+    setTimeout(() => { cancellingRef.current = false; }, 3000);
   };
 
   const toggleContact = (contactUserId: string) => {

@@ -6,7 +6,6 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import {
   Camera,
   Video,
-  Image as ImageIcon,
   X,
   Loader2,
   Hash,
@@ -17,6 +16,7 @@ import {
   Eye,
   EyeOff,
   Upload,
+  MapPin,
   Crosshair,
   Flame,
   UserX,
@@ -115,7 +115,9 @@ export default function CreatePostPage() {
   const { user, loading: authLoading } = useAuth();
   const isMounted = useRef(true);
   const [submitted, setSubmitted] = useState(false);
-
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState<string | null>(null);
+const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const [media, setMedia] = useState<File[]>([]);
   const [mediaPreviews, setMediaPreviews] = useState<{ url: string; type: string }[]>([]);
   const [category, setCategory] = useState("");
@@ -425,30 +427,46 @@ export default function CreatePostPage() {
         if (isVideo) {
           const sizeMB = file.size / 1024 / 1024;
 
-          if (sizeMB > 16) {
-            setToast("Analyzing video...");
+setToast("Processing video...");
 
+          try {
+            const result = await compressVideo(file, (progress) => {
+              const overallProgress = Math.round(
+                ((i + progress / 100) / totalFiles) * 80
+              );
+              setUploadProgress(overallProgress);
+            });
+
+            uploadToCloudinary = true;
+            cloudinaryUrl = result.url;
+
+          } catch (error: any) {
+            if (error.message !== "SKIP_COMPRESSION") {
+              throw error;
+            }
+            // Compression skipped, upload to Cloudinary directly
             try {
-              const result = await compressVideo(file, (progress) => {
-                const overallProgress = Math.round(
-                  ((i + progress / 100) / totalFiles) * 80
-                );
-                setUploadProgress(overallProgress);
-              });
+              setToast("Uploading video...");
+              const formData = new FormData();
+              formData.append("file", file);
+              formData.append("upload_preset", process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || "");
+              formData.append("resource_type", "video");
+              formData.append("eager", "w_720,c_limit,vc_h264,ac_aac,q_auto,f_mp4");
+              formData.append("eager_async", "true");
 
+              const cloudRes = await fetch(
+                `https://api.cloudinary.com/v1_1/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/video/upload`,
+                { method: "POST", body: formData }
+              );
+
+              if (!cloudRes.ok) throw new Error("Upload failed");
+              const cloudData = await cloudRes.json();
               uploadToCloudinary = true;
-              cloudinaryUrl = result.url;
-
-            } catch (error: any) {
-              if (error.message !== "SKIP_COMPRESSION") {
-                throw error;
-              }
-              // Video under 16MB, upload normally
+              cloudinaryUrl = cloudData.secure_url;
+            } catch {
+              // Fallback to Supabase
               fileToUpload = file;
             }
-          } else {
-            // Video under 16MB, upload directly
-            fileToUpload = file;
           }
         }
 
@@ -915,11 +933,17 @@ export default function CreatePostPage() {
           </button>
         </div>
 
-        {/* Submit */}
+{/* Preview / Submit */}
         <button
           type="button"
-          onClick={handleSubmit}
-          disabled={isLoading || submitted}
+          onClick={() => {
+            // Create blob URL for video preview
+            if (media[0]?.type.startsWith("video/")) {
+              setPreviewVideoUrl(URL.createObjectURL(media[0]));
+            }
+            setShowPreview(true);
+          }}
+          disabled={isLoading || submitted || !category}
           className="w-full py-3.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:hover:scale-100"
           style={{
             background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
@@ -932,13 +956,160 @@ export default function CreatePostPage() {
               Uploading... {uploadProgress}%
             </div>
           ) : (
-            <div className="flex items-center justify-center gap-2">
-              <Shield className="w-5 h-5" />
-              Post to Peja
+<div className="flex items-center justify-center gap-2">
+              <Eye className="w-5 h-5" />
+              Preview Post
             </div>
           )}
         </button>
+{/* Preview Modal */}
+        {showPreview && (
+          <>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50" onClick={() => { setShowPreview(false); if (previewVideoUrl) { URL.revokeObjectURL(previewVideoUrl); setPreviewVideoUrl(null); } }} />
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+              <div
+                className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl"
+                style={{
+                  background: "rgba(18, 12, 36, 0.98)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  boxShadow: "0 -10px 40px rgba(0,0,0,0.5)",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Handle bar */}
+                <div className="flex justify-center pt-3 pb-1 sm:hidden">
+                  <div className="w-10 h-1 rounded-full bg-white/20" />
+                </div>
 
+                <div className="p-5">
+                  <h3 className="text-lg font-bold text-white mb-4">Preview Your Post</h3>
+
+                  {/* Media preview */}
+                  {mediaPreviews.length > 0 && (
+                    <div className="mb-4 rounded-xl overflow-hidden bg-dark-800">
+{mediaPreviews[0].type === "video" ? (
+<div className="relative bg-black rounded-xl overflow-hidden">
+                          <video
+                            src={previewVideoUrl || undefined}
+                            className="w-full max-h-[50vh] object-contain"
+                            controls
+                            playsInline
+                            autoPlay
+                            preload="auto"
+                          />
+                        </div>
+                      ) : (
+                        <img src={mediaPreviews[0].url} alt="" className="w-full max-h-[50vh] object-contain rounded-xl" />
+                      )}
+                      {mediaPreviews.length > 1 && (
+                        <div className="flex gap-1 p-2 overflow-x-auto">
+{mediaPreviews.slice(1).map((p, i) => (
+                            <div key={i} className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-dark-700">
+                              {p.type === "video" ? (
+                                <div className="relative w-full h-full">
+                                  {p.url ? (
+                                    <img src={p.url} alt="" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full bg-dark-800" />
+                                  )}
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                                    <Play className="w-3 h-3 text-white" />
+                                  </div>
+                                </div>
+                              ) : (
+                                <img src={p.url} alt="" className="w-full h-full object-cover" />
+                              )}
+                            </div>
+                          ))}
+                          <span className="text-xs text-dark-500 self-center ml-1">+{mediaPreviews.length - 1} more</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Category */}
+                  {category && (
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-xs font-bold uppercase tracking-wider text-primary-400">
+                        {CATEGORIES.find(c => c.id === category)?.name || category}
+                      </span>
+                    </div>
+                  )}
+
+{/* Description */}
+                  {comment.trim() && (
+                    <div className="mb-3">
+                      <p
+                        className={`text-sm text-dark-200 whitespace-pre-wrap break-words ${!previewDescExpanded && comment.length > 200 ? "overflow-hidden" : ""}`}
+                        style={!previewDescExpanded && comment.length > 200 ? { display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" } : undefined}
+                      >
+                        {comment}
+                      </p>
+                      {comment.length > 200 && (
+                        <button
+                          onClick={() => setPreviewDescExpanded(!previewDescExpanded)}
+                          className="text-xs text-primary-400 mt-1 font-medium"
+                        >
+                          {previewDescExpanded ? "Show less" : "See more"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Location */}
+                  {location && (
+                    <div className="flex items-center gap-1.5 text-xs text-dark-400 mb-3">
+                      <MapPin className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{location.address || "Location captured"}</span>
+                    </div>
+                  )}
+
+                  {/* Tags */}
+                  {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {tags.map(tag => (
+                        <span key={tag} className="text-xs text-primary-400 bg-primary-500/10 px-2 py-0.5 rounded-lg">#{tag}</span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Sensitive content indicator */}
+                  {isSensitive && (
+                    <div className="flex items-center gap-2 text-xs text-red-400 mb-4">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      Marked as sensitive content
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex gap-3 pt-4 border-t border-white/10">
+                    <button
+                      onClick={() => { setShowPreview(false); if (previewVideoUrl) { URL.revokeObjectURL(previewVideoUrl); setPreviewVideoUrl(null); } }}
+                      className="flex-1 py-3 rounded-xl text-sm font-medium text-dark-300 hover:bg-white/5 transition-colors"
+                      style={{
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1px solid rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => { setShowPreview(false); if (previewVideoUrl) { URL.revokeObjectURL(previewVideoUrl); setPreviewVideoUrl(null); } handleSubmit(); }}
+                      className="flex-1 py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
+                      style={{
+                        background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                        boxShadow: "0 4px 20px rgba(124, 58, 237, 0.4)",
+                      }}
+                    >
+                      <Shield className="w-4 h-4" />
+                      Post to Peja
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
         {/* Post Loading Animation */}
         <PostLoadingAnimation
           isActive={isLoading}

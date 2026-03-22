@@ -214,8 +214,8 @@ export function InlineVideo({
         } catch {}
       }
 
-      handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
-      doPause();
+handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect, v);
+      // Don't pause - lightbox will adopt the playing video element
       onExpand(currentTime, posterDataUrl);
     }
   };

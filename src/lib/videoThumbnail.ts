@@ -75,13 +75,17 @@ export function getOptimizedVideoUrl(videoUrl: string): string {
  * Preloads the first chunk of a video URL so playback starts faster.
  * Call this when a video card enters the viewport.
  */
+const preloadedUrls = new Set<string>();
+
 export function preloadVideoChunk(videoUrl: string): void {
   if (typeof window === "undefined") return;
+  if (preloadedUrls.has(videoUrl)) return; // Don't preload same URL twice
+  preloadedUrls.add(videoUrl);
 
   try {
-    // Preload 2MB — enough for first 10-15 seconds of video
+    // Preload 5MB for fast start
     fetch(videoUrl, {
-      headers: { Range: "bytes=0-2000000" },
+      headers: { Range: "bytes=0-5000000" },
       mode: "cors",
       credentials: "omit",
     }).catch(() => {});

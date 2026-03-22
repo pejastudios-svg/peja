@@ -31,8 +31,7 @@ const NO_CACHE_PATTERNS = [
   /supabase\.co/,
   /googleapis\.com/,
   /nominatim\.openstreetmap\.org/,
-  /cloudinary\.com\/.*\/upload/,
-  /res\.cloudinary\.com/,
+ /cloudinary\.com\/.*\/upload(?!\/w_|\/vc_|\/so_|\/f_)/,
   /firebase/,
 ];
 
@@ -67,7 +66,8 @@ self.addEventListener("activate", (event) => {
               (key) =>
                 key !== APP_SHELL_CACHE &&
                 key !== CACHE_NAME &&
-                key !== DATA_CACHE
+                key !== DATA_CACHE &&
+                key !== "peja-video-v1"
             )
             .map((key) => caches.delete(key))
         )
@@ -101,6 +101,25 @@ self.addEventListener("fetch", (event) => {
             return response;
           })
           .catch(() => caches.match("/offline.html"));
+      })
+    );
+    return;
+  }
+
+  // Video/media from Cloudinary: cache-first for optimized playback URLs
+  if (url.hostname.includes("res.cloudinary.com") && url.pathname.includes("/video/")) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request)
+          .then((response) => {
+            if (response.ok && response.status === 200) {
+              const clone = response.clone();
+              caches.open("peja-video-v1").then((cache) => cache.put(request, clone));
+            }
+            return response;
+          })
+          .catch(() => new Response("", { status: 408 }));
       })
     );
     return;
