@@ -20,6 +20,7 @@ interface CreateNotificationParams {
   title: string;
   body?: string;
   data?: Record<string, any>;
+  silent?: boolean;
 }
 
 // ============================================
@@ -31,24 +32,27 @@ export async function createNotification({
   title,
   body,
   data,
+  silent = false,
 }: CreateNotificationParams): Promise<boolean> {
   try {
+    // Silent notifications: only insert for realtime map tracking, mark as read
     const { error } = await supabase.from("notifications").insert({
       user_id: userId,
       type,
-      title,
-      body,
+      title: silent ? "" : title,
+      body: silent ? "" : body,
       data: data || {},
-      is_read: false,
+      is_read: silent ? true : false,
     });
 
     if (error) {
       return false;
     }
 
-    // Also send FCM push notification (fire and forget)
-    sendFCMPush(userId, title, body || "", data || {}).catch((err) => {
-    });
+    // Don't send push for silent notifications
+    if (!silent && title) {
+      sendFCMPush(userId, title, body || "", data || {}).catch(() => {});
+    }
 
     return true;
   } catch (error) {

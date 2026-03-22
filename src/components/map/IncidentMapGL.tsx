@@ -209,7 +209,7 @@ export default function IncidentMapGL({
   const [bearing, setBearing] = useState(0);
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
   const [sendingHelp, setSendingHelp] = useState(false);
-  const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
+const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
   const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [toast, setToast] = useState<string | null>(null);
@@ -312,6 +312,7 @@ export default function IncidentMapGL({
     };
     recoverHelpers();
   }, [myUserId]);
+
   // =====================================================================
   // CLEAN UP HELPERS FOR INACTIVE SOS ALERTS
   // =====================================================================
@@ -558,16 +559,15 @@ export default function IncidentMapGL({
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // Update route when helper moves
+// Fetch/update route when helping someone
   useEffect(() => {
-    if (!routeGeoJSON || !userLocation) return;
-
-    // Find the SOS we're helping
-    const helpedId = [...helpedSOSIds][0]; // most recent
+    if (!userLocation) return;
+    const helpedId = [...helpedSOSIds][0];
     if (!helpedId) return;
+    if (liveSOSAlerts.length === 0) return;
 
     const sos = liveSOSAlerts.find(s => s.id === helpedId);
-    if (!sos) { setRouteGeoJSON(null); setRouteInfo(null); return; }
+    if (!sos) return;
 
     const updateRoute = async () => {
       const route = await fetchRoute(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
@@ -580,9 +580,13 @@ export default function IncidentMapGL({
       }
     };
 
-    // Debounce route updates to every 15 seconds
-    const timer = setTimeout(updateRoute, 15000);
-    return () => clearTimeout(timer);
+    // Fetch immediately if no route yet, otherwise debounce updates
+    if (!routeGeoJSON) {
+      updateRoute();
+    } else {
+      const timer = setTimeout(updateRoute, 15000);
+      return () => clearTimeout(timer);
+    }
   }, [userLocation, helpedSOSIds, liveSOSAlerts, routeGeoJSON]);
 
   // =====================================================================
@@ -730,10 +734,11 @@ export default function IncidentMapGL({
             }
           }
         }
-        if (milestoneToFire) {
+if (milestoneToFire) {
           // Mark milestone as fired (persisted to localStorage)
           firedMilestones.add(milestoneToFire);
           saveFiredMilestone(sosId, helperId, milestoneToFire);
+          // Visible milestone notification
           await createNotification({
             userId: sosOwnerId,
             type: "sos_alert",
@@ -748,8 +753,26 @@ export default function IncidentMapGL({
               helper_lng: lng,
               eta_minutes: eta,
               milestone: milestoneToFire,
+            },
+          });
+        } else {
+          // Silent location update for map tracking only
+          await createNotification({
+            userId: sosOwnerId,
+            type: "sos_alert",
+            title: "",
+            body: "",
+            data: {
+              sos_id: sosId,
+              helper_id: helperId,
+              helper_name: helperName,
+              helper_avatar: helperAvatar || null,
+              helper_lat: lat,
+              helper_lng: lng,
+              eta_minutes: eta,
               is_location_update: true,
             },
+            silent: true,
           });
         }
         // If arrived, stop tracking
