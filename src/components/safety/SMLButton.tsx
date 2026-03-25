@@ -342,7 +342,8 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
   return (
     <>
       {/* Floating button */}
-      <button
+     <button
+        data-tutorial="nav-sml"
         onClick={handleButtonClick}
         className="relative flex items-center justify-center transition-all active:scale-90"
         style={{

@@ -14,6 +14,7 @@ import {
   X,
   Search,
   Home,
+  MapPin,
 } from "lucide-react";
 
 // =====================================================
@@ -82,6 +83,15 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     description:
       "In a real emergency, tap and hold this button. It broadcasts your live location to nearby users and your emergency contacts. Do NOT misuse this. False alerts result in a permanent ban.",
     icon: <AlertTriangle className="w-5 h-5" />,
+    position: "top",
+  },
+  {
+    id: "sml-button",
+    target: "nav-sml",
+    title: "Share My Location",
+    description:
+      "Tap this to share your live location with your emergency contacts. Set a check-in timer and tap 'I'm OK' before it expires. If you miss a check-in, your contacts are automatically alerted. You can also see when others are sharing their location with you.",
+    icon: <MapPin className="w-5 h-5" />,
     position: "top",
   },
   {
