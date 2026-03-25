@@ -18,6 +18,7 @@ import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import { apiUrl } from "@/lib/api";
 import { PejaLoadingScreen } from "@/components/ui/PejaLoadingScreen";
 import { usePageCache } from "@/context/PageCacheContext";
+import { preloadFeedVideos } from "@/lib/videoThumbnail";
 
 type FeedTab = "nearby" | "trending";
 type TrendingMode = "recommended" | "top";
@@ -32,7 +33,7 @@ const DEFAULT_UI: HomeUIState = {
   trendingMode: "recommended",
 };
 
-const PRIORITY_CATEGORIES = new Set(["crime", "fire", "kidnapping", "terrorist"]);
+const PRIORITY_CATEGORIES = new Set(["kidnapping", "terrorist"]);
 
 function categoryPriority(p: Post): number {
   if (PRIORITY_CATEGORIES.has(p.category)) return 0;
@@ -97,6 +98,12 @@ export default function Home() {
   });
 
   const [refreshing, setRefreshing] = useState(false);
+  // Preload first videos from cache immediately on mount
+  useEffect(() => {
+    if (posts.length > 0) {
+      preloadFeedVideos(posts);
+    }
+  }, []);
 
   // ── Stable refs: prevent fetchPosts from being recreated on every
   //    auth / confirm context update ──
@@ -337,6 +344,7 @@ export default function Home() {
 
         setPosts(finalPosts);
         feedCache.setPosts(feedKey, finalPosts);
+        preloadFeedVideos(finalPosts);
       } catch (err) {
         // ── Never wipe posts the user can already see ──
       } finally {

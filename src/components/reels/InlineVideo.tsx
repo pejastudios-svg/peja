@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { Volume2, VolumeX, Play, Pause, Maximize2 } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
-import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk, generateVideoThumbnail } from "@/lib/videoThumbnail";
+import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk, generateVideoThumbnail, getCachedVideoUrl } from "@/lib/videoThumbnail";
 import { useHlsPlayer } from "@/hooks/useHlsPlayer";
 
 const PLAYING_EVENT = "peja-inline-video-playing";
@@ -58,7 +58,8 @@ export function InlineVideo({
   const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
   const effectivePoster = poster || getVideoThumbnailUrl(src) || generatedPoster || undefined;
   useHlsPlayer(videoRef, src);
-  const optimizedSrc = getOptimizedVideoUrl(src);
+  const rawOptimized = getOptimizedVideoUrl(src);
+  const optimizedSrc = getCachedVideoUrl(rawOptimized) || rawOptimized;
 
     // Generate thumbnail for non-Cloudinary videos (Supabase-hosted)
   useEffect(() => {

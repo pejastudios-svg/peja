@@ -76,20 +76,56 @@ export function getOptimizedVideoUrl(videoUrl: string): string {
  * Call this when a video card enters the viewport.
  */
 const preloadedUrls = new Set<string>();
+const videoCache = new Map<string, string>(); // url -> blob URL
 
-export function preloadVideoChunk(videoUrl: string): void {
+export function preloadVideoChunk(videoUrl: string, priority: "high" | "low" = "low"): void {
   if (typeof window === "undefined") return;
-  if (preloadedUrls.has(videoUrl)) return; // Don't preload same URL twice
+  if (preloadedUrls.has(videoUrl)) return;
   preloadedUrls.add(videoUrl);
 
-  try {
-    // Preload 5MB for fast start
+  if (priority === "high") {
+    // Full preload for first few videos - cache entire video as blob
+    fetch(videoUrl, { mode: "cors", credentials: "omit" })
+      .then(res => {
+        if (!res.ok) return;
+        return res.blob();
+      })
+      .then(blob => {
+        if (blob) {
+          const blobUrl = URL.createObjectURL(blob);
+          videoCache.set(videoUrl, blobUrl);
+        }
+      })
+      .catch(() => {});
+  } else {
+    // Range preload for later videos
     fetch(videoUrl, {
       headers: { Range: "bytes=0-5000000" },
       mode: "cors",
       credentials: "omit",
     }).catch(() => {});
-  } catch {}
+  }
+}
+
+export function getCachedVideoUrl(videoUrl: string): string | null {
+  return videoCache.get(videoUrl) || null;
+}
+
+export function preloadFeedVideos(posts: { media?: { url: string; media_type: string }[] }[]): void {
+  if (typeof window === "undefined") return;
+  
+  let videoCount = 0;
+  for (const post of posts) {
+    const video = post.media?.find(m => m.media_type === "video");
+    if (!video) continue;
+    
+    const optimizedUrl = getOptimizedVideoUrl(video.url);
+    const priority = videoCount < 3 ? "high" : "low";
+    preloadVideoChunk(optimizedUrl, priority);
+    videoCount++;
+    
+    if (videoCount >= 6) break; // Preload max 6 videos
+  }
 }
 
 /**

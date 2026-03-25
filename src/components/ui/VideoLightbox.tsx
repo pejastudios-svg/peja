@@ -7,7 +7,7 @@ import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
 import { supabase } from "@/lib/supabase";
-import { getVideoThumbnailUrl, getOptimizedVideoUrl, generateVideoThumbnail } from "@/lib/videoThumbnail";
+import { getVideoThumbnailUrl, getOptimizedVideoUrl, generateVideoThumbnail, getCachedVideoUrl } from "@/lib/videoThumbnail";
 import { useHlsPlayer } from "@/hooks/useHlsPlayer";
 
 export function VideoLightbox({
@@ -40,8 +40,6 @@ export function VideoLightbox({
     const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
     const cachedPosterRef = useRef<string | null>(null);
   const [videoBuffering, setVideoBuffering] = useState(true);
-  const [adoptedVideo, setAdoptedVideo] = useState<HTMLVideoElement | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
   const [animPhase, setAnimPhase] = useState<"idle" | "enter" | "open" | "exit">("idle");
   const exitTransformRef = useRef("scale(0.88)");
   const animSourceRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -134,7 +132,6 @@ const getEffectiveStartData = () => {
       }
 
 // Use poster from handoff for instant visual, create own video element
-      setAdoptedVideo(null);
       setShowPoster(true);
       setVideoBuffering(true);
       setIsPlaying(true);
@@ -166,7 +163,7 @@ const getEffectiveStartData = () => {
       cachedPosterRef.current = null;
       setAnimPhase("idle");
       animSourceRectRef.current = null;
-      setAdoptedVideo(null);
+
 
       if (videoRef.current) {
         videoRef.current.pause();
@@ -201,7 +198,7 @@ useEffect(() => {
     if (v) {
       v.muted = !soundEnabled;
     }
-  }, [soundEnabled, adoptedVideo]);
+  }, [soundEnabled]);
 
   const resetFadeTimer = () => {
     if (fadeTimeout.current) clearTimeout(fadeTimeout.current);
@@ -421,8 +418,7 @@ if (animPhase === "enter") {
       <div className="absolute inset-0 z-5" onClick={handleScreenTap} />
 
       <div
-ref={containerRef}
-        className="relative z-1 w-full h-full flex items-center justify-center"
+className="relative z-1 w-full h-full flex items-center justify-center"
         style={getVideoContainerStyle()}
       >
         {/* Poster overlay — always covers video until frames render. Never shows ugly browser default. */}
@@ -447,10 +443,9 @@ ref={containerRef}
           </div>
         )}
 
-  {!adoptedVideo && (
-          <video
+<video
           ref={videoRef}
-          src={videoUrl ? getOptimizedVideoUrl(videoUrl) : undefined}
+          src={videoUrl ? (getCachedVideoUrl(getOptimizedVideoUrl(videoUrl)) || getOptimizedVideoUrl(videoUrl)) : undefined}
           className={`max-w-full max-h-full object-contain pointer-events-none transition-opacity duration-100 ${
             showPoster ? "opacity-0" : "opacity-100"
           }`}
@@ -480,7 +475,6 @@ ref={containerRef}
             }
           }}
         />
-        )}
       </div>
 
       <div
