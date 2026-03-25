@@ -133,54 +133,22 @@ const getEffectiveStartData = () => {
         incrementView(postId);
       }
 
-      // Check if we have a live video element from handoff
-      const handoffData = handoff.getHandoff();
-      if (handoffData?.videoElement && handoffData.src === videoUrl) {
-        const liveVideo = handoffData.videoElement;
-        
-        // Style it for fullscreen
-        liveVideo.className = "max-w-full max-h-full object-contain pointer-events-none";
-        liveVideo.style.opacity = "1";
-        liveVideo.loop = true;
-        liveVideo.muted = !soundEnabled;
-        
-        // Attach event listeners
-        liveVideo.ontimeupdate = handleTimeUpdate;
-        liveVideo.onwaiting = () => setVideoBuffering(true);
-        liveVideo.onplaying = () => { setVideoBuffering(false); setShowPoster(false); };
-        liveVideo.oncanplay = () => { setVideoBuffering(false); setShowPoster(false); };
-        liveVideo.onended = () => setIsPlaying(false);
-        
-        setAdoptedVideo(liveVideo);
-        setShowPoster(false);
-        setVideoBuffering(false);
-        setIsPlaying(!liveVideo.paused);
+// Use poster from handoff for instant visual, create own video element
+      setAdoptedVideo(null);
+      setShowPoster(true);
+      setVideoBuffering(true);
+      setIsPlaying(true);
 
-        // Move element to lightbox container after render
-        requestAnimationFrame(() => {
-          if (containerRef.current) {
-            containerRef.current.appendChild(liveVideo);
-            liveVideo.play().catch(() => {});
-          }
-        });
-      } else {
-        // No handoff - fall back to creating new video
-        setAdoptedVideo(null);
-        setShowPoster(true);
-        setVideoBuffering(true);
-        setIsPlaying(true);
-
-        const v = videoRef.current;
-        if (v && effectiveStartTime > 0) {
-          const setTime = () => {
-            v.currentTime = effectiveStartTime;
-            v.removeEventListener("loadedmetadata", setTime);
-          };
-          if (v.readyState >= 1) {
-            v.currentTime = effectiveStartTime;
-          } else {
-            v.addEventListener("loadedmetadata", setTime);
-          }
+      const v = videoRef.current;
+      if (v && effectiveStartTime > 0) {
+        const setTime = () => {
+          v.currentTime = effectiveStartTime;
+          v.removeEventListener("loadedmetadata", setTime);
+        };
+        if (v.readyState >= 1) {
+          v.currentTime = effectiveStartTime;
+        } else {
+          v.addEventListener("loadedmetadata", setTime);
         }
       }
 
@@ -229,7 +197,7 @@ const getEffectiveStartData = () => {
 
   // Sync video muted state with global audio context
 useEffect(() => {
-    const v = adoptedVideo || videoRef.current;
+    const v = videoRef.current;
     if (v) {
       v.muted = !soundEnabled;
     }
@@ -247,20 +215,10 @@ const handleClose = () => {
     if (closingRef.current) return;
     closingRef.current = true;
 
-    const v = adoptedVideo || videoRef.current;
+const v = videoRef.current;
     if (v && videoUrl) {
       handoff.returnTime(videoUrl, v.currentTime);
       v.pause();
-    }
-
-    // Clean up adopted video
-    if (adoptedVideo) {
-      adoptedVideo.ontimeupdate = null;
-      adoptedVideo.onwaiting = null;
-      adoptedVideo.onplaying = null;
-      adoptedVideo.oncanplay = null;
-      adoptedVideo.onended = null;
-      setAdoptedVideo(null);
     }
 
     // Compute exit transform — continue in drag direction if dragging
@@ -318,7 +276,7 @@ const handleClose = () => {
 
 const togglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const v = adoptedVideo || videoRef.current;
+    const v = videoRef.current;
     if (!v) return;
     if (v.paused) {
       v.play();
@@ -333,14 +291,14 @@ const togglePlay = (e?: React.MouseEvent) => {
   };
 
 const handleTimeUpdate = () => {
-    const v = adoptedVideo || videoRef.current;
+    const v = videoRef.current;
     if (!v || !v.duration) return;
     const p = (v.currentTime / v.duration) * 100;
     setProgress(isNaN(p) ? 0 : p);
   };
 
 const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = adoptedVideo || videoRef.current;
+    const v = videoRef.current;
     if (v) {
       const time = (parseFloat(e.target.value) / 100) * v.duration;
       v.currentTime = time;
