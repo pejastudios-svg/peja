@@ -204,7 +204,7 @@ export default function IncidentMapGL({
     bearing: 0,
     pitch: 0,
   });
-  const [followUser, setFollowUser] = useState(true);
+  const [followUser, setFollowUser] = useState(compassEnabled);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [bearing, setBearing] = useState(0);
   const [selectedSOS, setSelectedSOS] = useState<SOSAlert | null>(null);
@@ -233,6 +233,10 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
     }
     return new Set();
   });
+
+  useEffect(() => {
+    setFollowUser(compassEnabled);
+  }, [compassEnabled]);
   // =====================================================================
   // PERSIST HELPERS TO localStorage
   // =====================================================================
@@ -978,7 +982,6 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
   }, []);
   const handleInteractionStart = useCallback(() => {
     isUserInteracting.current = true;
-    setFollowUser(false);
     if (interactionTimeout.current) clearTimeout(interactionTimeout.current);
   }, []);
   const handleInteractionEnd = useCallback(() => {
