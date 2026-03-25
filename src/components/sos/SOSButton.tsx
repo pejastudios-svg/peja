@@ -32,6 +32,188 @@ interface LoadingStep {
   status: "pending" | "active" | "done";
 }
 
+// =====================================================
+// VOICE NOTE COMPONENT
+// =====================================================
+function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) {
+  const [recording, setRecording] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [hasRecording, setHasRecording] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/mp4",
+      });
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType });
+        if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = URL.createObjectURL(blob);
+        onRecorded(blob);
+        setHasRecording(true);
+      };
+
+      mediaRecorder.start(100);
+      setRecording(true);
+      setDuration(0);
+      timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+
+      // Auto-stop after 60 seconds
+      setTimeout(() => {
+        if (mediaRecorderRef.current?.state === "recording") {
+          stopRecording();
+        }
+      }, 60000);
+    } catch {
+      // Microphone permission denied
+    }
+  };
+
+  const stopRecording = () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (mediaRecorderRef.current?.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+    setRecording(false);
+  };
+
+  const deleteRecording = () => {
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    audioUrlRef.current = null;
+    setHasRecording(false);
+    setDuration(0);
+    onRecorded(null);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setPlaying(false);
+  };
+
+  const togglePlayback = () => {
+    if (!audioUrlRef.current) return;
+    if (playing && audioRef.current) {
+      audioRef.current.pause();
+      setPlaying(false);
+      return;
+    }
+    const audio = new Audio(audioUrlRef.current);
+    audioRef.current = audio;
+    audio.onended = () => setPlaying(false);
+    audio.play();
+    setPlaying(true);
+  };
+
+  const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+
+  return (
+    <div>
+      <label className="block text-xs font-semibold text-dark-400 uppercase tracking-wider mb-2">
+        Voice Note (Optional)
+      </label>
+      {!recording && !hasRecording && (
+        <button
+          type="button"
+          onClick={startRecording}
+          className="w-full flex items-center gap-3 p-3 rounded-xl transition-all active:scale-[0.97]"
+          style={{
+            background: "rgba(20, 12, 36, 0.8)",
+            border: "1px solid rgba(255,255,255,0.06)",
+          }}
+        >
+          <div className="w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center">
+            <svg className="w-4 h-4 text-red-400" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5z"/>
+              <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+            </svg>
+          </div>
+          <span className="text-sm text-dark-300">Tap to record voice note</span>
+          <span className="text-[10px] text-dark-500 ml-auto">Max 60s</span>
+        </button>
+      )}
+
+      {recording && (
+        <div
+          className="flex items-center gap-3 p-3 rounded-xl"
+          style={{
+            background: "rgba(239, 68, 68, 0.08)",
+            border: "1px solid rgba(239, 68, 68, 0.2)",
+          }}
+        >
+          <div className="w-9 h-9 rounded-full bg-red-500 flex items-center justify-center animate-pulse">
+            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+              <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-400">Recording...</p>
+            <p className="text-xs text-dark-400">{formatTime(duration)}</p>
+          </div>
+          <button
+            onClick={stopRecording}
+            className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 text-sm font-medium active:scale-95 transition-transform"
+          >
+            Stop
+          </button>
+        </div>
+      )}
+
+      {hasRecording && !recording && (
+        <div
+          className="flex items-center gap-3 p-3 rounded-xl"
+          style={{
+            background: "rgba(34, 197, 94, 0.06)",
+            border: "1px solid rgba(34, 197, 94, 0.15)",
+          }}
+        >
+          <button
+            onClick={togglePlayback}
+            className="w-9 h-9 rounded-full bg-green-500/20 flex items-center justify-center active:scale-90 transition-transform"
+          >
+            {playing ? (
+              <svg className="w-4 h-4 text-green-400" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+              </svg>
+            ) : (
+              <svg className="w-4 h-4 text-green-400 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z"/>
+              </svg>
+            )}
+          </button>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-green-400">Voice note recorded</p>
+            <p className="text-xs text-dark-400">{formatTime(duration)}</p>
+          </div>
+          <button
+            onClick={deleteRecording}
+            className="p-2 rounded-lg hover:bg-white/10 text-dark-400 active:scale-90 transition-transform"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SOSButton({ className = "" }: { className?: string }) {
   const router = useRouter();
   const { user } = useAuth();
@@ -55,7 +237,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
   const [showActivePopup, setShowActivePopup] = useState(false);
   const [selectedTag, setSelectedTag] = useState<SOSTagId | null>(null);
   const [textMessage, setTextMessage] = useState("");
-
+  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
   // =====================================================
   // DISCLOSURE STATE
   // =====================================================
@@ -68,6 +250,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
   const [loadingComplete, setLoadingComplete] = useState(false);
   const [loadingFailed, setLoadingFailed] = useState(false);
   const [showNotifiedCard, setShowNotifiedCard] = useState(false);
+  const [modalClosing, setModalClosing] = useState(false);
 
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
@@ -357,6 +540,22 @@ export function SOSButton({ className = "" }: { className?: string }) {
 
       const userName = userData?.full_name || "Someone";
 
+    // Upload voice note if recorded
+      let voiceNoteUrl: string | null = null;
+      if (voiceBlob) {
+        try {
+          const ext = voiceBlob.type.includes("webm") ? "webm" : "mp4";
+          const fileName = `sos-voice/${user.id}/${Date.now()}.${ext}`;
+          const { error: uploadErr } = await supabase.storage
+            .from("media")
+            .upload(fileName, voiceBlob, { cacheControl: "3600", upsert: false });
+          if (!uploadErr) {
+            const { data: pubUrl } = supabase.storage.from("media").getPublicUrl(fileName);
+            voiceNoteUrl = pubUrl.publicUrl;
+          }
+        } catch {}
+      }
+
       const { data: sosData, error } = await supabase
         .from("sos_alerts")
         .insert({
@@ -367,6 +566,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
           status: "active",
           tag: selectedTag,
           message: textMessage || null,
+          voice_note_url: voiceNoteUrl,
         })
         .select()
         .single();
@@ -512,10 +712,15 @@ export function SOSButton({ className = "" }: { className?: string }) {
     }
   };
 
-  const closeOptions = () => {
-    setShowOptions(false);
-    setSelectedTag(null);
-    setTextMessage("");
+const closeOptions = () => {
+    setModalClosing(true);
+    setTimeout(() => {
+      setShowOptions(false);
+      setSelectedTag(null);
+      setTextMessage("");
+      setVoiceBlob(null);
+      setModalClosing(false);
+    }, 250);
   };
 
   // =====================================================
@@ -777,8 +982,8 @@ export function SOSButton({ className = "" }: { className?: string }) {
         <div className="fixed inset-0 z-[25000] flex items-end sm:items-center justify-center cap-status-pad">
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={closeOptions} />
           
-          <div
-            className="relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-y-auto select-none"
+           <div
+            className={`relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-y-auto select-none ${modalClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
             style={{
               maxHeight: "calc(100dvh - var(--cap-status-bar-height, 0px) - env(safe-area-inset-bottom, 0px) - 32px)",
               background: "rgba(12, 8, 24, 0.98)",
@@ -823,7 +1028,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
                       <button
                         key={tag.id}
                         onClick={() => setSelectedTag(isSelected ? null : tag.id)}
-                        className="relative p-3 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                        className="relative p-3 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.92]"
                         style={{
                           background: isSelected
                             ? `${tag.color}15`
@@ -880,6 +1085,9 @@ export function SOSButton({ className = "" }: { className?: string }) {
                 />
               </div>
 
+              {/* Voice Note */}
+              <VoiceNote onRecorded={(blob) => setVoiceBlob(blob)} />
+
               {/* Hold Button */}
               <div className="pt-2 pb-2">
                 <p className="text-center text-xs text-dark-500 mb-3 select-none">
@@ -892,7 +1100,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
                   onTouchStart={handleHoldStart}
                   onTouchEnd={handleHoldEnd}
                   onContextMenu={(e) => e.preventDefault()}
-                  className="relative w-full py-5 rounded-2xl font-bold text-lg text-white transition-all overflow-hidden select-none"
+                  className="relative w-full py-5 rounded-2xl font-bold text-lg text-white transition-all overflow-hidden select-none active:scale-[0.96]"
                   style={{
                     background: isHolding
                       ? "#991b1b"
@@ -1103,12 +1311,12 @@ export function SOSButton({ className = "" }: { className?: string }) {
   // =====================================================
   // MAIN BUTTON
   // =====================================================
-  return (
+ return (
     <button
       onClick={handleButtonTap}
       disabled={loading}
-      className={`relative w-16 h-16 rounded-full shadow-lg flex items-center justify-center transition-transform bg-gradient-to-br from-red-500 to-red-700 select-none ${
-        sosActive ? "sos-button-active" : ""
+     className={`relative w-full h-full rounded-full shadow-lg flex items-center justify-center bg-gradient-to-br from-red-500 to-red-700 select-none ${
+        sosActive ? "sos-button-active" : "active:scale-[0.95] transition-transform"
       } ${className}`}
       style={{
         WebkitUserSelect: "none",

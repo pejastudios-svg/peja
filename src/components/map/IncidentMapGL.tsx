@@ -1334,10 +1334,16 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
                   <p className="font-semibold text-white">{tagInfo.label}</p>
                 </div>
               )}
-              {selectedSOS.message && (
+              {selectedSOS.voice_note_url && (
                 <div className="p-3 bg-white/5 rounded-xl">
-                  <p className="text-sm text-dark-400 mb-1">Message:</p>
-                  <p className="text-white">{selectedSOS.message}</p>
+                  <p className="text-sm text-dark-400 mb-2">Voice Note:</p>
+                  <audio
+                    controls
+                    src={selectedSOS.voice_note_url}
+                    className="w-full h-10"
+                    style={{ filter: "invert(1) hue-rotate(180deg) brightness(0.85)" }}
+                    preload="metadata"
+                  />
                 </div>
               )}
               {tagInfo && !isOwnSOS && (

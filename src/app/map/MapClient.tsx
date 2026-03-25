@@ -283,9 +283,9 @@ export default function MapClient() {
 
       const { data: sosData, error: sosError } = await supabase
         .from("sos_alerts")
-        .select(`
+       .select(`
           id, user_id, latitude, longitude, address, status, tag, message,
-          bearing, created_at, last_updated, resolved_at
+          voice_note_url, bearing, created_at, last_updated, resolved_at
         `)
         .eq("status", "active")
         .gte("created_at", twentyFourHoursAgo)
@@ -384,6 +384,7 @@ export default function MapClient() {
                   status: newRow.status,
                   tag: newRow.tag,
                   message: newRow.message,
+                  voice_note_url: newRow.voice_note_url,
                   bearing: newRow.bearing,
                   created_at: newRow.created_at,
                   last_updated: newRow.last_updated,

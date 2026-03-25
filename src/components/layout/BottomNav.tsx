@@ -16,20 +16,26 @@ const navItems = [
 ];
 
 const GLASS: React.CSSProperties = {
-  background: "rgba(30, 20, 50, 0.75)",
-  backdropFilter: "blur(40px) saturate(180%)",
-  WebkitBackdropFilter: "blur(40px) saturate(180%)",
-  border: "1px solid rgba(255, 255, 255, 0.1)",
+  background: "linear-gradient(135deg, rgba(30, 20, 50, 0.55) 0%, rgba(20, 15, 40, 0.65) 100%)",
+  backdropFilter: "blur(40px) saturate(200%)",
+  WebkitBackdropFilter: "blur(40px) saturate(200%)",
+  border: "1px solid rgba(255, 255, 255, 0.12)",
   boxShadow:
-    "0 2px 20px rgba(0, 0, 0, 0.3), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)",
+    "0 4px 24px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 -1px 0 rgba(0, 0, 0, 0.2) inset",
   transform: "translateZ(0)",
   WebkitTransform: "translateZ(0)",
+  willChange: "backdrop-filter",
 };
-
 const GLASS_SOS: React.CSSProperties = {
-  ...GLASS,
-  background: "rgba(60, 25, 30, 0.45)",
-  border: "1px solid rgba(239, 68, 68, 0.15)",
+  background: "linear-gradient(135deg, rgba(80, 20, 25, 0.55) 0%, rgba(60, 15, 20, 0.65) 100%)",
+  backdropFilter: "blur(40px) saturate(200%)",
+  WebkitBackdropFilter: "blur(40px) saturate(200%)",
+  border: "1px solid rgba(239, 68, 68, 0.18)",
+  boxShadow:
+    "0 4px 24px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 0 15px rgba(239, 68, 68, 0.08)",
+  transform: "translateZ(0)",
+  WebkitTransform: "translateZ(0)",
+  willChange: "backdrop-filter",
 };
 
 export function BottomNav() {
@@ -148,7 +154,7 @@ const activeIndex = useMemo(() => {
             bottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
             left: "50%",
             transform: `translateX(-50%) scale(${minimized ? 1 : 0.8})`,
-            opacity: minimized ? 1 : 0,
+            opacity: minimized ? 1 : 0.01,
             pointerEvents: minimized ? "auto" : "none",
             transition:
               "opacity 0.3s cubic-bezier(0.32, 0.72, 0, 1), transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
@@ -183,8 +189,8 @@ const activeIndex = useMemo(() => {
         {/* ── Full nav ── */}
         <div
           className="flex items-center gap-2"
-style={{
-            opacity: minimized ? 0 : 1,
+           style={{
+            opacity: minimized ? 0.01 : 1,
             pointerEvents: minimized ? "none" : "auto",
             transition: "opacity 0.3s ease",
           }}
@@ -293,7 +299,6 @@ return (
                 WebkitBackdropFilter: "blur(40px) saturate(180%)",
                 border: "1px solid rgba(239, 68, 68, 0.15)",
                 boxShadow: "0 2px 20px rgba(0, 0, 0, 0.3), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)",
-                overflow: "hidden",
               }}
             >
               <SOSButton className="w-9 h-9" />
