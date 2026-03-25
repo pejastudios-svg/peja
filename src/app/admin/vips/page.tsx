@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { apiUrl } from "@/lib/api";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
   Search,
   Crown,
@@ -100,6 +101,8 @@ const pageCache = usePageCache();
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
   };
+
+  useScrollFreeze(revokeModalOpen);
 
   // =====================================================
   // FETCH VIPs

@@ -11,6 +11,7 @@ import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { FlaggedContentListener } from "@/components/notifications/FlaggedContentListener";
 import { apiUrl } from "@/lib/api";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
   Flag,
   CheckCircle,
@@ -103,6 +104,7 @@ export default function GuardianQueuePage() {
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  useScrollFreeze(showReviewModal);
 
   const visibleItems = items.filter((item) => {
     const q = search.trim().toLowerCase();

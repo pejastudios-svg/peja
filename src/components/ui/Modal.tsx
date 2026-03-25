@@ -1,8 +1,8 @@
 "use client";
-
 import { Fragment, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 // Updated type to include animation options
 type ModalAnimation = "fade" | "scale" | "slide-up";
@@ -23,6 +23,7 @@ export function Modal({
   animation?: ModalAnimation;
 }) {
   const [mounted, setMounted] = useState(false);
+  useScrollFreeze(isOpen);
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {

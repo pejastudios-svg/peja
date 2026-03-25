@@ -10,6 +10,7 @@ import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStrength";
 import { resetTutorial } from "@/components/tutorial/TutorialOverlay";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
   ArrowLeft,
   Bell,
@@ -84,7 +85,8 @@ export default function SettingsPage() {
   const [pwSuccess, setPwSuccess] = useState(false);
 
   useScrollRestore("settings");
-
+  useScrollFreeze(showChangePassword);
+  
   useEffect(() => {
     if (authLoading) return;
     if (user) {
@@ -786,7 +788,8 @@ export default function SettingsPage() {
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
             onClick={resetPasswordModal}
           />
-          <div className="fixed inset-4 z-50 max-w-md mx-auto my-auto max-h-[85vh] overflow-y-auto">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="w-full max-w-md max-h-[85vh] overflow-y-auto">
             <div className="glass-card">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
@@ -1012,6 +1015,7 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+          </div>
         </>
       )}
 
@@ -1069,5 +1073,6 @@ export default function SettingsPage() {
         </>
       )}
     </div>
+    
   );
 }

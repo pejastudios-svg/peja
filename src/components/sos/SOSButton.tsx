@@ -8,6 +8,7 @@ import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
 import SOSLocation from "@/lib/sosLocation";
 import { supabase } from "@/lib/supabase";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import { 
   AlertTriangle, X, Phone, Loader2, CheckCircle, Users, 
   ArrowLeft, Scan, MapPin, Radio, Shield, Send,
@@ -256,6 +257,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
   const holdTimer = useRef<NodeJS.Timeout | null>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
   const toast = useToast();
+  useScrollFreeze(showOptions || showActivePopup || showLoadingAnimation || showDisclosure);
 
   // Register SOS modals with back button system
   useEffect(() => {

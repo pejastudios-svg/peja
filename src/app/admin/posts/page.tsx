@@ -14,6 +14,7 @@ import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 import {
   Search,
@@ -83,6 +84,7 @@ const [posts, setPosts] = useState<PostData[]>([]);
   const pageSize = 20;
   const pageCache = usePageCache();
   const cacheKey = `admin:posts:${statusFilter}:${categoryFilter}:${page}`;
+  useScrollFreeze(showPostModal || !!confirmDeleteId || confirmBulkDelete);
   // Initialize from cache on mount
   useEffect(() => {
     const cached = pageCache.get<{ posts: PostData[]; count: number }>(cacheKey);

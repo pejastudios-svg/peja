@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
   AlertTriangle,
   MapPin,
@@ -54,8 +55,9 @@ export default function AdminSOSPage() {
   const [selectedSOS, setSelectedSOS] = useState<SOSData | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-    const [sosContacts, setSosContacts] = useState<any[]>([]);
+  const [sosContacts, setSosContacts] = useState<any[]>([]);
   const [sosContactsLoading, setSosContactsLoading] = useState(false);
+  useScrollFreeze(showModal);
 
   const fetchSOSUserContacts = async (userId: string) => {
     setSosContactsLoading(true);

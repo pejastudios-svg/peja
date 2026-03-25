@@ -9,6 +9,7 @@ import { useVideoHandoff } from "@/context/VideoHandoffContext";
 import { supabase } from "@/lib/supabase";
 import { getVideoThumbnailUrl, getOptimizedVideoUrl, generateVideoThumbnail, getCachedVideoUrl } from "@/lib/videoThumbnail";
 import { useHlsPlayer } from "@/hooks/useHlsPlayer";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 export function VideoLightbox({
   isOpen,
@@ -32,6 +33,7 @@ export function VideoLightbox({
   const handoff = useVideoHandoff();
   const hasAppliedHandoffRef = useRef(false);
   const closingRef = useRef(false);
+  useScrollFreeze(isOpen);
 
   const [showControls, setShowControls] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -124,7 +126,6 @@ const getEffectiveStartData = () => {
       closingRef.current = false;
       hasAppliedHandoffRef.current = false;
       resetFadeTimer();
-      document.body.style.overflow = "hidden";
       window.dispatchEvent(new Event("peja-modal-open"));
 
       if (postId) {
@@ -155,7 +156,6 @@ const getEffectiveStartData = () => {
       setAnimPhase("enter");
       expandTimer = setTimeout(() => setAnimPhase("open"), 30);
 } else {
-      document.body.style.overflow = "";
       setDragOffset({ x: 0, y: 0 });
       setShowPoster(true);
       setVideoBuffering(true);
@@ -171,7 +171,6 @@ const getEffectiveStartData = () => {
       }
     }
     return () => {
-      document.body.style.overflow = "";
       if (expandTimer) clearTimeout(expandTimer);
     };
   }, [isOpen, effectiveStartTime, postId]);

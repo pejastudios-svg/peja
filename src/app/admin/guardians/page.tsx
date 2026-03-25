@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 type Application = {
   id: string;
@@ -152,6 +153,8 @@ const [actions, setActions] = useState<GuardianAction[]>(cachedActions || []);
 
   // Prevent "auto-open on filter click" bug
   const handledAppParamRef = useRef(false);
+
+  useScrollFreeze(modalOpen || revokeModalOpen);
   
   function GuardianAppRowSkeleton() {
     return (

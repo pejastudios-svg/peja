@@ -16,6 +16,7 @@ import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { FlaggedContentListener } from "@/components/notifications/FlaggedContentListener";
 import { apiUrl } from "@/lib/api";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
   Flag,
   Loader2,
@@ -117,7 +118,7 @@ const pageCache = usePageCache();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
-
+  useScrollFreeze(showModal);
   // ============================================================
   // FETCH QUEUE (pending + escalated)
   // ============================================================

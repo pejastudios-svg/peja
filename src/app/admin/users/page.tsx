@@ -13,6 +13,7 @@ import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
 import { ChevronDown } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 
 interface AdminUser {
@@ -41,6 +42,7 @@ export default function AdminUsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
+  useScrollFreeze(!!deleteTarget);
   const fetchUsersFn = useCallback(async () => {
     let query = supabase
       .from("users")

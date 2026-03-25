@@ -7,6 +7,7 @@ import { useToast } from "@/context/ToastContext";
 import { supabase } from "@/lib/supabase";
 import { apiUrl } from "@/lib/api";
 import { Portal } from "@/components/ui/Portal";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
   MapPin,
   X,
@@ -101,6 +102,8 @@ export function SMLButton() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useScrollFreeze(showMenu || showShareModal || showActiveModal || showCancelConfirm);
 
   const headers = useCallback(() => ({
     "Content-Type": "application/json",
@@ -395,7 +398,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
         <Portal>
           <div className="fixed inset-0 z-[9998]" onClick={() => setShowMenu(false)} />
           <div
-            className="fixed z-[9999] rounded-2xl overflow-hidden"
+            className="fixed z-[9999] rounded-2xl overflow-hidden animate-bounce-in"
             style={{
               bottom: "calc(90px + env(safe-area-inset-bottom, 0px))",
               right: 16,
@@ -506,7 +509,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]" onClick={() => setShowActiveModal(false)} />
           <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center pointer-events-none">
             <div
-              className="w-full max-w-sm rounded-t-3xl sm:rounded-2xl p-5 pointer-events-auto"
+              className="w-full max-w-sm rounded-t-3xl sm:rounded-2xl p-5 pointer-events-auto animate-bounce-in"
               style={{
                 background: "rgba(18, 12, 36, 0.98)",
                 border: "1px solid rgba(255,255,255,0.1)",
@@ -538,14 +541,14 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
               <div className="flex gap-2">
                 <button
                   onClick={handleConfirm}
-                  className={`flex-1 py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 text-white ${isOverdue ? "bg-red-600" : "bg-green-600"}`}
+                  className={`flex-1 py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 text-white active:scale-[0.95] transition-transform ${isOverdue ? "bg-red-600" : "bg-green-600"}`}
                 >
                   <CheckCircle className="w-4 h-4" />
                   I'm OK
                 </button>
                  <button
                   onClick={() => { setShowActiveModal(false); setShowCancelConfirm(true); }}
-                  className="px-5 py-3.5 rounded-xl text-sm font-medium bg-white/5 text-dark-300 border border-white/10"
+                  className="px-5 py-3.5 rounded-xl text-sm font-medium bg-white/5 text-dark-300 border border-white/10 active:scale-[0.95] transition-transform"
                 >
                   Stop
                 </button>
@@ -561,7 +564,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000]" onClick={() => { setShowCancelConfirm(false); setShowActiveModal(true); }} />
           <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
             <div
-              className="w-full max-w-sm rounded-2xl p-6"
+              className="w-full max-w-sm rounded-2xl p-6 animate-bounce-in"
               style={{ background: "rgba(18, 12, 36, 0.98)", border: "1px solid rgba(255,255,255,0.1)" }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -582,7 +585,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]" onClick={() => setShowShareModal(false)} />
           <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center pointer-events-none">
             <div
-              className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl pointer-events-auto"
+              className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl pointer-events-auto animate-bounce-in"
               style={{
                 background: "rgba(18, 12, 36, 0.98)",
                 border: "1px solid rgba(255,255,255,0.1)",

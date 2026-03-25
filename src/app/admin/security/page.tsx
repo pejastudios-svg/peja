@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Shield, ShieldCheck, ShieldOff, Copy, Check, Loader2, AlertTriangle, Smartphone, X } from "lucide-react";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 export default function AdminSecurityPage() {
   const { session } = useAuth();
@@ -28,6 +29,7 @@ export default function AdminSecurityPage() {
   const [disableCode, setDisableCode] = useState("");
   const [disableError, setDisableError] = useState("");
   const [disableLoading, setDisableLoading] = useState(false);
+  useScrollFreeze(showDisable);
 
   const headers = {
     "Content-Type": "application/json",
