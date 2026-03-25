@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Home, Map, PlusCircle, Search } from "lucide-react";
 import { SOSButton } from "../sos/SOSButton";
 import { useAuth } from "@/context/AuthContext";
+import { SMLButton } from "../safety/SMLButton";
 
 const navItems = [
   { href: "/", icon: Home, label: "Home" },
@@ -269,17 +270,34 @@ return (
             })}
           </div>
 
-          {/* ── SOS pill (25%) ── */}
-            <div
-            data-tutorial="nav-sos"
-            className="flex flex-col items-center justify-center h-14"
+{/* ── SOS + SML ── */}
+          <div
+            className="flex flex-col items-center gap-2"
             style={{
-              ...GLASS_SOS,
-              borderRadius: "30px",
               flex: "0",
+              position: "absolute",
+              right: 16,
+              bottom: "calc(100% + 12px)",
             }}
           >
-            <SOSButton className="w-9 h-9" />
+            <SMLButton />
+<div
+              data-tutorial="nav-sos"
+              className="flex items-center justify-center"
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: "50%",
+                background: "rgba(60, 25, 30, 0.45)",
+                backdropFilter: "blur(40px) saturate(180%)",
+                WebkitBackdropFilter: "blur(40px) saturate(180%)",
+                border: "1px solid rgba(239, 68, 68, 0.15)",
+                boxShadow: "0 2px 20px rgba(0, 0, 0, 0.3), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)",
+                overflow: "hidden",
+              }}
+            >
+              <SOSButton className="w-9 h-9" />
+            </div>
           </div>
         </div>
       </div>
