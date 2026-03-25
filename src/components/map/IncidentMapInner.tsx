@@ -7,6 +7,7 @@ import { formatDistanceToNow } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/lib/notifications";
 import { useAuth } from "@/context/AuthContext";
+import { VoiceNotePlayer } from "@/components/ui/VoiceNotePlayer";
 
 if (typeof window !== "undefined") {
   delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -817,15 +818,11 @@ export default function IncidentMapInner({
                 </div>
               )}
               {selectedSOS.voice_note_url && (
-                <div className="p-3 bg-white/5 rounded-xl">
+                <div>
                   <p className="text-sm text-dark-400 mb-2">Voice Note:</p>
-                  <audio
-                    controls
-                    src={selectedSOS.voice_note_url}
-                    className="w-full h-10"
-                    style={{ filter: "invert(1) hue-rotate(180deg) brightness(0.85)" }}
-                    preload="metadata"
-                  />
+                  <div className="[&>div]:max-w-none [&>div]:w-full">
+                    <VoiceNotePlayer src={selectedSOS.voice_note_url} />
+                  </div>
                 </div>
               )}
               {tagInfo && !isOwnSOS && (

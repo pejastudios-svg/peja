@@ -541,21 +541,28 @@ export function SOSButton({ className = "" }: { className?: string }) {
 
       const userName = userData?.full_name || "Someone";
 
-    // Upload voice note if recorded
+// Upload voice note if recorded
       let voiceNoteUrl: string | null = null;
-const vBlob = voiceBlobRef.current;
+      const vBlob = voiceBlobRef.current;
+      console.log("[SOS] Voice blob:", vBlob ? `${(vBlob.size / 1024).toFixed(1)}KB, type: ${vBlob.type}` : "none");
       if (vBlob) {
         try {
           const ext = vBlob.type.includes("webm") ? "webm" : "mp4";
-          const fileName = `sos-voice/${user.id}/${Date.now()}.${ext}`;
+          const fileName = `posts/${user.id}/sos-${Date.now()}.${ext}`;
+          console.log("[SOS] Uploading voice to:", fileName);
           const { error: uploadErr } = await supabase.storage
             .from("media")
-            .upload(fileName, vBlob, { cacheControl: "3600", upsert: false });
-          if (!uploadErr) {
+            .upload(fileName, vBlob, { cacheControl: "3600", upsert: false, contentType: "audio/mpeg" });
+          if (uploadErr) {
+            console.error("[SOS] Voice upload error:", uploadErr);
+          } else {
             const { data: pubUrl } = supabase.storage.from("media").getPublicUrl(fileName);
             voiceNoteUrl = pubUrl.publicUrl;
+            console.log("[SOS] Voice note URL:", voiceNoteUrl);
           }
-        } catch {}
+        } catch (err) {
+          console.error("[SOS] Voice upload exception:", err);
+        }
       }
 
       const { data: sosData, error } = await supabase
@@ -573,6 +580,7 @@ const vBlob = voiceBlobRef.current;
         .select()
         .single();
 
+        console.log("[SOS] Insert result:", { id: sosData?.id, voice_note_url: sosData?.voice_note_url });
       if (error) throw error;
 
       setSosId(sosData.id);

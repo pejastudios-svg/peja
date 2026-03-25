@@ -9,6 +9,8 @@ import { createNotification } from "@/lib/notifications";
 import { useAuth } from "@/context/AuthContext";
 import { CheckCircle } from "lucide-react";
 import SOSLocation from "@/lib/sosLocation";
+import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
+
 interface IncidentMapGLProps {
   posts: Post[];
   userLocation: { lat: number; lng: number } | null;
@@ -1335,15 +1337,11 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
                 </div>
               )}
               {selectedSOS.voice_note_url && (
-                <div className="p-3 bg-white/5 rounded-xl">
+                <div>
                   <p className="text-sm text-dark-400 mb-2">Voice Note:</p>
-                  <audio
-                    controls
-                    src={selectedSOS.voice_note_url}
-                    className="w-full h-10"
-                    style={{ filter: "invert(1) hue-rotate(180deg) brightness(0.85)" }}
-                    preload="metadata"
-                  />
+                  <div className="[&>div]:max-w-none [&>div]:w-full">
+                    <VoiceNotePlayer src={selectedSOS.voice_note_url} />
+                  </div>
                 </div>
               )}
               {tagInfo && !isOwnSOS && (
