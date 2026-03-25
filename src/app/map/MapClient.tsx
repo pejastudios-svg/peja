@@ -323,6 +323,7 @@ export default function MapClient() {
         status: s.status,
         tag: s.tag,
         message: s.message,
+        voice_note_url: s.voice_note_url,
         bearing: s.bearing,
         created_at: s.created_at,
         last_updated: s.last_updated,

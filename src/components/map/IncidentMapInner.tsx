@@ -816,7 +816,18 @@ export default function IncidentMapInner({
                   <p className="text-white">{selectedSOS.message}</p>
                 </div>
               )}
-
+              {selectedSOS.voice_note_url && (
+                <div className="p-3 bg-white/5 rounded-xl">
+                  <p className="text-sm text-dark-400 mb-2">Voice Note:</p>
+                  <audio
+                    controls
+                    src={selectedSOS.voice_note_url}
+                    className="w-full h-10"
+                    style={{ filter: "invert(1) hue-rotate(180deg) brightness(0.85)" }}
+                    preload="metadata"
+                  />
+                </div>
+              )}
               {tagInfo && !isOwnSOS && (
                 <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
                   <p className="text-sm font-medium text-yellow-400 mb-1">How to help:</p>

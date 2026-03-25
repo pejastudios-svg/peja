@@ -238,6 +238,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
   const [selectedTag, setSelectedTag] = useState<SOSTagId | null>(null);
   const [textMessage, setTextMessage] = useState("");
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
+  const voiceBlobRef = useRef<Blob | null>(null);
   // =====================================================
   // DISCLOSURE STATE
   // =====================================================
@@ -542,13 +543,14 @@ export function SOSButton({ className = "" }: { className?: string }) {
 
     // Upload voice note if recorded
       let voiceNoteUrl: string | null = null;
-      if (voiceBlob) {
+const vBlob = voiceBlobRef.current;
+      if (vBlob) {
         try {
-          const ext = voiceBlob.type.includes("webm") ? "webm" : "mp4";
+          const ext = vBlob.type.includes("webm") ? "webm" : "mp4";
           const fileName = `sos-voice/${user.id}/${Date.now()}.${ext}`;
           const { error: uploadErr } = await supabase.storage
             .from("media")
-            .upload(fileName, voiceBlob, { cacheControl: "3600", upsert: false });
+            .upload(fileName, vBlob, { cacheControl: "3600", upsert: false });
           if (!uploadErr) {
             const { data: pubUrl } = supabase.storage.from("media").getPublicUrl(fileName);
             voiceNoteUrl = pubUrl.publicUrl;
@@ -719,6 +721,7 @@ const closeOptions = () => {
       setSelectedTag(null);
       setTextMessage("");
       setVoiceBlob(null);
+      voiceBlobRef.current = null;
       setModalClosing(false);
     }, 250);
   };
@@ -1086,7 +1089,7 @@ const closeOptions = () => {
               </div>
 
               {/* Voice Note */}
-              <VoiceNote onRecorded={(blob) => setVoiceBlob(blob)} />
+              <VoiceNote onRecorded={(blob) => { setVoiceBlob(blob); voiceBlobRef.current = blob; }} />
 
               {/* Hold Button */}
               <div className="pt-2 pb-2">
