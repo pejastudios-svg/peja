@@ -485,25 +485,25 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     setMounted(true);
   }, []);
 
-  // Only show tutorial when user is logged in
+  // Only show tutorial when user is logged in (run once)
+  const tutorialCheckedRef = useRef(false);
   useEffect(() => {
     if (authLoading || !user) return;
+    if (tutorialCheckedRef.current) return;
+    tutorialCheckedRef.current = true;
     if (typeof window === "undefined") return;
 
     const completed = localStorage.getItem(TUTORIAL_COMPLETED_KEY);
     const dismissed = localStorage.getItem(TUTORIAL_DISMISSED_KEY);
 
-    // Check if this is a first-time login (not just first visit)
     const hasSeenLogin = localStorage.getItem("peja-has-logged-in");
     if (!hasSeenLogin) {
       localStorage.setItem("peja-has-logged-in", "true");
-      // First login ever - show tutorial after a delay
       if (completed !== "true") {
         const timer = setTimeout(() => setPhase("welcome"), 2000);
         return () => clearTimeout(timer);
       }
     } else if (completed !== "true" && dismissed !== "true") {
-      // Returning user who hasn't finished tutorial
       const timer = setTimeout(() => setPhase("welcome"), 2000);
       return () => clearTimeout(timer);
     }
