@@ -11,6 +11,7 @@ import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
 import { Trash2, Flag, Bell, Users, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 type AdminNotification = {
   id: string;

@@ -63,6 +63,7 @@ export function SMLButton() {
   const cancellingRef = useRef(false);
 
   const [showMenu, setShowMenu] = useState(false);
+  const [menuClosing, setMenuClosing] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showActiveModal, setShowActiveModal] = useState(false);
   const [showSharedList, setShowSharedList] = useState(false);
@@ -184,6 +185,14 @@ export function SMLButton() {
       })));
     }
   }, [user]);
+
+  const closeMenu = useCallback(() => {
+    setMenuClosing(true);
+    setTimeout(() => {
+      setShowMenu(false);
+      setMenuClosing(false);
+    }, 200);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -396,13 +405,20 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
       {/* ===== MENU POPUP (when people share with you) ===== */}
       {showMenu && (
         <Portal>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setShowMenu(false)} />
-          <div
-            className="fixed z-[9999] rounded-2xl overflow-hidden animate-bounce-in"
+          <div className="fixed inset-0 z-[9998]" onClick={closeMenu} />
+<div
+            className="fixed z-[9999] flex justify-center px-4"
             style={{
-              bottom: "calc(90px + env(safe-area-inset-bottom, 0px))",
-              right: 16,
-              width: 280,
+              bottom: "calc(200px + env(safe-area-inset-bottom, 0px))",
+              left: 0,
+              right: 0,
+            }}
+          >
+          <div
+            className={`rounded-2xl overflow-hidden ${menuClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
+            style={{
+              width: 340,
+              maxWidth: "100%",
               background: "rgba(18, 12, 36, 0.98)",
               border: "1px solid rgba(255,255,255,0.1)",
               boxShadow: "0 -10px 40px rgba(0,0,0,0.6), 0 0 20px rgba(124,58,237,0.1)",
@@ -460,7 +476,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
               </div>
            {sharedWithMe.length >= 1 && (
                 <button
-                  onClick={() => { setShowMenu(false); router.push("/checkin/shared"); }}
+                  onClick={() => { closeMenu(); router.push("/checkin/shared"); }}
                   className="w-full mt-2 py-2 rounded-xl text-xs font-medium text-primary-400 bg-primary-500/10 border border-primary-500/20 hover:bg-primary-500/15 transition-colors"
                 >
                   View All Locations
@@ -471,7 +487,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
 {/* My check-in status or share option */}
             {myCheckIn ? (
               <button
-                onClick={() => { setShowMenu(false); setShowActiveModal(true); }}
+                onClick={() => { closeMenu(); setShowActiveModal(true); }}
                 className="w-full flex items-center gap-3 p-3 hover:bg-white/5 transition-colors border-t border-white/5"
               >
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isOverdue ? "bg-red-500/15" : "bg-green-500/15"}`}>
@@ -487,7 +503,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
               </button>
             ) : (
               <button
-                onClick={() => { setShowMenu(false); fetchContacts(); setShowShareModal(true); }}
+                onClick={() => { closeMenu(); fetchContacts(); setShowShareModal(true); }}
                 className="w-full flex items-center gap-3 p-3 hover:bg-white/5 transition-colors border-t border-white/5"
               >
                 <div className="w-9 h-9 rounded-full bg-primary-500/15 flex items-center justify-center">
@@ -499,6 +515,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                 </div>
               </button>
             )}
+           </div>
           </div>
         </Portal>
       )}

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { createNotification } from "@/lib/notifications";
@@ -244,6 +244,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
   // DISCLOSURE STATE
   // =====================================================
   const [showDisclosure, setShowDisclosure] = useState(false);
+  const [disclosureClosing, setDisclosureClosing] = useState(false);
   const [dontShowAgain, setDontShowAgain] = useState(false);
 
   // Loading animation states
@@ -283,7 +284,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
       } else if (showOptions) {
         closeOptions();
       } else if (showDisclosure) {
-        setShowDisclosure(false);
+        closeDisclosure();
       }
     };
     window.addEventListener("peja-close-sos-modal", handleBackClose);
@@ -736,6 +737,14 @@ const closeOptions = () => {
     }, 250);
   };
 
+  const closeDisclosure = useCallback(() => {
+    setDisclosureClosing(true);
+    setTimeout(() => {
+      setShowDisclosure(false);
+      setDisclosureClosing(false);
+    }, 200);
+  }, []);
+
   // =====================================================
   // DISCLOSURE MODAL — SHOWN BEFORE SOS OPTIONS
   // =====================================================
@@ -743,10 +752,10 @@ const closeOptions = () => {
     return (
       <Portal>
         <div className="fixed inset-0 z-[25000] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={() => setShowDisclosure(false)} />
+          <div className="absolute inset-0 bg-black/85 backdrop-blur-sm" onClick={() => { setDisclosureClosing(true); setTimeout(() => { setShowDisclosure(false); setDisclosureClosing(false); }, 200); }} />
           
           <div
-            className="relative w-full max-w-md rounded-2xl overflow-hidden select-none"
+            className={`relative w-full max-w-md rounded-2xl overflow-hidden select-none ${disclosureClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
             style={{
               background: "rgba(12, 8, 24, 0.98)",
               border: "1px solid rgba(239, 68, 68, 0.15)",
@@ -850,7 +859,7 @@ const closeOptions = () => {
               {/* Buttons */}
               <div className="flex gap-2 pt-1">
                 <button
-                  onClick={() => setShowDisclosure(false)}
+                  onClick={closeDisclosure}
                   className="flex-1 py-3 rounded-xl font-medium text-dark-400 transition-all hover:bg-white/5 active:scale-[0.98]"
                   style={{
                     background: "rgba(255,255,255,0.02)",

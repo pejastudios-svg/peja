@@ -8,6 +8,8 @@ import { SOSButton } from "../sos/SOSButton";
 import { useAuth } from "@/context/AuthContext";
 import { SMLButton } from "../safety/SMLButton";
 
+const PEJA_LOGO = "https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png";
+
 const navItems = [
   { href: "/", icon: Home, label: "Home" },
   { href: "/map", icon: Map, label: "Map" },
@@ -16,26 +18,12 @@ const navItems = [
 ];
 
 const GLASS: React.CSSProperties = {
-  background: "linear-gradient(135deg, rgba(30, 20, 50, 0.55) 0%, rgba(20, 15, 40, 0.65) 100%)",
-  backdropFilter: "blur(40px) saturate(200%)",
-  WebkitBackdropFilter: "blur(40px) saturate(200%)",
-  border: "1px solid rgba(255, 255, 255, 0.12)",
+  background: "rgba(30, 20, 50, 0.75)",
+  backdropFilter: "blur(40px) saturate(180%)",
+  WebkitBackdropFilter: "blur(40px) saturate(180%)",
+  border: "1px solid rgba(255, 255, 255, 0.1)",
   boxShadow:
-    "0 4px 24px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 -1px 0 rgba(0, 0, 0, 0.2) inset",
-  transform: "translateZ(0)",
-  WebkitTransform: "translateZ(0)",
-  willChange: "backdrop-filter",
-};
-const GLASS_SOS: React.CSSProperties = {
-  background: "linear-gradient(135deg, rgba(80, 20, 25, 0.55) 0%, rgba(60, 15, 20, 0.65) 100%)",
-  backdropFilter: "blur(40px) saturate(200%)",
-  WebkitBackdropFilter: "blur(40px) saturate(200%)",
-  border: "1px solid rgba(239, 68, 68, 0.18)",
-  boxShadow:
-    "0 4px 24px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 0 15px rgba(239, 68, 68, 0.08)",
-  transform: "translateZ(0)",
-  WebkitTransform: "translateZ(0)",
-  willChange: "backdrop-filter",
+    "0 2px 20px rgba(0, 0, 0, 0.3), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)",
 };
 
 export function BottomNav() {
@@ -45,15 +33,12 @@ export function BottomNav() {
   const navRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
 
-  // Scroll-to-minimize state
-  const [minimized, setMinimized] = useState(false);
-  const lastScrollY = useRef(0);
-  const scrollAccum = useRef(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const isHidden =
     pathname.startsWith("/post/") || !!pathname.match(/^\/messages\/[^/]+$/);
 
-const activeIndex = useMemo(() => {
+  const activeIndex = useMemo(() => {
     if (pathname === "/" || pathname === "") return 0;
     if (pathname.startsWith("/map")) return 1;
     if (pathname.startsWith("/create")) return 2;
@@ -61,8 +46,8 @@ const activeIndex = useMemo(() => {
     return -1;
   }, [pathname]);
 
-  // Sliding indicator position
-  const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 });
+  // Floating indicator position
+  const [indicatorX, setIndicatorX] = useState(0);
 
   const updateIndicator = useCallback(() => {
     const el = itemRefs.current[activeIndex];
@@ -70,10 +55,7 @@ const activeIndex = useMemo(() => {
     if (el && nav) {
       const navRect = nav.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
-      setIndicatorStyle({
-        left: elRect.left - navRect.left + (elRect.width - 40) / 2,
-        width: 40,
-      });
+      setIndicatorX(elRect.left - navRect.left + elRect.width / 2);
     }
   }, [activeIndex]);
 
@@ -88,224 +70,250 @@ const activeIndex = useMemo(() => {
     return () => clearTimeout(timer);
   }, [pathname, updateIndicator]);
 
-  // Scroll detection for minimize/expand
   useEffect(() => {
-    if (isHidden) return;
-
-    const THRESHOLD_DOWN = 40; // px scrolled down to minimize
-    const THRESHOLD_UP = 20; // px scrolled up to expand
-
-    const handleScroll = () => {
-      const currentY = window.scrollY;
-      const delta = currentY - lastScrollY.current;
-
-      if (delta > 0) {
-        // Scrolling down
-        scrollAccum.current += delta;
-        if (scrollAccum.current > THRESHOLD_DOWN && currentY > 100) {
-          setMinimized(true);
-          scrollAccum.current = 0;
-        }
-      } else {
-        // Scrolling up
-        scrollAccum.current += delta; // delta is negative
-        if (scrollAccum.current < -THRESHOLD_UP) {
-          setMinimized(false);
-          scrollAccum.current = 0;
-        }
-      }
-
-      // Always expand at top of page
-      if (currentY < 50) {
-        setMinimized(false);
-        scrollAccum.current = 0;
-      }
-
-      lastScrollY.current = currentY;
-    };
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [isHidden]);
-
-  // Reset minimized when navigating
-  useEffect(() => {
-    setMinimized(false);
-    scrollAccum.current = 0;
+    setMenuOpen(false);
   }, [pathname]);
 
-  // All hooks above — safe to return null
+    // Tutorial control for Peja menu
+  useEffect(() => {
+    const handleOpen = () => setMenuOpen(true);
+    const handleClose = () => setMenuOpen(false);
+    window.addEventListener("peja-tutorial-open-menu", handleOpen);
+    window.addEventListener("peja-tutorial-close-menu", handleClose);
+    return () => {
+      window.removeEventListener("peja-tutorial-open-menu", handleOpen);
+      window.removeEventListener("peja-tutorial-close-menu", handleClose);
+    };
+  }, []);
+
   if (isHidden) return null;
 
-  return (
-    <nav
-      className="fixed bottom-0 left-0 right-0 z-50 transition-all"
-      style={{
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
-        transition: "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
-      }}
-    >
-      <div className="px-3 pb-2">
-        {/* ── Minimized state: just a Home pill ── */}
+  const renderNavItem = (item: typeof navItems[0], index: number) => {
+    const isActive = index === activeIndex;
+    const Icon = item.icon;
+
+    const inner = (
+      <div className="relative z-10 flex flex-col items-center justify-center py-1.5">
         <div
-          className="flex items-center justify-center"
           style={{
-            position: "absolute",
-            bottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
-            left: "50%",
-            transform: `translateX(-50%) scale(${minimized ? 1 : 0.8})`,
-            opacity: minimized ? 1 : 0.01,
-            pointerEvents: minimized ? "auto" : "none",
-            transition:
-              "opacity 0.3s cubic-bezier(0.32, 0.72, 0, 1), transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+            transition: "all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
+            transform: isActive ? "translateY(-3px)" : "translateY(0)",
           }}
         >
-          <button
-            onClick={() => {
-              if (pathname === "/") {
-                window.scrollTo({ top: 0, behavior: "smooth" });
-              } else {
-                router.push("/", { scroll: false });
-              }
-              setMinimized(false);
-            }}
-            className="flex items-center justify-center w-12 h-12"
+          <Icon
+            className="w-[22px] h-[22px]"
             style={{
-              ...GLASS,
-              borderRadius: "16px",
+              color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.5)",
+              filter: isActive ? "drop-shadow(0 0 6px rgba(167,139,250,0.5))" : "none",
+              transition: "all 0.3s ease",
             }}
-          >
-            <Home
-              className="w-6 h-6"
-              style={{
-                color: "#c4b5fd",
-                filter: "drop-shadow(0 0 6px rgba(167,139,250,0.5))",
-              }}
-              strokeWidth={2.4}
-            />
-          </button>
+            strokeWidth={isActive ? 2.8 : 2.2}
+          />
         </div>
-
-        {/* ── Full nav ── */}
-        <div
-          className="flex items-center gap-2"
-           style={{
-            opacity: minimized ? 0.01 : 1,
-            pointerEvents: minimized ? "none" : "auto",
-            transition: "opacity 0.3s ease",
+        <span
+          className="text-[10px] mt-0.5 font-semibold"
+          style={{
+            color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.4)",
+            transition: "color 0.3s ease",
           }}
         >
-          {/* ── Nav pill (75%) ── */}
-          <div
-            ref={navRef}
-            className="relative flex items-center justify-around h-14"
-style={{
-              ...GLASS,
-              borderRadius: "20px",
-              flex: "3",
-            }}
-          >
+          {item.label}
+        </span>
+      </div>
+    );
 
-            {navItems.map((item, index) => {
-              const isActive = index === activeIndex;
-              const Icon = item.icon;
+    if (item.href === "/") {
+      return (
+        <button
+          key={item.href}
+          ref={(el) => { itemRefs.current[index] = el; }}
+          onClick={() => {
+            if (pathname === "/") window.scrollTo({ top: 0, behavior: "smooth" });
+            else router.push("/", { scroll: false });
+          }}
+          className="flex-1 flex items-center justify-center"
+        >
+          {inner}
+        </button>
+      );
+    }
 
-              const inner = (
-                <>
-                  <Icon
-                    className="w-[22px] h-[22px] transition-all duration-300"
-                    style={{
-                      color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.55)",
-                      filter: isActive
-                        ? "drop-shadow(0 0 6px rgba(167,139,250,0.4))"
-                        : "none",
-                    }}
-                    strokeWidth={2.5}
-                  />
-                  <span
-                    className="text-[10px] mt-0.5 font-semibold transition-all duration-300"
-                    style={{
-                    color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.45)",
-                    }}
-                  >
-                    {item.label}
-                  </span>
-                </>
-              );
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        scroll={false}
+        ref={(el) => { itemRefs.current[index] = el; }}
+        data-tutorial={
+          item.href === "/map" ? "nav-map" :
+          item.href === "/create" ? "nav-report" :
+          item.href === "/search" ? "nav-search" :
+          undefined
+        }
+        className="flex-1 flex items-center justify-center"
+      >
+        {inner}
+      </Link>
+    );
+  };
 
-              if (item.href === "/") {
-                return (
-                  <button
-                    key={item.href}
-                    ref={(el) => {
-                      itemRefs.current[index] = el;
-                    }}
-                    onClick={() => {
-                      if (pathname === "/") {
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                      } else {
-                        router.push("/", { scroll: false });
-                      }
-                    }}
-                    className="relative z-10 flex flex-col items-center justify-center py-1.5 px-3"
-                  >
-                    {inner}
-                  </button>
-                );
-              }
+  return (
+    <>
+      {/* Menu backdrop */}
+      {menuOpen && (
+        <div
+          className="fixed inset-0 z-[49] bg-black/40"
+          style={{
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            animation: "fadeIn 0.2s ease",
+          }}
+          onClick={() => setMenuOpen(false)}
+        />
+      )}
 
-return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  scroll={false}
-                  ref={(el) => {
-                    itemRefs.current[index] = el;
-                  }}
-                  data-tutorial={
-                    item.href === "/map" ? "nav-map" :
-                    item.href === "/create" ? "nav-report" :
-                    item.href === "/search" ? "nav-search" :
-                    undefined
-                  }
-                  className="relative z-10 flex flex-col items-center justify-center py-1.5 px-3"
-                >
-                  {inner}
-                </Link>
-              );
-            })}
-          </div>
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-50"
+        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+      >
+        <div className="px-4 pb-2 relative">
 
-{/* ── SOS + SML ── */}
-          <div
-            className="flex flex-col items-center gap-2"
-            style={{
-              flex: "0",
-              position: "absolute",
-              right: 16,
-              bottom: "calc(100% + 12px)",
-            }}
-          >
-            <SMLButton />
-<div
-              data-tutorial="nav-sos"
-              className="flex items-center justify-center"
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: "50%",
-                background: "rgba(60, 25, 30, 0.45)",
-                backdropFilter: "blur(40px) saturate(180%)",
-                WebkitBackdropFilter: "blur(40px) saturate(180%)",
-                border: "1px solid rgba(239, 68, 68, 0.15)",
-                boxShadow: "0 2px 20px rgba(0, 0, 0, 0.3), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)",
-              }}
+          {/* ── Full nav ── */}
+          <div>
+            <div
+              ref={navRef}
+              className="relative flex items-center h-[60px]"
+              style={{ ...GLASS, borderRadius: "22px" }}
             >
-              <SOSButton className="w-9 h-9" />
+              {/* Sliding active indicator */}
+              {activeIndex >= 0 && (
+                <div
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: indicatorX,
+                    bottom: -2,
+                    width: 20,
+                    height: 3,
+                    borderRadius: "2px",
+                    background: "#a78bfa",
+                    boxShadow: "0 0 8px rgba(167, 139, 250, 0.5)",
+                    transition: "left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                    transform: "translateX(-50%)",
+                    zIndex: 20,
+                  }}
+                />
+              )}
+
+              {/* Left items: Home, Map */}
+              {renderNavItem(navItems[0], 0)}
+              {renderNavItem(navItems[1], 1)}
+
+              {/* Center spacer for logo */}
+              <div className="w-[68px] shrink-0" />
+
+              {/* Right items: Report, Search */}
+              {renderNavItem(navItems[2], 2)}
+              {renderNavItem(navItems[3], 3)}
+            </div>
+
+            {/* ── Center Peja Logo + SOS/SML fan ── */}
+            <div
+              className="absolute left-1/2 -translate-x-1/2"
+              style={{ bottom: 18, zIndex: 60 }}
+            >
+              {/* Fan-out: SML (left) */}
+              <div
+                data-tutorial="nav-sml"
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  bottom: "100%",
+                  transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                  transform: menuOpen
+                    ? "translate(calc(-50% - 32px), -16px) scale(1)"
+                    : "translate(-50%, 20px) scale(0)",
+                  opacity: menuOpen ? 1 : 0,
+                  pointerEvents: menuOpen ? "auto" : "none",
+                }}
+              >
+                <div className="flex flex-col items-center gap-1">
+                  <SMLButton />
+                  <span className="text-[9px] font-bold text-primary-300 uppercase tracking-wider">SML</span>
+                </div>
+              </div>
+
+            {/* Fan-out: SOS (right) */}
+              <div
+                data-tutorial="nav-sos"
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  bottom: "100%",
+                  transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.04s",
+                  transform: menuOpen
+                    ? "translate(calc(-50% + 32px), -16px) scale(1)"
+                    : "translate(-50%, 20px) scale(0)",
+                  opacity: menuOpen ? 1 : 0,
+                  pointerEvents: menuOpen ? "auto" : "none",
+                }}
+              >
+                <div className="flex flex-col items-center gap-1">
+                  <div
+                    className="flex items-center justify-center"
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: "50%",
+                      background: "rgba(60, 25, 30, 0.85)",
+                      backdropFilter: "blur(40px) saturate(180%)",
+                      WebkitBackdropFilter: "blur(40px) saturate(180%)",
+                      border: "1px solid rgba(239, 68, 68, 0.2)",
+                      boxShadow: "0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(239, 68, 68, 0.1)",
+                    }}
+                  >
+                    <SOSButton className="w-full h-full" />
+                  </div>
+                  <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider">SOS</span>
+                </div>
+              </div>
+
+              {/* Peja logo button */}
+              <button
+                onClick={() => setMenuOpen(!menuOpen)}
+                className="relative flex items-center justify-center"
+                style={{
+                  width: 58,
+                  height: 58,
+                  borderRadius: "50%",
+                  background: menuOpen
+                    ? "rgba(40, 25, 65, 0.95)"
+                    : "linear-gradient(135deg, rgba(100, 50, 200, 0.35) 0%, rgba(80, 40, 160, 0.55) 100%)",
+                  backdropFilter: "blur(40px) saturate(180%)",
+                  WebkitBackdropFilter: "blur(40px) saturate(180%)",
+                  border: `2px solid ${menuOpen ? "rgba(139, 92, 246, 0.5)" : "rgba(139, 92, 246, 0.25)"}`,
+                  boxShadow: menuOpen
+                    ? "0 0 30px rgba(139, 92, 246, 0.35), 0 4px 20px rgba(0, 0, 0, 0.4)"
+                    : "0 0 15px rgba(139, 92, 246, 0.12), 0 4px 16px rgba(0, 0, 0, 0.3)",
+                  transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                  transform: menuOpen ? "scale(0.88) rotate(45deg)" : "scale(1) rotate(0deg)",
+                  zIndex: 40,
+                }}
+              >
+                <img
+                  src={PEJA_LOGO}
+                  alt="Peja"
+                  className="w-8 h-8 object-contain"
+                  style={{
+                    filter: "drop-shadow(0 0 3px rgba(167, 139, 250, 0.3))",
+                    transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                    transform: menuOpen ? "rotate(-45deg)" : "rotate(0deg)",
+                  }}
+                />
+              </button>
             </div>
           </div>
         </div>
-      </div>
-    </nav>
+      </nav>
+    </>
   );
 }

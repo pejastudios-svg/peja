@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { SOS_TAGS } from "@/lib/types";
 import type { MapHelper } from "@/components/admin/AdminLiveMap";
 import { formatDistanceToNow } from "date-fns";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 const AdminLiveMap = dynamic(() => import("@/components/admin/AdminLiveMap"), {
   ssr: false,

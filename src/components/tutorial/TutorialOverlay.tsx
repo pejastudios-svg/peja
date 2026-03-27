@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useAuth } from "@/context/AuthContext";
 import {
-   Shield,
   PlusCircle,
   CheckCircle,
   Map,
@@ -163,7 +163,7 @@ function WelcomeScreen({ onStart, onSkip }: { onStart: () => void; onSkip: () =>
           </div>
 
           <div className="relative flex flex-col items-center">
-            <div
+          <div
               className="w-20 h-20 rounded-2xl flex items-center justify-center mb-3"
               style={{
                 background: "rgba(124, 58, 237, 0.2)",
@@ -171,7 +171,12 @@ function WelcomeScreen({ onStart, onSkip }: { onStart: () => void; onSkip: () =>
                 boxShadow: "0 0 30px rgba(139, 92, 246, 0.2)",
               }}
             >
-              <Shield className="w-10 h-10 text-primary-400" />
+              <img
+                src="https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png"
+                alt="Peja"
+                className="w-12 h-12 object-contain"
+                style={{ filter: "drop-shadow(0 0 4px rgba(167, 139, 250, 0.3))" }}
+              />
             </div>
             <span className="text-2xl font-black tracking-[0.2em]" style={{ color: "#a78bfa" }}>
               PEJA
@@ -239,14 +244,25 @@ function SpotlightOverlay({
   const step = steps[currentStep];
   const isLast = currentStep === steps.length - 1;
 
-  const measureTarget = useCallback(() => {
+ const measureTarget = useCallback(() => {
     if (typeof window === "undefined") return;
 
     setWindowSize({ w: window.innerWidth, h: window.innerHeight });
 
     if (!step) return;
 
-    const el = document.querySelector(`[data-tutorial="${step.target}"]`);
+    // Open Peja menu for SOS/SML steps
+    if (step.target === "nav-sos" || step.target === "nav-sml") {
+      window.dispatchEvent(new CustomEvent("peja-tutorial-open-menu"));
+    } else {
+      window.dispatchEvent(new CustomEvent("peja-tutorial-close-menu"));
+    }
+
+    // Small delay for menu animation when opening
+    const delay = (step.target === "nav-sos" || step.target === "nav-sml") ? 400 : 0;
+
+    setTimeout(() => {
+      const el = document.querySelector(`[data-tutorial="${step.target}"]`);
     if (!el) {
       setSpotlight(null);
       return;
@@ -284,7 +300,7 @@ function SpotlightOverlay({
       height: rect.height + padding * 2,
     });
 
-    const preferredPos = step.position || "auto";
+const preferredPos = step.position || "auto";
     if (preferredPos === "top") {
       setTooltipPos("top");
     } else if (preferredPos === "bottom") {
@@ -292,6 +308,7 @@ function SpotlightOverlay({
     } else {
       setTooltipPos(rect.top < window.innerHeight / 2 ? "bottom" : "top");
     }
+    }, delay);
   }, [step]);
 
   useEffect(() => {
@@ -462,23 +479,35 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   const [phase, setPhase] = useState<"hidden" | "welcome" | "spotlight">("hidden");
   const [currentStep, setCurrentStep] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
     setMounted(true);
+  }, []);
 
-    if (typeof window !== "undefined") {
-      const completed = localStorage.getItem(TUTORIAL_COMPLETED_KEY);
-      const dismissed = localStorage.getItem(TUTORIAL_DISMISSED_KEY);
+  // Only show tutorial when user is logged in
+  useEffect(() => {
+    if (authLoading || !user) return;
+    if (typeof window === "undefined") return;
 
-      if (completed !== "true" && dismissed !== "true") {
-        // Wait for the app to fully render before showing
-        const timer = setTimeout(() => {
-          setPhase("welcome");
-        }, 2000);
+    const completed = localStorage.getItem(TUTORIAL_COMPLETED_KEY);
+    const dismissed = localStorage.getItem(TUTORIAL_DISMISSED_KEY);
+
+    // Check if this is a first-time login (not just first visit)
+    const hasSeenLogin = localStorage.getItem("peja-has-logged-in");
+    if (!hasSeenLogin) {
+      localStorage.setItem("peja-has-logged-in", "true");
+      // First login ever - show tutorial after a delay
+      if (completed !== "true") {
+        const timer = setTimeout(() => setPhase("welcome"), 2000);
         return () => clearTimeout(timer);
       }
+    } else if (completed !== "true" && dismissed !== "true") {
+      // Returning user who hasn't finished tutorial
+      const timer = setTimeout(() => setPhase("welcome"), 2000);
+      return () => clearTimeout(timer);
     }
-  }, []);
+  }, [user, authLoading]);
 
   // Listen for manual trigger from Settings
   useEffect(() => {

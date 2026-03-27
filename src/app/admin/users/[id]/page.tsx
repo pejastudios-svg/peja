@@ -13,6 +13,7 @@ import { PostCard } from "@/components/posts/PostCard";
 import { Post } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 type AdminUserFull = {
   id: string;

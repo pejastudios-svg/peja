@@ -27,6 +27,7 @@ import { ServiceWorkerRegistrar } from "@/components/navigation/ServiceWorkerReg
 import { TutorialProvider } from "@/components/tutorial/TutorialOverlay";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { CheckInMonitor } from "@/components/safety/CheckInMonitor";
+import { LoginPrompt } from "@/components/auth/LoginPrompt";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -104,6 +105,7 @@ export default function RootLayout({
                         <CapacitorKeyboardHandler />
                         <ServiceWorkerRegistrar />
                         <CheckInMonitor />
+                        <LoginPrompt />
                         <ServiceWorkerRegistration />
                         <TutorialProvider>
                         {children}

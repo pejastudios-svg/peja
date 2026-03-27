@@ -12,6 +12,7 @@ import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
 import type { MapHelper } from "@/components/admin/AdminLiveMap";
 import { useRouter } from "next/navigation";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 import {
   AreaChart,

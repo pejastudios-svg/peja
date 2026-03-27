@@ -9,7 +9,7 @@ import { useConfirm } from "@/context/ConfirmContext";
 import { useAuth } from "@/context/AuthContext";
 import { useFeedCache } from "@/context/FeedContext";
 import { useToast } from "@/context/ToastContext";
-import { getVideoThumbnailUrl, preloadVideoChunk } from "@/lib/videoThumbnail";
+import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk } from "@/lib/videoThumbnail";
 import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
 import { shareUrl } from "@/lib/share";
 
@@ -80,10 +80,10 @@ useEffect(() => {
   }, [post.id]);
 
   // Preload first video chunk when card mounts (for faster playback)
-  useEffect(() => {
+useEffect(() => {
     const firstVideo = post.media?.find(m => m.media_type === "video");
     if (firstVideo) {
-      preloadVideoChunk(firstVideo.url);
+      preloadVideoChunk(getOptimizedVideoUrl(firstVideo.url));
     }
   }, [post.id]);
 

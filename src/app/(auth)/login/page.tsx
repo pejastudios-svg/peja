@@ -59,7 +59,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gradient mb-2">Peja</h1>
+          <h1 className="text-3xl font-bold text-gradient mb-2">PEJA</h1>
           <p className="text-dark-400">Welcome back! Sign in to continue</p>
         </div>
 
