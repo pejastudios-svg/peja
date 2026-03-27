@@ -279,7 +279,13 @@ export function BottomNav() {
 
               {/* Peja logo button */}
               <button
-                onClick={() => setMenuOpen(!menuOpen)}
+                onClick={() => {
+                  if (!user) {
+                    router.push("/login");
+                    return;
+                  }
+                  setMenuOpen(!menuOpen);
+                }}
                 className="relative flex items-center justify-center"
                 style={{
                   width: 58,

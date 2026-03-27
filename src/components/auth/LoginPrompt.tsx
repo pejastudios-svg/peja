@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { LogIn, UserPlus } from "lucide-react";
@@ -13,6 +13,15 @@ export function LoginPrompt() {
   const router = useRouter();
   const pathname = usePathname();
   const [show, setShow] = useState(false);
+  const [closing, setClosing] = useState(false);
+
+  const handleClose = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => {
+      setShow(false);
+      setClosing(false);
+    }, 250);
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -28,9 +37,9 @@ export function LoginPrompt() {
     return () => clearTimeout(timer);
   }, [user, loading, pathname]);
 
-  const handleDismiss = () => {
+   const handleDismiss = () => {
     sessionStorage.setItem(DISMISSED_KEY, "true");
-    setShow(false);
+    handleClose();
   };
 
   if (!show) return null;
@@ -40,11 +49,13 @@ export function LoginPrompt() {
       <div
         className="fixed inset-0 z-[30000] bg-black/70 backdrop-blur-sm"
         onClick={handleDismiss}
-        style={{ animation: "fadeIn 0.3s ease" }}
+        style={{
+          animation: closing ? "fadeOut 0.25s ease forwards" : "fadeIn 0.3s ease",
+        }}
       />
       <div className="fixed inset-0 z-[30001] flex items-center justify-center p-6">
         <div
-          className="w-full max-w-sm rounded-3xl overflow-hidden animate-bounce-in"
+          className={`w-full max-w-sm rounded-3xl overflow-hidden ${closing ? "animate-bounce-out" : "animate-bounce-in"}`}
           style={{
             background: "rgba(18, 12, 36, 0.98)",
             border: "1px solid rgba(139, 92, 246, 0.2)",
@@ -101,8 +112,8 @@ export function LoginPrompt() {
 
             <button
               onClick={() => {
-                setShow(false);
-                router.push("/signup");
+                handleClose();
+                setTimeout(() => router.push("/signup"), 300);
               }}
               className="w-full py-3.5 rounded-xl font-semibold text-white transition-all active:scale-[0.98] mb-3 flex items-center justify-center gap-2"
               style={{
@@ -116,9 +127,9 @@ export function LoginPrompt() {
             </button>
 
             <button
-              onClick={() => {
-                setShow(false);
-                router.push("/login");
+                onClick={() => {
+                handleClose();
+                setTimeout(() => router.push("/login"), 300);
               }}
               className="w-full py-3 rounded-xl text-sm font-medium text-primary-400 transition-colors hover:bg-white/5 active:bg-white/10 flex items-center justify-center gap-2"
               style={{
