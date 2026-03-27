@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Home, Map, PlusCircle, Search } from "lucide-react";
@@ -34,6 +35,15 @@ export function BottomNav() {
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuClosing, setMenuClosing] = useState(false);
+
+  const closeMenu = useCallback(() => {
+    setMenuClosing(true);
+    setTimeout(() => {
+      setMenuOpen(false);
+      setMenuClosing(false);
+    }, 300);
+  }, []);
 
   const isHidden =
     pathname.startsWith("/post/") || !!pathname.match(/^\/messages\/[^/]+$/);
@@ -71,7 +81,7 @@ export function BottomNav() {
   }, [pathname, updateIndicator]);
 
   useEffect(() => {
-    setMenuOpen(false);
+    if (menuOpen) closeMenu();
   }, [pathname]);
 
     // Tutorial control for Peja menu
@@ -85,6 +95,8 @@ export function BottomNav() {
       window.removeEventListener("peja-tutorial-close-menu", handleClose);
     };
   }, []);
+
+  useScrollFreeze(menuOpen || menuClosing);
 
   if (isHidden) return null;
 
@@ -160,15 +172,15 @@ export function BottomNav() {
   return (
     <>
       {/* Menu backdrop */}
-      {menuOpen && (
+      {(menuOpen || menuClosing) && (
         <div
           className="fixed inset-0 z-[49] bg-black/40"
           style={{
             backdropFilter: "blur(4px)",
             WebkitBackdropFilter: "blur(4px)",
-            animation: "fadeIn 0.2s ease",
+            animation: menuClosing ? "fadeOut 0.25s ease forwards" : "fadeIn 0.2s ease",
           }}
-          onClick={() => setMenuOpen(false)}
+          onClick={closeMenu}
         />
       )}
 
@@ -229,11 +241,11 @@ export function BottomNav() {
                   left: "50%",
                   bottom: "100%",
                   transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                  transform: menuOpen
+                  transform: menuOpen && !menuClosing
                     ? "translate(calc(-50% - 32px), -16px) scale(1)"
                     : "translate(-50%, 20px) scale(0)",
-                  opacity: menuOpen ? 1 : 0,
-                  pointerEvents: menuOpen ? "auto" : "none",
+                  opacity: menuOpen && !menuClosing ? 1 : 0,
+                  pointerEvents: menuOpen && !menuClosing ? "auto" : "none",
                 }}
               >
                 <div className="flex flex-col items-center gap-1">
@@ -250,10 +262,10 @@ export function BottomNav() {
                   left: "50%",
                   bottom: "100%",
                   transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.04s",
-                  transform: menuOpen
+                  transform: menuOpen && !menuClosing
                     ? "translate(calc(-50% + 32px), -16px) scale(1)"
                     : "translate(-50%, 20px) scale(0)",
-                  opacity: menuOpen ? 1 : 0,
+                  opacity: menuOpen && !menuClosing ? 1 : 0,
                   pointerEvents: menuOpen ? "auto" : "none",
                 }}
               >
@@ -279,29 +291,33 @@ export function BottomNav() {
 
               {/* Peja logo button */}
               <button
-                onClick={() => {
+               onClick={() => {
                   if (!user) {
                     router.push("/login");
                     return;
                   }
-                  setMenuOpen(!menuOpen);
+                  if (menuOpen || menuClosing) {
+                    closeMenu();
+                  } else {
+                    setMenuOpen(true);
+                  }
                 }}
                 className="relative flex items-center justify-center"
                 style={{
                   width: 58,
                   height: 58,
                   borderRadius: "50%",
-                  background: menuOpen
+                  background: menuOpen && !menuClosing
                     ? "rgba(40, 25, 65, 0.95)"
                     : "linear-gradient(135deg, rgba(100, 50, 200, 0.35) 0%, rgba(80, 40, 160, 0.55) 100%)",
                   backdropFilter: "blur(40px) saturate(180%)",
                   WebkitBackdropFilter: "blur(40px) saturate(180%)",
-                  border: `2px solid ${menuOpen ? "rgba(139, 92, 246, 0.5)" : "rgba(139, 92, 246, 0.25)"}`,
-                  boxShadow: menuOpen
+                  border: `2px solid ${menuOpen && !menuClosing ? "rgba(139, 92, 246, 0.5)" : "rgba(139, 92, 246, 0.25)"}`,
+                  boxShadow: menuOpen && !menuClosing
                     ? "0 0 30px rgba(139, 92, 246, 0.35), 0 4px 20px rgba(0, 0, 0, 0.4)"
                     : "0 0 15px rgba(139, 92, 246, 0.12), 0 4px 16px rgba(0, 0, 0, 0.3)",
                   transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                  transform: menuOpen ? "scale(0.88) rotate(45deg)" : "scale(1) rotate(0deg)",
+                  transform: menuOpen && !menuClosing ? "scale(0.88) rotate(45deg)" : "scale(1) rotate(0deg)",
                   zIndex: 40,
                 }}
               >
@@ -312,7 +328,7 @@ export function BottomNav() {
                   style={{
                     filter: "drop-shadow(0 0 3px rgba(167, 139, 250, 0.3))",
                     transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                    transform: menuOpen ? "rotate(-45deg)" : "rotate(0deg)",
+                    transform: menuOpen && !menuClosing ? "rotate(-45deg)" : "rotate(0deg)",
                   }}
                 />
               </button>

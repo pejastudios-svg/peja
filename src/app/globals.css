@@ -1947,6 +1947,25 @@ html.capacitor-native .cap-status-pad {
   to { opacity: 0; }
 }
 
+@keyframes suck-in {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  40% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(0) rotate(10deg);
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+.animate-suck-in {
+  animation: suck-in 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
+}
+
 @keyframes zoomIn95 {
   from { transform: scale(0.95); opacity: 0; }
   to { transform: scale(1); opacity: 1; }

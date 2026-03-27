@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/context/AuthContext";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
   PlusCircle,
   CheckCircle,
@@ -542,7 +543,8 @@ const handleStart = useCallback(() => {
     localStorage.removeItem(TUTORIAL_DISMISSED_KEY);
     setPhase("hidden");
   }, []);
-
+  
+  useScrollFreeze(phase !== "hidden");
   if (!mounted) return <>{children}</>;
 
   return (

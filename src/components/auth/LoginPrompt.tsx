@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { LogIn, UserPlus } from "lucide-react";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 const PUBLIC_PATHS = ["/login", "/signup", "/terms", "/privacy", "/help", "/offline.html"];
 const DISMISSED_KEY = "peja-login-prompt-dismissed";
@@ -42,6 +43,7 @@ export function LoginPrompt() {
     handleClose();
   };
 
+  useScrollFreeze(show);
   if (!show) return null;
 
   return (
