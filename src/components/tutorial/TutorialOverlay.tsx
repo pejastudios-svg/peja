@@ -269,46 +269,30 @@ function SpotlightOverlay({
       return;
     }
 
-    // Scroll element into view first
-    const rect = el.getBoundingClientRect();
-    const isVisible =
-      rect.top >= 0 &&
-      rect.bottom <= window.innerHeight &&
-      rect.left >= 0 &&
-      rect.right <= window.innerWidth;
+  // Always scroll element into view
+    el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    
+    // Measure after scroll settles
+    setTimeout(() => {
+      const rect = el.getBoundingClientRect();
+      const padding = 6;
+      setSpotlight({
+        top: rect.top - padding,
+        left: rect.left - padding,
+        width: rect.width + padding * 2,
+        height: rect.height + padding * 2,
+      });
 
-    if (!isVisible) {
-      el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
-      // Re-measure after scroll settles
-      setTimeout(() => {
-        const newRect = el.getBoundingClientRect();
-        const padding = 6;
-        setSpotlight({
-          top: newRect.top - padding,
-          left: newRect.left - padding,
-          width: newRect.width + padding * 2,
-          height: newRect.height + padding * 2,
-        });
-      }, 400);
-      return;
-    }
+      const preferredPos = step.position || "auto";
+      if (preferredPos === "top") {
+        setTooltipPos("top");
+      } else if (preferredPos === "bottom") {
+        setTooltipPos("bottom");
+      } else {
+        setTooltipPos(rect.top < window.innerHeight / 2 ? "bottom" : "top");
+      }
+    }, 500);
 
-    const padding = 6;
-    setSpotlight({
-      top: rect.top - padding,
-      left: rect.left - padding,
-      width: rect.width + padding * 2,
-      height: rect.height + padding * 2,
-    });
-
-const preferredPos = step.position || "auto";
-    if (preferredPos === "top") {
-      setTooltipPos("top");
-    } else if (preferredPos === "bottom") {
-      setTooltipPos("bottom");
-    } else {
-      setTooltipPos(rect.top < window.innerHeight / 2 ? "bottom" : "top");
-    }
     }, delay);
   }, [step]);
 
@@ -543,8 +527,7 @@ const handleStart = useCallback(() => {
     localStorage.removeItem(TUTORIAL_DISMISSED_KEY);
     setPhase("hidden");
   }, []);
-  
-  useScrollFreeze(phase !== "hidden");
+
   if (!mounted) return <>{children}</>;
 
   return (
