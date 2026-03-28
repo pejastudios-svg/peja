@@ -24,35 +24,37 @@ export function SlowConnectionBanner() {
       const nav = navigator as any;
       const conn = nav.connection || nav.mozConnection || nav.webkitConnection;
 
-      let isSlow = false;
+     let isSlow = false;
 
       if (conn) {
-        // effectiveType: 'slow-2g', '2g', '3g', '4g'
         const type = conn.effectiveType;
-        const downlink = conn.downlink; // Mbps
+        const downlink = conn.downlink;
+        const rtt = conn.rtt;
 
         if (type === "slow-2g" || type === "2g") {
           isSlow = true;
-        } else if (type === "3g" && downlink < 0.5) {
+        } else if (type === "3g" && (downlink < 0.7 || rtt > 1000)) {
+          isSlow = true;
+        } else if (downlink > 0 && downlink < 0.3) {
+          isSlow = true;
+        } else if (rtt > 2000) {
           isSlow = true;
         }
       }
 
-      // Also check with a timed fetch as fallback
-      if (!conn) {
-        const start = performance.now();
-        fetch("/favicon.ico", { cache: "no-store", mode: "no-cors" })
-          .then(() => {
-            const elapsed = performance.now() - start;
-            if (elapsed > 3000) {
-              handleSlow();
-            }
-          })
-          .catch(() => {
-            // Offline - handled by OfflineScreen
-          });
-        return;
-      }
+      // Timed fetch as additional check (runs for ALL connections)
+      const start = performance.now();
+      fetch("/favicon.ico?" + Date.now(), { cache: "no-store", mode: "no-cors" })
+        .then(() => {
+          const elapsed = performance.now() - start;
+          if (elapsed > 3000 && !wasSlowRef.current && !dismissedRef.current) {
+            handleSlow();
+            wasSlowRef.current = true;
+          } else if (elapsed < 1000 && wasSlowRef.current) {
+            handleBack();
+          }
+        })
+        .catch(() => {});
 
       if (isSlow && !wasSlowRef.current && !dismissedRef.current) {
         handleSlow();
@@ -60,7 +62,7 @@ export function SlowConnectionBanner() {
         handleBack();
       }
 
-      wasSlowRef.current = isSlow;
+      wasSlowRef.current = isSlow || wasSlowRef.current;
     };
 
     const handleSlow = () => {
