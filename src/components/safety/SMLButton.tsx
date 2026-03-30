@@ -253,6 +253,13 @@ export function SMLButton() {
     }
   }, [sharedWithMe]);
 
+  // Broadcast SML state to BottomNav
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("peja-sml-state", { 
+      detail: { active: !!myCheckIn, sharedCount: sharedWithMe.length } 
+    }));
+  }, [myCheckIn, sharedWithMe]);
+
 const handleButtonClick = () => {
     if (myCheckIn && sharedWithMe.length === 0) {
       // Only my check-in active, no one sharing with me

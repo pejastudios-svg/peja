@@ -640,7 +640,7 @@ const setActiveConversation = useCallback((id: string | null) => {
         }
       )
 
-      // ---- MESSAGE UPDATE (edit/delete) ----
+     // ---- MESSAGE UPDATE (edit/delete) ----
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "messages" },
@@ -648,6 +648,28 @@ const setActiveConversation = useCallback((id: string | null) => {
           const msg = payload.new as any;
           if (!msg.conversation_id) return;
           dispatch(msg.conversation_id, (l) => l.onMessageUpdate(msg));
+          
+          // Update last_message_text in conversation list
+          setConversations((prev) =>
+            prev.map((c) => {
+              if (c.id !== msg.conversation_id) return c;
+              // Update if sender matches and message is deleted or edited
+              if (msg.edited_at || msg.is_deleted) {
+                const msgTime = new Date(msg.created_at).getTime();
+                const lastTime = c.last_message_at ? new Date(c.last_message_at).getTime() : 0;
+                // Within 2 seconds = same message
+                if (Math.abs(msgTime - lastTime) < 2000) {
+                  return {
+                    ...c,
+                    last_message_text: msg.is_deleted 
+                      ? "Message deleted" 
+                      : (msg.content?.slice(0, 100) || c.last_message_text),
+                  };
+                }
+              }
+              return c;
+            })
+          );
         }
       )
 

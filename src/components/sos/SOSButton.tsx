@@ -311,6 +311,11 @@ export function SOSButton({ className = "" }: { className?: string }) {
     sosIdRef.current = sosId;
   }, [sosId]);
 
+  // Broadcast SOS state to BottomNav
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("peja-sos-state", { detail: { active: sosActive } }));
+  }, [sosActive]);
+
   useEffect(() => {
     if (!sosActive || !sosId) return;
     if (!navigator.geolocation) return;

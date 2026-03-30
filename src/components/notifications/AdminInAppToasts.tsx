@@ -117,11 +117,11 @@ export default function AdminInAppToasts({ onNewNotification }: Props) {
     // Navigate based on type
     const data = notification.data || {};
     if (notification.type === "flagged_post" || notification.type === "flagged_comment") {
-      router.push(`/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`);
+      window.location.href = `/admin/flagged?open=${encodeURIComponent(data.flagged_id || "")}`;
     } else if (notification.type === "guardian_application") {
-      router.push(`/admin/guardians?app=${encodeURIComponent(data.application_id || "")}`);
+      window.location.href = `/admin/guardians?app=${encodeURIComponent(data.application_id || "")}`;
     } else {
-      router.push("/admin/notifications");
+      window.location.href = "/admin/notifications";
     }
   };
 

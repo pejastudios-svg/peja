@@ -108,20 +108,19 @@ export function CapacitorPushNotifications() {
           "pushNotificationActionPerformed",
           (action) => {
 
-            const data = action.notification.data;
-
+         const data = action.notification.data;
             if (data?.sos_id) {
               if (data?.latitude && data?.longitude) {
-                router.push(`/map?lat=${data.latitude}&lng=${data.longitude}&sos=${data.sos_id}`);
+                window.location.href = `/map?lat=${data.latitude}&lng=${data.longitude}&sos=${data.sos_id}`;
               } else {
-                router.push("/map");
+                window.location.href = "/map";
               }
             } else if (data?.post_id) {
-              router.push(`/post/${data.post_id}`);
+              window.location.href = `/post/${data.post_id}`;
             } else if (data?.type === "guardian_approved") {
-              router.push("/guardian");
+              window.location.href = "/guardian";
             } else {
-              router.push("/notifications");
+              window.location.href = "/notifications";
             }
           }
         );

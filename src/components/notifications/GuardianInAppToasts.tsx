@@ -116,9 +116,9 @@ export default function GuardianInAppToasts({ onNewNotification }: Props) {
     // Navigate based on type
     const data = notification.data || {};
     if (notification.type === "flagged_post" || notification.type === "flagged_comment") {
-      router.push(`/guardian/queue?review=${encodeURIComponent(data.flagged_id || "")}`);
+      window.location.href = `/guardian/queue?review=${encodeURIComponent(data.flagged_id || "")}`;
     } else {
-      router.push("/guardian/notifications");
+      window.location.href = "/guardian/notifications";
     }
   };
 

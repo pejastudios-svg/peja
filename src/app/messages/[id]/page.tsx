@@ -215,7 +215,8 @@ const {
   setRecordingConversationId, 
   clearUnread, 
   markConversationRead, 
-  updateLastMessage, 
+  updateLastMessage,
+  fetchConversations,
   subscribeToChat, 
   setActiveConversation 
 } = useMessageCache();
@@ -2263,6 +2264,17 @@ const handleTouchEnd = () => {
           .eq("id", editingMessage.id)
           .eq("sender_id", user.id);
         if (editErr) throw editErr;
+        
+        // Update conversation in database
+        const { error: convErr } = await supabase
+          .from("conversations")
+          .update({ last_message_text: markdownContent?.slice(0, 100) || "" })
+          .eq("id", conversationId);
+        console.log("[Edit] Conv update:", convErr ? convErr.message : "success");
+        
+        // Force refresh conversations
+        fetchConversations();
+        
         setEditingMessage(null);
         clearEditor();
         setCharCount(0);

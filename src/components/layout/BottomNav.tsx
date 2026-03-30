@@ -37,6 +37,10 @@ export function BottomNav() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuClosing, setMenuClosing] = useState(false);
 
+  const [sosActive, setSosActive] = useState(false);
+  const [smlActive, setSmlActive] = useState(false);
+  const [smlSharedCount, setSmlSharedCount] = useState(0);
+
   const closeMenu = useCallback(() => {
     setMenuClosing(true);
     setTimeout(() => {
@@ -93,6 +97,32 @@ export function BottomNav() {
     return () => {
       window.removeEventListener("peja-tutorial-open-menu", handleOpen);
       window.removeEventListener("peja-tutorial-close-menu", handleClose);
+    };
+  }, []);
+
+  // Listen for SOS/SML state changes
+  useEffect(() => {
+    const handleSOS = (e: any) => setSosActive(e.detail?.active || false);
+    const handleSML = (e: any) => {
+      setSmlActive(e.detail?.active || false);
+      setSmlSharedCount(e.detail?.sharedCount || 0);
+    };
+    window.addEventListener("peja-sos-state", handleSOS);
+    window.addEventListener("peja-sml-state", handleSML);
+
+    // Init from localStorage
+    const savedSOS = localStorage.getItem("peja-sos-active-id");
+    if (savedSOS) setSosActive(true);
+    const savedSML = localStorage.getItem("peja-sml-active");
+    if (savedSML) setSmlActive(true);
+    try {
+      const savedShared = localStorage.getItem("peja-sml-shared");
+      if (savedShared) setSmlSharedCount(JSON.parse(savedShared).length);
+    } catch {}
+
+    return () => {
+      window.removeEventListener("peja-sos-state", handleSOS);
+      window.removeEventListener("peja-sml-state", handleSML);
     };
   }, []);
 
@@ -312,10 +342,23 @@ export function BottomNav() {
                     : "linear-gradient(135deg, rgba(100, 50, 200, 0.35) 0%, rgba(80, 40, 160, 0.55) 100%)",
                   backdropFilter: "blur(40px) saturate(180%)",
                   WebkitBackdropFilter: "blur(40px) saturate(180%)",
-                  border: `2px solid ${menuOpen && !menuClosing ? "rgba(139, 92, 246, 0.5)" : "rgba(139, 92, 246, 0.25)"}`,
+                  border: `2px solid ${
+                    menuOpen && !menuClosing 
+                      ? "rgba(139, 92, 246, 0.5)" 
+                      : sosActive || smlActive
+                        ? "transparent"
+                        : "rgba(139, 92, 246, 0.25)"
+                  }`,
                   boxShadow: menuOpen && !menuClosing
                     ? "0 0 30px rgba(139, 92, 246, 0.35), 0 4px 20px rgba(0, 0, 0, 0.4)"
                     : "0 0 15px rgba(139, 92, 246, 0.12), 0 4px 16px rgba(0, 0, 0, 0.3)",
+                  animation: !menuOpen && (sosActive && smlActive)
+                    ? "peja-pulse-dual 3s ease-in-out infinite"
+                    : !menuOpen && sosActive
+                      ? "peja-pulse-red 1.5s ease-in-out infinite"
+                      : !menuOpen && smlActive
+                        ? "peja-pulse-green 1.5s ease-in-out infinite"
+                        : "none",
                   transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
                   transform: menuOpen && !menuClosing ? "scale(0.88) rotate(45deg)" : "scale(1) rotate(0deg)",
                   zIndex: 40,
@@ -331,6 +374,25 @@ export function BottomNav() {
                     transform: menuOpen && !menuClosing ? "rotate(-45deg)" : "rotate(0deg)",
                   }}
                 />
+                {/* Shared count badge */}
+                {smlSharedCount > 0 && !menuOpen && (
+                  <div
+                    className="absolute -top-1 -right-1 flex items-center justify-center"
+                    style={{
+                      width: 18,
+                      height: 18,
+                      borderRadius: "50%",
+                      background: "#22c55e",
+                      border: "2px solid rgba(12, 8, 24, 0.9)",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "white",
+                      boxShadow: "0 0 6px rgba(34, 197, 94, 0.5)",
+                    }}
+                  >
+                    {smlSharedCount}
+                  </div>
+                )}
               </button>
             </div>
           </div>
