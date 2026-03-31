@@ -125,7 +125,7 @@ useEffect(() => {
       .subscribe();
 
     // Keep a slower poll as fallback (every 60 seconds)
-    pollingRef.current = setInterval(fetchData, 60000);
+    pollingRef.current = setInterval(fetchData, 15000);
 
     return () => {
       supabase.removeChannel(channel);

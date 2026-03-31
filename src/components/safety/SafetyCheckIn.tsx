@@ -199,19 +199,26 @@ if (diff <= 0) {
       (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
       () => {}
     );
-
-    // Watch position
+    // Watch position for movement
     locationRef.current = navigator.geolocation.watchPosition(
       (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
       () => {},
-      { enableHighAccuracy: true, maximumAge: 30000, timeout: 10000 }
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
     );
-
+    // Also poll every 15s in case watchPosition doesn't fire (user stationary)
+    const pollInterval = setInterval(() => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 8000 }
+      );
+    }, 15000);
     return () => {
       if (locationRef.current !== null) {
         navigator.geolocation.clearWatch(locationRef.current);
         locationRef.current = null;
       }
+      clearInterval(pollInterval);
     };
   }, [activeCheckIn, headers]);
 

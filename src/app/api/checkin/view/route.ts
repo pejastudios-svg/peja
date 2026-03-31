@@ -29,20 +29,19 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Not authorized to view this check-in" }, { status: 403 });
     }
 
-    // Get the check-in owner's info
+// Get the check-in owner's info (include fallback location)
     const { data: owner } = await supabaseAdmin
       .from("users")
-      .select("id, full_name, avatar_url")
+      .select("id, full_name, avatar_url, last_latitude, last_longitude")
       .eq("id", checkin.user_id)
       .single();
-
     return NextResponse.json({
       ok: true,
       checkin: {
         id: checkin.id,
         status: checkin.status,
-        latitude: checkin.latitude,
-        longitude: checkin.longitude,
+        latitude: checkin.latitude || owner?.last_latitude || null,
+        longitude: checkin.longitude || owner?.last_longitude || null,
         address: checkin.address,
         location_updated_at: checkin.location_updated_at,
         next_check_in_at: checkin.next_check_in_at,
