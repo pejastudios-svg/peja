@@ -2250,39 +2250,50 @@ const handleTouchEnd = () => {
       }
     }
     // If editing, handle separately
-    if (editingMessage) {
-      setSending(true);
-      try {
-        const editorHTML = getEditorHTML();
-        const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
-        const { error: editErr } = await supabase
-          .from("messages")
-          .update({
-            content: markdownContent,
-            edited_at: new Date().toISOString(),
-          })
-          .eq("id", editingMessage.id)
-          .eq("sender_id", user.id);
-        if (editErr) throw editErr;
-        
-        // Update conversation in database
-        const { error: convErr } = await supabase
-          .from("conversations")
-          .update({ last_message_text: markdownContent?.slice(0, 100) || "" })
-          .eq("id", conversationId);
-        console.log("[Edit] Conv update:", convErr ? convErr.message : "success");
-        
-        // Force refresh conversations
-        fetchConversations();
-        
-        setEditingMessage(null);
-        clearEditor();
-        setCharCount(0);
-      } catch (e: any) {
-        toast.danger("Failed to edit message");
-      } finally {
-        setSending(false);
-      }
+  if (editingMessage) {
+      const editorHTML = getEditorHTML();
+      const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
+      const editId = editingMessage.id;
+      const editTime = new Date().toISOString();
+      
+      // Optimistic update - instant UI change
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === editId
+            ? { ...m, content: markdownContent, edited_at: editTime }
+            : m
+        )
+      );
+      setEditingMessage(null);
+      clearEditor();
+      setCharCount(0);
+      
+      // Background DB updates
+      supabase
+        .from("messages")
+        .update({ content: markdownContent, edited_at: editTime })
+        .eq("id", editId)
+        .eq("sender_id", user.id)
+        .then(({ error }) => {
+          if (error) {
+            toast.danger("Failed to save edit");
+            // Revert on failure
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === editId
+                  ? { ...m, content: editingMessage.content, edited_at: editingMessage.edited_at }
+                  : m
+              )
+            );
+          }
+        });
+      
+      supabase
+        .from("conversations")
+        .update({ last_message_text: markdownContent?.slice(0, 100) || "" })
+        .eq("id", conversationId)
+        .then(() => fetchConversations());
+      
       return;
     }
 

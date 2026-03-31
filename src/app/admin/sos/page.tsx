@@ -9,8 +9,9 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useRouter } from "next/navigation";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
-import GlowButton from "@/components/dashboard/GlowButton";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
+import { SOS_TAGS } from "@/lib/types";
 import {
   AlertTriangle,
   MapPin,
@@ -22,7 +23,8 @@ import {
   Eye,
   Phone,
   Trash2,
-  MessageCircle, 
+MessageCircle,
+  Volume2,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { Modal } from "@/components/ui/Modal";
@@ -449,8 +451,36 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
                 </div>
             </div>
 
-            {/* Message & Audio */}
+           {/* Situation Details */}
             <div className="grid grid-cols-1 gap-4">
+                {/* Category Tag */}
+                {selectedSOS.tag && (() => {
+                  const tagInfo = SOS_TAGS.find((t: any) => t.id === selectedSOS.tag);
+                  return (
+                    <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl">
+                      <p className="text-xs text-red-300 uppercase font-bold mb-2 flex items-center gap-2">
+                        <AlertTriangle className="w-3 h-3" /> Situation
+                      </p>
+                      <p className="text-dark-100 text-lg font-bold">{tagInfo?.label || selectedSOS.tag}</p>
+                      {tagInfo?.suggestion && (
+                        <p className="text-dark-400 text-sm mt-1">{tagInfo.suggestion}</p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Location */}
+                {selectedSOS.address && (
+                <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
+                    <p className="text-xs text-dark-400 uppercase font-bold mb-2 flex items-center gap-2">
+                        <MapPin className="w-3 h-3" /> Location
+                    </p>
+                    <p className="text-dark-100 text-base font-medium">{selectedSOS.address}</p>
+                    <p className="text-dark-500 text-xs mt-1 font-mono">{selectedSOS.latitude?.toFixed(6)}, {selectedSOS.longitude?.toFixed(6)}</p>
+                </div>
+                )}
+
+                {/* Message */}
                 {selectedSOS.message && (
                 <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl">
                     <p className="text-xs text-red-300 uppercase font-bold mb-2 flex items-center gap-2">
@@ -460,10 +490,15 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
                 </div>
                 )}
 
+                {/* Voice Note */}
                 {selectedSOS.voice_note_url && (
                 <div className="p-4 bg-white/5 border border-white/10 rounded-xl">
-                    <p className="text-xs text-dark-400 uppercase font-bold mb-2">Audio Evidence</p>
-                    <audio src={selectedSOS.voice_note_url} controls className="w-full h-8" />
+                    <p className="text-xs text-dark-400 uppercase font-bold mb-3 flex items-center gap-2">
+                        <Volume2 className="w-3 h-3" /> Voice Note
+                    </p>
+                    <div className="[&>div]:max-w-none [&>div]:w-full">
+                      <VoiceNotePlayer src={selectedSOS.voice_note_url} />
+                    </div>
                 </div>
                 )}
             </div>

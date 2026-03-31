@@ -447,7 +447,7 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
               }}
               className="w-full text-sm text-dark-500 hover:text-dark-300 py-2 transition-colors"
             >
-              {useBackupCode ? "Use authenticator code instead" : "Lost your phone? Use a backup code"}
+              {useBackupCode ? "Use authenticator code instead" : "Use a backup code"}
             </button>
           </form>
         )}
