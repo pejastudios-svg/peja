@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { LogIn, UserPlus } from "lucide-react";
@@ -24,18 +24,27 @@ export function LoginPrompt() {
     }, 250);
   }, []);
 
+const authCheckedRef = useRef(false);
   useEffect(() => {
-    if (loading) return;
-    if (user) return;
-    if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return;
-
-    // Check if already dismissed this session
-    const dismissed = sessionStorage.getItem(DISMISSED_KEY);
-    if (dismissed) return;
-
-    // Show after a short delay
-    const timer = setTimeout(() => setShow(true), 1500);
-    return () => clearTimeout(timer);
+    // Wait for auth to fully hydrate - don't show on first render
+    if (loading) {
+      authCheckedRef.current = false;
+      return;
+    }
+    // Auth has loaded at least once
+    if (!authCheckedRef.current) {
+      authCheckedRef.current = true;
+      // User is logged in, no need to show
+      if (user) return;
+      // On a public path, don't show
+      if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return;
+      // Already dismissed this session
+      const dismissed = sessionStorage.getItem(DISMISSED_KEY);
+      if (dismissed) return;
+      // Wait for the page to fully render before showing
+      const timer = setTimeout(() => setShow(true), 3000);
+      return () => clearTimeout(timer);
+    }
   }, [user, loading, pathname]);
 
    const handleDismiss = () => {

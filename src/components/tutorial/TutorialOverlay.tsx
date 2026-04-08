@@ -260,39 +260,37 @@ function SpotlightOverlay({
     }
 
     // Small delay for menu animation when opening
-    const delay = (step.target === "nav-sos" || step.target === "nav-sml") ? 400 : 0;
+    const delay = (step.target === "nav-sos" || step.target === "nav-sml") ? 350 : 50;
 
     setTimeout(() => {
       const el = document.querySelector(`[data-tutorial="${step.target}"]`);
-    if (!el) {
-      setSpotlight(null);
-      return;
-    }
-
-  // Always scroll element into view
-    el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
-    
-    // Measure after scroll settles
-    setTimeout(() => {
-      const rect = el.getBoundingClientRect();
-      const padding = 6;
-      setSpotlight({
-        top: rect.top - padding,
-        left: rect.left - padding,
-        width: rect.width + padding * 2,
-        height: rect.height + padding * 2,
-      });
-
-      const preferredPos = step.position || "auto";
-      if (preferredPos === "top") {
-        setTooltipPos("top");
-      } else if (preferredPos === "bottom") {
-        setTooltipPos("bottom");
-      } else {
-        setTooltipPos(rect.top < window.innerHeight / 2 ? "bottom" : "top");
+      if (!el) {
+        setSpotlight(null);
+        return;
       }
-    }, 500);
 
+      // Instant scroll, no smooth animation
+      el.scrollIntoView({ behavior: "instant", block: "center", inline: "center" });
+
+      // Measure immediately after scroll
+      requestAnimationFrame(() => {
+        const rect = el.getBoundingClientRect();
+        const padding = 6;
+        setSpotlight({
+          top: rect.top - padding,
+          left: rect.left - padding,
+          width: rect.width + padding * 2,
+          height: rect.height + padding * 2,
+        });
+        const preferredPos = step.position || "auto";
+        if (preferredPos === "top") {
+          setTooltipPos("top");
+        } else if (preferredPos === "bottom") {
+          setTooltipPos("bottom");
+        } else {
+          setTooltipPos(rect.top < window.innerHeight / 2 ? "bottom" : "top");
+        }
+      });
     }, delay);
   }, [step]);
 
@@ -332,7 +330,7 @@ function SpotlightOverlay({
                 height={spotlight.height}
                 rx="12"
                 fill="black"
-                style={{ transition: "all 0.4s cubic-bezier(0.32, 0.72, 0, 1)" }}
+                style={{ transition: "all 0.2s ease-out" }}
               />
             )}
           </mask>
@@ -358,7 +356,7 @@ function SpotlightOverlay({
             height: spotlight.height + 4,
             border: "2px solid rgba(139, 92, 246, 0.5)",
             boxShadow: "0 0 20px rgba(139, 92, 246, 0.3), inset 0 0 20px rgba(139, 92, 246, 0.1)",
-            transition: "all 0.4s cubic-bezier(0.32, 0.72, 0, 1)",
+            transition: "all 0.2s ease-out",
           }}
         />
       )}
@@ -373,7 +371,7 @@ function SpotlightOverlay({
           right: "16px",
           maxWidth: "360px",
           margin: "0 auto",
-          transition: "all 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+          transition: "all 0.2s ease-out",
           ...(spotlight
             ? tooltipPos === "bottom"
               ? { top: spotlight.top + spotlight.height + 16 }
