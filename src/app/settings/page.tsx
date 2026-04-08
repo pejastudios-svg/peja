@@ -35,6 +35,7 @@ import {
   Copy,
   ShieldCheck,
 } from "lucide-react";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export default function SettingsPage() {
   useScrollRestore("settings");
@@ -435,7 +436,7 @@ export default function SettingsPage() {
             }`}
           >
             {saving ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <PejaSpinner className="w-4 h-4" />
             ) : saveSuccess ? (
               <>
                 <CheckCircle className="w-4 h-4" />
@@ -915,7 +916,7 @@ export default function SettingsPage() {
                   >
                     {pwLoading ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <PejaSpinner className="w-4 h-4" />
                         Verifying...
                       </>
                     ) : (
@@ -991,7 +992,7 @@ export default function SettingsPage() {
                   >
                     {pwLoading ? (
                       <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <PejaSpinner className="w-4 h-4" />
                         Changing...
                       </>
                     ) : (

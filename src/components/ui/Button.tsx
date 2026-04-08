@@ -2,6 +2,7 @@
 
 import { forwardRef, ButtonHTMLAttributes } from "react";
 import { Loader2 } from "lucide-react";
+import { PejaSpinner } from "./PejaSpinner";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "ghost" | "danger";
@@ -53,7 +54,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {isLoading ? (
-          <Loader2 className="w-4 h-4 animate-spin" />
+          <PejaSpinner className="w-4 h-4" />
         ) : (
           leftIcon
         )}

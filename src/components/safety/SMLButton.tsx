@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   User,
 } from "lucide-react";
+import { PejaSpinner } from "../ui/PejaSpinner";
 
 interface SharedWithMe {
   id: string;
@@ -692,7 +693,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                 {/* Loading phase */}
                 {starting && startPhase && (
                   <div className="mb-4 p-3 rounded-xl bg-primary-500/10 border border-primary-500/20 flex items-center gap-3">
-                    <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+                    <PejaSpinner className="w-5 h-5" />
                     <p className="text-sm text-primary-400 font-medium">{startPhase}</p>
                   </div>
                 )}
@@ -707,7 +708,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                     boxShadow: "0 4px 20px rgba(124, 58, 237, 0.3)",
                   }}
                 >
-                  {starting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Shield className="w-5 h-5" />}
+                  {starting ? <PejaSpinner className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
                   Start Sharing
                 </button>
               </div>

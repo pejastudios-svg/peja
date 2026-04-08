@@ -34,6 +34,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 type FlagRow = {
   id: string;
@@ -447,7 +448,7 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
             <>
               {refreshing && (
                 <div className="flex justify-center py-2">
-                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                  <PejaSpinner className="w-5 h-5" />
                 </div>
               )}
               {items.map((item) => (
@@ -543,7 +544,7 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
             <>
               {historyLoading && (
                 <div className="flex justify-center py-2">
-                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                  <PejaSpinner className="w-5 h-5" />
                 </div>
               )}
 
@@ -738,7 +739,7 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
 
             <div className={`grid gap-3 border-t border-white/10 pt-4 ${selected.contentType === "post" ? "grid-cols-3" : "grid-cols-2"}`}>
               <Button variant="primary" className="bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20" onClick={() => handleReviewAction("approve")} disabled={actionLoading}>
-                {actionLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                {actionLoading ? <PejaSpinner className="w-4 h-4 mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
                 Safe
               </Button>
               {selected.contentType === "post" && (

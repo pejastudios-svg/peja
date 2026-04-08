@@ -9,6 +9,7 @@ import {
   Loader2,
   FileText,
 } from "lucide-react";
+import { PejaSpinner } from "../ui/PejaSpinner";
 
 interface DocumentViewerProps {
   isOpen: boolean;
@@ -146,7 +147,7 @@ export function DocumentViewer({
             {loading && (
               <div className="absolute inset-0 flex items-center justify-center z-10">
                 <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
+                  <PejaSpinner className="w-8 h-8" />
                   <p className="text-sm text-dark-400">Loading {ext.toUpperCase()}...</p>
                 </div>
               </div>

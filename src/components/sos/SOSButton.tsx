@@ -14,6 +14,7 @@ import {
   ArrowLeft, Scan, MapPin, Radio, Shield, Send,
   Siren, Car, UserX, Flame, MapPinned, Ban,
 } from "lucide-react";
+import { PejaSpinner } from "../ui/PejaSpinner";
 
 // =====================================================
 // SOS TAG DEFINITIONS WITH ICONS & COLORS
@@ -1322,7 +1323,7 @@ const closeOptions = () => {
               >
                 {loading ? (
                   <div className="flex items-center justify-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" /> Cancelling...
+                    <PejaSpinner className="w-4 h-4" /> Cancelling...
                   </div>
                 ) : (
                   "Cancel SOS (I'm safe now)"
@@ -1352,7 +1353,7 @@ const closeOptions = () => {
       } as React.CSSProperties}
     >
       {loading ? (
-        <Loader2 className="w-7 h-7 text-white animate-spin" />
+        <PejaSpinner className="w-7 h-7" />
       ) : (
         <AlertTriangle className="w-7 h-7 text-white" />
       )}

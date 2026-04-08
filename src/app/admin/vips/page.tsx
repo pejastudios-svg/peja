@@ -25,6 +25,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import HudShell from "@/components/dashboard/HudShell";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 type VIPUser = {
   id: string;
@@ -458,7 +459,7 @@ useEffect(() => {
           <div className="max-h-[400px] overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-white/10">
             {searchLoading ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+                <PejaSpinner className="w-5 h-5" />
                 <span className="ml-2 text-sm text-dark-400">Searching...</span>
               </div>
             ) : searchQuery.trim().length < 2 ? (

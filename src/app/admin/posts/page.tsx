@@ -15,6 +15,7 @@ import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 import {
   Search,
@@ -583,7 +584,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
         <>
           {loading && (
             <div className="flex justify-center py-4">
-              <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
+              <PejaSpinner className="w-6 h-6" />
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -910,7 +911,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                 }}
               >
                 {actionLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <PejaSpinner className="w-4 h-4" />
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4" />
@@ -983,7 +984,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                 }}
               >
                 {actionLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <PejaSpinner className="w-4 h-4" />
                 ) : (
                   <>
                     <Trash2 className="w-4 h-4" />

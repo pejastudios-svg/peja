@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStrength";
 import { useAuth } from "@/context/AuthContext";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -173,7 +174,7 @@ export default function SignupPage() {
           <Button type="submit" variant="primary" className="w-full mt-6" disabled={loading}>
             {loading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                <PejaSpinner className="w-4 h-4 mr-2" />
                 Creating Account...
               </>
             ) : (

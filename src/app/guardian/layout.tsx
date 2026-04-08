@@ -19,6 +19,7 @@ import {
   Loader2,
   ArrowLeft,
 } from "lucide-react";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 const navItems = [
   { href: "/guardian", icon: LayoutDashboard, label: "Dashboard", badge: false },
@@ -173,7 +174,7 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
   if (authLoading || checking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-dark-950">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+        <PejaSpinner className="w-8 h-8" />
       </div>
     );
   }

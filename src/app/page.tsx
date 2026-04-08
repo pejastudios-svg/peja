@@ -19,6 +19,7 @@ import { apiUrl } from "@/lib/api";
 import { PejaLoadingScreen } from "@/components/ui/PejaLoadingScreen";
 import { usePageCache } from "@/context/PageCacheContext";
 import { preloadFeedVideos } from "@/lib/videoThumbnail";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 type FeedTab = "nearby" | "trending";
 type TrendingMode = "recommended" | "top";
@@ -664,7 +665,7 @@ export default function Home() {
             <div className="space-y-4" data-tutorial="home-feed">
               {refreshing && (
                 <div className="flex justify-center py-2">
-                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                 <PejaSpinner className="w-5 h-5" />
                 </div>
               )}
               {posts.map((post) => (

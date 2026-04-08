@@ -22,6 +22,7 @@ import {
   Loader2,
   Crown,     
 } from "lucide-react";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 const navItems = [
   { href: "/admin", icon: LayoutDashboard, label: "Overview", badge: false },
@@ -182,7 +183,7 @@ useEffect(() => {
   if (authLoading || checking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-dark-950">
-        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+        <PejaSpinner className="w-8 h-8" />
       </div>
     );
   }

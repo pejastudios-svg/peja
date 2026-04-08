@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Mic, Square, Trash2, Send, Loader2, AlertCircle } from "lucide-react";
+import { PejaSpinner } from "../ui/PejaSpinner";
 
 interface VoiceNoteRecorderProps {
   onRecordingStart?: () => void;
@@ -568,7 +569,7 @@ export function VoiceNoteRecorder({
           className="w-10 h-10 rounded-full flex items-center justify-center bg-primary-600 hover:bg-primary-500 text-white transition-colors active:scale-95 disabled:opacity-50"
         >
           {isUploading ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
+            <PejaSpinner className="w-5 h-5" />
           ) : (
             <Send className="w-5 h-5" />
           )}

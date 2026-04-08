@@ -11,6 +11,7 @@ import { useLongPress } from "@/components/hooks/useLongPress";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/context/ToastContext";
+import { PejaSpinner } from "../ui/PejaSpinner";
 
 interface Comment {
   id: string;
@@ -643,7 +644,7 @@ export function WatchCommentSheet({
                    onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
                  />
                  <button onClick={handleSubmit} disabled={submitting || !newComment.trim()} className="text-primary-500 disabled:opacity-50 font-medium text-sm">
-                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                   {submitting ? <PejaSpinner className="w-4 h-4" />: <Send className="w-4 h-4" />}
                  </button>
              </div>
         </div>

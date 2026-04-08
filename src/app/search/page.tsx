@@ -10,14 +10,13 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
-import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import {
   Search,
   X,
-  Loader2,
   SlidersHorizontal,
   MapPin,
 } from "lucide-react";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 function SearchContent() {
   // ============================================================
@@ -443,13 +442,13 @@ useEffect(() => {
             <div className="text-center py-12 text-dark-400">No posts yet.</div>
           ) : posts.length === 0 && loading ? (
             <div className="flex justify-center py-12">
-              <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
+              <PejaSpinner className="w-6 h-6" />
             </div>
           ) : (
             <div className="space-y-4">
               {loading && (
                 <div className="flex justify-center py-2">
-                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                  <PejaSpinner className="w-5 h-5" />
                 </div>
               )}
               <p className="text-sm text-dark-400">
@@ -478,7 +477,7 @@ useEffect(() => {
 function SearchLoading() {
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+      <PejaSpinner className="w-8 h-8" />
     </div>
   );
 }

@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import type { VIPUser } from "@/lib/types";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 // =====================================================
 // MAIN PAGE
@@ -293,7 +294,7 @@ return (
           <div className="max-h-[400px] overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-white/10">
             {vipSearchLoading ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+                <PejaSpinner className="w-5 h-5" />
                 <span className="ml-2 text-sm text-dark-400">Searching...</span>
               </div>
             ) : vipSearch.trim().length < 2 ? (
@@ -301,7 +302,7 @@ return (
                 <PejaAdminEntry userId={user.id} onSelect={startConversation} creating={creating} onlineUsers={onlineUsers} />
                 {allVipsLoading ? (
                   <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-5 h-5 text-primary-400 animate-spin" /><span className="ml-2 text-sm text-dark-400">Loading VIP members...</span>
+                    <PejaSpinner className="w-5 h-5" /><span className="ml-2 text-sm text-dark-400">Loading VIP members...</span>
                   </div>
                 ) : allVips.map((v) => (
                   <VipUserRow key={v.id} user={v} isOnline={onlineUsers.has(v.id)} creating={creating} onSelect={startConversation} />
@@ -432,7 +433,7 @@ function VipUserRow({ user, isOnline, creating, onSelect }: {
         </div>
         <p className="text-xs text-dark-500 truncate">{user.email}</p>
       </div>
-      {creating === user.id ? <Loader2 className="w-4 h-4 text-primary-400 animate-spin shrink-0" /> : <MessageCircle className="w-4 h-4 text-dark-500 shrink-0" />}
+      {creating === user.id ? <PejaSpinner className="w-7 h-7" />: <MessageCircle className="w-4 h-4 text-dark-500 shrink-0" />}
     </button>
   );
 }
@@ -467,7 +468,7 @@ function PejaAdminEntry({ userId, onSelect, creating, onlineUsers }: {
           <div className="flex items-center gap-1.5"><span className="text-sm font-semibold text-primary-300">Peja</span><Crown className="w-3.5 h-3.5 text-yellow-400" /></div>
           <p className="text-xs text-dark-400">Message the Peja team directly</p>
         </div>
-        {creating === adminUser.id ? <Loader2 className="w-4 h-4 text-primary-400 animate-spin shrink-0" /> : <MessageCircle className="w-4 h-4 text-primary-400 shrink-0" />}
+        {creating === adminUser.id ? <PejaSpinner className="w-7 h-7" /> : <MessageCircle className="w-4 h-4 text-primary-400 shrink-0" />}
       </button>
       <div className="border-b border-white/5 mt-3" />
       <p className="text-[11px] text-dark-500 uppercase tracking-wider font-bold px-1 mt-3 mb-2">VIP Members</p>

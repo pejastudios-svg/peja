@@ -19,12 +19,13 @@ import {
   Shield,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 const TrackingMap = dynamic(() => import("@/components/safety/TrackingMap"), {
   ssr: false,
   loading: () => (
     <div className="flex-1 flex items-center justify-center bg-dark-800">
-      <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+      <PejaSpinner className="w-8 h-8" />
     </div>
   ),
 });
@@ -167,7 +168,7 @@ useEffect(() => {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-dark-950">
         <div className="text-center">
-          <Loader2 className="w-10 h-10 text-primary-500 animate-spin mx-auto mb-3" />
+          <PejaSpinner className="w-10 h-10 mx-auto mb-3" />
           <p className="text-dark-400 text-sm">Loading location...</p>
         </div>
       </div>

@@ -14,6 +14,7 @@ import { Post } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 type AdminUserFull = {
   id: string;
@@ -431,8 +432,8 @@ useEffect(() => {
       </div>
 
       {postsLoading ? (
-        <div className="flex justify-center py-10">
-          <Loader2 className="w-7 h-7 text-primary-500 animate-spin" />
+        <div className="flex justify-center py-10"><PejaSpinner className="w-7 h-7" />
+          
         </div>
       ) : posts.length === 0 ? (
         <div className="glass-card text-center py-10">

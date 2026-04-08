@@ -6,6 +6,7 @@ import { Shield, ShieldCheck, ShieldOff, Copy, Check, Loader2, AlertTriangle, Sm
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export default function AdminSecurityPage() {
   const { session } = useAuth();
@@ -129,7 +130,7 @@ export default function AdminSecurityPage() {
     return (
       <HudShell title="Security" subtitle="Two-factor authentication settings">
         <div className="flex justify-center py-12">
-          <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+          <PejaSpinner className="w-8 h-8" />
         </div>
       </HudShell>
     );
@@ -173,7 +174,7 @@ export default function AdminSecurityPage() {
                 disabled={setupLoading}
                 className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-primary-600 hover:bg-primary-500 transition-colors flex items-center gap-2"
               >
-                {setupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Smartphone className="w-4 h-4" />}
+                {setupLoading ? <PejaSpinner className="w-4 h-4" />: <Smartphone className="w-4 h-4" />}
                 Enable
               </button>
             )}
@@ -268,7 +269,7 @@ export default function AdminSecurityPage() {
                 disabled={verifyCode.length < 6 || setupLoading}
                 className="w-full py-3 bg-primary-600 text-white rounded-xl font-semibold disabled:opacity-50 hover:bg-primary-500 transition-colors flex items-center justify-center gap-2"
               >
-                {setupLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {setupLoading ? <PejaSpinner className="w-4 h-4" /> : null}
                 Verify
               </button>
 
@@ -420,7 +421,7 @@ export default function AdminSecurityPage() {
                   disabled={disableCode.length < 6 || disableLoading}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-600 text-white disabled:opacity-40 hover:bg-red-500 transition-colors flex items-center justify-center gap-2"
                 >
-                  {disableLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {disableLoading ? <PejaSpinner className="w-4 h-4" /> : null}
                   Disable 2FA
                 </button>
               </div>

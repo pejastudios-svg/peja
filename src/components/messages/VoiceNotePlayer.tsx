@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Play, Pause, Loader2 } from "lucide-react";
+import { PejaSpinner } from "../ui/PejaSpinner";
 
 const NUM_BARS = 32;
 
@@ -341,7 +342,7 @@ export function VoiceNotePlayer({
         }`}
       >
         {isLoading && !isPlaying ? (
-          <Loader2 className="w-5 h-5 text-white/70 animate-spin" />
+          <PejaSpinner className="w-5 h-5" />
         ) : isPlaying ? (
           <Pause className="w-5 h-5 text-white fill-white" />
         ) : (

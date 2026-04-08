@@ -8,6 +8,7 @@ import { Mail, Lock, Eye, EyeOff, ArrowLeft, Loader2, ShieldCheck, KeyRound } fr
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStrength";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -155,7 +156,7 @@ export default function ForgotPasswordPage() {
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <PejaSpinner className="w-4 h-4 mr-2" />
                   Sending Code...
                 </>
               ) : (
@@ -256,7 +257,7 @@ export default function ForgotPasswordPage() {
             >
               {loading ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <PejaSpinner className="w-4 h-4 mr-2" />
                   Resetting...
                 </>
               ) : (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { PejaSpinner } from "./PejaSpinner";
 
 interface PullToRefreshProps {
   onRefresh: () => Promise<void>;
@@ -105,9 +105,7 @@ export function PullToRefresh({ onRefresh, children, className = "" }: PullToRef
               transition: pulling.current ? "none" : "all 0.25s ease",
             }}
           >
-            <Loader2
-              className={`w-6 h-6 text-primary-400 ${refreshing ? "animate-spin" : ""}`}
-            />
+            <PejaSpinner className="w-6 h-6" />
           </div>
         </div>
       )}

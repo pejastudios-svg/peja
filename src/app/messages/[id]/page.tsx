@@ -61,6 +61,7 @@ import {
 import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns";
 import type { Message, VIPUser, MessageMediaItem } from "@/lib/types";
 import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 // =====================================================
 // EMOJI DATA
@@ -1966,7 +1967,7 @@ const handleTouchEnd = () => {
       );
     }
     if (status === "sending") {
-      return <Loader2 className="w-3 h-3 text-white/30 animate-spin" />;
+      return <PejaSpinner className="w-3 h-3" />;
     }
     if (status === "failed") {
       return (
@@ -3036,7 +3037,7 @@ onTouchEnd={() => {
         }`}
       >
         <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
-          <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+          <PejaSpinner className="w-5 h-5" />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-xs text-white/60">Uploading image...</p>
@@ -3099,7 +3100,7 @@ onTouchEnd={() => {
         />
         <div className="absolute inset-0 flex items-center justify-center bg-black/20">
           <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
-            <Loader2 className="w-5 h-5 text-white animate-spin" />
+            <PejaSpinner className="w-5 h-5" />
           </div>
         </div>
         <div className="absolute bottom-2 left-2 right-2">
@@ -3116,7 +3117,7 @@ onTouchEnd={() => {
       }`}
     >
       <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
-        <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+        <PejaSpinner className="w-5 h-5" />
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs text-white/60">Uploading video...</p>
@@ -3141,7 +3142,7 @@ onTouchEnd={() => {
         }`}
       >
         <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
-          <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+          <PejaSpinner className="w-5 h-5" />
         </div>
         <div className="flex-1">
           <p className="text-xs text-white/60">Uploading voice note...</p>

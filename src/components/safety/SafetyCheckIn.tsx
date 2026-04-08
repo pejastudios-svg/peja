@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Radio,
 } from "lucide-react";
+import { PejaSpinner } from "../ui/PejaSpinner";
 
 interface CheckInContact {
   id: string;
@@ -620,7 +621,7 @@ if (checkingStatus) {
                 {starting && startPhase && (
                   <div className="mb-4 p-4 rounded-xl bg-primary-500/10 border border-primary-500/20 flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-primary-600/30 flex items-center justify-center shrink-0">
-                      <Loader2 className="w-4 h-4 text-primary-400 animate-spin" />
+                      <PejaSpinner className="w-4 h-4" />
                     </div>
                     <p className="text-sm text-primary-400 font-medium">{startPhase}</p>
                   </div>
@@ -637,7 +638,7 @@ if (checkingStatus) {
                   }}
                 >
                   {starting ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <PejaSpinner className="w-5 h-5" />
                   ) : (
                     <Shield className="w-5 h-5" />
                   )}

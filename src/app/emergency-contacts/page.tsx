@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 interface EmergencyContact {
   id: string;
@@ -414,7 +415,7 @@ export default function EmergencyContactsPage() {
                       disabled={respondingId === invite.id}
                       className="p-2 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded-lg transition-colors"
                     >
-                      {respondingId === invite.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      {respondingId === invite.id ?<PejaSpinner className="w-4 h-4" /> : <Check className="w-4 h-4" />}
                     </button>
                     <button
                       onClick={() => handleRespondToInvite(invite.id, false)}
@@ -492,7 +493,7 @@ export default function EmergencyContactsPage() {
                 )}
               </div>
 
-              {searching && <div className="flex justify-center py-4"><Loader2 className="w-5 h-5 text-primary-500 animate-spin" /></div>}
+              {searching && <div className="flex justify-center py-4"><PejaSpinner className="w-5 h-5" /></div>}
 
               {!searching && searchResults.length > 0 && (
                 <div className="mt-2 space-y-1 max-h-60 overflow-y-auto">

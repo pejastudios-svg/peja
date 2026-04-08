@@ -7,6 +7,7 @@ import {
   X, Search, MapPin, TrendingUp, ChevronRight, Loader2, 
   ArrowLeft, Clock, Calendar, BarChart3, PieChart, AlertTriangle 
 } from "lucide-react";
+import { PejaSpinner } from "../ui/PejaSpinner";
 
 interface Hotspot {
   area: string;
@@ -498,7 +499,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
         <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+              <PejaSpinner className="w-8 h-8" />
             </div>
           ) : filteredHotspots.length === 0 ? (
             <div className="text-center py-12">

@@ -14,12 +14,13 @@ import { useFeedCache } from "@/context/FeedContext";
 import { usePageCache } from "@/context/PageCacheContext";
 import DataAnalyticsPanel from "@/components/map/DataAnalyticsPanel";
 import { ChevronDown } from "lucide-react";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
   loading: () => (
     <div className="h-full flex items-center justify-center bg-dark-800">
-      <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+      <PejaSpinner className="w-8 h-8" />
     </div>
   ),
 });
@@ -544,7 +545,7 @@ export default function MapClient() {
 className={`absolute right-4 z-1000 transition-all duration-300 ${showList ? "bottom-[calc(60%+0.5rem)]" : "bottom-[68px]"} p-3 glass-float rounded-full shadow-lg hover:bg-white/10`}
           >
             {gettingLocation ? (
-              <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+              <PejaSpinner className="w-5 h-5" />
             ) : (
               <Navigation className="w-5 h-5 text-primary-400" />
             )}

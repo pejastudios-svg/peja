@@ -28,6 +28,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Post } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export default function ProfilePage() {
   // ============================================================
@@ -579,7 +580,7 @@ export default function ProfilePage() {
                     >
                       {deleting ? (
                         <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <PejaSpinner className="w-4 h-4" />
                           Deleting...
                         </>
                       ) : (

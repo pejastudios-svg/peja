@@ -32,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 interface Notification {
   id: string;
@@ -461,8 +462,8 @@ export default function NotificationsPage() {
             ) : (
               <div className="space-y-2">
                 {loading && (
-                  <div className="flex justify-center py-2">
-                    <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                  <div className="flex justify-center py-2"><PejaSpinner className="w-5 h-5" />
+                    
                   </div>
                 )}
                 {notifications.map((notification) => (
@@ -592,7 +593,7 @@ export default function NotificationsPage() {
                   disabled={responding !== null}
                   leftIcon={
                     responding === "decline" ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <PejaSpinner className="w-4 h-4" />
                     ) : (
                       <X className="w-4 h-4" />
                     )
@@ -607,7 +608,7 @@ export default function NotificationsPage() {
                   disabled={responding !== null}
                   leftIcon={
                     responding === "accept" ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <PejaSpinner className="w-4 h-4" />
                     ) : (
                       <Check className="w-4 h-4" />
                     )

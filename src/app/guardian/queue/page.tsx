@@ -30,6 +30,7 @@ import { formatDistanceToNow } from "date-fns";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { CATEGORIES } from "@/lib/types";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 interface PostData {
   id: string;
@@ -407,7 +408,7 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
         <div className="space-y-3">
           {loading && (
             <div className="flex justify-center py-2">
-              <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+             <PejaSpinner className="w-5 h-5" />
             </div>
           )}
           {visibleItems.map((item) => {

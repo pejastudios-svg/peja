@@ -13,6 +13,7 @@ import GlowButton from "@/components/dashboard/GlowButton";
 import type { MapHelper } from "@/components/admin/AdminLiveMap";
 import { useRouter } from "next/navigation";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 import {
   AreaChart,
@@ -59,7 +60,7 @@ const AdminLiveMap = dynamic(() => import("@/components/admin/AdminLiveMap"), {
   ssr: false,
   loading: () => (
     <div className="h-full flex items-center justify-center bg-dark-900 rounded-xl">
-      <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
+      <PejaSpinner className="w-6 h-6" />
     </div>
   ),
 });
@@ -1443,7 +1444,7 @@ const res = await fetch("/api/sos-helpers", {
             onClick={() => window.location.reload()}
             className="h-9 text-xs"
           >
-            <Loader2 className="w-3 h-3 mr-1.5 inline" /> Refresh
+            <PejaSpinner className="w-3 h-3 mr-1.5 inline" /> Refresh
           </GlowButton>
         </div>
       }
@@ -2055,7 +2056,7 @@ const res = await fetch("/api/sos-helpers", {
               }}
             >
               {reportLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <PejaSpinner className="w-4 h-4" />
               ) : (
                 <>
                   <Download className="w-4 h-4" />
@@ -2134,7 +2135,7 @@ const res = await fetch("/api/sos-helpers", {
         <div className="space-y-1.5 max-h-[600px] overflow-y-auto scrollbar-hide">
           {activityLoading && activityLog.length === 0 ? (
             <div className="flex justify-center py-12">
-              <Loader2 className="w-6 h-6 text-primary-500 animate-spin" />
+              <PejaSpinner className="w-6 h-6" />
             </div>
           ) : (() => {
             const filtered = activityLog.filter((e) => {

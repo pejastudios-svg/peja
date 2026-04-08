@@ -14,6 +14,7 @@ import GlowButton from "@/components/dashboard/GlowButton";
 import { ChevronDown } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 
 interface AdminUser {
@@ -278,7 +279,7 @@ const deleteUser = async (userId: string, userName: string) => {
             <div className="space-y-2">
               {loading && (
                 <div className="flex justify-center py-2">
-                  <Loader2 className="w-5 h-5 text-primary-500 animate-spin" />
+                  <PejaSpinner className="w-5 h-5" />
                 </div>
               )}
               {filteredUsers.map((user) => (
@@ -460,7 +461,7 @@ const deleteUser = async (userId: string, userName: string) => {
                 >
                   {deleting ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <PejaSpinner className="w-4 h-4" />
                       Deleting...
                     </>
                   ) : (

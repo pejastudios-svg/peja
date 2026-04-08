@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -261,7 +262,7 @@ export default function EditProfilePage() {
               )}
               {uploadingAvatar && (
                 <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                  <Loader2 className="w-6 h-6 text-white animate-spin" />
+                  <PejaSpinner className="w-6 h-6" />
                 </div>
               )}
             </div>

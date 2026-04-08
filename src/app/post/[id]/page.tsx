@@ -25,6 +25,7 @@ import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { apiUrl } from "@/lib/api";
 import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
 import { shareUrl } from "@/lib/share";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 import {
   ArrowLeft,
@@ -1560,7 +1561,7 @@ if (error || !post) {
               className="p-2.5 bg-primary-600 rounded-xl text-white disabled:opacity-50 shrink-0"
             >
               {submittingComment ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <PejaSpinner className="w-5 h-5" />
               ) : (
                 <Send className="w-5 h-5" />
               )}

@@ -30,6 +30,7 @@ import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
 import { notifyUsersAboutIncident } from "@/lib/notifications";
 import { PostLoadingAnimation } from "@/components/posts/PostLoadingAnimation";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 // Category icon mapping
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -754,7 +755,7 @@ setToast("Processing video...");
               }}
             >
               {locationLoading ? (
-                <Loader2 className="w-5 h-5 text-primary-400 animate-spin" />
+                <PejaSpinner className="w-5 h-5" />
               ) : (
                 <Crosshair className={`w-5 h-5 ${location ? "text-green-400" : "text-primary-400"}`} />
               )}
@@ -952,7 +953,7 @@ setToast("Processing video...");
         >
           {isLoading ? (
             <div className="flex items-center justify-center gap-2">
-              <Loader2 className="w-5 h-5 animate-spin" />
+              <PejaSpinner className="w-5 h-5" />
               Uploading... {uploadProgress}%
             </div>
           ) : (
