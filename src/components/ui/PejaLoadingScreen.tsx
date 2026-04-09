@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export function PejaLoadingScreen() {
   const [phase, setPhase] = useState(0);
@@ -148,38 +149,15 @@ export function PejaLoadingScreen() {
         </span>
       </div>
 
-      {/* Loading dots */}
+    {/* Loading spinner */}
       <div
-        className="flex gap-2 mt-5"
+        className="mt-5"
         style={{
           opacity: phase >= 3 ? 1 : 0,
           transition: "opacity 0.4s ease-out 0.2s",
         }}
       >
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="rounded-full"
-            style={{
-              width: 6,
-              height: 6,
-              background:
-                i === 0
-                  ? "#22c55e"
-                  : i === 1
-                  ? "#3b82f6"
-                  : "#c026d3",
-              boxShadow: `0 0 8px ${
-                i === 0
-                  ? "rgba(34,197,94,0.6)"
-                  : i === 1
-                  ? "rgba(59,130,246,0.6)"
-                  : "rgba(192,38,211,0.6)"
-              }`,
-              animation: `peja-load-dot 1.4s ease-in-out ${i * 0.2}s infinite`,
-            }}
-          />
-        ))}
+        <PejaSpinner className="w-8 h-8" />
       </div>
     </div>
   );

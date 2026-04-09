@@ -5,6 +5,8 @@ import { ChevronLeft } from "lucide-react";
 import { Portal } from "@/components/ui/Portal";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/context/AuthContext";
+import { recordPostView } from "@/lib/postViews";
 
 export type MediaItem = { url: string; type: "image" | "video" };
 
@@ -32,30 +34,10 @@ export function ImageLightbox({
     return [];
   }, [items, imageUrl]);
 
-  const viewedRef = useRef<Set<string>>(new Set());
-
-const incrementView = async (id: string) => {
-  // Prevent duplicate views in this session
-  if (viewedRef.current.has(id)) return;
-  viewedRef.current.add(id);
-  
-  try {
-    // Get current view count
-    const { data: post } = await supabase
-      .from("posts")
-      .select("views")
-      .eq("id", id)
-      .single();
-    
-    if (post) {
-      await supabase
-        .from("posts")
-        .update({ views: (post.views || 0) + 1 })
-        .eq("id", id);
-    }
-  } catch (e) {
-  }
-};
+const { user } = useAuth();
+  const incrementView = (id: string) => {
+    recordPostView(id, user?.id);
+  };
 
   const [index, setIndex] = useState(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);

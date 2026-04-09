@@ -51,6 +51,7 @@ import {
   Play,
   Copy,
 } from "lucide-react";
+import { recordPostView } from "@/lib/postViews";
 
 interface CommentMedia {
   id: string;
@@ -412,8 +413,8 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
 
         confirmCtx.loadConfirmedFor([postId]);
 
-        // Update views (fire and forget)
-        supabase.from("posts").update({ views: (data.views || 0) + 1 }).eq("id", postId).then(() => {});
+// Record unique view
+        recordPostView(postId, user?.id);
         
         setLoading(false);
       } catch (err) {

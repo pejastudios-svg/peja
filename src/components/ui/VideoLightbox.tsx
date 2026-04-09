@@ -10,6 +10,8 @@ import { supabase } from "@/lib/supabase";
 import { getVideoThumbnailUrl, getOptimizedVideoUrl, generateVideoThumbnail, getCachedVideoUrl } from "@/lib/videoThumbnail";
 import { useHlsPlayer } from "@/hooks/useHlsPlayer";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { recordPostView } from "@/lib/postViews";
+import { useAuth } from "@/context/AuthContext";
 
 export function VideoLightbox({
   isOpen,
@@ -41,6 +43,7 @@ export function VideoLightbox({
   const [showPoster, setShowPoster] = useState(true);
     const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
     const cachedPosterRef = useRef<string | null>(null);
+    const { user } = useAuth();
   const [videoBuffering, setVideoBuffering] = useState(true);
   const [animPhase, setAnimPhase] = useState<"idle" | "enter" | "open" | "exit">("idle");
   const exitTransformRef = useRef("scale(0.88)");
@@ -56,25 +59,8 @@ export function VideoLightbox({
 
   const fadeTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  const incrementView = async (id: string) => {
-    if (viewedRef.current.has(id)) return;
-    viewedRef.current.add(id);
-
-    try {
-      const { data: post } = await supabase
-        .from("posts")
-        .select("views")
-        .eq("id", id)
-        .single();
-
-      if (post) {
-        await supabase
-          .from("posts")
-          .update({ views: (post.views || 0) + 1 })
-          .eq("id", id);
-      }
-    } catch (e) {
-    }
+const incrementView = (id: string) => {
+    recordPostView(id, user?.id);
   };
 
   // Get effective start data from handoff
