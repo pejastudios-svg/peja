@@ -128,7 +128,7 @@ export default function GuardianInAppToasts({ onNewNotification }: Props) {
 
   return (
     <div
-      className="fixed left-0 right-0 z-[100000] flex justify-center px-4"
+      className="fixed left-0 right-0 z-[9999999] flex justify-center px-4"
       style={{ top: "calc(70px + env(safe-area-inset-top, 0px))" }}
     >
       <div className="w-full max-w-md space-y-2">

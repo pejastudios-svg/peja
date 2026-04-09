@@ -170,7 +170,7 @@ export default function InAppNotificationToasts() {
 
   return (
     <div
-      className="fixed left-0 right-0 z-[200000] flex justify-center px-3"
+      className="fixed left-0 right-0 z-[9999999] flex justify-center px-3"
       style={{ top: "calc(64px + env(safe-area-inset-top, 0px) + 8px)" }}
     >
       <div className="w-full max-w-md space-y-2">

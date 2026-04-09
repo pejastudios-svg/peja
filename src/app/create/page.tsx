@@ -31,6 +31,7 @@ import { CATEGORIES } from "@/lib/types";
 import { notifyUsersAboutIncident } from "@/lib/notifications";
 import { PostLoadingAnimation } from "@/components/posts/PostLoadingAnimation";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 // Category icon mapping
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -157,6 +158,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     }
     handleGetLocation();
   }, [user, authLoading, router]);
+  useScrollFreeze(showPreview);
 
   if (authLoading) {
     return (

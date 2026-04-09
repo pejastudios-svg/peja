@@ -1,6 +1,6 @@
 // Peja Service Worker - Aggressive App Shell Caching
-const CACHE_NAME = "peja-v1";
-const APP_SHELL_CACHE = "peja-shell-v1";
+const CACHE_NAME = "peja-v2";
+const APP_SHELL_CACHE = "peja-shell-v2";
 const DATA_CACHE = "peja-data-v1";
 
 // App shell files to pre-cache on install
@@ -16,6 +16,7 @@ const APP_SHELL = [
   "/signup/",
   "/settings/",
   "/offline.html",
+  "https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png",
 ];
 
 // Patterns that should be cached aggressively (static assets)
@@ -116,6 +117,29 @@ self.addEventListener("fetch", (event) => {
             if (response.ok && response.status === 200) {
               const clone = response.clone();
               caches.open("peja-video-v1").then((cache) => cache.put(request, clone));
+            }
+            return response;
+          })
+          .catch(() => new Response("", { status: 408 }));
+      })
+    );
+    return;
+  }
+
+  // External images (avatars, thumbnails): cache-first
+  if (
+    url.pathname.match(/\.(png|jpg|jpeg|webp|gif|svg)$/) ||
+    url.hostname.includes("ui-avatars.com") ||
+    url.hostname.includes("res.cloudinary.com") && url.pathname.includes("/image/")
+  ) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request)
+          .then((response) => {
+            if (response.ok) {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
             }
             return response;
           })

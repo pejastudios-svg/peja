@@ -18,12 +18,12 @@ interface HeaderProps {
 
 // Dark-mode liquid glass: light enough to show distortion, dark enough to read icons
 const GLASS: React.CSSProperties = {
-  background: "rgba(40, 30, 60, 0.45)",
+  background: "rgba(50, 25, 80, 0.6)",
   backdropFilter: "blur(50px) saturate(180%)",
   WebkitBackdropFilter: "blur(50px) saturate(180%)",
-  border: "1px solid rgba(255, 255, 255, 0.12)",
+  border: "1px solid rgba(139, 92, 246, 0.15)",
   boxShadow:
-    "0 2px 20px rgba(0, 0, 0, 0.25), inset 0 0.5px 0 rgba(255, 255, 255, 0.1)",
+    "0 2px 20px rgba(0, 0, 0, 0.25), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)",
   borderRadius: "16px",
 };
 

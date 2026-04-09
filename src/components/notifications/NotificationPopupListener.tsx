@@ -236,7 +236,7 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
   };
 
   return (
-    <div className="fixed bottom-4 right-4 z-[100000] max-w-sm animate-[slideUp_200ms_ease-out]">
+    <div className="fixed bottom-4 right-4 z-[9999999] max-w-sm animate-[slideUp_200ms_ease-out]">
       <div className="bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
         <div className="flex items-start gap-3 px-4 py-3">
           <div className="p-2 rounded-xl bg-dark-800 shrink-0">{getIcon()}</div>
