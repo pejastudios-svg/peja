@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import { Portal } from "@/components/ui/Portal";
 import { InlineVideo } from "@/components/reels/InlineVideo";
-import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { recordPostView } from "@/lib/postViews";
 

@@ -24,7 +24,7 @@ export function getVideoThumbnailUrl(videoUrl: string): string | null {
     const pathWithVersion = versionMatch[1];
     const jpgPath = pathWithVersion.replace(/\.[^.]+$/, ".jpg");
 
-    return `${base}/video/upload/so_0,w_480,h_480,c_limit,f_jpg,q_auto/${jpgPath}`;
+    return `${base}/video/upload/so_0,w_480,h_480,c_limit,f_jpg,q_auto:low/${jpgPath}`;
   } catch {
     return null;
   }
@@ -62,10 +62,9 @@ export function getOptimizedVideoUrl(videoUrl: string): string {
 
     const pathWithVersion = versionMatch[1];
 
-    // Fast-start MP4: moov atom at beginning, h264 baseline for fast decode,
-    // lower resolution on mobile for instant playback
-    const width = isMobile ? 480 : 720;
-    return `${base}/video/upload/w_${width},c_limit,q_auto:low,vc_h264:baseline,ac_aac,f_mp4,fl_fast_start/${pathWithVersion}`;
+// Fast-start MP4: moov atom at beginning, h264 baseline for fast decode
+    const width = isMobile ? 640 : 720;
+    return `${base}/video/upload/w_${width},c_limit,q_auto:eco,vc_h264:baseline,ac_aac,br_1500k,f_mp4,fl_fast_start/${pathWithVersion}`;
   } catch {
     return videoUrl;
   }

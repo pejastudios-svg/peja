@@ -18,7 +18,7 @@ import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import { apiUrl } from "@/lib/api";
 import { PejaLoadingScreen } from "@/components/ui/PejaLoadingScreen";
 import { usePageCache } from "@/context/PageCacheContext";
-import { preloadFeedVideos } from "@/lib/videoThumbnail";
+import { preloadFeedVideos, getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 type FeedTab = "nearby" | "trending";
@@ -105,7 +105,14 @@ export default function Home() {
       preloadFeedVideos(posts);
     }
   }, []);
-
+posts.forEach((p: any) => {
+        p.media?.forEach((m: any) => {
+          if (m.media_type === "video") {
+            const thumb = m.thumbnail_url || getVideoThumbnailUrl(m.url);
+            if (thumb) { const img = new Image(); img.src = thumb; }
+          }
+        });
+      });
   // ── Stable refs: prevent fetchPosts from being recreated on every
   //    auth / confirm context update ──
   const userRef = useRef(user);
@@ -346,6 +353,17 @@ export default function Home() {
         setPosts(finalPosts);
         feedCache.setPosts(feedKey, finalPosts);
         preloadFeedVideos(finalPosts);
+
+        // Preload video thumbnails
+        finalPosts.forEach((p: any) => {
+          p.media?.forEach((m: any) => {
+            if (m.media_type === "video") {
+              const thumb = m.thumbnail_url || getVideoThumbnailUrl(m.url);
+              if (thumb) { const img = new Image(); img.src = thumb; }
+            }
+          });
+        });
+        
       } catch (err) {
         // ── Never wipe posts the user can already see ──
       } finally {

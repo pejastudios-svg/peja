@@ -48,6 +48,17 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   const [showSensitive, setShowSensitive] = useState(false);
   const [showFullComment, setShowFullComment] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  // Preload video thumbnails eagerly
+  useEffect(() => {
+    const videos = post.media?.filter(m => m.media_type === "video") || [];
+    videos.forEach(v => {
+      const thumbUrl = v.thumbnail_url || getVideoThumbnailUrl(v.url);
+      if (thumbUrl) {
+        const img = new Image();
+        img.src = thumbUrl;
+      }
+    });
+  }, [post.media]);
   const [videoStartTime, setVideoStartTime] = useState(0);
   const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
   const [showLightboxOptions, setShowLightboxOptions] = useState(false);

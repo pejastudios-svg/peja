@@ -65,10 +65,16 @@ export function CapacitorBackButton() {
             router.back();
             return;
           }
-          if (canGoBack) {
+         if (canGoBack) {
             router.back();
             return;
           }
+          // If not on home page and can't go back, go home
+          if (window.location.pathname !== "/") {
+            router.push("/");
+            return;
+          }
+          // On home page with no history - double tap to exit
           const now = Date.now();
           if (now - lastBackPress < 2000) {
             App.exitApp();
