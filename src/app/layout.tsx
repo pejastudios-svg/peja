@@ -81,7 +81,7 @@ export default function RootLayout({
         />
         <script dangerouslySetInnerHTML={{ __html: `
           (function() {
-            var APP_VERSION = "2.1.0";
+            var APP_VERSION = "${process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || Date.now()}";
             var stored = localStorage.getItem("peja-app-version");
             if (stored && stored !== APP_VERSION) {
               localStorage.setItem("peja-app-version", APP_VERSION);
