@@ -1,3 +1,4 @@
+
 // Peja Service Worker - Aggressive App Shell Caching
 const CACHE_NAME = "peja-v2";
 const APP_SHELL_CACHE = "peja-shell-v2";
@@ -36,8 +37,9 @@ const NO_CACHE_PATTERNS = [
   /firebase/,
 ];
 
-// Install: pre-cache app shell
+// Install: pre-cache app shell + skip waiting to activate immediately
 self.addEventListener("install", (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches
       .open(APP_SHELL_CACHE)

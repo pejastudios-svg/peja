@@ -79,6 +79,26 @@ export default function RootLayout({
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
           crossOrigin=""
         />
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            var APP_VERSION = "2.1.0";
+            var stored = localStorage.getItem("peja-app-version");
+            if (stored && stored !== APP_VERSION) {
+              localStorage.setItem("peja-app-version", APP_VERSION);
+              if ("caches" in window) {
+                caches.keys().then(function(names) {
+                  names.forEach(function(name) { caches.delete(name); });
+                }).then(function() {
+                  window.location.reload();
+                });
+              } else {
+                window.location.reload();
+              }
+            } else if (!stored) {
+              localStorage.setItem("peja-app-version", APP_VERSION);
+            }
+          })();
+        `}} />
       </head>
       <body className={`${poppins.variable} font-sans antialiased`}>
         <ToastProvider>

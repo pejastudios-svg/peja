@@ -18,6 +18,24 @@ export function CapacitorInit() {
     if (!isAndroidWebView && !isCapacitorBridge) return;
 
     setIsCapacitor(true);
+    
+    // Force clear WebView cache to ensure latest version loads
+    if ("caches" in window) {
+      caches.keys().then((names) => {
+        names.forEach((name) => {
+          if (!name.includes("peja-v2") && !name.includes("peja-shell-v2")) {
+            caches.delete(name);
+          }
+        });
+      });
+    }
+    // Force service worker update
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        registrations.forEach((reg) => reg.update());
+      });
+    }
+
     // Hide splash screen now that the app has loaded
 import("@capacitor/splash-screen")
   .then(({ SplashScreen }) => SplashScreen.hide({ fadeOutDuration: 300 }))
