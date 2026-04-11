@@ -99,6 +99,21 @@ export default function Home() {
   });
 
   const [refreshing, setRefreshing] = useState(false);
+  // Cache of the other tab's posts for smooth swiping
+  const [nearbyPosts, setNearbyPosts] = useState<Post[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get("home:nearby");
+      if (cached?.posts?.length) return cached.posts;
+    }
+    return [];
+  });
+  const [trendingPosts, setTrendingPosts] = useState<Post[]>(() => {
+    if (typeof window !== "undefined") {
+      const cached = feedCache.get("home:trending");
+      if (cached?.posts?.length) return cached.posts;
+    }
+    return [];
+  });
   // Swipe state
   const swipeStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
@@ -188,6 +203,8 @@ posts.forEach((p: any) => {
       const cached = feedCache.get(key);
       if (cached?.posts?.length) {
         setPosts(cached.posts);
+        if (key === "home:nearby") setNearbyPosts(cached.posts);
+        else if (key === "home:trending") setTrendingPosts(cached.posts);
         setLoading(false);
       }
     },
@@ -402,6 +419,8 @@ posts.forEach((p: any) => {
         confirmRef.current.loadConfirmedFor(finalPosts.map((p) => p.id));
 
         setPosts(finalPosts);
+        if (feedKey === "home:nearby") setNearbyPosts(finalPosts);
+        else if (feedKey === "home:trending") setTrendingPosts(finalPosts);
         feedCache.setPosts(feedKey, finalPosts);
         preloadFeedVideos(finalPosts);
 
@@ -701,7 +720,7 @@ posts.forEach((p: any) => {
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-<div className="flex items-center justify-center gap-2 mb-4" data-tutorial="home-nearby">
+<div className="flex items-center justify-center gap-1 mb-4 relative" data-tutorial="home-nearby">
             <Button
               variant={activeTab === "nearby" ? "primary" : "secondary"}
               size="sm"
@@ -725,39 +744,76 @@ posts.forEach((p: any) => {
               Trending
             </Button>
           </div>
-          <div
-            style={{
-              transform: `translateX(${swipeOffset}px)`,
-              transition: isSwiping ? "none" : "transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)",
-              willChange: isSwiping ? "transform" : "auto",
-            }}
-          >
-          {loading && posts.length === 0 ? (
-            <div className="space-y-4" data-tutorial="home-feed">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <PostCardSkeleton key={i} />
-              ))}
+         <div className="overflow-hidden">
+            <div
+              className="flex"
+              style={{
+                width: "200%",
+                transform: `translateX(calc(${activeTab === "trending" ? "-50%" : "0%"} + ${swipeOffset}px))`,
+                transition: isSwiping ? "none" : "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+                willChange: isSwiping ? "transform" : "auto",
+              }}
+            >
+              {/* Nearby feed */}
+              <div className="w-1/2 min-w-0 px-0">
+                {loading && nearbyPosts.length === 0 && activeTab === "nearby" ? (
+                  <div className="space-y-4" data-tutorial="home-feed">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <PostCardSkeleton key={`nearby-skel-${i}`} />
+                    ))}
+                  </div>
+                ) : nearbyPosts.length === 0 ? (
+                  <div className="text-center py-12 text-dark-400">No nearby posts yet.</div>
+                ) : (
+                  <div className="space-y-4" data-tutorial="home-feed">
+                    {refreshing && activeTab === "nearby" && (
+                      <div className="flex justify-center py-2">
+                        <PejaSpinner className="w-5 h-5" />
+                      </div>
+                    )}
+                    {nearbyPosts.map((post) => (
+                      <PostCard
+                        key={`nearby-${post.id}`}
+                        post={post}
+                        sourceKey="home:nearby"
+                        onConfirm={() => {}}
+                        onShare={() => {}}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Trending feed */}
+              <div className="w-1/2 min-w-0 px-0">
+                {loading && trendingPosts.length === 0 && activeTab === "trending" ? (
+                  <div className="space-y-4">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <PostCardSkeleton key={`trend-skel-${i}`} />
+                    ))}
+                  </div>
+                ) : trendingPosts.length === 0 ? (
+                  <div className="text-center py-12 text-dark-400">No trending posts yet.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {refreshing && activeTab === "trending" && (
+                      <div className="flex justify-center py-2">
+                        <PejaSpinner className="w-5 h-5" />
+                      </div>
+                    )}
+                    {trendingPosts.map((post) => (
+                      <PostCard
+                        key={`trend-${post.id}`}
+                        post={post}
+                        sourceKey="home:trending"
+                        onConfirm={() => {}}
+                        onShare={() => {}}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
-          ) : posts.length === 0 ? (
-            <div className="text-center py-12">No posts yet.</div>
-          ) : (
-            <div className="space-y-4" data-tutorial="home-feed">
-              {refreshing && (
-                <div className="flex justify-center py-2">
-                 <PejaSpinner className="w-5 h-5" />
-                </div>
-              )}
-              {posts.map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  sourceKey={feedKey}
-                  onConfirm={() => {}}
-                  onShare={() => {}}
-                />
-              ))}
-            </div>
-          )}
           </div>
         </div>
       </main>
