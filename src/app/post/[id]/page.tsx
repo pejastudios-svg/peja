@@ -1278,7 +1278,7 @@ if (error || !post) {
             {showOptions && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowOptions(false)} />
-                <div className="absolute right-0 top-full mt-1 w-44 glass-strong rounded-xl p-1.5 z-50 shadow-lg">
+                <div className="absolute right-0 top-full mt-1 w-44 glass-strong rounded-xl p-1.5 z-50 shadow-lg animate-bounce-in">
                   <button onClick={() => { handleShare(); setShowOptions(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-dark-200 text-sm">
                     <Share2 className="w-4 h-4" /> Share
                   </button>
