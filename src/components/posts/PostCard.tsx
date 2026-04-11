@@ -227,23 +227,23 @@ const handleShareClick = async (e: React.MouseEvent) => {
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
+       <div className="flex items-center gap-2 min-w-0 flex-1">
           {!isExpired ? (
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5 shrink-0">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
               <span className="text-xs font-medium text-red-400">LIVE</span>
             </span>
           ) : (
-            <span className="w-2 h-2 bg-dark-500 rounded-full" />
+            <span className="w-2 h-2 bg-dark-500 rounded-full shrink-0" />
           )}
-          <span className="text-dark-600">|</span>
+          <span className="text-dark-600 shrink-0">|</span>
           <span className="text-xs text-dark-400 flex items-center gap-1 min-w-0">
             <MapPin className="w-3 h-3 shrink-0" />
             <span className="truncate">{post.address || "Unknown location"}</span>
           </span>
         </div>
-        <span className="text-xs text-dark-500 flex items-center gap-1">
-          <Clock className="w-3 h-3" />
+        <span className="text-xs text-dark-500 flex items-center gap-1 shrink-0 ml-2">
+          <Clock className="w-3 h-3 shrink-0" />
           {timeAgo}
         </span>
       </div>
