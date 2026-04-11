@@ -2583,3 +2583,12 @@ video {
     border-color: rgba(34, 197, 94, 0.8);
   }
 }
+
+/* Hide scrollbar on main feed */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

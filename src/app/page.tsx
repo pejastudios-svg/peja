@@ -124,28 +124,31 @@ export default function Home() {
     setIsSwiping(false);
   }, []);
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+ const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!swipeStartRef.current) return;
     const dx = e.touches[0].clientX - swipeStartRef.current.x;
     const dy = e.touches[0].clientY - swipeStartRef.current.y;
     
-    // Only horizontal swipe (not vertical scroll)
+    // First 10px determines direction
+    if (!isSwiping && Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+    
+    // If vertical wins, cancel swipe entirely
     if (!isSwiping && Math.abs(dy) > Math.abs(dx)) {
       swipeStartRef.current = null;
       return;
     }
     
-    if (Math.abs(dx) > 10) {
-      setIsSwiping(true);
-      // Limit swipe range and add resistance at edges
-      const maxSwipe = window.innerWidth * 0.4;
-      const limited = Math.max(-maxSwipe, Math.min(maxSwipe, dx));
-      // Add resistance when swiping in a direction that has no tab
-      if ((activeTab === "nearby" && dx > 0) || (activeTab === "trending" && dx < 0)) {
-        setSwipeOffset(limited * 0.2); // Rubber band effect
-      } else {
-        setSwipeOffset(limited);
-      }
+    // Horizontal swipe detected - lock it
+    setIsSwiping(true);
+    e.preventDefault(); // Prevent vertical scroll
+    
+    const maxSwipe = window.innerWidth * 0.5;
+    const limited = Math.max(-maxSwipe, Math.min(maxSwipe, dx));
+    
+    if ((activeTab === "nearby" && dx > 0) || (activeTab === "trending" && dx < 0)) {
+      setSwipeOffset(limited * 0.15);
+    } else {
+      setSwipeOffset(limited);
     }
   }, [activeTab, isSwiping]);
 
@@ -694,12 +697,26 @@ posts.forEach((p: any) => {
     return <PejaLoadingScreen />;
   }
 
+  // Calculate tab blend ratio for swipe animation (0 = nearby active, 1 = trending active)
+  const swipeProgress = (() => {
+    const base = activeTab === "trending" ? 1 : 0;
+    if (!isSwiping || swipeOffset === 0) return base;
+    const screenW = typeof window !== "undefined" ? window.innerWidth : 400;
+    const delta = -swipeOffset / (screenW * 0.5); // negative because swipe left = go right
+    return Math.max(0, Math.min(1, base + delta));
+  })();
+
+  const nearbyColor = `rgba(124, 58, 237, ${1 - swipeProgress * 0.7})`;
+  const nearbyBg = `rgba(124, 58, 237, ${0.15 + (1 - swipeProgress) * 0.15})`;
+  const trendingColor = `rgba(124, 58, 237, ${0.3 + swipeProgress * 0.7})`;
+  const trendingBg = `rgba(124, 58, 237, ${0.15 + swipeProgress * 0.15})`;
+
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header onCreateClick={() => router.push("/create")} />
 
       <PullToRefresh onRefresh={handleRefresh}>
-      <main className="pt-14">
+      <main className="pt-14 hide-scrollbar">
         {user && !user.occupation && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
             <div className="glass-card p-4 flex items-center justify-between">
@@ -719,30 +736,41 @@ posts.forEach((p: any) => {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          style={{ touchAction: isSwiping ? "none" : "pan-y" }}
         >
 <div className="flex items-center justify-center gap-1 mb-4 relative" data-tutorial="home-nearby">
-            <Button
-              variant={activeTab === "nearby" ? "primary" : "secondary"}
-              size="sm"
+          <button
               onClick={() => {
                 setActiveTab("nearby");
                 applyCachedFeed("home:nearby");
               }}
-              leftIcon={<MapPin className="w-4 h-4" />}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+              style={{
+                background: nearbyBg,
+                color: nearbyColor,
+                border: `1px solid rgba(124, 58, 237, ${(1 - swipeProgress) * 0.3})`,
+                transition: isSwiping ? "none" : "all 0.35s ease",
+              }}
             >
+              <MapPin className="w-4 h-4" />
               Nearby
-            </Button>
-            <Button
-              variant={activeTab === "trending" ? "primary" : "secondary"}
-              size="sm"
+            </button>
+            <button
               onClick={() => {
                 setActiveTab("trending");
                 applyCachedFeed("home:trending");
               }}
-              leftIcon={<TrendingUp className="w-4 h-4" />}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+              style={{
+                background: trendingBg,
+                color: trendingColor,
+                border: `1px solid rgba(124, 58, 237, ${swipeProgress * 0.3})`,
+                transition: isSwiping ? "none" : "all 0.35s ease",
+              }}
             >
+              <TrendingUp className="w-4 h-4" />
               Trending
-            </Button>
+            </button>
           </div>
          <div className="overflow-hidden">
             <div
