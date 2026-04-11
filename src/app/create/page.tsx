@@ -197,11 +197,11 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
         if (addr.neighbourhood) parts.push(addr.neighbourhood);
         if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
         if (addr.state) parts.push(addr.state);
-        return parts.length > 0 ? parts.join(", ") : "Location found";
+        return parts.length > 0 ? parts.join(", ") : `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
       }
-      return "Location found";
+      return `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
     } catch {
-      return "Location found";
+      return `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
     }
   };
 
@@ -946,7 +946,7 @@ setToast("Processing video...");
             }
             setShowPreview(true);
           }}
-          disabled={isLoading || submitted || !category}
+          disabled={isLoading || submitted || !category || media.length === 0}
           className="w-full py-3.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:hover:scale-100"
           style={{
             background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",

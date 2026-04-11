@@ -99,6 +99,57 @@ export default function Home() {
   });
 
   const [refreshing, setRefreshing] = useState(false);
+  // Swipe state
+  const swipeStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: Date.now() };
+    setIsSwiping(false);
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!swipeStartRef.current) return;
+    const dx = e.touches[0].clientX - swipeStartRef.current.x;
+    const dy = e.touches[0].clientY - swipeStartRef.current.y;
+    
+    // Only horizontal swipe (not vertical scroll)
+    if (!isSwiping && Math.abs(dy) > Math.abs(dx)) {
+      swipeStartRef.current = null;
+      return;
+    }
+    
+    if (Math.abs(dx) > 10) {
+      setIsSwiping(true);
+      // Limit swipe range and add resistance at edges
+      const maxSwipe = window.innerWidth * 0.4;
+      const limited = Math.max(-maxSwipe, Math.min(maxSwipe, dx));
+      // Add resistance when swiping in a direction that has no tab
+      if ((activeTab === "nearby" && dx > 0) || (activeTab === "trending" && dx < 0)) {
+        setSwipeOffset(limited * 0.2); // Rubber band effect
+      } else {
+        setSwipeOffset(limited);
+      }
+    }
+  }, [activeTab, isSwiping]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (!swipeStartRef.current) { setSwipeOffset(0); return; }
+    const threshold = window.innerWidth * 0.15;
+    
+    if (swipeOffset < -threshold && activeTab === "nearby") {
+      setActiveTab("trending");
+      applyCachedFeed("home:trending");
+    } else if (swipeOffset > threshold && activeTab === "trending") {
+      setActiveTab("nearby");
+      applyCachedFeed("home:nearby");
+    }
+    
+    setSwipeOffset(0);
+    setIsSwiping(false);
+    swipeStartRef.current = null;
+  }, [swipeOffset, activeTab]);
   // Preload first videos from cache immediately on mount
   useEffect(() => {
     if (posts.length > 0) {
@@ -644,8 +695,12 @@ posts.forEach((p: any) => {
           </div>
         )}
 
-        <div className="max-w-2xl mx-auto px-4 py-4">
-
+<div
+          className="max-w-2xl mx-auto px-4 py-4"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
 <div className="flex items-center justify-center gap-2 mb-4" data-tutorial="home-nearby">
             <Button
               variant={activeTab === "nearby" ? "primary" : "secondary"}
@@ -670,7 +725,13 @@ posts.forEach((p: any) => {
               Trending
             </Button>
           </div>
-
+          <div
+            style={{
+              transform: `translateX(${swipeOffset}px)`,
+              transition: isSwiping ? "none" : "transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)",
+              willChange: isSwiping ? "transform" : "auto",
+            }}
+          >
           {loading && posts.length === 0 ? (
             <div className="space-y-4" data-tutorial="home-feed">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -697,6 +758,7 @@ posts.forEach((p: any) => {
               ))}
             </div>
           )}
+          </div>
         </div>
       </main>
       </PullToRefresh>

@@ -86,7 +86,7 @@ export default function SettingsPage() {
   const [pwSuccess, setPwSuccess] = useState(false);
 
   useScrollRestore("settings");
-  useScrollFreeze(showChangePassword);
+  useScrollFreeze(showChangePassword || showStatesModal);
   
   useEffect(() => {
     if (authLoading) return;
@@ -502,8 +502,8 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                <p className="text-xs text-blue-400">
+              <div className="mt-4 p-3 bg-primary-500/10 border border-primary-500/20 rounded-lg">
+                <p className="text-xs text-primary-400 font-medium">
                   Danger and Caution alerts are enabled by default for your safety
                 </p>
               </div>

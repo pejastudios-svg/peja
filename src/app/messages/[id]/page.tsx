@@ -1494,14 +1494,21 @@ useEffect(() => {
     );
 
     if (existing) {
-      // Optimistically remove
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? { ...m, reactions: (m.reactions || []).filter((r) => r.id !== existing.id) }
-            : m
-        )
-      );
+      // Animate out then remove
+      const el = document.querySelector(`[data-reaction="${messageId}-${emoji}"]`);
+      if (el) {
+        el.classList.remove("animate-bounce-in");
+        el.classList.add("animate-bounce-out");
+      }
+      setTimeout(() => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, reactions: (m.reactions || []).filter((r) => r.id !== existing.id) }
+              : m
+          )
+        );
+      }, 200);
 
       // Background DB call
       supabase.from("message_reactions").delete().eq("id", existing.id).then(({ error }) => {
@@ -3249,11 +3256,12 @@ onTouchEnd={() => {
                                 return (
                                   <button
                                     key={emoji}
+                                    data-reaction={`${msg.id}-${emoji}`}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       toggleReaction(msg.id, emoji);
                                     }}
-                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all active:scale-90 ${
+                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all active:scale-90 animate-bounce-in ${
                                       myReaction
                                         ? "border-primary-500/40 bg-primary-600/20"
                                         : "border-white/10 bg-white/5 hover:bg-white/10"
@@ -3811,11 +3819,12 @@ onTouchEnd={() => {
                       return (
                         <button
                           key={emoji}
+                          data-reaction={`${contextMenuMsg.id}-${emoji}`}
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleReaction(contextMenuMsg.id, emoji);
                           }}
-                          className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all active:scale-90 ${
+                          className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all active:scale-90 animate-bounce-in ${
                             myReaction
                               ? "border-primary-500/40 bg-primary-600/20"
                               : "border-white/10 bg-white/5 hover:bg-white/10"

@@ -237,9 +237,9 @@ const handleShareClick = async (e: React.MouseEvent) => {
             <span className="w-2 h-2 bg-dark-500 rounded-full" />
           )}
           <span className="text-dark-600">|</span>
-          <span className="text-xs text-dark-400 flex items-center gap-1 truncate max-w-[150px]">
+          <span className="text-xs text-dark-400 flex items-center gap-1 min-w-0">
             <MapPin className="w-3 h-3 shrink-0" />
-            {post.address || "Unknown location"}
+            <span className="truncate">{post.address || "Unknown location"}</span>
           </span>
         </div>
         <span className="text-xs text-dark-500 flex items-center gap-1">

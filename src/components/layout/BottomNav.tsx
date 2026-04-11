@@ -302,16 +302,7 @@ export function BottomNav() {
                 <div className="flex flex-col items-center gap-1">
                   <div
                     className="flex items-center justify-center"
-                    style={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: "50%",
-                      background: "rgba(60, 25, 30, 0.85)",
-                      backdropFilter: "blur(40px) saturate(180%)",
-                      WebkitBackdropFilter: "blur(40px) saturate(180%)",
-                      border: "1px solid rgba(239, 68, 68, 0.2)",
-                      boxShadow: "0 4px 20px rgba(0, 0, 0, 0.4), 0 0 15px rgba(239, 68, 68, 0.1)",
-                    }}
+                    style={{ width: 48, height: 48 }}
                   >
                     <SOSButton className="w-full h-full" />
                   </div>

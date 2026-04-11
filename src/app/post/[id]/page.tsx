@@ -343,6 +343,7 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [optionsClosing, setOptionsClosing] = useState(false);
 
   // --- Comment Options State ---
   const [showCommentOptions, setShowCommentOptions] = useState(false);
@@ -355,6 +356,11 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
   const avatarHoldTimer = useRef<number | null>(null);
   const isConfirmed = confirmCtx.isConfirmed(postId);
   const confirmCount = post ? confirmCtx.getCount(postId, post.confirmations || 0) : 0;
+
+  const closeOptions = useCallback(() => {
+    setOptionsClosing(true);
+    setTimeout(() => { setShowOptions(false); setOptionsClosing(false); }, 200);
+  }, []);
 
   // Cleanup
   useEffect(() => {
@@ -1277,18 +1283,18 @@ if (error || !post) {
             </button>
             {showOptions && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowOptions(false)} />
-                <div className="absolute right-0 top-full mt-1 w-44 glass-strong rounded-xl p-1.5 z-50 shadow-lg animate-bounce-in">
-                  <button onClick={() => { handleShare(); setShowOptions(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-dark-200 text-sm">
+                <div className="fixed inset-0 z-40" onClick={closeOptions} />
+                <div className={`absolute right-0 top-full mt-1 w-44 glass-strong rounded-xl p-1.5 z-50 shadow-lg ${optionsClosing ? "animate-bounce-out" : "animate-bounce-in"}`}>
+                  <button onClick={() => { handleShare(); closeOptions(); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-dark-200 text-sm">
                     <Share2 className="w-4 h-4" /> Share
                   </button>
                   {!isOwner && (
-                    <button onClick={() => { setShowReportModal(true); setShowOptions(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-orange-400 text-sm">
+                    <button onClick={() => { setShowReportModal(true); closeOptions(); }}className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-orange-400 text-sm">
                       <Flag className="w-4 h-4" /> Report
                     </button>
                   )}
                   {isOwner && (
-                    <button onClick={() => { setShowDeleteModal(true); setShowOptions(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-red-400 text-sm">
+                    <button onClick={() => { setShowDeleteModal(true); closeOptions(); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-red-400 text-sm">
                       <Trash2 className="w-4 h-4" /> Delete
                     </button>
                   )}
@@ -1418,24 +1424,24 @@ if (error || !post) {
               </div>
             )}
 
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-dark-400">
-              {post.address && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5" />
-                  <span className="truncate max-w-[150px]">{post.address}</span>
-                </span>
-              )}
-              <span className="flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5" />
-                {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
-              </span>
+           {post.address && (
+              <div className="flex items-start gap-1.5 text-xs text-dark-400">
+                <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>{post.address}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-4 text-xs text-dark-400">
               <span className="flex items-center gap-1">
                 <Eye className="w-3.5 h-3.5" />
-                {post.views}
+                {post.views} {post.views === 1 ? "view" : "views"}
               </span>
               <span className="flex items-center gap-1">
                 <MessageCircle className="w-3.5 h-3.5" />
-                {post.comment_count || 0}
+                {post.comment_count || 0} {(post.comment_count || 0) === 1 ? "comment" : "comments"}
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
               </span>
             </div>
 

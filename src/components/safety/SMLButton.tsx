@@ -67,6 +67,9 @@ export function SMLButton() {
   const [menuClosing, setMenuClosing] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showActiveModal, setShowActiveModal] = useState(false);
+  const [shareClosing, setShareClosing] = useState(false);
+  const [activeClosing, setActiveClosing] = useState(false);
+  const [cancelClosing, setCancelClosing] = useState(false);
   const [showSharedList, setShowSharedList] = useState(false);
 
   // My check-in state
@@ -195,6 +198,19 @@ export function SMLButton() {
     }, 200);
   }, []);
 
+  const closeShareModal = useCallback(() => {
+    setShareClosing(true);
+    setTimeout(() => { setShowShareModal(false); setShareClosing(false); }, 200);
+  }, []);
+  const closeActiveModal = useCallback(() => {
+    setActiveClosing(true);
+    setTimeout(() => { setShowActiveModal(false); setActiveClosing(false); }, 200);
+  }, []);
+  const closeCancelConfirm = useCallback(() => {
+    setCancelClosing(true);
+    setTimeout(() => { setShowCancelConfirm(false); setCancelClosing(false); }, 200);
+  }, []);
+
   useEffect(() => {
     fetchData();
     pollingRef.current = setInterval(fetchData, 30000);
@@ -302,7 +318,7 @@ const handleButtonClick = () => {
       await new Promise(r => setTimeout(r, 400));
 
       setMyCheckIn(data.checkin);
-      setShowShareModal(false);
+      closeShareModal();
       setShowMenu(false);
       toast.success("Location sharing started!");
     } catch (err: any) {
@@ -340,8 +356,8 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
   const handleCancel = async () => {
     cancellingRef.current = true;
     setMyCheckIn(null);
-    setShowCancelConfirm(false);
-    setShowActiveModal(false);
+    closeCancelConfirm();
+    closeActiveModal();
     toast.success("Check-in ended.");
     try {
       await fetch(apiUrl("/api/checkin/cancel/"), { method: "POST", headers: headers() });
@@ -531,10 +547,10 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
       {/* ===== ACTIVE CHECK-IN MODAL ===== */}
       {showActiveModal && myCheckIn && (
         <Portal>
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]" onClick={() => setShowActiveModal(false)} />
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]" onClick={() => closeActiveModal()} />
           <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center pointer-events-none">
             <div
-              className="w-full max-w-sm rounded-t-3xl sm:rounded-2xl p-5 pointer-events-auto animate-bounce-in"
+              className={`w-full max-w-sm rounded-t-3xl sm:rounded-2xl p-5 pointer-events-auto ${activeClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
               style={{
                 background: "rgba(18, 12, 36, 0.98)",
                 border: "1px solid rgba(255,255,255,0.1)",
@@ -572,7 +588,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                   I'm OK
                 </button>
                  <button
-                  onClick={() => { setShowActiveModal(false); setShowCancelConfirm(true); }}
+                  onClick={() => { closeActiveModal(); setShowCancelConfirm(true); }}
                   className="px-5 py-3.5 rounded-xl text-sm font-medium bg-white/5 text-dark-300 border border-white/10 active:scale-[0.95] transition-transform"
                 >
                   Stop
@@ -586,17 +602,17 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
       {/* ===== CANCEL CONFIRM ===== */}
       {showCancelConfirm && (
         <Portal>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000]" onClick={() => { setShowCancelConfirm(false); setShowActiveModal(true); }} />
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000]" onClick={() => { closeCancelConfirm(); setShowActiveModal(true); }} />
           <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
             <div
-              className="w-full max-w-sm rounded-2xl p-6 animate-bounce-in"
+              className={`w-full max-w-sm rounded-2xl p-6 ${cancelClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
               style={{ background: "rgba(18, 12, 36, 0.98)", border: "1px solid rgba(255,255,255,0.1)" }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-lg font-bold text-white mb-2">Stop Sharing?</h3>
               <p className="text-sm text-dark-400 mb-4">Your contacts will be notified that you stopped sharing.</p>
               <div className="flex gap-3">
-                <button onClick={() => { setShowCancelConfirm(false); setShowActiveModal(true); }} className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-white/5 text-dark-200 border border-white/10">Keep Sharing</button>
+                <button onClick={() => { closeCancelConfirm(); setShowActiveModal(true); }} className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-white/5 text-dark-200 border border-white/10">Keep Sharing</button>
                 <button onClick={handleCancel} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-600 text-white">Stop</button>
               </div>
             </div>
@@ -607,10 +623,10 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
       {/* ===== SHARE MODAL ===== */}
       {showShareModal && (
         <Portal>
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]" onClick={() => setShowShareModal(false)} />
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]" onClick={() => closeShareModal()} />
           <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center pointer-events-none">
             <div
-              className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl pointer-events-auto animate-bounce-in"
+              className={`w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl pointer-events-auto ${shareClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
               style={{
                 background: "rgba(18, 12, 36, 0.98)",
                 border: "1px solid rgba(255,255,255,0.1)",
@@ -627,7 +643,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                     <h2 className="text-lg font-bold text-white">Share My Location</h2>
                     <p className="text-sm text-dark-400">Alert your emergency contacts</p>
                   </div>
-                  <button onClick={() => setShowShareModal(false)} className="p-1.5 rounded-lg hover:bg-white/10">
+                  <button onClick={() => closeShareModal()} className="p-1.5 rounded-lg hover:bg-white/10">
                     <X className="w-5 h-5 text-dark-400" />
                   </button>
                 </div>
