@@ -706,10 +706,12 @@ posts.forEach((p: any) => {
     return Math.max(0, Math.min(1, base + delta));
   })();
 
-  const nearbyColor = `rgba(124, 58, 237, ${1 - swipeProgress * 0.7})`;
-  const nearbyBg = `rgba(124, 58, 237, ${0.15 + (1 - swipeProgress) * 0.15})`;
-  const trendingColor = `rgba(124, 58, 237, ${0.3 + swipeProgress * 0.7})`;
-  const trendingBg = `rgba(124, 58, 237, ${0.15 + swipeProgress * 0.15})`;
+const nearbyBg = swipeProgress < 0.5
+    ? `rgba(124, 58, 237, ${0.8 - swipeProgress * 0.6})`
+    : `rgba(124, 58, 237, ${0.15 + (1 - swipeProgress) * 0.05})`;
+  const trendingBg = swipeProgress > 0.5
+    ? `rgba(124, 58, 237, ${0.2 + swipeProgress * 0.6})`
+    : `rgba(124, 58, 237, ${0.15 + swipeProgress * 0.05})`;
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
@@ -745,10 +747,10 @@ posts.forEach((p: any) => {
                 applyCachedFeed("home:nearby");
               }}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{
+             style={{
                 background: nearbyBg,
-                color: nearbyColor,
-                border: `1px solid rgba(124, 58, 237, ${(1 - swipeProgress) * 0.3})`,
+                color: "white",
+                border: `1px solid rgba(124, 58, 237, ${0.15 + (1 - swipeProgress) * 0.2})`,
                 transition: isSwiping ? "none" : "all 0.35s ease",
               }}
             >
@@ -763,8 +765,8 @@ posts.forEach((p: any) => {
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
               style={{
                 background: trendingBg,
-                color: trendingColor,
-                border: `1px solid rgba(124, 58, 237, ${swipeProgress * 0.3})`,
+                color: "white",
+                border: `1px solid rgba(124, 58, 237, ${0.15 + swipeProgress * 0.2})`,
                 transition: isSwiping ? "none" : "all 0.35s ease",
               }}
             >

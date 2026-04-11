@@ -2584,11 +2584,13 @@ video {
   }
 }
 
-/* Hide scrollbar on main feed */
-.hide-scrollbar {
+/* Hide scrollbar globally */
+html, body, main {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
-.hide-scrollbar::-webkit-scrollbar {
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+main::-webkit-scrollbar {
   display: none;
 }
