@@ -72,19 +72,143 @@ export function CheckInMonitor() {
     } catch {}
   }, [session?.access_token, user, toast]);
 
-  useEffect(() => {
+useEffect(() => {
     if (!user) return;
-
-    // Check on mount
     checkStatus();
-
-    // Poll every 30 seconds
     intervalRef.current = setInterval(checkStatus, 30000);
-
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [user, checkStatus]);
+
+  // Background location tracking when check-in is active
+  const locationWatchRef = useRef<number | null>(null);
+  const locationPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bgWatcherRef = useRef<string | null>(null);
+  const activeRef = useRef(false);
+
+  useEffect(() => {
+    if (!session?.access_token || !user) return;
+
+    const sendLocation = (lat: number, lng: number) => {
+      fetch(apiUrl("/api/checkin/location/"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ latitude: lat, longitude: lng }),
+      }).catch(() => {});
+    };
+
+    const startTracking = async () => {
+      if (activeRef.current) return;
+      activeRef.current = true;
+
+      // Try native background geolocation first
+      try {
+        const { registerPlugin } = await import("@capacitor/core");
+        const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
+        bgWatcherRef.current = await BackgroundGeolocation.addWatcher(
+          {
+            backgroundMessage: "Peja is tracking your location for safety",
+            backgroundTitle: "Location Sharing Active",
+            requestPermissions: true,
+            stale: false,
+            distanceFilter: 10, // meters
+          },
+          (location: any, error: any) => {
+            if (error) return;
+            if (location) {
+              sendLocation(location.latitude, location.longitude);
+            }
+          }
+        );
+        return; // Native tracking started, no need for web fallback
+      } catch {
+        // Not on native platform, use web fallback
+      }
+
+      // Web fallback: watchPosition + polling
+      if (!navigator.geolocation) return;
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+        () => {},
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+
+      locationWatchRef.current = navigator.geolocation.watchPosition(
+        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
+      );
+
+      locationPollRef.current = setInterval(() => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 8000 }
+        );
+      }, 15000);
+    };
+
+    const stopTracking = async () => {
+      activeRef.current = false;
+
+      // Stop native background tracking
+      if (bgWatcherRef.current) {
+        try {
+          const { registerPlugin } = await import("@capacitor/core");
+          const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
+          await BackgroundGeolocation.removeWatcher({ id: bgWatcherRef.current });
+          bgWatcherRef.current = null;
+        } catch {}
+      }
+
+      // Stop web fallback
+      if (locationWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(locationWatchRef.current);
+        locationWatchRef.current = null;
+      }
+      if (locationPollRef.current) {
+        clearInterval(locationPollRef.current);
+        locationPollRef.current = null;
+      }
+    };
+
+    const checkAndTrack = async () => {
+      try {
+        const res = await fetch(apiUrl("/api/checkin/status/"), {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const data = await res.json();
+        if (data.active && data.checkin) {
+          if (!activeRef.current) startTracking();
+        } else {
+          if (activeRef.current) stopTracking();
+        }
+      } catch {}
+    };
+
+    checkAndTrack();
+    const trackInterval = setInterval(checkAndTrack, 30000);
+
+    // Restart tracking when app returns to foreground
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && activeRef.current) {
+        // Re-check status and restart if needed
+        checkAndTrack();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearInterval(trackInterval);
+      stopTracking();
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [session?.access_token, user]);
 
   return null;
 }

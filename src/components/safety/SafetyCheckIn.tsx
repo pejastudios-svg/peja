@@ -188,11 +188,14 @@ if (diff <= 0) {
     if (!activeCheckIn || !navigator.geolocation) return;
 
     const sendLocation = (lat: number, lng: number) => {
+      console.log("[SML] Sending location:", lat.toFixed(6), lng.toFixed(6));
       fetch(apiUrl("/api/checkin/location/"), {
         method: "POST",
         headers: headers(),
         body: JSON.stringify({ latitude: lat, longitude: lng }),
-      }).catch(() => {});
+      }).then(res => {
+        if (!res.ok) console.error("[SML] Location send failed:", res.status);
+      }).catch((err) => console.error("[SML] Location send error:", err));
     };
 
     // Get initial location

@@ -101,5 +101,10 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <service
+            android:name="com.equimaps.capacitor_background_geolocation.BackgroundGeolocationService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
     </application>
 </manifest>

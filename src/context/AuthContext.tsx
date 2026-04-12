@@ -367,7 +367,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSupabaseUser(newSession.user);
           
           if (event === 'SIGNED_IN') {
+            // Clean up OAuth hash fragment from URL (once)
+            if (window.location.hash) {
+              setTimeout(() => {
+                window.history.replaceState(null, "", window.location.pathname);
+              }, 1000);
+            }
             // Only fetch profile on SIGNED_IN if signIn/signUp isn't handling it
+            
             if (!signingInRef.current) {
               fetchUserProfile(newSession.user.id).catch(() => {});
             }
@@ -542,7 +549,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) {
       }
-
+      // If no profile exists (first-time OAuth user), create one
+      if (!data && supabaseUser) {
+        console.log("[Auth] No profile found, creating for OAuth user:", supabaseUser.email);
+        const meta = supabaseUser.user_metadata || {};
+        const newProfile = {
+          id: userId,
+          email: supabaseUser.email || "",
+          full_name: meta.full_name || meta.name || "",
+          avatar_url: meta.avatar_url || meta.picture || "",
+          phone: meta.phone || "",
+          status: "active",
+          email_verified: !!supabaseUser.email_confirmed_at,
+        };
+        const { data: inserted, error: insertErr } = await supabase
+          .from("users")
+          .upsert(newProfile, { onConflict: "id" })
+          .select()
+          .single();
+        console.log("[Auth] Profile create result:", insertErr ? insertErr.message : "success", inserted?.id);
+        if (!insertErr && inserted) {
+          data = inserted;
+        }
+      }
       const profile: User = data ? {
         id: data.id,
         email: data.email,

@@ -79,9 +79,12 @@ export default function RootLayout({
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
           crossOrigin=""
         />
-        <script dangerouslySetInnerHTML={{ __html: `
+       <script dangerouslySetInnerHTML={{ __html: `
           (function() {
-            var APP_VERSION = "${process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || Date.now()}";
+            if (window.location.hash) return;
+            if (window.location.hostname === "localhost") return;
+            var APP_VERSION = "${process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "dev"}";
+            if (APP_VERSION === "dev") return;
             var stored = localStorage.getItem("peja-app-version");
             if (stored && stored !== APP_VERSION) {
               localStorage.setItem("peja-app-version", APP_VERSION);

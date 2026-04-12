@@ -302,6 +302,7 @@ const pageCache = usePageCache();
   const _cached = pageCache.get<any>("admin:analytics:all");
 
   const [loading, setLoading] = useState(!_cached);
+  const [mapFullscreen, setMapFullscreen] = useState(false);
   const [flashFields, setFlashFields] = useState<Record<string, boolean>>({});
 
   /* ── core stats ── */
@@ -826,6 +827,12 @@ const res = await fetch("/api/sos-helpers", {
     } catch {
       /* silent */
     }
+  }, []);
+
+  useEffect(() => {
+    const handleExpand = () => setMapFullscreen(true);
+    window.addEventListener("peja-expand-admin-map", handleExpand);
+    return () => window.removeEventListener("peja-expand-admin-map", handleExpand);
   }, []);
 
   useEffect(() => {
@@ -1431,6 +1438,7 @@ const res = await fetch("/api/sos-helpers", {
   );
 
   return (
+    <>
     <HudShell
       title="System Analytics"
       subtitle="Real-time platform intelligence and live monitoring"
@@ -1649,7 +1657,7 @@ const res = await fetch("/api/sos-helpers", {
           } dispatched`}
           right={
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-dark-500">Refreshes every 15s</span>
+        
               <div className="pill pill-green flex items-center gap-1.5">
                 <Navigation className="w-3 h-3" />
                 Track
@@ -2559,5 +2567,26 @@ const res = await fetch("/api/sos-helpers", {
         </div>
       </HudPanel>
     </HudShell>
+
+    {/* Fullscreen Map Modal */}
+    {mapFullscreen && (
+      <div className="fixed inset-0 z-[9999]" style={{ background: "#0c0818" }}>
+       <div className="absolute top-14 left-3 z-10">
+          <button
+            onClick={() => setMapFullscreen(false)}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" />
+            </svg>
+            Minimize
+          </button>
+          </div>
+        <div className="w-full h-full">
+          <AdminLiveMap helpers={mapHelpers} hideExpand />
+        </div>
+      </div>
+   )}
+    </>
   );
 }

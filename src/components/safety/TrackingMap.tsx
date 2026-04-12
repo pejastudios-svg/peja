@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import MapGL, { Marker, MapRef } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { User } from "lucide-react";
@@ -27,8 +27,11 @@ export default function TrackingMap({
 }: TrackingMapProps) {
   const mapRef = useRef<MapRef>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+const [targetLat, setTargetLat] = useState(latitude);
+  const [targetLng, setTargetLng] = useState(longitude);
   const [liveLat, setLiveLat] = useState(latitude);
   const [liveLng, setLiveLng] = useState(longitude);
+  const animRef = useRef<number | null>(null);
 
   const MAP_STYLE = useMemo(
     () =>
@@ -36,10 +39,10 @@ export default function TrackingMap({
     []
   );
 
-  // Update from props
+// Update target from props
   useEffect(() => {
-    setLiveLat(latitude);
-    setLiveLng(longitude);
+    setTargetLat(latitude);
+    setTargetLng(longitude);
   }, [latitude, longitude]);
 
   // Realtime subscription for check-in location
@@ -54,8 +57,9 @@ export default function TrackingMap({
         (payload) => {
           const updated = payload.new as any;
           if (updated.latitude && updated.longitude) {
-            setLiveLat(updated.latitude);
-            setLiveLng(updated.longitude);
+            console.log("[TrackingMap] Received update:", updated.latitude, updated.longitude);
+            setTargetLat(updated.latitude);
+            setTargetLng(updated.longitude);
             onLocationUpdate?.(updated.latitude, updated.longitude);
           }
         }
@@ -67,14 +71,48 @@ export default function TrackingMap({
     };
   }, [checkinId, onLocationUpdate]);
 
-  // Smoothly pan to new location
+  // Smoothly animate marker between positions
+  useEffect(() => {
+    const duration = 1000; // 1 second animation
+    const startLat = liveLat;
+    const startLng = liveLng;
+    const endLat = targetLat;
+    const endLng = targetLng;
+    
+    if (startLat === endLat && startLng === endLng) return;
+    
+    const startTime = performance.now();
+    
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      // Ease out cubic
+      const ease = 1 - Math.pow(1 - t, 3);
+      
+      setLiveLat(startLat + (endLat - startLat) * ease);
+      setLiveLng(startLng + (endLng - startLng) * ease);
+      
+      if (t < 1) {
+        animRef.current = requestAnimationFrame(animate);
+      }
+    };
+    
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    animRef.current = requestAnimationFrame(animate);
+    
+    return () => {
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
+  }, [targetLat, targetLng]);
+
+  // Smoothly pan map camera to new location
   useEffect(() => {
     if (!mapRef.current || !mapLoaded) return;
     mapRef.current.easeTo({
-      center: [liveLng, liveLat],
-      duration: 800,
+      center: [targetLng, targetLat],
+      duration: 1000,
     });
-  }, [liveLat, liveLng, mapLoaded]);
+  }, [targetLat, targetLng, mapLoaded]);
 
   const ringColor = isOverdue ? "rgba(239, 68, 68, 0.4)" : "rgba(34, 197, 94, 0.3)";
   const borderColor = isOverdue ? "#ef4444" : "#22c55e";

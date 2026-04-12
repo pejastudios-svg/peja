@@ -275,15 +275,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
               <h2 className="text-lg font-bold text-white truncate">{selectedHotspot.area}</h2>
               <p className="text-xs text-dark-400">{selectedHotspot.count} total incidents</p>
             </div>
-            <button
-              onClick={() => {
-                onSelectArea(selectedHotspot.lat, selectedHotspot.lng);
-                onClose();
-              }}
-              className="px-3 py-2 bg-primary-600 text-white text-sm rounded-lg font-medium"
-            >
-              View Map
-            </button>
+            
           </div>
 
           {/* Scrollable Content */}

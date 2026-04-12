@@ -14,9 +14,12 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
+import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
+import { SOS_TAGS } from "@/lib/types";
 import { Maximize2, Play } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 /* ── types ── */
 interface MapPost {
@@ -35,6 +38,12 @@ interface MapSOS {
   longitude: number;
   avatar_url?: string;
   full_name?: string;
+  tag?: string;
+  message?: string;
+  voice_note_url?: string;
+  address?: string;
+  created_at?: string;
+  user_id?: string;
 }
 export interface MapHelper {
   id: string;
@@ -171,9 +180,11 @@ const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=
 export default function AdminLiveMap({
   className = "",
   helpers = [],
+  hideExpand = false,
 }: {
   className?: string;
   helpers?: MapHelper[];
+  hideExpand?: boolean;
 }) {
   const router = useRouter();
   const mapRef = useRef<MapRef>(null);
@@ -186,8 +197,10 @@ export default function AdminLiveMap({
 const [selectedPost, setSelectedPost] = useState<MapPost | null>(null);
   const [selectedPostMedia, setSelectedPostMedia] = useState<{ url: string; media_type: string; thumbnail_url?: string } | null>(null);
 const [lightboxOpen, setLightboxOpen] = useState(false);
+const [selectedSOS, setSelectedSOS] = useState<MapSOS | null>(null);
   const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
 
   // Fetch media for selected post
   useEffect(() => {
@@ -229,7 +242,7 @@ const [lightboxOpen, setLightboxOpen] = useState(false);
         supabase
           .from("sos_alerts")
           .select(
-            "id, latitude, longitude, user_id, users:user_id(full_name, avatar_url)"
+            "id, latitude, longitude, user_id, tag, message, voice_note_url, address, created_at, users:user_id(full_name, avatar_url)"
           )
           .eq("status", "active"),
       ]);
@@ -268,6 +281,12 @@ const [lightboxOpen, setLightboxOpen] = useState(false);
             longitude: s.longitude,
             avatar_url: s.users?.avatar_url,
             full_name: s.users?.full_name,
+            tag: s.tag,
+            message: s.message,
+            voice_note_url: s.voice_note_url,
+            address: s.address,
+            created_at: s.created_at,
+            user_id: s.user_id,
           }))
         );
     })();
@@ -313,13 +332,19 @@ const [lightboxOpen, setLightboxOpen] = useState(false);
               .select("full_name, avatar_url")
               .eq("id", s.user_id)
               .single();
-            setSOSAlerts((prev) => [
+           setSOSAlerts((prev) => [
               {
                 id: s.id,
                 latitude: s.latitude,
                 longitude: s.longitude,
                 avatar_url: u?.avatar_url,
                 full_name: u?.full_name,
+                tag: s.tag,
+                message: s.message,
+                voice_note_url: s.voice_note_url,
+                address: s.address,
+                created_at: s.created_at,
+                user_id: s.user_id,
               },
               ...prev,
             ]);
@@ -490,16 +515,17 @@ return (
           <>
             <NavigationControl position="top-right" showCompass={false} />
             {/* Fullscreen toggle */}
+            {!hideExpand && (
             <div className="absolute top-2 left-2 z-10">
              <button
-                onClick={() => router.push("/admin/map")}
+                onClick={() => window.dispatchEvent(new Event("peja-expand-admin-map"))}
                 className="p-2 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 text-white hover:bg-black/80 transition-colors"
                 title="Expand map"
               >
                 <Maximize2 className="w-4 h-4" />
               </button>
             </div>
-
+            )}
             {/* ── Heatmap layer ── */}
             {showHeatmap && heatmapPosts.length > 0 && (
               <Source id="heatmap-src" type="geojson" data={heatmapData}>
@@ -820,7 +846,7 @@ return (
                     height: 40,
                     cursor: "pointer",
                   }}
-                  onClick={() => flyTo(s.latitude, s.longitude)}
+                  onClick={() => { flyTo(s.latitude, s.longitude); setSelectedSOS(s); }}
                 >
                   <div
                     className="sos-glow-ring"
@@ -916,6 +942,119 @@ return (
             ))}
           </>
         )}
+        {/* ── SOS Detail Panel ── */}
+          {selectedSOS && (
+            <div
+              className="absolute top-0 right-0 bottom-0 w-full max-w-sm z-20 overflow-y-auto"
+              style={{
+                background: "rgba(12, 8, 24, 0.95)",
+                backdropFilter: "blur(20px)",
+                borderLeft: "1px solid rgba(239, 68, 68, 0.2)",
+                animation: "fadeIn 0.2s ease",
+              }}
+            >
+              {/* Header */}
+              <div className="sticky top-0 z-10 flex items-center justify-between p-4" style={{ background: "rgba(12, 8, 24, 0.95)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  SOS Alert
+                </h3>
+                <button onClick={() => setSelectedSOS(null)} className="p-1.5 rounded-lg hover:bg-white/10 text-dark-400">✕</button>
+              </div>
+
+              <div className="p-4 space-y-4">
+                {/* User */}
+                <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+                  <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-red-500 shrink-0">
+                    <img
+                      src={selectedSOS.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedSOS.full_name || "S")}&background=dc2626&color=fff`}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-white">{selectedSOS.full_name || "Unknown"}</p>
+                    {selectedSOS.created_at && (
+                      <p className="text-xs text-dark-400">{formatDistanceToNow(new Date(selectedSOS.created_at), { addSuffix: true })}</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tag/Situation */}
+                {selectedSOS.tag && (() => {
+                  const tagInfo = SOS_TAGS.find((t: any) => t.id === selectedSOS.tag);
+                  return (
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
+                      <p className="text-[10px] text-red-300 uppercase font-bold mb-1">Situation</p>
+                      <p className="text-white font-semibold">{tagInfo?.label || selectedSOS.tag}</p>
+                      {tagInfo?.suggestion && (
+                        <p className="text-dark-400 text-xs mt-1">{tagInfo.suggestion}</p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Address */}
+                {selectedSOS.address && (
+                  <div className="p-3 bg-white/5 border border-white/10 rounded-xl">
+                    <p className="text-[10px] text-dark-400 uppercase font-bold mb-1">Location</p>
+                    <p className="text-white text-sm">{selectedSOS.address}</p>
+                    <p className="text-dark-500 text-[10px] mt-1 font-mono">{selectedSOS.latitude.toFixed(6)}, {selectedSOS.longitude.toFixed(6)}</p>
+                  </div>
+                )}
+
+                {/* Message */}
+                {selectedSOS.message && (
+                  <div className="p-3 bg-red-500/5 border border-red-500/20 rounded-xl">
+                    <p className="text-[10px] text-red-300 uppercase font-bold mb-1">Message</p>
+                    <p className="text-white text-sm">"{selectedSOS.message}"</p>
+                  </div>
+                )}
+
+                {/* Voice Note */}
+                {selectedSOS.voice_note_url && (
+                  <div className="p-3 bg-white/5 border border-white/10 rounded-xl">
+                    <p className="text-[10px] text-dark-400 uppercase font-bold mb-2">Voice Note</p>
+                    <div className="[&>div]:max-w-none [&>div]:w-full">
+                      <VoiceNotePlayer src={selectedSOS.voice_note_url} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Helpers coming */}
+                {helpers.filter(h => h.sosId === selectedSOS.id).length > 0 && (
+                  <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
+                    <p className="text-[10px] text-green-300 uppercase font-bold mb-2">Helpers Responding</p>
+                    <div className="space-y-2">
+                      {helpers.filter(h => h.sosId === selectedSOS.id).map(h => (
+                        <div key={h.id} className="flex items-center gap-2 p-2 bg-green-500/10 rounded-lg">
+                          <div className="w-8 h-8 rounded-full overflow-hidden border border-green-500 shrink-0">
+                            <img
+                              src={h.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(h.name)}&background=22c55e&color=fff`}
+                              alt=""
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-white">{h.name}</p>
+                            <p className="text-[10px] text-green-400">ETA: {Math.ceil(h.eta / 60)} min</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <button
+                  onClick={() => router.push(`/admin/sos`)}
+                  className="w-full py-3 rounded-xl text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-colors"
+                >
+                  View in SOS Dashboard
+                </button>
+              </div>
+            </div>
+          )}
       </MapGL>
 
       {/* ── Controls ── */}
@@ -951,49 +1090,6 @@ return (
           <span className="text-yellow-400">{heatmapStats.last7d}</span> this week
         </div>
       )}
-
-      {/* ── Legend ── */}
-      <div className="absolute bottom-3 left-3 glass-float rounded-lg p-2.5 flex flex-col gap-1.5 text-xs">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]" />
-          <span className="text-dark-300">SOS ({sosAlerts.length})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]" />
-          <span className="text-dark-300">Helpers ({helpers.length})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div
-            style={{
-              width: 10,
-              height: 10,
-              background: "#8b5cf6",
-              borderRadius: "50% 50% 50% 0",
-              transform: "rotate(-45deg)",
-              border: "1.5px solid white",
-            }}
-          />
-          <span className="text-dark-300">Incidents ({posts.length})</span>
-        </div>
-        {connectionLines.features.length > 0 && (
-          <div className="flex items-center gap-2">
-            <div className="w-4 border-t-2 border-dashed border-green-500" />
-            <span className="text-dark-300">En route</span>
-          </div>
-        )}
-        {showHeatmap && (
-          <div className="flex items-center gap-2">
-            <div
-              className="w-5 h-2.5 rounded-sm"
-              style={{
-                background:
-                  "linear-gradient(90deg, rgba(124,58,237,0.4), rgba(234,179,8,0.5), rgba(249,115,22,0.6), rgba(239,68,68,0.8), rgba(185,28,28,0.95))",
-              }}
-            />
-            <span className="text-dark-300">Risk density</span>
-          </div>
-        )}
-      </div>
       {/* Lightboxes */}
       <ImageLightbox
         isOpen={lightboxOpen}
