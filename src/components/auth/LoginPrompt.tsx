@@ -51,7 +51,7 @@ const handleGoogleSignIn = async () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: "https://peja.life",
+          redirectTo: window.location.origin,
         },
       });
       if (error) console.error("Google sign-in error:", error);
