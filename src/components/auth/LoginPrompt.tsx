@@ -68,8 +68,17 @@ const handleGoogleSignIn = async () => {
   useEffect(() => {
     if (user && show) {
       setShow(false);
+      return;
     }
-  }, [user, show]);
+    // Also check Supabase session directly (covers OAuth redirect case)
+    if (show && !user && !loading) {
+      supabase.auth.getSession().then(({ data }) => {
+        if (data.session?.user) {
+          setShow(false);
+        }
+      });
+    }
+  }, [user, show, loading]);
   if (!show) return null;
 
   return (
