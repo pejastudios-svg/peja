@@ -1,205 +1,214 @@
+// Peja Service Worker v3 - Offline-First Safety App
+const CACHE_NAME = "peja-v3";
+const APP_SHELL_CACHE = "peja-shell-v3";
+const DATA_CACHE = "peja-data-v2";
+const MEDIA_CACHE = "peja-media-v2";
+const VIDEO_CACHE = "peja-video-v2";
 
-// Peja Service Worker - Aggressive App Shell Caching
-const CACHE_NAME = "peja-v2";
-const APP_SHELL_CACHE = "peja-shell-v2";
-const DATA_CACHE = "peja-data-v1";
-
-// App shell files to pre-cache on install
 const APP_SHELL = [
   "/",
-  "/map/",
-  "/search/",
-  "/create/",
-  "/profile/",
-  "/notifications/",
-  "/messages/",
-  "/login/",
-  "/signup/",
-  "/settings/",
+  "/map",
+  "/search",
+  "/create",
+  "/profile",
+  "/notifications",
+  "/messages",
+  "/login",
+  "/signup",
+  "/settings",
+  "/emergency-contacts",
   "/offline.html",
   "https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png",
 ];
 
-// Patterns that should be cached aggressively (static assets)
 const STATIC_PATTERNS = [
   /\/_next\/static\/.*/,
   /\.(?:js|css|woff2?|ttf|eot)$/,
+];
+
+const IMAGE_PATTERNS = [
   /\.(?:png|jpg|jpeg|gif|svg|ico|webp)$/,
+  /ui-avatars\.com/,
+  /res\.cloudinary\.com.*\/image\//,
 ];
 
-// Patterns that should NEVER be cached (API calls, real-time data)
+const CACHEABLE_DATA_PATTERNS = [
+  /supabase\.co\/rest\/v1\/posts/,
+  /supabase\.co\/rest\/v1\/users/,
+];
+
 const NO_CACHE_PATTERNS = [
-  /\/api\//,
-  /supabase\.co/,
+  /supabase\.co\/auth/,
+  /supabase\.co\/realtime/,
+  /supabase\.co\/storage/,
   /googleapis\.com/,
-  /nominatim\.openstreetmap\.org/,
- /cloudinary\.com\/.*\/upload(?!\/w_|\/vc_|\/so_|\/f_)/,
   /firebase/,
+  /nominatim\.openstreetmap\.org/,
 ];
 
-// Install: pre-cache app shell + skip waiting to activate immediately
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
-    caches
-      .open(APP_SHELL_CACHE)
-      .then((cache) => {
-        // Don't fail install if some pages fail to cache
-        return Promise.allSettled(
-          APP_SHELL.map((url) =>
-            cache.add(url).catch((err) => {
-              console.warn("SW: Failed to cache", url, err);
-            })
-          )
-        );
-      })
-      .then(() => self.skipWaiting())
+    caches.open(APP_SHELL_CACHE).then((cache) =>
+      Promise.allSettled(
+        APP_SHELL.map((url) => cache.add(url).catch(() => {}))
+      )
+    )
   );
 });
 
-// Activate: clean old caches
 self.addEventListener("activate", (event) => {
+  const KEEP = [APP_SHELL_CACHE, CACHE_NAME, DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter(
-              (key) =>
-                key !== APP_SHELL_CACHE &&
-                key !== CACHE_NAME &&
-                key !== DATA_CACHE &&
-                key !== "peja-video-v1"
-            )
-            .map((key) => caches.delete(key))
-        )
-      )
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => !KEEP.includes(k)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
-// Fetch: stale-while-revalidate for pages, cache-first for static assets
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests
   if (request.method !== "GET") return;
+  if (NO_CACHE_PATTERNS.some((p) => p.test(request.url))) return;
 
-  // Skip API and data requests - always go to network
-  if (NO_CACHE_PATTERNS.some((pattern) => pattern.test(request.url))) return;
-
-  // Static assets: cache-first (they have content hashes)
-  if (STATIC_PATTERNS.some((pattern) => pattern.test(url.pathname))) {
+  // Static assets: cache-first
+  if (STATIC_PATTERNS.some((p) => p.test(url.pathname))) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request)
-          .then((response) => {
-            if (response.ok) {
-              const clone = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-            }
-            return response;
-          })
-          .catch(() => caches.match("/offline.html"));
-      })
+      caches.match(request).then((c) => c || fetch(request).then((r) => {
+        if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((ca) => ca.put(request, cl)); }
+        return r;
+      }).catch(() => caches.match("/offline.html")))
     );
     return;
   }
 
-  // Video/media from Cloudinary: cache-first for optimized playback URLs
+  // Images: cache-first
+  if (IMAGE_PATTERNS.some((p) => p.test(request.url))) {
+    event.respondWith(
+      caches.match(request).then((c) => c || fetch(request).then((r) => {
+        if (r.ok) { const cl = r.clone(); caches.open(MEDIA_CACHE).then((ca) => ca.put(request, cl)); }
+        return r;
+      }).catch(() => new Response("", { status: 408 })))
+    );
+    return;
+  }
+
+  // Videos: cache-first
   if (url.hostname.includes("res.cloudinary.com") && url.pathname.includes("/video/")) {
     event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request)
-          .then((response) => {
-            if (response.ok && response.status === 200) {
-              const clone = response.clone();
-              caches.open("peja-video-v1").then((cache) => cache.put(request, clone));
-            }
-            return response;
-          })
-          .catch(() => new Response("", { status: 408 }));
-      })
+      caches.match(request).then((c) => c || fetch(request).then((r) => {
+        if (r.ok) { const cl = r.clone(); caches.open(VIDEO_CACHE).then((ca) => ca.put(request, cl)); }
+        return r;
+      }).catch(() => new Response("", { status: 408 })))
     );
     return;
   }
 
-  // External images (avatars, thumbnails): cache-first
-  if (
-    url.pathname.match(/\.(png|jpg|jpeg|webp|gif|svg)$/) ||
-    url.hostname.includes("ui-avatars.com") ||
-    url.hostname.includes("res.cloudinary.com") && url.pathname.includes("/image/")
-  ) {
+  // Supabase data: stale-while-revalidate
+  if (CACHEABLE_DATA_PATTERNS.some((p) => p.test(request.url))) {
     event.respondWith(
       caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request)
-          .then((response) => {
-            if (response.ok) {
-              const clone = response.clone();
-              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-            }
-            return response;
-          })
-          .catch(() => new Response("", { status: 408 }));
+        const net = fetch(request).then((r) => {
+          if (r.ok) { const cl = r.clone(); caches.open(DATA_CACHE).then((ca) => ca.put(request, cl)); }
+          return r;
+        }).catch(() => cached || new Response("[]", { headers: { "Content-Type": "application/json" } }));
+        return cached || net;
       })
     );
     return;
   }
 
-  // HTML pages: stale-while-revalidate
-  if (
-    request.mode === "navigate" ||
-    request.headers.get("accept")?.includes("text/html")
-  ) {
+  // API calls: network-first, cache fallback
+  if (url.pathname.startsWith("/api/")) {
+    event.respondWith(
+      fetch(request).then((r) => {
+        if (r.ok) { const cl = r.clone(); caches.open(DATA_CACHE).then((ca) => ca.put(request, cl)); }
+        return r;
+      }).catch(() => caches.match(request).then((c) => c || new Response(
+        JSON.stringify({ error: "offline", offline: true }),
+        { status: 503, headers: { "Content-Type": "application/json" } }
+      )))
+    );
+    return;
+  }
+
+  // HTML: stale-while-revalidate
+  if (request.mode === "navigate" || (request.headers.get("accept") || "").includes("text/html")) {
     event.respondWith(
       caches.match(request).then((cached) => {
-        const fetchPromise = fetch(request)
-          .then((response) => {
-            if (response.ok) {
-              const clone = response.clone();
-              caches
-                .open(APP_SHELL_CACHE)
-                .then((cache) => cache.put(request, clone));
-            }
-            return response;
-          })
-          .catch(() => {
-            // Network failed, return cached version or offline page
-            return cached || caches.match("/offline.html");
-          });
-
-        // Return cached immediately if available, update in background
-        return cached || fetchPromise;
+        const net = fetch(request).then((r) => {
+          if (r.ok) { const cl = r.clone(); caches.open(APP_SHELL_CACHE).then((ca) => ca.put(request, cl)); }
+          return r;
+        }).catch(() => cached || caches.match("/") || caches.match("/offline.html"));
+        return cached || net;
       })
     );
     return;
   }
 
-  // Everything else: network-first with cache fallback
+  // Everything else: network-first
   event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-        }
-        return response;
-      })
-      .catch(() => caches.match(request))
+    fetch(request).then((r) => {
+      if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((ca) => ca.put(request, cl)); }
+      return r;
+    }).catch(() => caches.match(request))
   );
 });
 
-// Listen for update messages
+// Offline action queue via IndexedDB
+const QUEUE_DB = "peja-offline-queue";
+const QUEUE_STORE = "actions";
+
+function openQueueDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(QUEUE_DB, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(QUEUE_STORE))
+        req.result.createObjectStore(QUEUE_STORE, { keyPath: "id", autoIncrement: true });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function queueAction(action) {
+  const db = await openQueueDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(QUEUE_STORE, "readwrite");
+    tx.objectStore(QUEUE_STORE).add(action);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function replayQueue() {
+  const db = await openQueueDB();
+  const actions = await new Promise((resolve, reject) => {
+    const tx = db.transaction(QUEUE_STORE, "readonly");
+    const req = tx.objectStore(QUEUE_STORE).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  for (const action of actions) {
+    try {
+      const res = await fetch(action.url, { method: action.method, headers: action.headers, body: action.body });
+      if (res.ok) {
+        const tx = db.transaction(QUEUE_STORE, "readwrite");
+        tx.objectStore(QUEUE_STORE).delete(action.id);
+      }
+    } catch { break; }
+  }
+}
+
 self.addEventListener("message", (event) => {
-  if (event.data === "skipWaiting") {
-    self.skipWaiting();
-  }
-  if (event.data === "clearCache") {
-    caches.keys().then((keys) => keys.forEach((key) => caches.delete(key)));
-  }
+  if (event.data === "skipWaiting") self.skipWaiting();
+  if (event.data === "clearCache") caches.keys().then((k) => k.forEach((key) => caches.delete(key)));
+  if (event.data?.type === "queue-action") queueAction(event.data.action);
+  if (event.data === "replay-queue") replayQueue();
+});
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === "peja-offline-sync") event.waitUntil(replayQueue());
 });

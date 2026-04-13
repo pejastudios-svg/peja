@@ -30,6 +30,7 @@ import { CheckInMonitor } from "@/components/safety/CheckInMonitor";
 import { LoginPrompt } from "@/components/auth/LoginPrompt";
 import { SlowConnectionBanner } from "@/components/system/SlowConnectionBanner";
 import { Analytics } from "@vercel/analytics/next"
+import { OfflineBanner } from "@/components/system/OfflineBanner";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -131,6 +132,7 @@ export default function RootLayout({
                         <ServiceWorkerRegistrar />
                         <CheckInMonitor />
                         <SlowConnectionBanner />
+                        <OfflineBanner />
                         <LoginPrompt />
                         <ServiceWorkerRegistration />
                         <Analytics/>
