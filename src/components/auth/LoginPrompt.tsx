@@ -64,6 +64,12 @@ const handleGoogleSignIn = async () => {
   };
 
   useScrollFreeze(show);
+  // Hide prompt when user logs in (e.g., after OAuth redirect)
+  useEffect(() => {
+    if (user && show) {
+      setShow(false);
+    }
+  }, [user, show]);
   if (!show) return null;
 
   return (
