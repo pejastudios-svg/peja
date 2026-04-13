@@ -27,29 +27,27 @@ export function LoginPrompt() {
 
 const authCheckedRef = useRef(false);
   useEffect(() => {
-    // Wait for auth to fully hydrate - don't show on first render
-    if (loading) {
-      authCheckedRef.current = false;
-      return;
-    }
-    // Auth has loaded at least once
-    if (!authCheckedRef.current) {
-      authCheckedRef.current = true;
-      // User is logged in, no need to show
-      if (user) return;
-      // On a public path, don't show
-      if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return;
-      // Already dismissed this session
-      const dismissed = sessionStorage.getItem(DISMISSED_KEY);
-      if (dismissed) return;
-      // Wait for the page to fully render before showing
-      const timer = setTimeout(() => setShow(true), 3000);
-      return () => clearTimeout(timer);
-    }
+    // Wait for auth to finish loading
+    if (loading) return;
+    // Only check once
+    if (authCheckedRef.current) return;
+    authCheckedRef.current = true;
+    // User is logged in, no need to show
+    if (user) return;
+    // On a public path, don't show
+    if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return;
+    // Already dismissed this session
+    const dismissed = sessionStorage.getItem(DISMISSED_KEY);
+    if (dismissed) return;
+    // Wait for the page to fully render before showing
+    const timer = setTimeout(() => setShow(true), 3000);
+    return () => clearTimeout(timer);
   }, [user, loading, pathname]);
 
 const handleGoogleSignIn = async () => {
     try {
+      // Mark that we're doing OAuth so the prompt doesn't show again on redirect
+      sessionStorage.setItem(DISMISSED_KEY, "true");
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {

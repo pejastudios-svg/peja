@@ -358,7 +358,7 @@ export function VoiceNotePlayer({
           onTouchStart={handleWaveformTouchStart}
           onTouchMove={handleWaveformTouchMove}
           onTouchEnd={handleWaveformTouchEnd}
-          className="relative h-8 flex items-center gap-[2px] cursor-pointer group select-none touch-none"
+          className="relative h-8 flex items-center gap-[2px] cursor-pointer group select-none touch-none overflow-hidden"
         >
           {waveformData.map((amplitude, i) => {
             const barProgress = (i / waveformData.length) * 100;
