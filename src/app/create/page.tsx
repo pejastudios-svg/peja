@@ -138,11 +138,28 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
+  // Pre-upload: maps each File → promise of its temp storage result
+  const preUploadRef = useRef<Map<File, Promise<{ url: string; tempPath: string } | null>>>(new Map());
+  // Tracks which pre-uploads were consumed by a successful post (so unmount cleanup skips them)
+  const usedPreUploadsRef = useRef<Set<File>>(new Set());
+  // Per-file upload status for UI spinner (stored in a ref to avoid stale closure issues)
+  const preUploadStatusMapRef = useRef<Map<File, "uploading" | "done" | "failed">>(new Map());
+  const [preUploadTick, setPreUploadTick] = useState(0);
+
   useEffect(() => {
     isMounted.current = true;
     return () => {
       isMounted.current = false;
       mediaPreviews.forEach(p => URL.revokeObjectURL(p.url));
+      // Clean up any temp files that were never posted
+      preUploadRef.current.forEach(async (promise, file) => {
+        if (!usedPreUploadsRef.current.has(file)) {
+          const result = await promise;
+          if (result?.tempPath) {
+            supabase.storage.from("media").remove([result.tempPath]).catch(() => {});
+          }
+        }
+      });
     };
   }, []);
 
@@ -246,6 +263,32 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     });
   }
 
+  const preUploadFile = async (file: File): Promise<{ url: string; tempPath: string } | null> => {
+    try {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return null;
+
+      const isImage = file.type.startsWith("image/");
+      const ext = file.name.split(".").pop()?.toLowerCase() || (isImage ? "jpg" : "mp4");
+      const tempPath = `temp/${authUser.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
+
+      const fileToUpload = isImage && file.size > 500 * 1024
+        ? await compressImage(file)
+        : file;
+
+      const { error } = await supabase.storage
+        .from("media")
+        .upload(tempPath, fileToUpload, { cacheControl: "3600", upsert: false });
+
+      if (error) return null;
+
+      const { data: { publicUrl } } = supabase.storage.from("media").getPublicUrl(tempPath);
+      return { url: publicUrl, tempPath };
+    } catch {
+      return null;
+    }
+  };
+
   const handleGetLocation = () => {
     setLocationLoading(true);
     setError("");
@@ -326,9 +369,33 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     setMediaPreviews((prev) => [...prev, ...newPreviews]);
     setError("");
     e.target.value = "";
+
+    // Start background pre-upload for each file immediately
+    for (const file of files) {
+      preUploadStatusMapRef.current.set(file, "uploading");
+      const promise = preUploadFile(file).then((result) => {
+        preUploadStatusMapRef.current.set(file, result ? "done" : "failed");
+        setPreUploadTick((t) => t + 1);
+        return result;
+      });
+      preUploadRef.current.set(file, promise);
+    }
+    setPreUploadTick((t) => t + 1);
   };
 
   const handleRemoveMedia = (index: number) => {
+    const file = media[index];
+    // Clean up temp storage for this file if pre-uploaded
+    const preUploadPromise = preUploadRef.current.get(file);
+    if (preUploadPromise) {
+      preUploadPromise.then((result) => {
+        if (result?.tempPath) {
+          supabase.storage.from("media").remove([result.tempPath]).catch(() => {});
+        }
+      });
+      preUploadRef.current.delete(file);
+      preUploadStatusMapRef.current.delete(file);
+    }
     URL.revokeObjectURL(mediaPreviews[index].url);
     setMedia((prev) => prev.filter((_, i) => i !== index));
     setMediaPreviews((prev) => prev.filter((_, i) => i !== index));
@@ -407,6 +474,23 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       const file = media[i];
       const isVideo = file.type.startsWith("video/");
       const isImage = file.type.startsWith("image/");
+
+      // Use pre-uploaded temp file if available — skip re-uploading entirely
+      const preUploadPromise = preUploadRef.current.get(file);
+      if (preUploadPromise) {
+        try {
+          setToast(isVideo ? "Finalizing video..." : "Finalizing image...");
+          const preResult = await preUploadPromise;
+          if (preResult) {
+            usedPreUploadsRef.current.add(file);
+            mediaUrls.push({ url: preResult.url, type: isVideo ? "video" : "photo", thumbnailUrl: null });
+            done++;
+            setUploadProgress(Math.round((done / totalFiles) * 80));
+            setToast(null);
+            continue;
+          }
+        } catch {}
+      }
 
       let fileToUpload: File | null = null;
       let uploadToCloudinary = false;
@@ -694,6 +778,12 @@ setToast("Processing video...");
                     </div>
                   ) : (
                     <img src={preview.url} alt="" className="w-full h-full object-cover" />
+                  )}
+                  {/* Pre-upload progress indicator */}
+                  {preUploadStatusMapRef.current.get(media[index]) === "uploading" && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
+                      <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    </div>
                   )}
                   <button
                     type="button"

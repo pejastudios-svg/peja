@@ -141,5 +141,21 @@ export async function GET(req: NextRequest) {
     missed++;
   }
 
-  return NextResponse.json({ ok: true, warned, missed });
+  // --- 3. Clean up temp pre-upload files older than 24h ---
+  const { data: tempFiles } = await supabaseAdmin.storage
+    .from("media")
+    .list("temp", { limit: 1000 });
+
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const oldTempFiles = (tempFiles || []).filter(
+    (f) => f.created_at && new Date(f.created_at) < cutoff
+  );
+
+  if (oldTempFiles.length > 0) {
+    await supabaseAdmin.storage
+      .from("media")
+      .remove(oldTempFiles.map((f) => `temp/${f.name}`));
+  }
+
+  return NextResponse.json({ ok: true, warned, missed, tempCleaned: oldTempFiles.length });
 }
