@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { requireUser } from "../../_auth";
+import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function POST(req: NextRequest) {
   try {
@@ -53,6 +54,14 @@ export async function POST(req: NextRequest) {
 
     if (notifications.length > 0) {
       await supabaseAdmin.from("notifications").insert(notifications);
+      await Promise.all((checkin.contact_ids || []).map((contactId: string) =>
+        sendPushToUser({
+          userId: contactId,
+          title: "Check-In Ended",
+          body: `${userName} has stopped sharing their location with you.`,
+          data: { type: "safety_checkin_ended", checkin_id: checkin.id, user_id: user.id },
+        })
+      ));
     }
 
     return NextResponse.json({ ok: true });

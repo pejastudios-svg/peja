@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { requireUser } from "../../_auth";
+import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function GET(req: NextRequest) {
   try {
@@ -58,6 +59,14 @@ export async function GET(req: NextRequest) {
 
       if (notifications.length > 0) {
         await supabaseAdmin.from("notifications").insert(notifications);
+        await Promise.all((checkin.contact_ids || []).map((contactId: string) =>
+          sendPushToUser({
+            userId: contactId,
+            title: "Missed Check-In",
+            body: `${userName} missed their check-in. Try reaching out to them. Their location is still being shared.`,
+            data: { type: "safety_checkin_missed", checkin_id: checkin.id, user_id: user.id },
+          })
+        ));
       }
 
       await supabaseAdmin.from("notifications").insert({
@@ -70,6 +79,13 @@ export async function GET(req: NextRequest) {
           checkin_id: checkin.id,
         },
         is_read: false,
+      });
+
+      await sendPushToUser({
+        userId: user.id,
+        title: "Check-In Expired",
+        body: "Your safety check-in timer has expired. Your emergency contacts have been notified. Open Peja and tap 'I'm OK' to confirm you're safe.",
+        data: { type: "safety_checkin_self_expired", checkin_id: checkin.id },
       });
 
       return NextResponse.json({

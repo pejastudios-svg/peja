@@ -272,10 +272,10 @@ export function SMLButton() {
 
   // Broadcast SML state to BottomNav
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent("peja-sml-state", { 
-      detail: { active: !!myCheckIn, sharedCount: sharedWithMe.length } 
+    window.dispatchEvent(new CustomEvent("peja-sml-state", {
+      detail: { active: !!myCheckIn, sharedCount: sharedWithMe.length, isOverdue }
     }));
-  }, [myCheckIn, sharedWithMe]);
+  }, [myCheckIn, sharedWithMe, isOverdue]);
 
 const handleButtonClick = () => {
     if (myCheckIn && sharedWithMe.length === 0) {

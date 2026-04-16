@@ -116,7 +116,15 @@ export function BottomNav() {
     const savedSOS = localStorage.getItem("peja-sos-active-id");
     if (savedSOS) setSosActive(true);
     const savedSML = localStorage.getItem("peja-sml-active");
-    if (savedSML) setSmlActive(true);
+    if (savedSML) {
+      setSmlActive(true);
+      try {
+        const checkin = JSON.parse(savedSML);
+        if (checkin?.next_check_in_at && new Date(checkin.next_check_in_at).getTime() < Date.now()) {
+          setSmlOverdue(true);
+        }
+      } catch {}
+    }
     try {
       const savedShared = localStorage.getItem("peja-sml-shared");
       if (savedShared) setSmlSharedCount(JSON.parse(savedShared).length);

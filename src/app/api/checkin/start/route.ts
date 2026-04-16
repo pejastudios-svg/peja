@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { requireUser } from "../../_auth";
+import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function POST(req: NextRequest) {
   try {
@@ -86,6 +87,15 @@ export async function POST(req: NextRequest) {
     }));
 
     await supabaseAdmin.from("notifications").insert(notifications);
+
+    await Promise.all(validIds.map((contactId: string) =>
+      sendPushToUser({
+        userId: contactId,
+        title: "Safety Check-In Started",
+        body: `${userName} is sharing their location with you. They will check in every ${intervalMinutes < 60 ? `${intervalMinutes} minutes` : `${Math.floor(intervalMinutes / 60)} hour${Math.floor(intervalMinutes / 60) > 1 ? "s" : ""}${intervalMinutes % 60 > 0 ? ` ${intervalMinutes % 60} min` : ""}`}.`,
+        data: { type: "safety_checkin_started", checkin_id: checkin.id, user_id: user.id },
+      })
+    ));
 
     return NextResponse.json({ ok: true, checkin });
   } catch (error: any) {

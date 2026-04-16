@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { requireUser } from "../../_auth";
+import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function POST(req: NextRequest) {
   try {
@@ -75,6 +76,16 @@ export async function POST(req: NextRequest) {
 
     if (notifications.length > 0) {
       await supabaseAdmin.from("notifications").insert(notifications);
+      await Promise.all((checkin.contact_ids || []).map((contactId: string) =>
+        sendPushToUser({
+          userId: contactId,
+          title: wasMissed ? "Check-In Confirmed" : "Check-In OK",
+          body: wasMissed
+            ? `${userName} has confirmed they are okay. Timer has been reset.`
+            : `${userName} checked in and is okay.`,
+          data: { type: "safety_checkin_confirmed", checkin_id: checkin.id, user_id: user.id },
+        })
+      ));
     }
 
     return NextResponse.json({ ok: true, nextCheckInAt: nextCheckIn.toISOString() });
