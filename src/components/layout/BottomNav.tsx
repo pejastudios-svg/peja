@@ -40,6 +40,7 @@ export function BottomNav() {
   const [sosActive, setSosActive] = useState(false);
   const [smlActive, setSmlActive] = useState(false);
   const [smlSharedCount, setSmlSharedCount] = useState(0);
+  const [smlOverdue, setSmlOverdue] = useState(false);
 
   const closeMenu = useCallback(() => {
     setMenuClosing(true);
@@ -106,6 +107,7 @@ export function BottomNav() {
     const handleSML = (e: any) => {
       setSmlActive(e.detail?.active || false);
       setSmlSharedCount(e.detail?.sharedCount || 0);
+      setSmlOverdue(e.detail?.isOverdue || false);
     };
     window.addEventListener("peja-sos-state", handleSOS);
     window.addEventListener("peja-sml-state", handleSML);
@@ -343,13 +345,15 @@ export function BottomNav() {
                   boxShadow: menuOpen && !menuClosing
                     ? "0 0 30px rgba(139, 92, 246, 0.35), 0 4px 20px rgba(0, 0, 0, 0.4)"
                     : "0 0 15px rgba(139, 92, 246, 0.12), 0 4px 16px rgba(0, 0, 0, 0.3)",
-                  animation: !menuOpen && (sosActive && smlActive)
-                    ? "peja-pulse-dual 3s ease-in-out infinite"
-                    : !menuOpen && sosActive
-                      ? "peja-pulse-red 1.5s ease-in-out infinite"
-                      : !menuOpen && smlActive
-                        ? "peja-pulse-green 1.5s ease-in-out infinite"
-                        : "none",
+                  animation: (() => {
+                    if (menuOpen) return "none";
+                    const redActive = sosActive || smlOverdue;
+                    const greenActive = smlActive && !smlOverdue;
+                    if (redActive && greenActive) return "peja-pulse-dual 3s ease-in-out infinite";
+                    if (redActive) return "peja-pulse-red 1.5s ease-in-out infinite";
+                    if (greenActive) return "peja-pulse-green 1.5s ease-in-out infinite";
+                    return "none";
+                  })(),
                   transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
                   transform: menuOpen && !menuClosing ? "scale(0.88) rotate(45deg)" : "scale(1) rotate(0deg)",
                   zIndex: 40,

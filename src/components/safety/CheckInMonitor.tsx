@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
+import { createNotification } from "@/lib/notifications";
 
 /**
  * Lightweight global monitor for safety check-ins.
@@ -49,12 +50,11 @@ export function CheckInMonitor() {
       const target = new Date(checkin.next_check_in_at).getTime();
       const diff = target - Date.now();
 
-      // 5-minute warning
+// 5-minute warning
       if (diff > 0 && diff <= 5 * 60 * 1000 && !getWarned()) {
         setWarned(true);
         toast.warning("Check-in expires in less than 5 minutes. Tap 'I'm OK' to reset.");
-
-        // Send warn notification
+        // Send warn notification to contacts
         fetch(apiUrl("/api/checkin/warn/"), {
           method: "POST",
           headers: {
@@ -62,12 +62,27 @@ export function CheckInMonitor() {
             Authorization: `Bearer ${session.access_token}`,
           },
         }).catch(() => {});
+        // Push notification to the user
+        createNotification({
+          userId: user.id,
+          type: "system",
+          title: "Check-in expiring soon",
+          body: "Your safety check-in expires in less than 5 minutes. Tap 'I'm OK' to reset.",
+          data: { type: "safety_checkin_warning" },
+        }).catch(() => {});
       }
-
       // Expired
       if (diff <= 0 && !getExpired()) {
         setExpired(true);
         toast.danger("Check-in expired! Your contacts have been notified. Tap 'I'm OK' to confirm you're safe.");
+        // Push notification to the user
+        createNotification({
+          userId: user.id,
+          type: "system",
+          title: "Check-in expired!",
+          body: "Your contacts have been notified. Open Peja and tap 'I'm OK' to confirm you're safe.",
+          data: { type: "safety_checkin_self_expired" },
+        }).catch(() => {});
       }
     } catch {}
   }, [session?.access_token, user, toast]);
