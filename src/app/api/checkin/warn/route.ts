@@ -11,12 +11,26 @@ export async function POST(req: NextRequest) {
     // Check active check-in exists
     const { data: checkin } = await supabaseAdmin
       .from("safety_checkins")
-      .select("id")
+      .select("id, last_confirmed_at")
       .eq("user_id", user.id)
       .eq("status", "active")
       .maybeSingle();
 
     if (!checkin) {
+      return NextResponse.json({ ok: true });
+    }
+
+    // Deduplicate: cron may have already sent the warning for this interval
+    const { data: existingWarn } = await supabaseAdmin
+      .from("notifications")
+      .select("id")
+      .eq("user_id", user.id)
+      .filter("data->>type", "eq", "safety_checkin_warning")
+      .filter("data->>checkin_id", "eq", checkin.id)
+      .gte("created_at", checkin.last_confirmed_at)
+      .maybeSingle();
+
+    if (existingWarn) {
       return NextResponse.json({ ok: true });
     }
 

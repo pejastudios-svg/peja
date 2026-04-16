@@ -1,18 +1,15 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 
 export function CapacitorPushNotifications() {
-  const router = useRouter();
   const { user } = useAuth();
-  const registeredRef = useRef(false);
+  const listenersSetRef = useRef(false);
 
   useEffect(() => {
     if (!user) return;
-    if (registeredRef.current) return;
     if (typeof window === "undefined") return;
 
     const isCapacitor =
@@ -21,23 +18,15 @@ export function CapacitorPushNotifications() {
 
     if (!isCapacitor) return;
 
-    registeredRef.current = true;
-
     const setupPush = async () => {
       try {
-        const { PushNotifications } = await import(
-          "@capacitor/push-notifications"
-        );
+        const { PushNotifications } = await import("@capacitor/push-notifications");
+        const { App } = await import("@capacitor/app");
 
-        // Delete old channels and recreate with correct settings
-        // Android caches channel settings — deleting forces a fresh start
+        // Create channels once — never delete them. Deleting a channel
+        // dismisses all its notifications and triggers Android 12 rate limits.
+        // createChannel is a no-op if the channel already exists.
         try {
-          // Delete old channels (silently fails if they don't exist)
-          try { await PushNotifications.deleteChannel({ id: "peja_alerts" }); } catch {}
-          try { await PushNotifications.deleteChannel({ id: "peja_sos" }); } catch {}
-          try { await PushNotifications.deleteChannel({ id: "default" }); } catch {}
-
-          // Create channels fresh with maximum importance
           await PushNotifications.createChannel({
             id: "peja_alerts",
             name: "Peja Alerts",
@@ -48,7 +37,6 @@ export function CapacitorPushNotifications() {
             vibration: true,
             lights: true,
           });
-
           await PushNotifications.createChannel({
             id: "peja_sos",
             name: "SOS Alerts",
@@ -59,77 +47,73 @@ export function CapacitorPushNotifications() {
             vibration: true,
             lights: true,
           });
+        } catch {}
 
-        } catch (channelErr) {
-        }
+        // Add listeners once — before register() to avoid any race condition
+        if (!listenersSetRef.current) {
+          listenersSetRef.current = true;
 
-        // Request permission
-        const permResult = await PushNotifications.requestPermissions();
+          PushNotifications.addListener("registration", async (token) => {
+            try {
+              await supabase
+                .from("user_push_tokens")
+                .upsert(
+                  {
+                    user_id: user.id,
+                    token: token.value,
+                    platform: "android",
+                    updated_at: new Date().toISOString(),
+                  },
+                  { onConflict: "user_id,token" }
+                );
+            } catch {}
+          });
 
-        if (permResult.receive === "granted") {
-          await PushNotifications.register();
-        } else {
-          return;
-        }
+          PushNotifications.addListener("registrationError", () => {});
 
-        // Listen for registration success
-        PushNotifications.addListener("registration", async (token) => {
+          PushNotifications.addListener("pushNotificationReceived", () => {});
 
-          try {
-            await supabase
-              .from("user_push_tokens")
-              .upsert(
-                {
-                  user_id: user.id,
-                  token: token.value,
-                  platform: "android",
-                  updated_at: new Date().toISOString(),
-                },
-                { onConflict: "user_id,token" }
-              );
-
-          } catch (err) {
-          }
-        });
-
-        // Listen for registration errors
-        PushNotifications.addListener("registrationError", (error) => {
-        });
-
-        // Listen for notifications received while app is in foreground
-        PushNotifications.addListener(
-          "pushNotificationReceived",
-          (notification) => {
-          }
-        );
-
-        // Listen for notification taps
-        PushNotifications.addListener(
-          "pushNotificationActionPerformed",
-          (action) => {
-
-         const data = action.notification.data;
-            if (data?.sos_id) {
-              if (data?.latitude && data?.longitude) {
-                window.location.href = `/map?lat=${data.latitude}&lng=${data.longitude}&sos=${data.sos_id}`;
+          PushNotifications.addListener(
+            "pushNotificationActionPerformed",
+            (action) => {
+              const data = action.notification.data;
+              if (data?.sos_id) {
+                if (data?.latitude && data?.longitude) {
+                  window.location.href = `/map?lat=${data.latitude}&lng=${data.longitude}&sos=${data.sos_id}`;
+                } else {
+                  window.location.href = "/map";
+                }
+              } else if (data?.post_id) {
+                window.location.href = `/post/${data.post_id}`;
+              } else if (data?.type === "guardian_approved") {
+                window.location.href = "/guardian";
               } else {
-                window.location.href = "/map";
+                window.location.href = "/notifications";
               }
-            } else if (data?.post_id) {
-              window.location.href = `/post/${data.post_id}`;
-            } else if (data?.type === "guardian_approved") {
-              window.location.href = "/guardian";
-            } else {
-              window.location.href = "/notifications";
             }
+          );
+        }
+
+        const registerToken = async () => {
+          const permResult = await PushNotifications.requestPermissions();
+          if (permResult.receive === "granted") {
+            await PushNotifications.register();
           }
-        );
-      } catch (err) {
-      }
+        };
+
+        await registerToken();
+
+        // Re-register every time the app comes to foreground to catch
+        // FCM token rotations — this is what causes "stops working after
+        // a while" on Android 12 devices.
+        App.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) registerToken();
+        });
+      } catch {}
     };
 
     setupPush();
-  }, [user, router]);
+  }, [user]);
 
   return null;
 }
