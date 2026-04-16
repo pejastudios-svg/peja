@@ -4,12 +4,6 @@
   "installCommand": "npm install",
   "framework": "nextjs",
   "regions": ["iad1"],
-  "crons": [
-    {
-      "path": "/api/cron/checkin-monitor",
-      "schedule": "* * * * *"
-    }
-  ],
   "headers": [
     {
       "source": "/(.*)",
