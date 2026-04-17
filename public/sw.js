@@ -1,6 +1,6 @@
-// Peja Service Worker v5 - Offline-First Safety App
-const CACHE_NAME = "peja-v5";
-const APP_SHELL_CACHE = "peja-shell-v5";
+// Peja Service Worker v6 - Offline-First Safety App
+const CACHE_NAME = "peja-v6";
+const APP_SHELL_CACHE = "peja-shell-v6";
 const DATA_CACHE = "peja-data-v2";
 const MEDIA_CACHE = "peja-media-v2";
 const VIDEO_CACHE = "peja-video-v2";
@@ -60,7 +60,7 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  const KEEP = ["peja-v5", "peja-shell-v5", DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
+  const KEEP = ["peja-v6", "peja-shell-v6", DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => !KEEP.includes(k)).map((k) => caches.delete(k))))

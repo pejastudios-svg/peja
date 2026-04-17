@@ -6,7 +6,6 @@ import { ChevronLeft, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
-import { supabase } from "@/lib/supabase";
 import { getVideoThumbnailUrl, getOptimizedVideoUrl, generateVideoThumbnail, getCachedVideoUrl } from "@/lib/videoThumbnail";
 import { useHlsPlayer } from "@/hooks/useHlsPlayer";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
@@ -31,7 +30,6 @@ export function VideoLightbox({
   sourceRect?: { x: number; y: number; width: number; height: number } | null;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const viewedRef = useRef<Set<string>>(new Set());
   const handoff = useVideoHandoff();
   const hasAppliedHandoffRef = useRef(false);
   const closingRef = useRef(false);
@@ -403,8 +401,8 @@ if (animPhase === "enter") {
       <div className="absolute inset-0 z-5" onClick={handleScreenTap} />
 
       <div
-className="relative z-1 w-full h-full flex items-center justify-center"
-        style={getVideoContainerStyle()}
+        className="relative z-1 w-full h-full flex items-center justify-center"
+        style={{ ...getVideoContainerStyle(), willChange: "transform" }}
       >
         {/* Poster overlay — always covers video until frames render. Never shows ugly browser default. */}
         {showPoster && (
