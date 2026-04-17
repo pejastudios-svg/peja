@@ -1,6 +1,6 @@
-// Peja Service Worker v3 - Offline-First Safety App
-const CACHE_NAME = "peja-v3";
-const APP_SHELL_CACHE = "peja-shell-v3";
+// Peja Service Worker v4 - Offline-First Safety App
+const CACHE_NAME = "peja-v4";
+const APP_SHELL_CACHE = "peja-shell-v4";
 const DATA_CACHE = "peja-data-v2";
 const MEDIA_CACHE = "peja-media-v2";
 const VIDEO_CACHE = "peja-video-v2";
@@ -17,7 +17,6 @@ const APP_SHELL = [
   "/signup",
   "/settings",
   "/emergency-contacts",
-  "/offline.html",
   "https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png",
 ];
 
@@ -35,6 +34,9 @@ const IMAGE_PATTERNS = [
 const CACHEABLE_DATA_PATTERNS = [
   /supabase\.co\/rest\/v1\/posts/,
   /supabase\.co\/rest\/v1\/users/,
+  /supabase\.co\/rest\/v1\/messages/,
+  /supabase\.co\/rest\/v1\/conversations/,
+  /supabase\.co\/rest\/v1\/user_settings/,
 ];
 
 const NO_CACHE_PATTERNS = [
@@ -58,7 +60,7 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  const KEEP = [APP_SHELL_CACHE, CACHE_NAME, DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
+  const KEEP = ["peja-v4", "peja-shell-v4", DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => !KEEP.includes(k)).map((k) => caches.delete(k))))
@@ -79,7 +81,7 @@ self.addEventListener("fetch", (event) => {
       caches.match(request).then((c) => c || fetch(request).then((r) => {
         if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((ca) => ca.put(request, cl)); }
         return r;
-      }).catch(() => caches.match("/offline.html")))
+      }).catch(() => new Response("", { status: 408 })))
     );
     return;
   }
@@ -141,7 +143,7 @@ self.addEventListener("fetch", (event) => {
         const net = fetch(request).then((r) => {
           if (r.ok) { const cl = r.clone(); caches.open(APP_SHELL_CACHE).then((ca) => ca.put(request, cl)); }
           return r;
-        }).catch(() => cached || caches.match("/") || caches.match("/offline.html"));
+        }).catch(() => cached || caches.match("/"));
         return cached || net;
       })
     );

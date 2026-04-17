@@ -62,6 +62,7 @@ import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns";
 import type { Message, VIPUser, MessageMediaItem } from "@/lib/types";
 import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { isOffline, enqueueAction, getQueue, dequeueAction } from "@/lib/offlineStorage";
 
 // =====================================================
 // EMOJI DATA
@@ -957,7 +958,45 @@ useEffect(() => {
       } catch {}
     };
   }, [MSG_CACHE_KEY]);
-  
+
+  // Drain queued messages when connectivity is restored
+  useEffect(() => {
+    if (!user?.id || !conversationId) return;
+    const drainQueue = async () => {
+      const queue = getQueue(`messages-${conversationId}`);
+      for (let i = 0; i < queue.length; i++) {
+        const item = queue[0]; // always drain from front
+        try {
+          const { data: newMsg, error } = await supabase
+            .from("messages")
+            .insert({
+              conversation_id: item.conversation_id,
+              sender_id: user.id,
+              content: item.content,
+              content_type: "text",
+              reply_to_id: item.reply_to_id || null,
+              metadata: {},
+            })
+            .select()
+            .single();
+          if (error) break;
+          dequeueAction(`messages-${conversationId}`, 0);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === item._tempId
+                ? { ...m, id: newMsg.id, delivery_status: "sent" as const }
+                : m
+            )
+          );
+        } catch {
+          break;
+        }
+      }
+    };
+    window.addEventListener("online", drainQueue);
+    return () => window.removeEventListener("online", drainQueue);
+  }, [user?.id, conversationId]);
+
     // =====================================================
   // REALTIME: Messages + Read receipts + Reactions
   // =====================================================
@@ -1964,7 +2003,7 @@ const handleTouchEnd = () => {
   // =====================================================
   // DELIVERY STATUS DISPLAY
   // =====================================================
-  const DeliveryLabel = ({ status }: { status?: "sent" | "seen" | "sending" | "failed" }) => {
+  const DeliveryLabel = ({ status }: { status?: "sent" | "seen" | "sending" | "failed" | "queued" }) => {
     if (!status) return null;
     if (status === "seen") {
       return (
@@ -1975,6 +2014,14 @@ const handleTouchEnd = () => {
     }
     if (status === "sending") {
       return <PejaSpinner className="w-3 h-3" />;
+    }
+    if (status === "queued") {
+      return (
+        <span className="text-[10px] text-yellow-400/70 font-medium flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          Queued
+        </span>
+      );
     }
     if (status === "failed") {
       return (
@@ -2372,6 +2419,28 @@ const handleTouchEnd = () => {
 
     if (mediaToSend.length > 0) {
       setUploadingMsgIds((prev) => new Map(prev).set(tempId, 0));
+    }
+
+    // Queue text-only messages when offline
+    if (isOffline() && mediaToSend.length === 0) {
+      enqueueAction(`messages-${conversationId}`, {
+        _tempId: tempId,
+        conversation_id: conversationId,
+        content: markdownContent,
+        reply_to_id: currentReplyingTo?.id || null,
+      });
+      setMessages((prev) =>
+        prev.map((m) => m.id === tempId ? { ...m, delivery_status: "queued" as any } : m)
+      );
+      return;
+    }
+
+    if (isOffline() && mediaToSend.length > 0) {
+      setMessages((prev) =>
+        prev.map((m) => m.id === tempId ? { ...m, delivery_status: "failed" as any } : m)
+      );
+      toast.warning("Can't send media while offline");
+      return;
     }
 
     // Background send

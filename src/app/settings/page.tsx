@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { isOffline, loadFromCache, saveToCache, enqueueAction, getQueue, clearQueue } from "@/lib/offlineStorage";
 import { NIGERIAN_STATES } from "@/lib/types";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -45,6 +46,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [saveQueued, setSaveQueued] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
 
   // Notification settings
@@ -87,6 +89,31 @@ export default function SettingsPage() {
 
   useScrollRestore("settings");
   useScrollFreeze(showChangePassword || showStatesModal);
+
+  // Drain queued settings when connectivity is restored
+  useEffect(() => {
+    const drainQueue = async () => {
+      if (!user) return;
+      const queue = getQueue("settings");
+      if (!queue.length) return;
+      const latest = queue[queue.length - 1];
+      const { _settingsId, _queuedAt, ...data } = latest;
+      try {
+        let result;
+        if (_settingsId) {
+          result = await supabase.from("user_settings").update(data).eq("id", _settingsId).select().single();
+        } else {
+          result = await supabase.from("user_settings").insert(data).select().single();
+        }
+        if (!result.error) {
+          setSettingsId(result.data.id);
+          clearQueue("settings");
+        }
+      } catch {}
+    };
+    window.addEventListener("online", drainQueue);
+    return () => window.removeEventListener("online", drainQueue);
+  }, [user]);
   
   useEffect(() => {
     if (authLoading) return;
@@ -99,6 +126,21 @@ export default function SettingsPage() {
       return () => clearTimeout(timer);
     }
   }, [user, authLoading, router]);
+
+  const applySettings = (settings: any) => {
+    setSettingsId(settings.id ?? null);
+    setPushEnabled(settings.push_enabled ?? true);
+    setDangerAlerts(settings.danger_alerts ?? true);
+    setCautionAlerts(settings.caution_alerts ?? true);
+    setAwarenessAlerts(settings.awareness_alerts ?? false);
+    setInfoAlerts(settings.info_alerts ?? false);
+    setAlertZoneType(settings.alert_zone_type ?? "all_nigeria");
+    setSelectedStates(settings.selected_states ?? []);
+    setAlertRadius(settings.alert_radius_km ?? 5);
+    setQuietHoursEnabled(settings.quiet_hours_enabled ?? false);
+    setQuietHoursStart(settings.quiet_hours_start ?? "23:00");
+    setQuietHoursEnd(settings.quiet_hours_end ?? "07:00");
+  };
 
   const loadSettings = async () => {
     if (!user) {
@@ -114,29 +156,25 @@ export default function SettingsPage() {
         .maybeSingle();
 
       if (error && error.code !== "PGRST116") {
+        const cached = loadFromCache<any>(`settings-${user.id}`);
+        if (cached) applySettings(cached);
         setDebugInfo(`Load error: ${error.message}`);
       }
 
       if (settings) {
-        setSettingsId(settings.id);
-        setPushEnabled(settings.push_enabled ?? true);
-        setDangerAlerts(settings.danger_alerts ?? true);
-        setCautionAlerts(settings.caution_alerts ?? true);
-        setAwarenessAlerts(settings.awareness_alerts ?? false);
-        setInfoAlerts(settings.info_alerts ?? false);
-        setAlertZoneType(settings.alert_zone_type ?? "all_nigeria");
-        setSelectedStates(settings.selected_states ?? []);
-        setAlertRadius(settings.alert_radius_km ?? 5);
-        setQuietHoursEnabled(settings.quiet_hours_enabled ?? false);
-        setQuietHoursStart(settings.quiet_hours_start ?? "23:00");
-        setQuietHoursEnd(settings.quiet_hours_end ?? "07:00");
+        applySettings(settings);
+        saveToCache(`settings-${user.id}`, settings);
         setDebugInfo(
           `Loaded: zone=${settings.alert_zone_type}, states=${JSON.stringify(settings.selected_states)}`
         );
       } else {
-        setDebugInfo("No settings found, using defaults");
+        const cached = loadFromCache<any>(`settings-${user.id}`);
+        if (cached) applySettings(cached);
+        else setDebugInfo("No settings found, using defaults");
       }
     } catch (error: any) {
+      const cached = loadFromCache<any>(`settings-${user.id}`);
+      if (cached) applySettings(cached);
       setDebugInfo(`Error: ${error.message}`);
     } finally {
       setLoading(false);
@@ -168,6 +206,15 @@ export default function SettingsPage() {
       quiet_hours_end: quietHoursEnd,
       updated_at: new Date().toISOString(),
     };
+
+    if (isOffline()) {
+      enqueueAction("settings", { ...settingsData, _settingsId: settingsId });
+      setSaveQueued(true);
+      setSaveSuccess(true);
+      setSaving(false);
+      setTimeout(() => { setSaveSuccess(false); setSaveQueued(false); }, 4000);
+      return;
+    }
 
     try {
       let result;
@@ -456,7 +503,9 @@ export default function SettingsPage() {
 
         {saveSuccess && (
           <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-            <p className="text-sm text-green-400 text-center">Settings saved successfully!</p>
+            <p className="text-sm text-green-400 text-center">
+              {saveQueued ? "Changes saved — will sync when online" : "Settings saved successfully!"}
+            </p>
           </div>
         )}
 

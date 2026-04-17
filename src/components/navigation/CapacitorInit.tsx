@@ -1,13 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { syncSessionToNative } from "@/lib/supabase";
-import { OfflineScreen } from "@/components/system/OfflineScreen";
 
 export function CapacitorInit() {
-  const [isOffline, setIsOffline] = useState(false);
-  const [isCapacitor, setIsCapacitor] = useState(false);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -17,13 +13,11 @@ export function CapacitorInit() {
 
     if (!isAndroidWebView && !isCapacitorBridge) return;
 
-    setIsCapacitor(true);
-    
-    // Force clear WebView cache to ensure latest version loads
+    // Delete stale SW caches from old versions only
     if ("caches" in window) {
       caches.keys().then((names) => {
         names.forEach((name) => {
-          if (!name.includes("peja-v2") && !name.includes("peja-shell-v2")) {
+          if (name === "peja-v3" || name === "peja-shell-v3" || name === "peja-v2" || name === "peja-shell-v2") {
             caches.delete(name);
           }
         });
@@ -130,22 +124,7 @@ import("@capacitor/splash-screen")
     // Setup deep link listener
     setupDeepLinkListener();
 
-    // Setup network monitoring
-    setupNetworkMonitor(setIsOffline);
   }, []);
-
-  // Show offline screen if no network in Capacitor
-  if (isCapacitor && isOffline) {
-    return (
-      <div className="fixed inset-0 z-[99999]">
-        <OfflineScreen
-          onRetry={() => {
-            window.location.reload();
-          }}
-        />
-      </div>
-    );
-  }
 
   return null;
 }
@@ -204,31 +183,5 @@ url.hostname === "peja.life" ||
       }
     });
   } catch (err) {
-  }
-}
-
-// =====================================================
-// NETWORK MONITOR
-// =====================================================
-async function setupNetworkMonitor(setIsOffline: (offline: boolean) => void) {
-  try {
-    const { Network } = await import("@capacitor/network");
-
-    // Check initial status
-    const status = await Network.getStatus();
-    if (!status.connected) {
-      setIsOffline(true);
-    }
-
-    // Listen for changes
-    Network.addListener("networkStatusChange", (status) => {
-      setIsOffline(!status.connected);
-    });
-  } catch {
-    // Fallback to browser APIs
-    setIsOffline(!navigator.onLine);
-
-    window.addEventListener("online", () => setIsOffline(false));
-    window.addEventListener("offline", () => setIsOffline(true));
   }
 }
