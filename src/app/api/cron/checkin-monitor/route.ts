@@ -24,33 +24,40 @@ export async function GET(req: NextRequest) {
     .gt("next_check_in_at", now.toISOString());
 
   for (const checkin of expiringSoon || []) {
-    // Only warn once per interval — check if we already sent one since last confirm
-    const { data: existingWarn } = await supabaseAdmin
+    // Dedup: only warn once per interval since last confirmation.
+    // Use .limit(1) instead of .maybeSingle() to avoid error on multiple rows.
+    let warnQuery = supabaseAdmin
       .from("notifications")
       .select("id")
       .eq("user_id", checkin.user_id)
       .filter("data->>type", "eq", "safety_checkin_warning")
       .filter("data->>checkin_id", "eq", checkin.id)
-      .gte("created_at", checkin.last_confirmed_at)
-      .maybeSingle();
+      .limit(1);
 
-    if (existingWarn) continue;
+    if (checkin.last_confirmed_at) {
+      warnQuery = warnQuery.gte("created_at", checkin.last_confirmed_at) as any;
+    }
 
-    await supabaseAdmin.from("notifications").insert({
-      user_id: checkin.user_id,
-      type: "system",
-      title: "Check-In Expiring Soon",
-      body: "Your safety check-in expires in less than 5 minutes. Tap 'I'm OK' to reset the timer.",
-      data: { type: "safety_checkin_warning", checkin_id: checkin.id },
-      is_read: false,
-    });
+    const { data: existingWarns } = await warnQuery;
+    if (existingWarns && existingWarns.length > 0) continue;
 
-    await sendPushToUser({
-      userId: checkin.user_id,
-      title: "Check-In Expiring Soon",
-      body: "Your safety check-in expires in less than 5 minutes. Tap 'I'm OK' to reset the timer.",
-      data: { type: "safety_checkin_warning", checkin_id: checkin.id },
-    });
+    // Fire both DB insert and push in parallel to stay within timeout
+    await Promise.all([
+      supabaseAdmin.from("notifications").insert({
+        user_id: checkin.user_id,
+        type: "system",
+        title: "Check-In Expiring Soon",
+        body: "Your safety check-in expires in less than 5 minutes. Tap 'I'm OK' to reset the timer.",
+        data: { type: "safety_checkin_warning", checkin_id: checkin.id },
+        is_read: false,
+      }),
+      sendPushToUser({
+        userId: checkin.user_id,
+        title: "Check-In Expiring Soon",
+        body: "Your safety check-in expires in less than 5 minutes. Tap 'I'm OK' to reset the timer.",
+        data: { type: "safety_checkin_warning", checkin_id: checkin.id },
+      }).catch(() => {}),
+    ]);
 
     warned++;
   }
@@ -65,7 +72,6 @@ export async function GET(req: NextRequest) {
   for (const checkin of overdueCheckins || []) {
     const newMissedCount = (checkin.missed_count || 0) + 1;
 
-    // Mark as missed atomically — if another process already did this, skip
     const { error: updateError } = await supabaseAdmin
       .from("safety_checkins")
       .update({
@@ -74,7 +80,7 @@ export async function GET(req: NextRequest) {
         updated_at: now.toISOString(),
       })
       .eq("id", checkin.id)
-      .eq("status", "active"); // guard: only update if still active
+      .eq("status", "active");
 
     if (updateError) continue;
 
@@ -86,57 +92,53 @@ export async function GET(req: NextRequest) {
 
     const userName = userData?.full_name || "Your contact";
 
-    // Push + in-app notification to each contact
-    if ((checkin.contact_ids || []).length > 0) {
-      const contactNotifs = (checkin.contact_ids as string[]).map((contactId) => ({
-        user_id: contactId,
+    const contactIds: string[] = checkin.contact_ids || [];
+
+    // Fire all notifications in parallel
+    await Promise.all([
+      // Contacts
+      contactIds.length > 0
+        ? supabaseAdmin.from("notifications").insert(
+            contactIds.map((contactId) => ({
+              user_id: contactId,
+              type: "system",
+              title: "Missed Check-In",
+              body: `${userName} missed their check-in. Try reaching out to them. Their location is still being shared.`,
+              data: {
+                type: "safety_checkin_missed",
+                checkin_id: checkin.id,
+                user_id: checkin.user_id,
+                user_name: userName,
+                missed_count: String(newMissedCount),
+              },
+              is_read: false,
+            }))
+          )
+        : Promise.resolve(),
+      ...contactIds.map((contactId) =>
+        sendPushToUser({
+          userId: contactId,
+          title: "Missed Check-In",
+          body: `${userName} missed their check-in. Try reaching out to them. Their location is still being shared.`,
+          data: { type: "safety_checkin_missed", checkin_id: checkin.id, user_id: checkin.user_id },
+        }).catch(() => {})
+      ),
+      // Self
+      supabaseAdmin.from("notifications").insert({
+        user_id: checkin.user_id,
         type: "system",
-        title: "Missed Check-In",
-        body: `${userName} missed their check-in. Try reaching out to them. Their location is still being shared.`,
-        data: {
-          type: "safety_checkin_missed",
-          checkin_id: checkin.id,
-          user_id: checkin.user_id,
-          user_name: userName,
-          missed_count: String(newMissedCount),
-        },
+        title: "Check-In Expired",
+        body: "Your safety check-in timer has expired. Your emergency contacts have been notified. Open Peja and tap 'I'm OK' to confirm you're safe.",
+        data: { type: "safety_checkin_self_expired", checkin_id: checkin.id },
         is_read: false,
-      }));
-
-      await supabaseAdmin.from("notifications").insert(contactNotifs);
-
-      await Promise.all(
-        (checkin.contact_ids as string[]).map((contactId) =>
-          sendPushToUser({
-            userId: contactId,
-            title: "Missed Check-In",
-            body: `${userName} missed their check-in. Try reaching out to them. Their location is still being shared.`,
-            data: {
-              type: "safety_checkin_missed",
-              checkin_id: checkin.id,
-              user_id: checkin.user_id,
-            },
-          })
-        )
-      );
-    }
-
-    // Push + in-app notification to the user themselves
-    await supabaseAdmin.from("notifications").insert({
-      user_id: checkin.user_id,
-      type: "system",
-      title: "Check-In Expired",
-      body: "Your safety check-in timer has expired. Your emergency contacts have been notified. Open Peja and tap 'I'm OK' to confirm you're safe.",
-      data: { type: "safety_checkin_self_expired", checkin_id: checkin.id },
-      is_read: false,
-    });
-
-    await sendPushToUser({
-      userId: checkin.user_id,
-      title: "Check-In Expired",
-      body: "Your safety check-in timer has expired. Your emergency contacts have been notified. Open Peja and tap 'I'm OK' to confirm you're safe.",
-      data: { type: "safety_checkin_self_expired", checkin_id: checkin.id },
-    });
+      }),
+      sendPushToUser({
+        userId: checkin.user_id,
+        title: "Check-In Expired",
+        body: "Your safety check-in timer has expired. Your emergency contacts have been notified. Open Peja and tap 'I'm OK' to confirm you're safe.",
+        data: { type: "safety_checkin_self_expired", checkin_id: checkin.id },
+      }).catch(() => {}),
+    ]);
 
     missed++;
   }
