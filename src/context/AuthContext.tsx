@@ -311,11 +311,30 @@ function getLocalProfile(userId: string): User | null {
   }
 }
 
+function readPersistedProfile(): { user: User | null; loading: boolean } {
+  if (typeof window === "undefined") return { user: null, loading: true };
+  try {
+    const raw = localStorage.getItem(PROFILE_LS_KEY);
+    if (!raw) return { user: null, loading: true };
+    const { userId, profile, timestamp } = JSON.parse(raw);
+    if (!userId || !profile) return { user: null, loading: true };
+    if (Date.now() - timestamp > 60 * 60 * 1000) return { user: null, loading: true };
+    // Also verify a Supabase session key exists — never show profile without a token
+    const hasToken = Object.keys(localStorage).some(
+      (k) => (k.includes("supabase") && k.includes("auth")) || k === "peja-auth"
+    );
+    if (!hasToken) return { user: null, loading: true };
+    return { user: profile as User, loading: false };
+  } catch {
+    return { user: null, loading: true };
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => readPersistedProfile().user);
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(() => readPersistedProfile().loading);
   const initRef = useRef(false);
   const fetchingRef = useRef(false);
   const signingInRef = useRef(false);

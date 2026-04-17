@@ -29,6 +29,7 @@ import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistratio
 import { CheckInMonitor } from "@/components/safety/CheckInMonitor";
 import { LoginPrompt } from "@/components/auth/LoginPrompt";
 import { SlowConnectionBanner } from "@/components/system/SlowConnectionBanner";
+import { BackgroundPrefetcher } from "@/components/navigation/BackgroundPrefetcher";
 import { Analytics } from "@vercel/analytics/next"
 import { OfflineBanner } from "@/components/system/OfflineBanner";
 
@@ -134,6 +135,7 @@ export default function RootLayout({
                         <SlowConnectionBanner />
                         <OfflineBanner />
                         <LoginPrompt />
+                        <BackgroundPrefetcher />
                         <ServiceWorkerRegistration />
                         <Analytics/>
                         <TutorialProvider>
