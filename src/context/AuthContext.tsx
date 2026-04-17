@@ -295,6 +295,21 @@ const locationTracker = new LocationTracker();
 
 let userProfileCache: { userId: string; profile: User; timestamp: number } | null = null;
 const CACHE_DURATION = 5 * 60 * 1000;
+const PROFILE_LS_KEY = "peja-user-profile";
+
+function getLocalProfile(userId: string): User | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(PROFILE_LS_KEY);
+    if (!raw) return null;
+    const { userId: uid, profile, timestamp } = JSON.parse(raw);
+    if (uid !== userId) return null;
+    if (Date.now() - timestamp > 60 * 60 * 1000) return null; // 1-hour shelf life
+    return profile as User;
+  } catch {
+    return null;
+  }
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -322,7 +337,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (currentSession?.user) {
           setSession(currentSession);
           setSupabaseUser(currentSession.user);
-          await fetchUserProfile(currentSession.user.id);
+          const cachedProfile = getLocalProfile(currentSession.user.id);
+          if (cachedProfile) {
+            // Instantly restore from cache — UI unblocks now
+            setUser(cachedProfile);
+            setLoading(false);
+            // Refresh profile in background without blocking
+            fetchUserProfile(currentSession.user.id, true).catch(() => {});
+          } else {
+            await fetchUserProfile(currentSession.user.id);
+          }
           checkAndStartLocationTracking(currentSession.user.id);
           presenceManager.start(currentSession.user.id);
           await startUserRowSubscription(currentSession.user.id);
@@ -332,7 +356,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (refreshed?.user) {
             setSession(refreshed);
             setSupabaseUser(refreshed.user);
-            await fetchUserProfile(refreshed.user.id);
+            const cachedProfile = getLocalProfile(refreshed.user.id);
+            if (cachedProfile) {
+              setUser(cachedProfile);
+              setLoading(false);
+              fetchUserProfile(refreshed.user.id, true).catch(() => {});
+            } else {
+              await fetchUserProfile(refreshed.user.id);
+            }
             checkAndStartLocationTracking(refreshed.user.id);
             presenceManager.start(refreshed.user.id);
             await startUserRowSubscription(refreshed.user.id);
@@ -404,6 +435,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setSupabaseUser(null);
             setSession(null);
             userProfileCache = null;
+            try { localStorage.removeItem(PROFILE_LS_KEY); } catch {}
             locationTracker.stop();
             presenceManager.stop();
           }
@@ -613,6 +645,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile,
         timestamp: Date.now(),
       };
+      try {
+        localStorage.setItem(PROFILE_LS_KEY, JSON.stringify({ userId, profile, timestamp: Date.now() }));
+      } catch {}
     } catch (error) {
       setUser({
         id: userId,

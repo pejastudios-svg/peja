@@ -16,7 +16,6 @@ import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import { apiUrl } from "@/lib/api";
-import { PejaLoadingScreen } from "@/components/ui/PejaLoadingScreen";
 import { usePageCache } from "@/context/PageCacheContext";
 import { preloadFeedVideos, getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
@@ -690,11 +689,27 @@ posts.forEach((p: any) => {
   // ============================================================
 
   if (posts.length === 0 && (authLoading || (!user && !authCheckDone))) {
-    return <PejaLoadingScreen />;
+    return (
+      <div className="min-h-screen pb-20">
+        <Header onCreateClick={() => {}} />
+        <main className="pt-14 max-w-2xl mx-auto px-4 py-4 space-y-4">
+          {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
+        </main>
+        <BottomNav />
+      </div>
+    );
   }
 
   if (posts.length === 0 && !user) {
-    return <PejaLoadingScreen />;
+    return (
+      <div className="min-h-screen pb-20">
+        <Header onCreateClick={() => {}} />
+        <main className="pt-14 max-w-2xl mx-auto px-4 py-4 space-y-4">
+          {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
+        </main>
+        <BottomNav />
+      </div>
+    );
   }
 
   // Calculate tab blend ratio for swipe animation (0 = nearby active, 1 = trending active)
