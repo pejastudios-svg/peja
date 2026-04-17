@@ -11,6 +11,7 @@ import { useToast } from "@/context/ToastContext";
 import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk } from "@/lib/videoThumbnail";
 import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
 import { shareUrl } from "@/lib/share";
+import { VideoLightbox } from "@/components/ui/VideoLightbox";
 
 import {
   MapPin,
@@ -47,6 +48,10 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
   const [showSensitive, setShowSensitive] = useState(false);
   const [showFullComment, setShowFullComment] = useState(false);
   const [videoError, setVideoError] = useState(false);
+  const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
+  const [videoLightboxUrl, setVideoLightboxUrl] = useState<string | null>(null);
+  const [videoStartTime, setVideoStartTime] = useState(0);
+  const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
   // Preload video thumbnails eagerly
   useEffect(() => {
     const videos = post.media?.filter(m => m.media_type === "video") || [];
@@ -169,6 +174,15 @@ if (!wasConfirmed) {
     router.push(`/post/${post.id}${sk}`, { scroll: false });
   };
 
+const handleExpandVideo = (currentTime?: number, posterDataUrl?: string) => {
+    const media = post.media?.[currentMediaIndex];
+    if (!media) return;
+    setVideoLightboxUrl(media.url);
+    setVideoStartTime(currentTime ?? 0);
+    setVideoThumbnail(posterDataUrl || media.thumbnail_url || getVideoThumbnailUrl(media.url) || null);
+    setVideoLightboxOpen(true);
+  };
+
 const handleShareClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const url = `https://peja.life/post/${post.id}`;
@@ -279,6 +293,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
                       showExpand={true}
                       showMute={true}
                       postId={post.id}
+                      onExpand={handleExpandVideo}
                       onError={() => setVideoError(true)}
                     />
                   )
@@ -417,7 +432,16 @@ const handleShareClick = async (e: React.MouseEvent) => {
     setLightboxOpen(false);
   }}
 />
-      
+
+      <VideoLightbox
+        isOpen={videoLightboxOpen}
+        onClose={() => setVideoLightboxOpen(false)}
+        videoUrl={videoLightboxUrl}
+        startTime={videoStartTime}
+        postId={post.id}
+        posterUrl={videoThumbnail}
+      />
+
     </article>
   );
 }

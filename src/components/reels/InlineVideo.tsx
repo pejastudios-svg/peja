@@ -506,51 +506,42 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
         onClick={!isExpanded ? handleContainerClick : undefined}
         onContextMenu={(e) => e.preventDefault()}
       >
-        {isExpanded ? (
-          // Expanded: fixed fullscreen container (video element stays in same React tree — no remount)
-          <div
-            style={getExpandedContainerStyle()}
-            onClick={handleExpandedTap}
-            onTouchStart={onExpandedTouchStart}
-            onTouchMove={onExpandedTouchMove}
-            onTouchEnd={onExpandedTouchEnd}
-          >
-            {videoEl}
-            {posterEl}
-            {/* Back button */}
-            {expandPhase === "open" && (
-              <div className="absolute z-10" style={{ top: "calc(1rem + var(--cap-status-bar-height, 0px))", left: "1rem" }}>
-                <button onClick={(e) => { e.stopPropagation(); handleCollapse(); }} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60">
-                  <ChevronLeft className="w-8 h-8" />
-                </button>
-              </div>
-            )}
-            {controlsBar}
-          </div>
-        ) : (
-          // Inline: normal card video
-          <>
-            <div className="absolute inset-0">
-              {videoEl}
+        {/* Single video container — only CSS changes between inline/expanded, no React remount */}
+        <div
+          className={isExpanded ? "" : "absolute inset-0"}
+          style={isExpanded ? getExpandedContainerStyle() : undefined}
+          onClick={isExpanded ? handleExpandedTap : undefined}
+          onTouchStart={isExpanded ? onExpandedTouchStart : undefined}
+          onTouchMove={isExpanded ? onExpandedTouchMove : undefined}
+          onTouchEnd={isExpanded ? onExpandedTouchEnd : undefined}
+        >
+          {videoEl}
+          {posterEl}
+          {/* Expanded: back button */}
+          {isExpanded && expandPhase === "open" && (
+            <div className="absolute z-10" style={{ top: "calc(1rem + var(--cap-status-bar-height, 0px))", left: "1rem" }}>
+              <button onClick={(e) => { e.stopPropagation(); handleCollapse(); }} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60">
+                <ChevronLeft className="w-8 h-8" />
+              </button>
             </div>
-            {posterEl}
-            {!isPlaying && !autoPlay && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-[2]">
-                <button onClick={togglePlay} className="p-4 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors">
-                  <Play className="w-8 h-8 fill-current" />
-                </button>
-              </div>
-            )}
-            {!videoReady && autoPlay && !isPlaying && (
-              <div className="absolute inset-0 flex items-center justify-center z-[2]">
-                <button onClick={togglePlay} className="p-4 rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors">
-                  <Play className="w-8 h-8 fill-current" />
-                </button>
-              </div>
-            )}
-            {controlsBar}
-          </>
-        )}
+          )}
+          {/* Inline: play button overlays */}
+          {!isExpanded && !isPlaying && !autoPlay && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-[2]">
+              <button onClick={togglePlay} className="p-4 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors">
+                <Play className="w-8 h-8 fill-current" />
+              </button>
+            </div>
+          )}
+          {!isExpanded && !videoReady && autoPlay && !isPlaying && (
+            <div className="absolute inset-0 flex items-center justify-center z-[2]">
+              <button onClick={togglePlay} className="p-4 rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors">
+                <Play className="w-8 h-8 fill-current" />
+              </button>
+            </div>
+          )}
+          {controlsBar}
+        </div>
       </div>
     </>
   );
