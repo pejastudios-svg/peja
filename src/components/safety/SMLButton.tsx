@@ -356,6 +356,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
   const handleCancel = async () => {
     cancellingRef.current = true;
     setMyCheckIn(null);
+    setIsOverdue(false);
     closeCancelConfirm();
     closeActiveModal();
     toast.success("Check-in ended.");
