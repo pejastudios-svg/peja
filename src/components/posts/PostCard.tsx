@@ -172,7 +172,7 @@ const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
     setLightboxUrl(media.url);
     setVideoStartTime(currentTime || 0);
     // Use captured frame first (best quality), then Cloudinary thumbnail, then null
-    setVideoThumbnail(capturedPoster || getVideoThumbnailUrl(media.url) || null);
+    setVideoThumbnail(capturedPoster || media.thumbnail_url || getVideoThumbnailUrl(media.url) || null);
     setVideoLightboxOpen(true);
   }
 };

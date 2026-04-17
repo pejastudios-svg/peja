@@ -139,7 +139,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
   // Pre-upload: maps each File → promise of its temp storage result
-  const preUploadRef = useRef<Map<File, Promise<{ url: string; tempPath: string } | null>>>(new Map());
+  const preUploadRef = useRef<Map<File, Promise<{ url: string; tempPath: string; thumbnailUrl: string | null } | null>>>(new Map());
   // Tracks which pre-uploads were consumed by a successful post (so unmount cleanup skips them)
   const usedPreUploadsRef = useRef<Set<File>>(new Set());
   // Per-file upload status for UI spinner (stored in a ref to avoid stale closure issues)
@@ -263,12 +263,27 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     });
   }
 
-  const preUploadFile = async (file: File): Promise<{ url: string; tempPath: string } | null> => {
+  const uploadThumbnailToStorage = async (blob: Blob, userId: string): Promise<string | null> => {
+    try {
+      const thumbPath = `thumbnails/${userId}-${Date.now()}-${Math.random().toString(36).substring(7)}.jpg`;
+      const { error } = await supabase.storage
+        .from("media")
+        .upload(thumbPath, blob, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false });
+      if (error) return null;
+      const { data: { publicUrl } } = supabase.storage.from("media").getPublicUrl(thumbPath);
+      return publicUrl;
+    } catch {
+      return null;
+    }
+  };
+
+  const preUploadFile = async (file: File): Promise<{ url: string; tempPath: string; thumbnailUrl: string | null } | null> => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) return null;
 
       const isImage = file.type.startsWith("image/");
+      const isVideo = file.type.startsWith("video/");
       const ext = file.name.split(".").pop()?.toLowerCase() || (isImage ? "jpg" : "mp4");
       const tempPath = `temp/${authUser.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
 
@@ -283,7 +298,16 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       if (error) return null;
 
       const { data: { publicUrl } } = supabase.storage.from("media").getPublicUrl(tempPath);
-      return { url: publicUrl, tempPath };
+
+      let thumbnailUrl: string | null = null;
+      if (isVideo) {
+        const thumbBlob = await createVideoThumbnail(file);
+        if (thumbBlob) {
+          thumbnailUrl = await uploadThumbnailToStorage(thumbBlob, authUser.id);
+        }
+      }
+
+      return { url: publicUrl, tempPath, thumbnailUrl };
     } catch {
       return null;
     }
@@ -483,7 +507,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
           const preResult = await preUploadPromise;
           if (preResult) {
             usedPreUploadsRef.current.add(file);
-            mediaUrls.push({ url: preResult.url, type: isVideo ? "video" : "photo", thumbnailUrl: null });
+            mediaUrls.push({ url: preResult.url, type: isVideo ? "video" : "photo", thumbnailUrl: preResult.thumbnailUrl ?? null });
             done++;
             setUploadProgress(Math.round((done / totalFiles) * 80));
             setToast(null);
@@ -584,24 +608,32 @@ setToast("Processing video...");
           mediaUrl = publicUrl.publicUrl;
         }
 
+        let thumbnailUrl: string | null = null;
+        if (isVideo) {
+          if (mediaUrl.includes("res.cloudinary.com")) {
+            try {
+              const parts = mediaUrl.split("/video/upload/");
+              if (parts.length === 2) {
+                const versionMatch = parts[1].match(/(v\d+\/.+)/);
+                if (versionMatch) {
+                  const jpgPath = versionMatch[1].replace(/\.[^.]+$/, ".jpg");
+                  thumbnailUrl = `${parts[0]}/video/upload/so_0,w_480,h_480,c_limit,f_jpg,q_auto/${jpgPath}`;
+                }
+              }
+            } catch {}
+          } else if (fileToUpload) {
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+            if (authUser) {
+              const thumbBlob = await createVideoThumbnail(fileToUpload);
+              if (thumbBlob) thumbnailUrl = await uploadThumbnailToStorage(thumbBlob, authUser.id);
+            }
+          }
+        }
+
         mediaUrls.push({
           url: mediaUrl,
           type: isVideo ? "video" : "photo",
-          thumbnailUrl: isVideo && mediaUrl.includes("res.cloudinary.com")
-            ? (() => {
-                try {
-                  const parts = mediaUrl.split("/video/upload/");
-                  if (parts.length === 2) {
-                    const versionMatch = parts[1].match(/(v\d+\/.+)/);
-                    if (versionMatch) {
-                      const jpgPath = versionMatch[1].replace(/\.[^.]+$/, ".jpg");
-                      return `${parts[0]}/video/upload/so_0,w_480,h_480,c_limit,f_jpg,q_auto/${jpgPath}`;
-                    }
-                  }
-                } catch {}
-                return null;
-              })()
-            : null,
+          thumbnailUrl,
         });
 
         done++;
