@@ -1,12 +1,16 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
-import { Volume2, VolumeX, Play, Pause, Maximize2 } from "lucide-react";
+import { Volume2, VolumeX, Play, Pause, Maximize2, ChevronLeft } from "lucide-react";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
+import { useAuth } from "@/context/AuthContext";
 import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk, generateVideoThumbnail, getCachedVideoUrl } from "@/lib/videoThumbnail";
 import { useHlsPlayer } from "@/hooks/useHlsPlayer";
+import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { recordPostView } from "@/lib/postViews";
 
 const PLAYING_EVENT = "peja-inline-video-playing";
 
@@ -19,6 +23,7 @@ export function InlineVideo({
   showMute = true,
   onError,
   autoPlay = true,
+  postId,
 }: {
   src: string;
   poster?: string;
@@ -28,6 +33,7 @@ export function InlineVideo({
   showMute?: boolean;
   onError?: () => void;
   autoPlay?: boolean;
+  postId?: string;
 }) {
   const instanceId = useId();
   const pathname = usePathname();
@@ -37,6 +43,7 @@ export function InlineVideo({
     currentPathRef.current = pathname;
   }, [pathname]);
   const handoff = useVideoHandoff();
+  const { user } = useAuth();
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -45,6 +52,8 @@ export function InlineVideo({
   const blockedRef = useRef(false);
   const userPausedRef = useRef(false);
   const soundEnabledRef = useRef(false);
+  // Prevents the video from blocking itself when it dispatches peja-modal-open
+  const selfExpandingRef = useRef(false);
 
   const [showControls, setShowControls] = useState(true);
   const { soundEnabled, setSoundEnabled } = useAudio();
@@ -54,6 +63,16 @@ export function InlineVideo({
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+
+  // Self-expansion state (used when onExpand prop is not provided)
+  const [expandPhase, setExpandPhase] = useState<"idle" | "enter" | "open" | "exit">("idle");
+  const expandSourceRectRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingExpanded, setIsDraggingExpanded] = useState(false);
+  const expandDragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const closingExpandRef = useRef(false);
+  const isExpanded = expandPhase !== "idle";
+  useScrollFreeze(isExpanded);
 
   const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
   const effectivePoster = poster || getVideoThumbnailUrl(src) || generatedPoster || undefined;
@@ -189,6 +208,80 @@ export function InlineVideo({
     }
   };
 
+  // ── Self-expansion (used when onExpand is not provided) ────────────────
+  const getExpandedContainerStyle = (): React.CSSProperties => {
+    const rect = expandSourceRectRef.current;
+    const dist = Math.sqrt(dragOffset.x ** 2 + dragOffset.y ** 2);
+
+    if (expandPhase === "enter" && rect) {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const tx = rect.x + rect.width / 2 - vw / 2;
+      const ty = rect.y + rect.height / 2 - vh / 2;
+      const s = Math.min(rect.width / vw, rect.height / vh);
+      return { position: "fixed", inset: 0, zIndex: 999998, backgroundColor: "black", display: "flex", alignItems: "center", justifyContent: "center", transform: `translate(${tx}px, ${ty}px) scale(${Math.max(s, 0.08)})`, transition: "none" };
+    }
+    if (expandPhase === "exit") {
+      const exitT = dist > 50 ? `translate(${dragOffset.x * 2}px, ${dragOffset.y * 2}px) scale(0.5)` : "scale(0.88)";
+      return { position: "fixed", inset: 0, zIndex: 999998, backgroundColor: "black", display: "flex", alignItems: "center", justifyContent: "center", transform: exitT, opacity: 0, transition: "transform 280ms cubic-bezier(0.2,0.8,0.2,1), opacity 250ms ease" };
+    }
+    if (isDraggingExpanded || dist > 0) {
+      return { position: "fixed", inset: 0, zIndex: 999998, backgroundColor: "black", display: "flex", alignItems: "center", justifyContent: "center", transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${1 - dist / 1000})`, transition: isDraggingExpanded ? "none" : "transform 0.3s ease-out" };
+    }
+    return { position: "fixed", inset: 0, zIndex: 999998, backgroundColor: "black", display: "flex", alignItems: "center", justifyContent: "center", transform: "none", transition: "transform 300ms cubic-bezier(0.2,0.8,0.2,1)" };
+  };
+
+  const handleSelfExpand = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isExpanded || closingExpandRef.current) return;
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (rect) expandSourceRectRef.current = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    selfExpandingRef.current = true;
+    window.dispatchEvent(new Event("peja-modal-open"));
+    selfExpandingRef.current = false;
+    closingExpandRef.current = false;
+    setSoundEnabled(true);
+    if (postId) recordPostView(postId, user?.id);
+    setExpandPhase("enter");
+    requestAnimationFrame(() => requestAnimationFrame(() => setExpandPhase("open")));
+  };
+
+  const handleCollapse = () => {
+    if (closingExpandRef.current) return;
+    closingExpandRef.current = true;
+    setExpandPhase("exit");
+    setTimeout(() => {
+      setExpandPhase("idle");
+      expandSourceRectRef.current = null;
+      setDragOffset({ x: 0, y: 0 });
+      closingExpandRef.current = false;
+      window.dispatchEvent(new Event("peja-modal-close"));
+    }, 280);
+  };
+
+  const onExpandedTouchStart = (e: React.TouchEvent) => {
+    expandDragStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    setIsDraggingExpanded(true);
+  };
+  const onExpandedTouchMove = (e: React.TouchEvent) => {
+    if (!expandDragStartRef.current) return;
+    setDragOffset({ x: e.touches[0].clientX - expandDragStartRef.current.x, y: e.touches[0].clientY - expandDragStartRef.current.y });
+  };
+  const onExpandedTouchEnd = () => {
+    setIsDraggingExpanded(false);
+    expandDragStartRef.current = null;
+    const dist = Math.sqrt(dragOffset.x ** 2 + dragOffset.y ** 2);
+    if (dist > 100) handleCollapse();
+    else setDragOffset({ x: 0, y: 0 });
+  };
+
+  const handleExpandedTap = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (showControls && isPlaying) { setShowControls(false); if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); }
+    else resetControlsTimer();
+  };
+  // ────────────────────────────────────────────────────────────────────────
+
   const handleExpand = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onExpand) {
@@ -218,6 +311,8 @@ export function InlineVideo({
 handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
       doPause();
       onExpand(currentTime, posterDataUrl);
+    } else {
+      handleSelfExpand(e);
     }
   };
 
@@ -300,6 +395,7 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
 
   useEffect(() => {
     const onModalOpen = () => {
+      if (selfExpandingRef.current) return; // Don't block ourselves when we're the one expanding
       setBlocked(true);
       blockedRef.current = true;
       const v = videoRef.current;
@@ -329,143 +425,133 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
     };
   }, []);
 
-  return (
+  const bgOpacity = isExpanded
+    ? Math.max(0, 1 - Math.sqrt(dragOffset.x ** 2 + dragOffset.y ** 2) / 400)
+    : 0;
+
+  const videoEl = (
+    <video
+      ref={videoRef}
+      src={optimizedSrc}
+      className={isExpanded
+        ? `max-w-full max-h-full object-contain pointer-events-none transition-opacity duration-100 ${!videoReady ? "opacity-0" : "opacity-100"}`
+        : `${className} ${!videoReady ? "opacity-0" : "opacity-100"}`}
+      playsInline
+      preload="auto"
+      muted
+      loop
+      onTimeUpdate={handleTimeUpdate}
+      onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+      onPlay={() => setIsPlaying(true)}
+      onPlaying={() => setVideoReady(true)}
+      onPause={() => { setIsPlaying(false); setShowControls(true); }}
+      onError={() => onError?.()}
+    />
+  );
+
+  const posterEl = !videoReady && (
+    <div className="absolute inset-0 z-[1] pointer-events-none">
+      {effectivePoster
+        ? <img src={effectivePoster} alt="" className={isExpanded ? "absolute inset-0 w-full h-full object-contain" : "w-full h-full object-cover"} />
+        : <div className="w-full h-full bg-dark-800" />}
+    </div>
+  );
+
+  const controlsBar = (
     <div
-      ref={wrapRef}
-      className="relative w-full h-full bg-black overflow-hidden group select-none"
-      onClick={handleContainerClick}
-      onContextMenu={(e) => e.preventDefault()}
+      className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 z-[3] ${showControls || !isPlaying ? "opacity-100" : "opacity-0"}`}
+      style={isExpanded ? { padding: "2.5rem 1.5rem", paddingBottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px))" } : { padding: "0.75rem" }}
+      onClick={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
     >
-      <video
-        ref={videoRef}
-        src={optimizedSrc}
-        className={`${className} ${!videoReady ? "opacity-0" : "opacity-100"}`}
-        playsInline
-        preload="auto"
-        muted
-        loop
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-        onPlay={() => setIsPlaying(true)}
-        onPlaying={() => setVideoReady(true)}
-        onPause={() => {
-          setIsPlaying(false);
-          setShowControls(true);
-        }}
-        onError={() => onError?.()}
-      />
-
-      {/* Poster overlay — always covers the video until first frame actually renders */}
-      {!videoReady && (
-        <div className="absolute inset-0 z-[1] pointer-events-none">
-          {effectivePoster ? (
-            <img
-              src={effectivePoster}
-              alt=""
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="w-full h-full bg-dark-800" />
-          )}
+      <div className="flex items-center gap-3">
+        <button onClick={togglePlay} className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors">
+          {isPlaying ? <Pause className={isExpanded ? "w-6 h-6 fill-current" : "w-4 h-4 fill-current"} /> : <Play className={isExpanded ? "w-6 h-6 fill-current" : "w-4 h-4 fill-current"} />}
+        </button>
+        <div className="flex-1 relative h-6 flex items-center group/slider">
+          <input type="range" min={0} max={100} step={0.1} value={progress} onChange={handleScrub}
+            onMouseDown={() => setIsScrubbing(true)} onMouseUp={() => setIsScrubbing(false)}
+            onTouchStart={(e) => { e.stopPropagation(); setIsScrubbing(true); }} onTouchEnd={() => setIsScrubbing(false)}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+          <div className="w-full h-1.5 bg-white/30 rounded-full relative">
+            <div className="absolute left-0 top-0 h-full bg-primary-500 rounded-full pointer-events-none" style={{ width: `${progress}%` }} />
+            <div className="absolute top-1/2 -mt-1.5 h-3 w-3 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover/slider:scale-125" style={{ left: `calc(${progress}% - 6px)` }} />
+          </div>
         </div>
-      )}
-
-      {/* Custom play button overlay — shown when not playing and not autoPlay, OR when video isn't ready yet and not autoPlay */}
-      {!isPlaying && !autoPlay && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-[2]">
-          <button
-            onClick={togglePlay}
-            className="p-4 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
-          >
-            <Play className="w-8 h-8 fill-current" />
+        {showMute && (
+          <button onPointerDownCapture={(e) => e.stopPropagation()} onTouchStartCapture={(e) => e.stopPropagation()} onClick={handleMuteClick} className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors">
+            {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
-        </div>
-      )}
-
-      {/* Play button on poster when autoPlay but video hasn't started yet (Android/slow networks) */}
-      {!videoReady && autoPlay && !isPlaying && (
-        <div className="absolute inset-0 flex items-center justify-center z-[2]">
-          <button
-            onClick={togglePlay}
-            className="p-4 rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors"
-          >
-            <Play className="w-8 h-8 fill-current" />
+        )}
+        {showExpand && !isExpanded && (
+          <button onClick={handleExpand} className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors">
+            <Maximize2 className="w-4 h-4" />
           </button>
-        </div>
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Backdrop for self-expanded mode */}
+      {isExpanded && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 bg-black" style={{ zIndex: 999997, opacity: expandPhase === "enter" ? 0.6 : expandPhase === "exit" ? 0 : bgOpacity, transition: expandPhase === "exit" ? "opacity 280ms ease" : expandPhase === "enter" ? "none" : "opacity 100ms ease-linear" }} />,
+        document.body
       )}
 
       <div
-        className={`absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 z-[3] ${
-          showControls || !isPlaying ? "opacity-100" : "opacity-0"
-        }`}
-        onClick={(e) => e.stopPropagation()}
+        ref={wrapRef}
+        className="relative w-full h-full bg-black overflow-hidden group select-none"
+        onClick={!isExpanded ? handleContainerClick : undefined}
+        onContextMenu={(e) => e.preventDefault()}
       >
-        <div className="flex items-center gap-3">
-          <button
-            onClick={togglePlay}
-            className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
+        {isExpanded ? (
+          // Expanded: fixed fullscreen container (video element stays in same React tree — no remount)
+          <div
+            style={getExpandedContainerStyle()}
+            onClick={handleExpandedTap}
+            onTouchStart={onExpandedTouchStart}
+            onTouchMove={onExpandedTouchMove}
+            onTouchEnd={onExpandedTouchEnd}
           >
-            {isPlaying ? (
-              <Pause className="w-4 h-4 fill-current" />
-            ) : (
-              <Play className="w-4 h-4 fill-current" />
+            {videoEl}
+            {posterEl}
+            {/* Back button */}
+            {expandPhase === "open" && (
+              <div className="absolute z-10" style={{ top: "calc(1rem + var(--cap-status-bar-height, 0px))", left: "1rem" }}>
+                <button onClick={(e) => { e.stopPropagation(); handleCollapse(); }} className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60">
+                  <ChevronLeft className="w-8 h-8" />
+                </button>
+              </div>
             )}
-          </button>
-
-          <div className="flex-1 relative h-6 flex items-center group/slider">
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={0.1}
-              value={progress}
-              onChange={handleScrub}
-              onMouseDown={() => setIsScrubbing(true)}
-              onMouseUp={() => setIsScrubbing(false)}
-              onTouchStart={(e) => {
-                e.stopPropagation();
-                setIsScrubbing(true);
-              }}
-              onTouchEnd={() => setIsScrubbing(false)}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-            />
-            <div className="w-full h-1.5 bg-white/30 rounded-full relative">
-              <div
-                className="absolute left-0 top-0 h-full bg-primary-500 rounded-full pointer-events-none"
-                style={{ width: `${progress}%` }}
-              />
-              <div
-                className="absolute top-1/2 -mt-1.5 h-3 w-3 bg-white rounded-full shadow-lg pointer-events-none transition-transform group-hover/slider:scale-125"
-                style={{ left: `calc(${progress}% - 6px)` }}
-              />
-            </div>
+            {controlsBar}
           </div>
-
-          {showMute && (
-            <button
-              onPointerDownCapture={(e) => e.stopPropagation()}
-              onTouchStartCapture={(e) => e.stopPropagation()}
-              onClick={handleMuteClick}
-              className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
-            >
-              {soundEnabled ? (
-                <Volume2 className="w-4 h-4" />
-              ) : (
-                <VolumeX className="w-4 h-4" />
-              )}
-            </button>
-          )}
-
-          {showExpand && onExpand && (
-            <button
-              onClick={handleExpand}
-              className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors"
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        ) : (
+          // Inline: normal card video
+          <>
+            <div className="absolute inset-0">
+              {videoEl}
+            </div>
+            {posterEl}
+            {!isPlaying && !autoPlay && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-[2]">
+                <button onClick={togglePlay} className="p-4 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md transition-colors">
+                  <Play className="w-8 h-8 fill-current" />
+                </button>
+              </div>
+            )}
+            {!videoReady && autoPlay && !isPlaying && (
+              <div className="absolute inset-0 flex items-center justify-center z-[2]">
+                <button onClick={togglePlay} className="p-4 rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors">
+                  <Play className="w-8 h-8 fill-current" />
+                </button>
+              </div>
+            )}
+            {controlsBar}
+          </>
+        )}
       </div>
-    </div>
+    </>
   );
 }

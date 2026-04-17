@@ -394,8 +394,9 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     setError("");
     e.target.value = "";
 
-    // Start background pre-upload for each file immediately
+    // Start background pre-upload for images only — videos always go through Cloudinary at submit time
     for (const file of files) {
+      if (file.type.startsWith("video/")) continue;
       preUploadStatusMapRef.current.set(file, "uploading");
       const promise = preUploadFile(file).then((result) => {
         preUploadStatusMapRef.current.set(file, result ? "done" : "failed");

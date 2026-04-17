@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, memo } from "react";
 import { useRouter } from "next/navigation";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
-import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 import { useConfirm } from "@/context/ConfirmContext";
 import { useAuth } from "@/context/AuthContext";
@@ -59,15 +58,8 @@ function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProp
       }
     });
   }, [post.media]);
-  const [videoStartTime, setVideoStartTime] = useState(0);
-  const [videoThumbnail, setVideoThumbnail] = useState<string | null>(null);
-  const [showLightboxOptions, setShowLightboxOptions] = useState(false);
-
-
-
   // Lightbox States
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [lightboxItems, setLightboxItems] = useState<{ url: string; type: "image" | "video" }[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -166,16 +158,6 @@ if (!wasConfirmed) {
   router.push(`/post/${post.id}${sk}`, { scroll: false });
 };
 
-const handleExpandVideo = (currentTime?: number, capturedPoster?: string) => {
-  const media = post.media?.[currentMediaIndex];
-  if (media && media.media_type === 'video') {
-    setLightboxUrl(media.url);
-    setVideoStartTime(currentTime || 0);
-    // Use captured frame first (best quality), then Cloudinary thumbnail, then null
-    setVideoThumbnail(capturedPoster || media.thumbnail_url || getVideoThumbnailUrl(media.url) || null);
-    setVideoLightboxOpen(true);
-  }
-};
 
   const handleAddInfo = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -296,7 +278,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
                       className="w-full h-full object-cover"
                       showExpand={true}
                       showMute={true}
-                      onExpand={handleExpandVideo}
+                      postId={post.id}
                       onError={() => setVideoError(true)}
                     />
                   )
@@ -436,14 +418,6 @@ const handleShareClick = async (e: React.MouseEvent) => {
   }}
 />
       
-      <VideoLightbox 
-  isOpen={videoLightboxOpen}
-  onClose={() => setVideoLightboxOpen(false)}
-  videoUrl={lightboxUrl}
-  startTime={videoStartTime}
-  postId={post.id}
-  posterUrl={videoThumbnail}
-/>
     </article>
   );
 }
