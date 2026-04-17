@@ -27,12 +27,15 @@ export function getFirebaseAdmin(): admin.app.App {
   return app;
 }
 
+// "sent" = delivered, "invalid" = token is dead and should be deleted, "error" = transient failure keep the token
+type SendResult = "sent" | "invalid" | "error";
+
 export async function sendPushNotification(params: {
   token: string;
   title: string;
   body: string;
   data?: Record<string, string>;
-}): Promise<boolean> {
+}): Promise<SendResult> {
   try {
     const firebaseApp = getFirebaseAdmin();
     const messaging = firebaseApp.messaging();
@@ -63,16 +66,19 @@ export async function sendPushNotification(params: {
       },
     });
 
-    return true;
+    return "sent";
   } catch (error: any) {
-    if (
-      error?.code === "messaging/registration-token-not-registered" ||
-      error?.code === "messaging/invalid-registration-token"
-    ) {
-      return false;
+    // Only delete the token when Firebase explicitly says it's invalid/unregistered
+    const INVALID_CODES = [
+      "messaging/registration-token-not-registered",
+      "messaging/invalid-registration-token",
+      "messaging/invalid-argument",
+    ];
+    if (INVALID_CODES.includes(error?.code)) {
+      return "invalid";
     }
-
-    return false;
+    // Transient error (network, quota, server) — keep the token
+    return "error";
   }
 }
 
@@ -99,27 +105,26 @@ export async function sendPushToUser(params: {
   const invalidTokenIds: string[] = [];
 
   for (const tokenRow of tokens) {
-    const success = await sendPushNotification({
+    const result = await sendPushNotification({
       token: tokenRow.token,
       title: params.title,
       body: params.body,
       data: params.data,
     });
 
-    if (success) {
+    if (result === "sent") {
       sentCount++;
-    } else {
+    } else if (result === "invalid") {
+      // Only delete tokens Firebase explicitly rejected — never on transient errors
       invalidTokenIds.push(tokenRow.id);
     }
   }
 
-  // Clean up invalid tokens
   if (invalidTokenIds.length > 0) {
     await supabaseAdmin
       .from("user_push_tokens")
       .delete()
       .in("id", invalidTokenIds);
-
   }
 
   return sentCount;
