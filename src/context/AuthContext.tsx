@@ -395,8 +395,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const timeoutId = setTimeout(() => {
-      setLoading(false);
-    }, 5000);
+      // Only force-clear loading if a fetch isn't already in progress
+      if (!fetchingRef.current) setLoading(false);
+    }, 12000);
 
     initAuth().finally(() => {
       clearTimeout(timeoutId);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { LogIn, UserPlus } from "lucide-react";
@@ -25,23 +25,22 @@ export function LoginPrompt() {
     }, 250);
   }, []);
 
-const authCheckedRef = useRef(false);
   useEffect(() => {
-    // Wait for auth to finish loading
-    if (loading) return;
-    // Only check once
-    if (authCheckedRef.current) return;
-    authCheckedRef.current = true;
-    // User is logged in, no need to show
-    if (user) return;
+    // Never show while auth is still resolving
+    if (loading || user) return;
     // On a public path, don't show
     if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) return;
     // Already dismissed this session
-    const dismissed = sessionStorage.getItem(DISMISSED_KEY);
-    if (dismissed) return;
-    // Wait for the page to fully render before showing
-    const timer = setTimeout(() => setShow(true), 3000);
-    return () => clearTimeout(timer);
+    if (sessionStorage.getItem(DISMISSED_KEY)) return;
+
+    // Double-check there's truly no session before showing (handles Capacitor
+    // async session restore where loading briefly resolves before user is set)
+    const timer = setTimeout(async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) return;
+      setShow(true);
+    }, 3000);
+    return () => clearTimeout(timer); // cancelled instantly if user arrives
   }, [user, loading, pathname]);
 
    const handleDismiss = () => {

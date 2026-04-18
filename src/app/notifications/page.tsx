@@ -115,7 +115,9 @@ export default function NotificationsPage() {
       const cleanup = setupRealtime();
       return cleanup;
     } else if (!authLoading && !user) {
-      router.push("/login");
+      // Grace period — Capacitor restores session async after first render
+      const t = setTimeout(() => router.push("/login"), 1500);
+      return () => clearTimeout(t);
     }
   }, [user, authLoading]);
 
