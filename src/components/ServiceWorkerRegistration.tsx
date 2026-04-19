@@ -7,6 +7,14 @@ export function ServiceWorkerRegistration() {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
 
+    // Reload once when a new SW takes over so the page picks up fresh code
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
+    });
+
     // Register after page load to not block rendering
     const register = async () => {
       try {
@@ -18,6 +26,14 @@ export function ServiceWorkerRegistration() {
         setInterval(() => {
           registration.update();
         }, 30 * 60 * 1000);
+
+        // Check for updates every time the app becomes visible (Capacitor foreground)
+        const onVisibility = () => {
+          if (document.visibilityState === "visible") {
+            registration.update().catch(() => {});
+          }
+        };
+        document.addEventListener("visibilitychange", onVisibility);
 
         // Handle updates
         registration.addEventListener("updatefound", () => {

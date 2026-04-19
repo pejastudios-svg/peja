@@ -1,9 +1,9 @@
-// Peja Service Worker v6 - Offline-First Safety App
-const CACHE_NAME = "peja-v6";
-const APP_SHELL_CACHE = "peja-shell-v6";
-const DATA_CACHE = "peja-data-v2";
-const MEDIA_CACHE = "peja-media-v2";
-const VIDEO_CACHE = "peja-video-v2";
+// Peja Service Worker v7 - Offline-First Safety App
+const CACHE_NAME = "peja-v7";
+const APP_SHELL_CACHE = "peja-shell-v7";
+const DATA_CACHE = "peja-data-v3";
+const MEDIA_CACHE = "peja-media-v3";
+const VIDEO_CACHE = "peja-video-v3";
 
 const APP_SHELL = [
   "/",
@@ -60,7 +60,7 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  const KEEP = ["peja-v6", "peja-shell-v6", DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
+  const KEEP = [CACHE_NAME, APP_SHELL_CACHE, DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys.filter((k) => !KEEP.includes(k)).map((k) => caches.delete(k))))
@@ -136,11 +136,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // HTML: stale-while-revalidate, guaranteed fallback so net::ERR_FAILED never shows
+  // HTML: network-first so new deploys propagate immediately; cache only as offline fallback
   if (request.mode === "navigate" || (request.headers.get("accept") || "").includes("text/html")) {
     event.respondWith(
-      caches.match(request).then(async (cached) => {
-        const offlineFallback = async () => {
+      fetch(request)
+        .then((r) => {
+          if (r.ok) { const cl = r.clone(); caches.open(APP_SHELL_CACHE).then((ca) => ca.put(request, cl)); }
+          return r;
+        })
+        .catch(async () => {
+          const cached = await caches.match(request);
           if (cached) return cached;
           const root = await caches.match("/");
           if (root) return root;
@@ -148,13 +153,7 @@ self.addEventListener("fetch", (event) => {
             `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Peja</title><style>*{box-sizing:border-box}body{background:#0c0818;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;font-family:sans-serif;color:#fff;padding:1rem}</style></head><body><div style="text-align:center;max-width:320px"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="1.5" style="margin-bottom:1rem"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0"/><path d="M12 8v4l3 3"/></svg><p style="color:#a78bfa;font-size:1.1rem;font-weight:600;margin:0 0 .5rem">You're offline</p><p style="color:#6b7280;font-size:.875rem;margin:0 0 1.5rem">Connect to the internet to view this page</p><button onclick="history.back()" style="padding:.6rem 1.5rem;background:#7c3aed;color:#fff;border:none;border-radius:.75rem;font-size:.875rem;cursor:pointer;font-weight:500">Go Back</button></div></body></html>`,
             { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } }
           );
-        };
-        const net = fetch(request).then((r) => {
-          if (r.ok) { const cl = r.clone(); caches.open(APP_SHELL_CACHE).then((ca) => ca.put(request, cl)); }
-          return r;
-        }).catch(offlineFallback);
-        return cached || net;
-      })
+        })
     );
     return;
   }

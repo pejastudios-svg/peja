@@ -62,9 +62,8 @@ export function getOptimizedVideoUrl(videoUrl: string): string {
 
     const pathWithVersion = versionMatch[1];
 
-// Fast-start MP4: moov atom at beginning, h264 baseline for fast decode
     const width = isMobile ? 640 : 720;
-    return `${base}/video/upload/w_${width},c_limit,q_auto:eco,vc_h264:baseline,ac_aac,br_1500k,f_mp4,fl_fast_start/${pathWithVersion}`;
+    return `${base}/video/upload/w_${width},c_limit,q_auto:eco,vc_h264:baseline,ac_aac,br_1500k,f_mp4/${pathWithVersion}`;
   } catch {
     return videoUrl;
   }

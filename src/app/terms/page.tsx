@@ -83,7 +83,7 @@ export default function TermsPage() {
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-dark-100 mb-3">6. Anonymity</h2>
             <p className="text-dark-300 leading-relaxed">
-              While you may choose to post anonymously, your identity is always visible 
+              While you may post anonymously, your identity is always visible 
               to Peja administrators for safety and accountability purposes. We may 
               disclose your information to law enforcement if required.
             </p>

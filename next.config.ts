@@ -69,6 +69,16 @@ const nextConfig = {
           },
         ],
       },
+      // HTML pages — never cache in the WebView so new deploys propagate on open
+      {
+        source: "/:path((?!_next/static/|_next/image|api/).*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "no-cache, no-store, must-revalidate",
+          },
+        ],
+      },
     ];
   },
 };

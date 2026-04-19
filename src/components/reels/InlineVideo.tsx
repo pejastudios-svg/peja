@@ -48,6 +48,33 @@ export function InlineVideo({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Retries video load when Cloudinary returns an empty-body 200 during
+  // async transcoding. First request triggers transcode; it's ready within
+  // ~10-30s for short clips, so retry with backoff before giving up.
+  const errorRetryRef = useRef(0);
+  const errorRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (errorRetryTimerRef.current) clearTimeout(errorRetryTimerRef.current);
+    };
+  }, []);
+  const scheduleVideoRetry = () => {
+    const attempt = errorRetryRef.current;
+    // Delays: 2s, 5s, 10s, 20s. Total ~37s before giving up — enough for
+    // Cloudinary to finish async transcoding a short clip.
+    const delays = [2000, 5000, 10000, 20000];
+    if (attempt < delays.length) {
+      errorRetryRef.current = attempt + 1;
+      if (errorRetryTimerRef.current) clearTimeout(errorRetryTimerRef.current);
+      errorRetryTimerRef.current = setTimeout(() => {
+        const v = videoRef.current;
+        if (!v) return;
+        try { v.load(); } catch {}
+      }, delays[attempt]);
+    } else {
+      onError?.();
+    }
+  };
 
   const blockedRef = useRef(false);
   const userPausedRef = useRef(false);
@@ -448,11 +475,23 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
       muted
       loop
       onTimeUpdate={handleTimeUpdate}
-      onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+      onLoadStart={() => {
+        if (errorRetryTimerRef.current) clearTimeout(errorRetryTimerRef.current);
+        errorRetryTimerRef.current = setTimeout(() => {
+          const v = videoRef.current;
+          if (v && v.readyState < 1) scheduleVideoRetry();
+        }, 6000);
+      }}
+      onLoadedMetadata={(e) => {
+        if (errorRetryTimerRef.current) clearTimeout(errorRetryTimerRef.current);
+        setDuration(e.currentTarget.duration);
+      }}
+      onLoadedData={() => { errorRetryRef.current = 0; }}
       onPlay={() => setIsPlaying(true)}
       onPlaying={() => setVideoReady(true)}
       onPause={() => { setIsPlaying(false); setShowControls(true); }}
-      onError={() => onError?.()}
+      onError={scheduleVideoRetry}
+      onStalled={scheduleVideoRetry}
     />
   );
 
