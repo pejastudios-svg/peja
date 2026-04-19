@@ -10,6 +10,7 @@ import { Header } from "@/components/layout/Header";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
+import { realtimeManager } from "@/lib/realtime";
 import {
   Search,
   X,
@@ -249,6 +250,34 @@ function SearchContent() {
       window.removeEventListener("peja-post-deleted", handlePostDeleted);
       window.removeEventListener("peja-post-archived", handlePostArchived);
     };
+  }, [feedKey, feedCache]);
+
+  // Realtime: remove posts from search results when they're deleted or archived anywhere
+  useEffect(() => {
+    const removeById = (postId: string) => {
+      setPosts((prev) => {
+        const next = prev.filter((p) => p.id !== postId);
+        if (next.length !== prev.length) feedCache.setPosts(feedKey, next);
+        return next;
+      });
+    };
+
+    const unsubscribe = realtimeManager.subscribeToPosts(
+      undefined,
+      (updatedPost: any) => {
+        if (
+          updatedPost?.status === "archived" ||
+          updatedPost?.status === "deleted"
+        ) {
+          removeById(updatedPost.id);
+        }
+      },
+      (deletedPost: any) => {
+        if (deletedPost?.id) removeById(deletedPost.id);
+      }
+    );
+
+    return () => unsubscribe();
   }, [feedKey, feedCache]);
 
 useEffect(() => {

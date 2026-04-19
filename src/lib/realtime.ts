@@ -8,48 +8,61 @@ class RealtimeManager {
   private retryCount: Map<string, number> = new Map();
   private maxRetries = 3;
 
+  // Fan-out listeners for the shared posts channel so multiple pages can
+  // subscribe at once (home, search, profile, admin).
+  private postListeners: Set<{
+    onInsert?: Callback;
+    onUpdate?: Callback;
+    onDelete?: Callback;
+  }> = new Set();
+
   subscribeToPosts(onInsert?: Callback, onUpdate?: Callback, onDelete?: Callback): () => void {
     const channelName = 'posts-realtime';
-    
-    if (this.channels.has(channelName)) {
-      return () => this.unsubscribe(channelName);
+    const listener = { onInsert, onUpdate, onDelete };
+    this.postListeners.add(listener);
+
+    if (!this.channels.has(channelName)) {
+      const retries = this.retryCount.get(channelName) || 0;
+      if (retries >= this.maxRetries) {
+        return () => {
+          this.postListeners.delete(listener);
+        };
+      }
+
+      try {
+        const channel = supabase
+          .channel(channelName)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'posts' },
+            (payload) => this.postListeners.forEach((l) => l.onInsert?.(payload.new))
+          )
+          .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'posts' },
+            (payload) => this.postListeners.forEach((l) => l.onUpdate?.(payload.new))
+          )
+          .on(
+            'postgres_changes',
+            { event: 'DELETE', schema: 'public', table: 'posts' },
+            (payload) => this.postListeners.forEach((l) => l.onDelete?.(payload.old))
+          )
+          .subscribe((status) => {
+            if (status === 'CHANNEL_ERROR') {
+              this.retryCount.set(channelName, retries + 1);
+            }
+          });
+
+        this.channels.set(channelName, channel);
+      } catch {}
     }
 
-    // Check retry count to prevent spam
-    const retries = this.retryCount.get(channelName) || 0;
-    if (retries >= this.maxRetries) {
-      return () => {};
-    }
-
-    try {
-      const channel = supabase
-        .channel(channelName)
-        .on(
-          'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'posts' },
-          (payload) => onInsert?.(payload.new)
-        )
-        .on(
-          'postgres_changes',
-          { event: 'UPDATE', schema: 'public', table: 'posts' },
-          (payload) => onUpdate?.(payload.new)
-        )
-        .on(
-          'postgres_changes',
-          { event: 'DELETE', schema: 'public', table: 'posts' },
-          (payload) => onDelete?.(payload.old)
-        )
-        .subscribe((status) => {
-          if (status === 'CHANNEL_ERROR') {
-            this.retryCount.set(channelName, retries + 1);
-          }
-        });
-
-      this.channels.set(channelName, channel);
-    } catch (error) {
-    }
-
-    return () => this.unsubscribe(channelName);
+    return () => {
+      this.postListeners.delete(listener);
+      if (this.postListeners.size === 0) {
+        this.unsubscribe(channelName);
+      }
+    };
   }
 
   subscribeToNotifications(userId: string, onInsert?: Callback, onUpdate?: Callback): () => void {

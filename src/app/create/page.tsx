@@ -26,8 +26,10 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
+import { useFeedCache } from "@/context/FeedContext";
 import { supabase } from "@/lib/supabase";
 import { CATEGORIES } from "@/lib/types";
+import type { Post } from "@/lib/types";
 import { notifyUsersAboutIncident } from "@/lib/notifications";
 import { PostLoadingAnimation } from "@/components/posts/PostLoadingAnimation";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
@@ -117,6 +119,7 @@ function validateVideoSize(file: File): { valid: boolean; warning?: string } {
 export default function CreatePostPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+  const feedCache = useFeedCache();
   const isMounted = useRef(true);
   const [submitted, setSubmitted] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -919,6 +922,47 @@ setToast("Processing video...");
 
     setUploadProgress(100);
     setToast("Post uploaded ✓");
+
+    // Optimistically prepend to the home feed caches so the post is visible
+    // the moment we land on /, independent of realtime event timing.
+    try {
+      const optimisticPost: Post = {
+        id: post.id,
+        user_id: authUser.id,
+        category: post.category,
+        comment: post.comment,
+        location: {
+          latitude: post.latitude ?? 0,
+          longitude: post.longitude ?? 0,
+        },
+        address: post.address,
+        is_anonymous: post.is_anonymous,
+        status: post.status,
+        is_sensitive: post.is_sensitive,
+        confirmations: post.confirmations || 0,
+        views: post.views || 0,
+        comment_count: post.comment_count || 0,
+        report_count: post.report_count || 0,
+        created_at: post.created_at,
+        media: mediaUrls.map((m, idx) => ({
+          id: `optimistic-${post.id}-${idx}`,
+          post_id: post.id,
+          url: m.url,
+          media_type: m.type,
+          is_sensitive: isSensitive,
+          ...(m.thumbnailUrl ? { thumbnail_url: m.thumbnailUrl } : {}),
+        })) as any,
+        tags: [...tags],
+      };
+
+      for (const key of ["home:trending", "home:nearby"]) {
+        const cached = feedCache.get(key);
+        const existing = cached?.posts || [];
+        if (!existing.some((p) => p.id === post.id)) {
+          feedCache.setPosts(key, [optimisticPost, ...existing].slice(0, 30));
+        }
+      }
+    } catch {}
 
     window.dispatchEvent(new Event("peja-post-created"));
     sessionStorage.setItem("peja-feed-refresh", "true");

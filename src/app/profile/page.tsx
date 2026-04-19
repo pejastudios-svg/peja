@@ -24,6 +24,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Post } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
+import { realtimeManager } from "@/lib/realtime";
 
 export default function ProfilePage() {
   // ============================================================
@@ -147,6 +148,41 @@ export default function ProfilePage() {
       window.removeEventListener("peja-post-archived", handlePostArchived);
     };
   }, [feedCache]);
+
+  // Realtime: reflect admin/remote deletes and archive actions on this profile's posts
+  useEffect(() => {
+    if (!user) return;
+
+    const removeById = (postId: string) => {
+      setUserPosts((prev) => {
+        const next = prev.filter((p) => p.id !== postId);
+        if (next.length !== prev.length) feedCache.setPosts("profile:posts", next);
+        return next;
+      });
+      setConfirmedPosts((prev) => {
+        const next = prev.filter((p) => p.id !== postId);
+        if (next.length !== prev.length) feedCache.setPosts("profile:confirmed", next);
+        return next;
+      });
+    };
+
+    const unsubscribe = realtimeManager.subscribeToPosts(
+      undefined,
+      (updatedPost: any) => {
+        if (
+          updatedPost?.status === "archived" ||
+          updatedPost?.status === "deleted"
+        ) {
+          removeById(updatedPost.id);
+        }
+      },
+      (deletedPost: any) => {
+        if (deletedPost?.id) removeById(deletedPost.id);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user, feedCache]);
 
   const fetchUserPosts = async () => {
     if (!user) return;
