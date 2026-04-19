@@ -465,40 +465,37 @@ posts.forEach((p: any) => {
     };
   }, []);
 
-  // Listen for post deleted/archived events
+  // Listen for post deleted/archived events — remove from all three states
   useEffect(() => {
-    const handlePostDeleted = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const { postId } = customEvent.detail || {};
-
-      if (postId) {
-        setPosts((prev) => {
-          const next = prev.filter((p) => p.id !== postId);
-          feedCache.setPosts(feedKey, next);
-          return next;
-        });
-      }
+    const removeById = (postId: string) => {
+      setPosts((prev) => {
+        const next = prev.filter((p) => p.id !== postId);
+        feedCache.setPosts(feedKey, next);
+        return next;
+      });
+      setNearbyPosts((prev) => {
+        const next = prev.filter((p) => p.id !== postId);
+        feedCache.setPosts("home:nearby", next);
+        return next;
+      });
+      setTrendingPosts((prev) => {
+        const next = prev.filter((p) => p.id !== postId);
+        feedCache.setPosts("home:trending", next);
+        return next;
+      });
     };
 
-    const handlePostArchived = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const { postId } = customEvent.detail || {};
-
-      if (postId) {
-        setPosts((prev) => {
-          const next = prev.filter((p) => p.id !== postId);
-          feedCache.setPosts(feedKey, next);
-          return next;
-        });
-      }
+    const handler = (e: Event) => {
+      const { postId } = (e as CustomEvent).detail || {};
+      if (postId) removeById(postId);
     };
 
-    window.addEventListener("peja-post-deleted", handlePostDeleted);
-    window.addEventListener("peja-post-archived", handlePostArchived);
+    window.addEventListener("peja-post-deleted", handler);
+    window.addEventListener("peja-post-archived", handler);
 
     return () => {
-      window.removeEventListener("peja-post-deleted", handlePostDeleted);
-      window.removeEventListener("peja-post-archived", handlePostArchived);
+      window.removeEventListener("peja-post-deleted", handler);
+      window.removeEventListener("peja-post-archived", handler);
     };
   }, [feedKey, feedCache]);
   
@@ -509,7 +506,10 @@ posts.forEach((p: any) => {
       const needsRefresh = sessionStorage.getItem("peja-feed-refresh");
       if (needsRefresh) {
         sessionStorage.removeItem("peja-feed-refresh");
-        feedCache.invalidateAll();
+        // Don't invalidateAll — that wipes the optimistic insert the create
+        // flow just wrote. The isRefresh=true call below already bypasses
+        // the cache-freshness shortcut, so we'll revalidate against the DB
+        // either way while keeping the new post visible immediately.
         fetchPostsRef.current(true);
       } else {
         fetchPostsRef.current();
@@ -530,101 +530,89 @@ posts.forEach((p: any) => {
   // Real-time subscription
   useEffect(() => {
     const unsubscribe = realtimeManager.subscribeToPosts(
-      // On new post
+      // On new post — prepend to both tabs so cross-device inserts show up immediately.
       async (newPost) => {
-        if (newPost.status === "live") {
-          const formatted = await formatPost(newPost);
-          if (formatted) {
-            setPosts((prev) => {
-              const merged = [formatted, ...prev];
+        if (newPost.status !== "live") return;
+        const formatted = await formatPost(newPost);
+        if (!formatted) return;
 
-              if (activeTab === "nearby") {
-                const currentUser = userRef.current;
-                const userLat = currentUser?.last_latitude ?? null;
-                const userLng = currentUser?.last_longitude ?? null;
-
-                if (userLat != null && userLng != null) {
-                  const sorted = merged.sort((a, b) => {
-                    const pa = categoryPriority(a);
-                    const pb = categoryPriority(b);
-                    if (pa !== pb) return pa - pb;
-
-                    const aHas = !!a.location?.latitude && !!a.location?.longitude;
-                    const bHas = !!b.location?.latitude && !!b.location?.longitude;
-                    if (!aHas && bHas) return 1;
-                    if (aHas && !bHas) return -1;
-                    if (!aHas && !bHas)
-                      return (
-                        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                      );
-
-                    const da = distanceKm(
-                      userLat,
-                      userLng,
-                      a.location.latitude,
-                      a.location.longitude
-                    );
-                    const db = distanceKm(
-                      userLat,
-                      userLng,
-                      b.location.latitude,
-                      b.location.longitude
-                    );
-                    if (da !== db) return da - db;
-                    return (
-                      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                    );
-                  });
-
-                  const next = sorted.slice(0, 30);
-                  feedCache.setPosts(feedKey, next);
-                  return next;
-                }
-              }
-
-              const next = merged.slice(0, 30);
-              feedCache.setPosts(feedKey, next);
-              return next;
-            });
-          }
-        }
-      },
-      // On post update
-      (updatedPost) => {
+        const prependIfMissing = (list: Post[]): Post[] => {
+          if (list.some((p) => p.id === formatted.id)) return list;
+          return [formatted, ...list].slice(0, 30);
+        };
 
         setPosts((prev) => {
-          if (updatedPost.status === "archived" || updatedPost.status === "deleted") {
-            const next = prev.filter((p) => p.id !== updatedPost.id);
-            feedCache.setPosts(feedKey, next);
-            return next;
-          }
-
-          const next = prev
-            .map((p) => {
-              if (p.id === updatedPost.id) {
-                return {
-                  ...p,
-                  confirmations: updatedPost.confirmations ?? p.confirmations,
-                  views: updatedPost.views ?? p.views,
-                  comment_count: updatedPost.comment_count ?? p.comment_count,
-                  report_count: updatedPost.report_count ?? p.report_count,
-                  status: updatedPost.status ?? p.status,
-                  is_sensitive: updatedPost.is_sensitive ?? p.is_sensitive,
-                };
-              }
-              return p;
-            })
-            .filter((p) => p.status === "live" || p.status === "resolved");
-
+          const next = prependIfMissing(prev);
           feedCache.setPosts(feedKey, next);
           return next;
         });
+        setNearbyPosts((prev) => {
+          const next = prependIfMissing(prev);
+          feedCache.setPosts("home:nearby", next);
+          return next;
+        });
+        setTrendingPosts((prev) => {
+          const next = prependIfMissing(prev);
+          feedCache.setPosts("home:trending", next);
+          return next;
+        });
       },
-      // On post delete
-      (deletedPost) => {
+      // On post update — apply to both tab states (archive-as-delete + live edits)
+      (updatedPost) => {
+        const applyUpdate = (list: Post[]): Post[] => {
+          if (updatedPost.status === "archived" || updatedPost.status === "deleted") {
+            return list.filter((p) => p.id !== updatedPost.id);
+          }
+          return list
+            .map((p) =>
+              p.id === updatedPost.id
+                ? {
+                    ...p,
+                    confirmations: updatedPost.confirmations ?? p.confirmations,
+                    views: updatedPost.views ?? p.views,
+                    comment_count: updatedPost.comment_count ?? p.comment_count,
+                    report_count: updatedPost.report_count ?? p.report_count,
+                    status: updatedPost.status ?? p.status,
+                    is_sensitive: updatedPost.is_sensitive ?? p.is_sensitive,
+                  }
+                : p
+            )
+            .filter((p) => p.status === "live" || p.status === "resolved");
+        };
+
         setPosts((prev) => {
-          const next = prev.filter((p) => p.id !== deletedPost.id);
+          const next = applyUpdate(prev);
           feedCache.setPosts(feedKey, next);
+          return next;
+        });
+        setNearbyPosts((prev) => {
+          const next = applyUpdate(prev);
+          feedCache.setPosts("home:nearby", next);
+          return next;
+        });
+        setTrendingPosts((prev) => {
+          const next = applyUpdate(prev);
+          feedCache.setPosts("home:trending", next);
+          return next;
+        });
+      },
+      // On post delete — filter from BOTH tab states since the rendered lists
+      // are nearbyPosts / trendingPosts, not the `posts` alias.
+      (deletedPost) => {
+        const removeFromList = (list: Post[]) => list.filter((p) => p.id !== deletedPost.id);
+        setPosts((prev) => {
+          const next = removeFromList(prev);
+          feedCache.setPosts(feedKey, next);
+          return next;
+        });
+        setNearbyPosts((prev) => {
+          const next = removeFromList(prev);
+          feedCache.setPosts("home:nearby", next);
+          return next;
+        });
+        setTrendingPosts((prev) => {
+          const next = removeFromList(prev);
+          feedCache.setPosts("home:trending", next);
           return next;
         });
       }

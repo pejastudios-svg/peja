@@ -86,6 +86,8 @@ export default function InAppNotificationToasts() {
 
     const channelName = `user-toasts-${user.id}-${Date.now()}`;
 
+    console.log("[toasts] subscribing for user", user.id);
+
     const channel = supabase
       .channel(channelName)
       .on(
@@ -97,6 +99,7 @@ export default function InAppNotificationToasts() {
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
+          console.log("[toasts] INSERT received", payload.new);
           if (!mountedRef.current) return;
 
           const n = payload.new as NotificationRow;
@@ -137,7 +140,9 @@ export default function InAppNotificationToasts() {
           }, 6000);
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log("[toasts] channel status:", status, err || "");
+      });
 
     channelRef.current = channel;
 

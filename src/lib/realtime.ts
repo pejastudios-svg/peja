@@ -35,26 +35,38 @@ class RealtimeManager {
           .on(
             'postgres_changes',
             { event: 'INSERT', schema: 'public', table: 'posts' },
-            (payload) => this.postListeners.forEach((l) => l.onInsert?.(payload.new))
+            (payload) => {
+              console.log('[realtime] posts INSERT', payload.new);
+              this.postListeners.forEach((l) => l.onInsert?.(payload.new));
+            }
           )
           .on(
             'postgres_changes',
             { event: 'UPDATE', schema: 'public', table: 'posts' },
-            (payload) => this.postListeners.forEach((l) => l.onUpdate?.(payload.new))
+            (payload) => {
+              console.log('[realtime] posts UPDATE', payload.new);
+              this.postListeners.forEach((l) => l.onUpdate?.(payload.new));
+            }
           )
           .on(
             'postgres_changes',
             { event: 'DELETE', schema: 'public', table: 'posts' },
-            (payload) => this.postListeners.forEach((l) => l.onDelete?.(payload.old))
+            (payload) => {
+              console.log('[realtime] posts DELETE', payload.old);
+              this.postListeners.forEach((l) => l.onDelete?.(payload.old));
+            }
           )
           .subscribe((status) => {
+            console.log('[realtime] posts channel status:', status);
             if (status === 'CHANNEL_ERROR') {
               this.retryCount.set(channelName, retries + 1);
             }
           });
 
         this.channels.set(channelName, channel);
-      } catch {}
+      } catch (err) {
+        console.log('[realtime] posts subscribe failed', err);
+      }
     }
 
     return () => {

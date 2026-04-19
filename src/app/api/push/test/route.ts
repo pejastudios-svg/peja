@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
-import { sendPushNotification } from "../../_firebaseAdmin";
+import { getFirebaseAdmin } from "../../_firebaseAdmin";
 
 // Test endpoint: GET /api/push/test?userId=xxx
 // Returns exactly where the push chain is breaking
@@ -27,29 +27,69 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // 2. Try sending to each token
+  // Verify Firebase admin init
+  let firebaseProjectId: string | null = null;
+  let firebaseInitError: string | null = null;
+  try {
+    const app = getFirebaseAdmin();
+    firebaseProjectId = app.options.projectId || null;
+  } catch (e: any) {
+    firebaseInitError = e?.message || String(e);
+  }
+
+  // 2. Try sending to each token, surfacing full error detail
   const results = await Promise.all(
     tokens.map(async (t) => {
-      const result = await sendPushNotification({
-        token: t.token,
-        title: "Peja Test",
-        body: "Push notification test — if you see this, it works!",
-        data: { type: "test" },
-      });
-      return { tokenId: t.id, token: t.token.slice(0, 20) + "...", result, updatedAt: t.updated_at };
+      try {
+        const app = getFirebaseAdmin();
+        await app.messaging().send({
+          token: t.token,
+          data: { type: "test", title: "Peja Test", body: "Push test", channelId: "peja_alerts" },
+          android: {
+            priority: "high",
+            ttl: 300000,
+            notification: {
+              channelId: "peja_alerts",
+              title: "Peja Test",
+              body: "Push notification test — if you see this, it works!",
+              sound: "peja_alert",
+              visibility: "public",
+              icon: "ic_notification",
+              defaultVibrateTimings: true,
+              notificationCount: 1,
+            },
+          },
+        });
+        return {
+          tokenId: t.id,
+          token: t.token.slice(0, 20) + "...",
+          result: "sent" as const,
+          updatedAt: t.updated_at,
+        };
+      } catch (err: any) {
+        return {
+          tokenId: t.id,
+          token: t.token.slice(0, 20) + "...",
+          result: "error" as const,
+          errorCode: err?.code || null,
+          errorMessage: err?.message || String(err),
+          errorInfo: err?.errorInfo || null,
+          updatedAt: t.updated_at,
+        };
+      }
     })
   );
 
   const anySuccess = results.some((r) => r.result === "sent");
-  const allInvalid = results.every((r) => r.result === "invalid");
 
   return NextResponse.json({
+    firebaseProjectId,
+    firebaseInitError,
+    firebaseServiceAccountSet: !!process.env.FIREBASE_SERVICE_ACCOUNT,
     tokenCount: tokens.length,
     results,
     diagnosis: anySuccess
       ? "Push sent successfully — check your device."
-      : allInvalid
-      ? "All tokens are invalid/expired. Open the Android app to re-register."
-      : "Firebase returned transient errors. Check FIREBASE_SERVICE_ACCOUNT env var.",
+      : "Send failed. See results[].errorCode / errorMessage.",
   });
 }
