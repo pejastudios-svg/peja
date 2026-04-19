@@ -927,7 +927,7 @@ setToast("Processing video...");
         {/* Media Upload */}
         <div className="glass-card mb-4">
           <input type="file" ref={cameraInputRef} onChange={handleFileSelect} accept="image/*" capture="environment" className="hidden" />
-          <input type="file" ref={videoInputRef} onChange={handleFileSelect} accept="video/*" capture="environment" className="hidden" />
+          <input type="file" ref={videoInputRef} onChange={handleFileSelect} accept="video/*" className="hidden" />
 
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">

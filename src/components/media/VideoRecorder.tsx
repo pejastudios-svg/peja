@@ -75,6 +75,14 @@ export function VideoRecorder({
     }
   }, []);
 
+  const pauseStreamPreview = useCallback(() => {
+    // Pause the live-camera <video> element but KEEP the MediaStream
+    // alive so the user can retake without re-requesting permissions.
+    if (videoElRef.current) {
+      try { videoElRef.current.pause(); } catch {}
+    }
+  }, []);
+
   const startCamera = useCallback(
     async (mode: "user" | "environment") => {
       setError(null);
@@ -133,6 +141,20 @@ export function VideoRecorder({
     };
   }, [previewUrl]);
 
+  // Re-bind the live MediaStream to the video element whenever we swap
+  // back from the recorded preview (e.g., after Retake). Required because
+  // the live <video> is unmounted while the preview is shown.
+  useEffect(() => {
+    if (previewUrl || recordedBlob) return;
+    const el = videoElRef.current;
+    const stream = streamRef.current;
+    if (el && stream && el.srcObject !== stream) {
+      el.srcObject = stream;
+      el.muted = true;
+      el.play().catch(() => {});
+    }
+  }, [previewUrl, recordedBlob]);
+
   const handleFlip = async () => {
     if (isRecording) return;
     const next = facingMode === "user" ? "environment" : "user";
@@ -147,10 +169,12 @@ export function VideoRecorder({
     }
     const rec = recorderRef.current;
     if (rec && rec.state !== "inactive") {
+      try { rec.requestData(); } catch {}
       try { rec.stop(); } catch {}
     }
     setIsRecording(false);
-  }, []);
+    pauseStreamPreview();
+  }, [pauseStreamPreview]);
 
   const startRecording = () => {
     if (!streamRef.current) {
@@ -179,7 +203,7 @@ export function VideoRecorder({
     }
     recorderRef.current = recorder;
 
-    recorder.ondataavailable = (e) => {
+    const onData = (e: BlobEvent) => {
       if (!e.data || e.data.size === 0) return;
       chunksRef.current.push(e.data);
       bytesRef.current += e.data.size;
@@ -189,23 +213,35 @@ export function VideoRecorder({
       }
     };
 
-    recorder.onstop = () => {
+    const finalize = () => {
       const type = recorder.mimeType || mime || "video/webm";
       const blob = new Blob(chunksRef.current, { type });
       if (blob.size === 0) {
-        setError("Recording was empty");
+        setError("Recording was empty — try again");
         return;
       }
+      const url = URL.createObjectURL(blob);
       setRecordedBlob(blob);
-      setPreviewUrl(URL.createObjectURL(blob));
+      setPreviewUrl(url);
     };
 
-    recorder.onerror = () => {
+    const onStop = () => {
+      // Give the browser one microtask to deliver any trailing dataavailable
+      setTimeout(finalize, 0);
+    };
+
+    const onError = () => {
       setError("Recording failed");
       stopRecording();
     };
 
-    recorder.start(500);
+    recorder.addEventListener("dataavailable", onData);
+    recorder.addEventListener("stop", onStop);
+    recorder.addEventListener("error", onError);
+
+    // Timeslice of 1000ms — delivers chunks every second; required on
+    // some WebKit/WebView builds to receive any data at all.
+    recorder.start(1000);
     startedAtRef.current = Date.now();
     setIsRecording(true);
 
@@ -226,12 +262,7 @@ export function VideoRecorder({
     setRecordedBlob(null);
     setDuration(0);
     setSizeBytes(0);
-    // Camera stream is still live; re-play the preview element
-    if (videoElRef.current && streamRef.current) {
-      videoElRef.current.srcObject = streamRef.current;
-      videoElRef.current.muted = true;
-      videoElRef.current.play().catch(() => {});
-    }
+    // Live stream rebinds to the video element via useEffect above.
   };
 
   const handleUse = () => {
