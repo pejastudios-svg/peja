@@ -955,8 +955,10 @@ setTimeout(() => setToastMsg(null), 2500);
       }
     });
 
-    // Remove post from ALL feed caches
+    // Remove post from ALL feed caches + record in client-authoritative overlay
+    // so it stays hidden across stale fetches until realtime confirms.
     feedCache.removePost(postId);
+    feedCache.trackDelete(postId);
 
     // Debug: Check cache after removal
     testKeys.forEach(k => {

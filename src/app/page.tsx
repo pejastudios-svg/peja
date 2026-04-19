@@ -84,9 +84,9 @@ export default function Home() {
   const [posts, setPosts] = useState<Post[]>(() => {
     if (typeof window !== "undefined") {
       const cached = feedCache.get(feedKey);
-      if (cached?.posts?.length) return cached.posts;
+      if (cached?.posts?.length) return feedCache.applyOverlay(cached.posts);
     }
-    return [];
+    return feedCache.applyOverlay([]);
   });
 
   const [loading, setLoading] = useState(() => {
@@ -102,16 +102,16 @@ export default function Home() {
   const [nearbyPosts, setNearbyPosts] = useState<Post[]>(() => {
     if (typeof window !== "undefined") {
       const cached = feedCache.get("home:nearby");
-      if (cached?.posts?.length) return cached.posts;
+      if (cached?.posts?.length) return feedCache.applyOverlay(cached.posts);
     }
-    return [];
+    return feedCache.applyOverlay([]);
   });
   const [trendingPosts, setTrendingPosts] = useState<Post[]>(() => {
     if (typeof window !== "undefined") {
       const cached = feedCache.get("home:trending");
-      if (cached?.posts?.length) return cached.posts;
+      if (cached?.posts?.length) return feedCache.applyOverlay(cached.posts);
     }
-    return [];
+    return feedCache.applyOverlay([]);
   });
   // Swipe state
   const swipeStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
@@ -204,9 +204,10 @@ posts.forEach((p: any) => {
     (key: string) => {
       const cached = feedCache.get(key);
       if (cached?.posts?.length) {
-        setPosts(cached.posts);
-        if (key === "home:nearby") setNearbyPosts(cached.posts);
-        else if (key === "home:trending") setTrendingPosts(cached.posts);
+        const overlaid = feedCache.applyOverlay(cached.posts);
+        setPosts(overlaid);
+        if (key === "home:nearby") setNearbyPosts(overlaid);
+        else if (key === "home:trending") setTrendingPosts(overlaid);
         setLoading(false);
       }
     },
@@ -273,7 +274,7 @@ posts.forEach((p: any) => {
       // If not refreshing and we have cached data, show it immediately
       // Then do a background revalidation
       if (!isRefresh && hasCachedData) {
-        setPosts(cached.posts);
+        setPosts(feedCache.applyOverlay(cached.posts));
         setLoading(false);
 
         // Stale-while-revalidate: if cache is older than 60 seconds, silently refresh
@@ -420,11 +421,18 @@ posts.forEach((p: any) => {
         );
         confirmRef.current.loadConfirmedFor(finalPosts.map((p) => p.id));
 
-        setPosts(finalPosts);
-        if (feedKey === "home:nearby") setNearbyPosts(finalPosts);
-        else if (feedKey === "home:trending") setTrendingPosts(finalPosts);
+        // Reconcile pending creates: any whose ID is in the fresh response means
+        // the server caught up, so drop them from the overlay. Deletes stay until
+        // realtime confirms, to avoid a paginated-out false positive.
+        feedCache.reconcile(finalPosts);
+
+        const displayPosts = feedCache.applyOverlay(finalPosts);
+
+        setPosts(displayPosts);
+        if (feedKey === "home:nearby") setNearbyPosts(displayPosts);
+        else if (feedKey === "home:trending") setTrendingPosts(displayPosts);
         feedCache.setPosts(feedKey, finalPosts);
-        preloadFeedVideos(finalPosts);
+        preloadFeedVideos(displayPosts);
 
         // Preload video thumbnails
         finalPosts.forEach((p: any) => {

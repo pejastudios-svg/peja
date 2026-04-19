@@ -41,7 +41,7 @@ function SearchContent() {
   const [posts, setPosts] = useState<Post[]>(() => {
     if (typeof window !== "undefined") {
       const cached = feedCache.get(feedKey);
-      if (cached?.posts?.length) return cached.posts;
+      if (cached?.posts?.length) return feedCache.applyDeletes(cached.posts);
     }
     return [];
   });
@@ -204,9 +204,10 @@ function SearchContent() {
       }
 
       const top = formattedPosts.slice(0, 50);
-      confirm.hydrateCounts(top.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
-      confirm.loadConfirmedFor(top.map((p) => p.id));
-      setPosts(top);
+      const display = feedCache.applyDeletes(top);
+      confirm.hydrateCounts(display.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+      confirm.loadConfirmedFor(display.map((p) => p.id));
+      setPosts(display);
       feedCache.setPosts(feedKey, top);
     } catch (error) {
       if (posts.length === 0) setPosts([]);

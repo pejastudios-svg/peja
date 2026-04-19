@@ -41,15 +41,15 @@ export default function ProfilePage() {
   const [userPosts, setUserPosts] = useState<Post[]>(() => {
     if (typeof window !== "undefined") {
       const cached = feedCache.get("profile:posts");
-      if (cached?.posts?.length) return cached.posts;
+      if (cached?.posts?.length) return feedCache.applyOverlay(cached.posts);
     }
-    return [];
+    return feedCache.applyOverlay([]);
   });
 
   const [confirmedPosts, setConfirmedPosts] = useState<Post[]>(() => {
     if (typeof window !== "undefined") {
       const cached = feedCache.get("profile:confirmed");
-      if (cached?.posts?.length) return cached.posts;
+      if (cached?.posts?.length) return feedCache.applyDeletes(cached.posts);
     }
     return [];
   });
@@ -230,12 +230,14 @@ export default function ProfilePage() {
         tags: post.post_tags?.map((t: any) => t.tag) || [],
       }));
 
-      setUserPosts(formattedPosts);
+      feedCache.reconcile(formattedPosts);
+      const display = feedCache.applyOverlay(formattedPosts);
+      setUserPosts(display);
       feedCache.setPosts("profile:posts", formattedPosts);
       confirm.hydrateCounts(
-        formattedPosts.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 }))
+        display.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 }))
       );
-      confirm.loadConfirmedFor(formattedPosts.map((p) => p.id));
+      confirm.loadConfirmedFor(display.map((p) => p.id));
     } catch (e) {
     } finally {
       setPostsLoading(false);
@@ -288,10 +290,11 @@ export default function ProfilePage() {
         }));
 
       const filtered = formatted.filter((p) => p.status !== "archived");
-      setConfirmedPosts(filtered);
+      const display = feedCache.applyDeletes(filtered);
+      setConfirmedPosts(display);
       feedCache.setPosts("profile:confirmed", filtered);
-      confirm.hydrateCounts(filtered.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
-      confirm.loadConfirmedFor(filtered.map((p) => p.id));
+      confirm.hydrateCounts(display.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
+      confirm.loadConfirmedFor(display.map((p) => p.id));
     } catch (e) {
     } finally {
       setConfirmedLoading(false);

@@ -726,6 +726,11 @@ useEffect(() => {
 
     const deletedPostId = activePostForOptions.id;
 
+    // Record in client-authoritative overlay so other feeds stay in sync
+    // even when their pages are unmounted.
+    feedCache.removePost(deletedPostId);
+    feedCache.trackDelete(deletedPostId);
+
     // Remove from local state immediately
     setPosts(prev => prev.filter(p => p.id !== deletedPostId));
     

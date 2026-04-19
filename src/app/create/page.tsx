@@ -955,6 +955,9 @@ setToast("Processing video...");
         tags: [...tags],
       };
 
+      // Client-authoritative overlay — survives stale fetches and missed realtime.
+      feedCache.trackCreate(optimisticPost);
+
       for (const key of ["home:trending", "home:nearby", "profile:posts"]) {
         const cached = feedCache.get(key);
         const existing = cached?.posts || [];
