@@ -32,6 +32,8 @@ import { notifyUsersAboutIncident } from "@/lib/notifications";
 import { PostLoadingAnimation } from "@/components/posts/PostLoadingAnimation";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { VideoRecorder } from "@/components/media/VideoRecorder";
+import { VideoPlayer } from "@/components/media/VideoPlayer";
 
 // Category icon mapping
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -133,6 +135,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const [error, setError] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
+  const [showRecorder, setShowRecorder] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -504,6 +507,40 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
         preUploadRef.current.set(file, promise);
       }
     }
+    setPreUploadTick((t) => t + 1);
+  };
+
+  const handleVideoCaptured = async (file: File) => {
+    const currentVideos = media.filter((m) => m.type.startsWith("video/")).length;
+    if (currentVideos >= 10) {
+      setError("Maximum 10 videos");
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      setError(`Recorded video is ${(file.size / (1024 * 1024)).toFixed(1)}MB — exceeds 100MB cap.`);
+      return;
+    }
+
+    let thumbUrl: string | null = null;
+    try {
+      const { generateVideoThumbnail } = await import("@/lib/videoThumbnail");
+      thumbUrl = await generateVideoThumbnail(file);
+    } catch {}
+
+    setMedia((prev) => [...prev, file]);
+    setMediaPreviews((prev) => [...prev, { url: thumbUrl || "", type: "video" }]);
+    setError("");
+
+    preUploadStatusMapRef.current.set(file, "uploading");
+    const xhr = new XMLHttpRequest();
+    videoXhrRef.current.set(file, xhr);
+    const promise = preUploadVideo(file, xhr).then((result) => {
+      videoXhrRef.current.delete(file);
+      preUploadStatusMapRef.current.set(file, result ? "done" : "failed");
+      setPreUploadTick((t) => t + 1);
+      return result;
+    });
+    preUploadRef.current.set(file, promise);
     setPreUploadTick((t) => t + 1);
   };
 
@@ -940,7 +977,7 @@ setToast("Processing video...");
           )}
 
           {/* Upload buttons */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => cameraInputRef.current?.click()}
@@ -958,6 +995,21 @@ setToast("Processing video...");
 
             <button
               type="button"
+              onClick={() => setShowRecorder(true)}
+              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
+              style={{
+                background: "rgba(239, 68, 68, 0.08)",
+                border: "1px dashed rgba(239, 68, 68, 0.35)",
+              }}
+            >
+              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(239, 68, 68, 0.15)" }}>
+                <Video className="w-5 h-5 text-red-400" />
+              </div>
+              <span className="text-[10px] text-dark-400 font-medium">Record</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => videoInputRef.current?.click()}
               className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
               style={{
@@ -966,9 +1018,9 @@ setToast("Processing video...");
               }}
             >
               <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(139, 92, 246, 0.15)" }}>
-                <Video className="w-5 h-5 text-primary-400" />
+                <Upload className="w-5 h-5 text-primary-400" />
               </div>
-              <span className="text-[10px] text-dark-400 font-medium">Video</span>
+              <span className="text-[10px] text-dark-400 font-medium">Library</span>
             </button>
           </div>
         </div>
@@ -1224,14 +1276,14 @@ setToast("Processing video...");
                     <div className="mb-4 rounded-xl overflow-hidden bg-dark-800">
 {mediaPreviews[0].type === "video" ? (
 <div className="relative bg-black rounded-xl overflow-hidden">
-                          <video
-                            src={previewVideoUrl || undefined}
-                            className="w-full max-h-[50vh] object-contain"
-                            controls
-                            playsInline
-                            autoPlay
-                            preload="auto"
-                          />
+                          {previewVideoUrl && (
+                            <VideoPlayer
+                              src={previewVideoUrl}
+                              className="w-full max-h-[50vh] aspect-video"
+                              autoPlay
+                              playsInline
+                            />
+                          )}
                         </div>
                       ) : (
                         <img src={mediaPreviews[0].url} alt="" className="w-full max-h-[50vh] object-contain rounded-xl" />
@@ -1345,6 +1397,15 @@ setToast("Processing video...");
             </div>
           </>
         )}
+        {/* In-app Video Recorder */}
+        <VideoRecorder
+          isOpen={showRecorder}
+          onClose={() => setShowRecorder(false)}
+          onCapture={handleVideoCaptured}
+          maxDurationSec={90}
+          maxSizeMB={100}
+        />
+
         {/* Post Loading Animation */}
         <PostLoadingAnimation
           isActive={isLoading}
