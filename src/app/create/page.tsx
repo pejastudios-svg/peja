@@ -154,6 +154,8 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const usedPreUploadsRef = useRef<Set<File>>(new Set());
   // Per-file upload status for UI spinner (stored in a ref to avoid stale closure issues)
   const preUploadStatusMapRef = useRef<Map<File, "uploading" | "done" | "failed">>(new Map());
+  // Per-file upload progress 0-100 for the pre-upload XHR
+  const preUploadProgressRef = useRef<Map<File, number>>(new Map());
   // In-flight video XHRs so we can abort on swap/remove/unmount
   const videoXhrRef = useRef<Map<File, XMLHttpRequest>>(new Map());
   const [preUploadTick, setPreUploadTick] = useState(0);
@@ -320,6 +322,15 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       formData.append("file", file);
       formData.append("upload_preset", preset);
 
+      preUploadProgressRef.current.set(file, 0);
+
+      xhr.upload.addEventListener("progress", (e) => {
+        if (!e.lengthComputable) return;
+        const pct = Math.round((e.loaded / e.total) * 100);
+        preUploadProgressRef.current.set(file, pct);
+        setPreUploadTick((t) => t + 1);
+      });
+
       xhr.addEventListener("load", () => {
         if (xhr.status !== 200) return resolve(null);
         try {
@@ -335,6 +346,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
               }
             }
           } catch {}
+          preUploadProgressRef.current.set(file, 100);
           resolve({
             url: data.secure_url,
             tempPath: null,
@@ -348,7 +360,9 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       });
       xhr.addEventListener("error", () => resolve(null));
       xhr.addEventListener("abort", () => resolve(null));
+      xhr.addEventListener("timeout", () => resolve(null));
 
+      xhr.timeout = 5 * 60 * 1000; // 5 minutes
       xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`);
       xhr.send(formData);
     });
@@ -566,6 +580,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       });
       preUploadRef.current.delete(file);
       preUploadStatusMapRef.current.delete(file);
+      preUploadProgressRef.current.delete(file);
     }
     if (mediaPreviews[index]?.url) URL.revokeObjectURL(mediaPreviews[index].url);
     setMedia((prev) => prev.filter((_, i) => i !== index));
@@ -651,7 +666,20 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       if (preUploadPromise) {
         try {
           setToast(isVideo ? "Finalizing video..." : "Finalizing image...");
+          // If the XHR is still in flight, mirror its progress into the
+          // overall bar so the user sees movement instead of a frozen 0%.
+          let mirrorInterval: ReturnType<typeof setInterval> | null = null;
+          const status = preUploadStatusMapRef.current.get(file);
+          if (isVideo && status === "uploading") {
+            mirrorInterval = setInterval(() => {
+              const pct = preUploadProgressRef.current.get(file) ?? 0;
+              const overall = Math.round(((i + pct / 100) / totalFiles) * 80);
+              setUploadProgress(overall);
+              setToast(`Uploading video... ${pct}%`);
+            }, 300);
+          }
           const preResult = await preUploadPromise;
+          if (mirrorInterval) clearInterval(mirrorInterval);
           if (preResult) {
             usedPreUploadsRef.current.add(file);
             mediaUrls.push({ url: preResult.url, type: isVideo ? "video" : "photo", thumbnailUrl: preResult.thumbnailUrl ?? null });
@@ -960,8 +988,16 @@ setToast("Processing video...");
                   )}
                   {/* Pre-upload progress indicator */}
                   {preUploadStatusMapRef.current.get(media[index]) === "uploading" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 z-20">
                       <Loader2 className="w-5 h-5 text-white animate-spin" />
+                      <span className="text-[10px] font-mono tabular-nums text-white/90">
+                        {preUploadProgressRef.current.get(media[index]) ?? 0}%
+                      </span>
+                    </div>
+                  )}
+                  {preUploadStatusMapRef.current.get(media[index]) === "failed" && (
+                    <div className="absolute inset-x-0 bottom-0 bg-red-500/80 text-[9px] text-white text-center py-0.5 z-20">
+                      Upload failed
                     </div>
                   )}
                   <button
