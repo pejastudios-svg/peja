@@ -85,9 +85,7 @@ export interface UserSettings {
   alert_zone_type: "all_nigeria" | "states" | "radius" | "saved_locations";
   selected_states: string[];
   alert_radius_km: number;
-  quiet_hours_enabled: boolean;
-  quiet_hours_start: string;
-  quiet_hours_end: string;
+  social_notifications_silenced: boolean;
 }
 
 export interface SavedLocation {

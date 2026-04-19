@@ -7,7 +7,7 @@ import { Volume2, VolumeX, Play, Pause, Maximize2, ChevronLeft } from "lucide-re
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
 import { useAuth } from "@/context/AuthContext";
-import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk, generateVideoThumbnail, getCachedVideoUrl } from "@/lib/videoThumbnail";
+import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk, generateVideoThumbnail, getCachedVideoUrl, getCachedThumb, setCachedThumb } from "@/lib/videoThumbnail";
 import { useHlsPlayer } from "@/hooks/useHlsPlayer";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import { recordPostView } from "@/lib/postViews";
@@ -74,7 +74,7 @@ export function InlineVideo({
   const isExpanded = expandPhase !== "idle";
   useScrollFreeze(isExpanded);
 
-  const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
+  const [generatedPoster, setGeneratedPoster] = useState<string | null>(() => getCachedThumb(src));
   const effectivePoster = poster || getVideoThumbnailUrl(src) || generatedPoster || undefined;
   useHlsPlayer(videoRef, src);
   const rawOptimized = getOptimizedVideoUrl(src);
@@ -84,12 +84,14 @@ export function InlineVideo({
   useEffect(() => {
     if (poster || getVideoThumbnailUrl(src)) return; // Already have a poster
     if (!src) return;
+    if (getCachedThumb(src)) return; // Already cached from a prior mount
 
     let cancelled = false;
 
     generateVideoThumbnail(src, 480).then((thumb) => {
       if (!cancelled && thumb) {
         setGeneratedPoster(thumb);
+        setCachedThumb(src, thumb);
       }
     });
 
@@ -297,12 +299,16 @@ export function InlineVideo({
       let posterDataUrl: string | undefined;
       if (v && v.videoWidth > 0 && v.videoHeight > 0) {
         try {
+          const maxW = 720;
+          const scale = Math.min(1, maxW / v.videoWidth);
+          const cw = Math.round(v.videoWidth * scale);
+          const ch = Math.round(v.videoHeight * scale);
           const canvas = document.createElement("canvas");
-          canvas.width = v.videoWidth;
-          canvas.height = v.videoHeight;
+          canvas.width = cw;
+          canvas.height = ch;
           const ctx = canvas.getContext("2d");
           if (ctx) {
-            ctx.drawImage(v, 0, 0);
+            ctx.drawImage(v, 0, 0, cw, ch);
             posterDataUrl = canvas.toDataURL("image/jpeg", 0.7);
           }
         } catch {}
@@ -433,11 +439,12 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
     <video
       ref={videoRef}
       src={optimizedSrc}
+      poster={effectivePoster}
       className={isExpanded
         ? `max-w-full max-h-full object-contain pointer-events-none transition-opacity duration-100 ${!videoReady ? "opacity-0" : "opacity-100"}`
         : `${className} ${!videoReady ? "opacity-0" : "opacity-100"}`}
       playsInline
-      preload="auto"
+      preload="metadata"
       muted
       loop
       onTimeUpdate={handleTimeUpdate}
@@ -452,8 +459,17 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
   const posterEl = !videoReady && (
     <div className="absolute inset-0 z-[1] pointer-events-none">
       {effectivePoster
-        ? <img src={effectivePoster} alt="" className={isExpanded ? "absolute inset-0 w-full h-full object-contain" : "w-full h-full object-cover"} />
-        : <div className="w-full h-full bg-dark-800" />}
+        ? <img
+            src={effectivePoster}
+            alt=""
+            loading="eager"
+            decoding="async"
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            // @ts-ignore — fetchpriority is valid HTML but not yet in React types
+            fetchpriority="high"
+            className={isExpanded ? "absolute inset-0 w-full h-full object-contain" : "w-full h-full object-cover"}
+          />
+        : <div className="w-full h-full bg-black" />}
     </div>
   );
 

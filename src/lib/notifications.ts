@@ -1,18 +1,22 @@
 import { supabase } from "./supabase";
 
-export type NotificationType = 
+export type NotificationType =
   | "sos_alert"
   | "nearby_incident"
   | "post_confirmed"
+  | "post_confirmed_digest"
   | "post_comment"
+  | "post_comment_digest"
   | "comment_liked"
+  | "comment_liked_digest"
+  | "comment_reply"
+  | "comment_reply_digest"
   | "guardian_approved"
   | "guardian_rejected"
   | "system"
-  | "comment_reply"
   | "dm_message"
-  | "dm_blocked";    
-
+  | "dm_message_digest"
+  | "dm_blocked";
 
 interface CreateNotificationParams {
   userId: string;
@@ -21,6 +25,7 @@ interface CreateNotificationParams {
   body?: string;
   data?: Record<string, any>;
   silent?: boolean;
+  skipPush?: boolean;
 }
 
 // ============================================
@@ -33,9 +38,9 @@ export async function createNotification({
   body,
   data,
   silent = false,
+  skipPush = false,
 }: CreateNotificationParams): Promise<boolean> {
   try {
-    // Silent notifications: only insert for realtime map tracking, mark as read
     const { error } = await supabase.from("notifications").insert({
       user_id: userId,
       type,
@@ -45,23 +50,21 @@ export async function createNotification({
       is_read: silent ? true : false,
     });
 
-    if (error) {
-      return false;
-    }
+    if (error) return false;
 
-    // Don't send push for silent notifications
-    if (!silent && title) {
-      sendFCMPush(userId, title, body || "", data || {}).catch(() => {});
+    if (!silent && !skipPush && title) {
+      sendFCMPush(userId, type, title, body || "", data || {}).catch(() => {});
     }
 
     return true;
-  } catch (error) {
+  } catch {
     return false;
   }
 }
 
 async function sendFCMPush(
   userId: string,
+  type: string,
   title: string,
   body: string,
   data: Record<string, any>
@@ -69,10 +72,8 @@ async function sendFCMPush(
   try {
     const { data: authData } = await supabase.auth.getSession();
     const token = authData.session?.access_token;
-
     if (!token) return;
 
-    // Convert all data values to strings (FCM requirement)
     const stringData: Record<string, string> = {};
     for (const [key, value] of Object.entries(data)) {
       stringData[key] = String(value ?? "");
@@ -82,19 +83,11 @@ async function sendFCMPush(
 
     await fetch(apiUrl("/api/send-push"), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        userId,
-        title,
-        body,
-        data: stringData,
-      }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ userId, type, title, body, data: stringData }),
     });
-  } catch (err) {
-    // Non-blocking, don't throw
+  } catch {
+    // Non-blocking
   }
 }
 
@@ -120,26 +113,6 @@ function calculateDistanceKm(
   return R * c;
 }
 
-// Check if current time is within quiet hours
-function isInQuietHours(start: string, end: string): boolean {
-  const now = new Date();
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
-  const currentTimeMinutes = currentHour * 60 + currentMinute;
-
-  const [startHour, startMin] = start.split(':').map(Number);
-  const [endHour, endMin] = end.split(':').map(Number);
-  const startTimeMinutes = startHour * 60 + startMin;
-  const endTimeMinutes = endHour * 60 + endMin;
-
-  if (startTimeMinutes > endTimeMinutes) {
-    // Overnight quiet hours (e.g., 23:00 - 07:00)
-    return currentTimeMinutes >= startTimeMinutes || currentTimeMinutes <= endTimeMinutes;
-  } else {
-    // Same-day quiet hours
-    return currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes;
-  }
-}
 
 // Nigerian states list
 const NIGERIAN_STATES = [
@@ -215,9 +188,6 @@ interface UserWithSettings {
     alert_zone_type: string;
     selected_states: string[];
     alert_radius_km: number;
-    quiet_hours_enabled: boolean;
-    quiet_hours_start: string;
-    quiet_hours_end: string;
   } | null;
 }
 
@@ -279,22 +249,10 @@ async function shouldNotifyUser(
       break;
   }
 
-  // ============================================
-  // CASE 4: Check quiet hours
-  // ============================================
-  if (settings.quiet_hours_enabled) {
-    const start = settings.quiet_hours_start || "23:00";
-    const end = settings.quiet_hours_end || "07:00";
-    
-    if (isInQuietHours(start, end)) {
-      if (catType !== "danger") {
-        return false;
-      }
-    }
-  }
+
 
   // ============================================
-  // CASE 5: Check location/zone preferences
+  // CASE 4: Check location/zone preferences
   // ============================================
   const alertZoneType = settings.alert_zone_type || "all_nigeria";
 
@@ -433,8 +391,8 @@ export async function notifyUsersAboutIncident(
           userId: user.id,
           type: "nearby_incident",
           title: `📍 ${categoryName} Alert`,
-          body: shortAddress 
-            ? `Reported near ${shortAddress}` 
+          body: shortAddress
+            ? `Reported near ${shortAddress}`
             : "An incident was reported nearby",
           data: { post_id: postId, category },
         });
@@ -442,7 +400,6 @@ export async function notifyUsersAboutIncident(
         if (success) {
           notifiedCount++;
         }
-      } else {
       }
     }
 
@@ -454,21 +411,42 @@ export async function notifyUsersAboutIncident(
 }
 
 // ============================================
-// SIMPLE NOTIFICATION FUNCTIONS
+// SOCIAL / DM NOTIFICATIONS (server-side)
+// Throttling, digest collapsing, and silence checks run server-side because
+// they require reading the recipient's rows (blocked by RLS client-side).
 // ============================================
+
+async function postSocial(payload: {
+  kind: "post_confirmed" | "post_comment" | "comment_reply" | "comment_liked" | "dm_message";
+  recipientId: string;
+  actorName: string;
+  postId?: string;
+  conversationId?: string;
+  preview?: string;
+}): Promise<boolean> {
+  try {
+    const { data: authData } = await supabase.auth.getSession();
+    const token = authData.session?.access_token;
+    if (!token) return false;
+
+    const { apiUrl } = await import("./api");
+    const res = await fetch(apiUrl("/api/notify-social"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 export async function notifyPostConfirmed(
   postId: string,
   postOwnerId: string,
   confirmerName: string
 ): Promise<boolean> {
-  return createNotification({
-    userId: postOwnerId,
-    type: "post_confirmed",
-    title: "✓ Your post was confirmed",
-    body: `${confirmerName} confirmed your incident report`,
-    data: { post_id: postId },
-  });
+  return postSocial({ kind: "post_confirmed", recipientId: postOwnerId, actorName: confirmerName, postId });
 }
 
 export async function notifyPostComment(
@@ -477,16 +455,12 @@ export async function notifyPostComment(
   commenterName: string,
   commentPreview: string
 ): Promise<boolean> {
-  const preview = commentPreview.length > 50 
-    ? commentPreview.slice(0, 50) + "..." 
-    : commentPreview;
-    
-  return createNotification({
-    userId: postOwnerId,
-    type: "post_comment",
-    title: "💬 New comment on your post",
-    body: `${commenterName}: ${preview}`,
-    data: { post_id: postId },
+  return postSocial({
+    kind: "post_comment",
+    recipientId: postOwnerId,
+    actorName: commenterName,
+    postId,
+    preview: commentPreview,
   });
 }
 
@@ -496,15 +470,12 @@ export async function notifyCommentReply(
   replierName: string,
   replyPreview: string
 ): Promise<boolean> {
-  const preview =
-    replyPreview.length > 60 ? replyPreview.slice(0, 60) + "..." : replyPreview;
-
-  return createNotification({
-    userId: commentOwnerId,
-    type: "comment_reply",
-    title: "↩️ New reply to your comment",
-    body: `${replierName}: ${preview}`,
-    data: { post_id: postId },
+  return postSocial({
+    kind: "comment_reply",
+    recipientId: commentOwnerId,
+    actorName: replierName,
+    postId,
+    preview: replyPreview,
   });
 }
 
@@ -513,13 +484,7 @@ export async function notifyCommentLiked(
   commentOwnerId: string,
   likerName: string
 ): Promise<boolean> {
-  return createNotification({
-    userId: commentOwnerId,
-    type: "comment_liked",
-    title: "❤️ Someone liked your comment",
-    body: `${likerName} liked your comment`,
-    data: { post_id: postId },
-  });
+  return postSocial({ kind: "comment_liked", recipientId: commentOwnerId, actorName: likerName, postId });
 }
 
 // ============================================
@@ -577,31 +542,12 @@ export async function notifyDMMessage(
   messagePreview: string,
   conversationId: string
 ): Promise<boolean> {
-  // Check if recipient has muted this conversation
-  try {
-    const { data: participant } = await supabase
-      .from("conversation_participants")
-      .select("is_muted")
-      .eq("conversation_id", conversationId)
-      .eq("user_id", recipientId)
-      .maybeSingle();
-
-    if (participant?.is_muted) {
-      return false; // Don't notify — conversation is muted
-    }
-  } catch {
-    // If check fails, proceed with notification
-  }
-
-  const preview =
-    messagePreview.length > 60 ? messagePreview.slice(0, 60) + "..." : messagePreview;
-
-  return createNotification({
-    userId: recipientId,
-    type: "dm_message",
-    title: `📩 ${senderName}`,
-    body: preview || "Sent you a message",
-    data: { conversation_id: conversationId, sender_name: senderName },
+  return postSocial({
+    kind: "dm_message",
+    recipientId,
+    actorName: senderName,
+    conversationId,
+    preview: messagePreview,
   });
 }
 

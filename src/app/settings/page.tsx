@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { isOffline, loadFromCache, saveToCache, enqueueAction, getQueue, clearQueue } from "@/lib/offlineStorage";
 import { NIGERIAN_STATES } from "@/lib/types";
+import { apiUrl } from "@/lib/api";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStrength";
@@ -20,13 +21,10 @@ import {
   FileText,
   LogOut,
   ChevronRight,
-  Clock,
   Check,
   X,
-  Loader2,
   CheckCircle,
   Users,
-  Save,
   MapPin,
   AlertTriangle,
   Lock,
@@ -35,6 +33,7 @@ import {
   KeyRound,
   Copy,
   ShieldCheck,
+  Trash2,
 } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
@@ -46,7 +45,6 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [saveQueued, setSaveQueued] = useState(false);
   const [settingsId, setSettingsId] = useState<string | null>(null);
 
   // Notification settings
@@ -61,16 +59,18 @@ export default function SettingsPage() {
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
   const [alertRadius, setAlertRadius] = useState(5);
 
-  // Quiet hours
-  const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
-  const [quietHoursStart, setQuietHoursStart] = useState("23:00");
-  const [quietHoursEnd, setQuietHoursEnd] = useState("07:00");
+
+  // Social notifications
+  const [socialSilenced, setSocialSilenced] = useState(false);
 
   // Modals
   const [showStatesModal, setShowStatesModal] = useState(false);
 
-  // Debug info
-  const [debugInfo, setDebugInfo] = useState<string>("");
+  // Delete account
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   // ─── Change Password State ───
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -87,7 +87,6 @@ export default function SettingsPage() {
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState(false);
 
-  useScrollRestore("settings");
   useScrollFreeze(showChangePassword || showStatesModal);
 
   // Drain queued settings when connectivity is restored
@@ -137,9 +136,7 @@ export default function SettingsPage() {
     setAlertZoneType(settings.alert_zone_type ?? "all_nigeria");
     setSelectedStates(settings.selected_states ?? []);
     setAlertRadius(settings.alert_radius_km ?? 5);
-    setQuietHoursEnabled(settings.quiet_hours_enabled ?? false);
-    setQuietHoursStart(settings.quiet_hours_start ?? "23:00");
-    setQuietHoursEnd(settings.quiet_hours_end ?? "07:00");
+    setSocialSilenced(settings.social_notifications_silenced ?? false);
   };
 
   const loadSettings = async () => {
@@ -148,48 +145,37 @@ export default function SettingsPage() {
       return;
     }
 
+    // Paint from cache instantly so the UI reflects the last known state
+    // without waiting for the (potentially slow) DB round-trip.
+    const cached = loadFromCache<any>(`settings-${user.id}`);
+    if (cached) {
+      applySettings(cached);
+      setLoading(false);
+    }
+
     try {
-      const { data: settings, error } = await supabase
+      const { data: settings } = await supabase
         .from("user_settings")
         .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (error && error.code !== "PGRST116") {
-        const cached = loadFromCache<any>(`settings-${user.id}`);
-        if (cached) applySettings(cached);
-        setDebugInfo(`Load error: ${error.message}`);
-      }
-
       if (settings) {
         applySettings(settings);
         saveToCache(`settings-${user.id}`, settings);
-        setDebugInfo(
-          `Loaded: zone=${settings.alert_zone_type}, states=${JSON.stringify(settings.selected_states)}`
-        );
-      } else {
-        const cached = loadFromCache<any>(`settings-${user.id}`);
-        if (cached) applySettings(cached);
-        else setDebugInfo("No settings found, using defaults");
       }
-    } catch (error: any) {
-      const cached = loadFromCache<any>(`settings-${user.id}`);
-      if (cached) applySettings(cached);
-      setDebugInfo(`Error: ${error.message}`);
+    } catch {
+      // keep cached values on error
     } finally {
       setLoading(false);
     }
   };
 
   const saveSettings = async () => {
-    if (!user) {
-      setSaveError("Please sign in to save settings");
-      return;
-    }
+    if (!user) return;
 
     setSaving(true);
     setSaveSuccess(false);
-    setSaveError("");
 
     const settingsData = {
       user_id: user.id,
@@ -201,51 +187,97 @@ export default function SettingsPage() {
       alert_zone_type: alertZoneType,
       selected_states: selectedStates,
       alert_radius_km: alertRadius,
-      quiet_hours_enabled: quietHoursEnabled,
-      quiet_hours_start: quietHoursStart,
-      quiet_hours_end: quietHoursEnd,
+      social_notifications_silenced: socialSilenced,
       updated_at: new Date().toISOString(),
     };
 
     if (isOffline()) {
       enqueueAction("settings", { ...settingsData, _settingsId: settingsId });
-      setSaveQueued(true);
       setSaveSuccess(true);
       setSaving(false);
-      setTimeout(() => { setSaveSuccess(false); setSaveQueued(false); }, 4000);
+      setTimeout(() => setSaveSuccess(false), 2000);
       return;
     }
 
-    try {
-      let result;
+    const doSave = async (data: typeof settingsData) => {
       if (settingsId) {
-        result = await supabase
-          .from("user_settings")
-          .update(settingsData)
-          .eq("id", settingsId)
-          .select()
-          .single();
-      } else {
-        result = await supabase.from("user_settings").insert(settingsData).select().single();
+        return supabase.from("user_settings").update(data).eq("id", settingsId).select().single();
+      }
+      return supabase.from("user_settings").insert(data).select().single();
+    };
+
+    try {
+      let result = await doSave(settingsData);
+
+      // Only strip the column if the DB says it doesn't exist (PostgREST 42703 / PGRST204).
+      const err: any = result.error;
+      const missingCol =
+        err &&
+        (err.code === "42703" ||
+          err.code === "PGRST204" ||
+          /social_notifications_silenced/i.test(err.message || ""));
+      if (missingCol) {
+        const { social_notifications_silenced: _drop, ...coreData } = settingsData;
+        void _drop;
+        result = await doSave(coreData as typeof settingsData);
       }
 
-      if (result.error) {
-        setSaveError(`Failed to save: ${result.error.message}`);
-      } else {
+      if (!result.error) {
         setSettingsId(result.data.id);
+        saveToCache(`settings-${user.id}`, result.data);
         setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 3000);
+        setSaveError("");
+        setTimeout(() => setSaveSuccess(false), 2000);
+      } else {
+        setSaveError(result.error.message || "Failed to save");
+        setTimeout(() => setSaveError(""), 4000);
       }
-    } catch (error: any) {
-      setSaveError(`Error: ${error.message}`);
+    } catch (err: any) {
+      setSaveError(err?.message || "Failed to save settings");
+      setTimeout(() => setSaveError(""), 4000);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleLogout = async () => {
+
+  const handleSignOut = async () => {
     await signOut();
     router.push("/login");
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user) return;
+
+    if (deleteConfirmText !== "DELETE") {
+      setDeleteError("Please type DELETE to confirm");
+      return;
+    }
+
+    setDeleting(true);
+    setDeleteError("");
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("No active session");
+
+      const response = await fetch(apiUrl("/api/delete-account"), {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to delete account");
+
+      await signOut();
+      router.push("/login");
+    } catch (err: any) {
+      setDeleteError(err.message || "Failed to delete account. Please try again.");
+      setDeleting(false);
+    }
   };
 
   const toggleState = (state: string) => {
@@ -476,39 +508,28 @@ export default function SettingsPage() {
           <button
             onClick={saveSettings}
             disabled={saving}
-            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-sm font-medium ${
               saveSuccess
                 ? "bg-green-500/20 text-green-400"
-                : "bg-primary-600 text-white hover:bg-primary-700"
+                : saveError
+                ? "bg-red-500/20 text-red-400"
+                : "bg-primary-600 text-white hover:bg-primary-700 active:scale-95"
             }`}
           >
             {saving ? (
               <PejaSpinner className="w-4 h-4" />
             ) : saveSuccess ? (
-              <>
-                <CheckCircle className="w-4 h-4" />
-                <span className="text-sm">Saved</span>
-              </>
+              <><CheckCircle className="w-4 h-4" /><span>Saved</span></>
+            ) : saveError ? (
+              <span>Failed</span>
             ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span className="text-sm">Save</span>
-              </>
+              <span>Save</span>
             )}
           </button>
         </div>
       </header>
 
       <main className="pt-14 max-w-2xl mx-auto px-4">
-
-        {saveSuccess && (
-          <div className="mt-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-            <p className="text-sm text-green-400 text-center">
-              {saveQueued ? "Changes saved — will sync when online" : "Settings saved successfully!"}
-            </p>
-          </div>
-        )}
-
         {saveError && (
           <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-400 text-center">{saveError}</p>
@@ -534,7 +555,7 @@ export default function SettingsPage() {
                   <div>
                     <p className="text-dark-100 font-medium">Danger Alerts</p>
                     <p className="text-xs text-dark-400">
-                      Crime/Theft, Fire, Kidnapping, Terrorist Attack
+                      Kidnapping, Terrorist Attack
                     </p>
                   </div>
                   <ToggleSwitch enabled={dangerAlerts} onChange={setDangerAlerts} />
@@ -735,40 +756,16 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Quiet Hours */}
+        {/* Social Notifications */}
         <section className="py-6 border-b border-white/5">
-          <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Quiet Hours</h2>
-
+          <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Social Notifications</h2>
           <SettingRow
-            icon={Clock}
-            label="Enable Quiet Hours"
-            description="Only Danger alerts during set hours"
+            icon={Bell}
+            label="Silence Social Notifications"
+            description="Mute likes, comments, and confirms"
           >
-            <ToggleSwitch enabled={quietHoursEnabled} onChange={setQuietHoursEnabled} />
+            <ToggleSwitch enabled={socialSilenced} onChange={setSocialSilenced} />
           </SettingRow>
-
-          {quietHoursEnabled && (
-            <div className="ml-4 mt-2 p-4 glass-sm rounded-xl flex gap-4">
-              <div className="flex-1">
-                <label className="text-xs text-dark-400 block mb-1">Start Time</label>
-                <input
-                  type="time"
-                  value={quietHoursStart}
-                  onChange={(e) => setQuietHoursStart(e.target.value)}
-                  className="w-full px-3 py-2 glass-input text-base"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-xs text-dark-400 block mb-1">End Time</label>
-                <input
-                  type="time"
-                  value={quietHoursEnd}
-                  onChange={(e) => setQuietHoursEnd(e.target.value)}
-                  className="w-full px-3 py-2 glass-input text-base"
-                />
-              </div>
-            </div>
-          )}
         </section>
 
         {/* Security Section — NEW */}
@@ -825,7 +822,13 @@ export default function SettingsPage() {
         {/* Account */}
         <section className="py-6">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Account</h2>
-          <SettingRow icon={LogOut} label="Log Out" onClick={handleLogout} danger />
+          <SettingRow icon={LogOut} label="Sign Out" onClick={handleSignOut} danger />
+          <SettingRow
+            icon={Trash2}
+            label="Delete Account"
+            onClick={() => setShowDeleteModal(true)}
+            danger
+          />
         </section>
 
         <p className="text-center text-sm text-dark-500 py-4">Peja v1.0.0</p>
@@ -1122,7 +1125,88 @@ export default function SettingsPage() {
           </div>
         </>
       )}
+
+      {/* Delete Account Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/80"
+            onClick={() => !deleting && setShowDeleteModal(false)}
+          />
+          <div className="relative glass-strong rounded-2xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Delete Account</h3>
+                <p className="text-sm text-dark-400">This action cannot be undone</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+                <p className="text-sm text-red-300 mb-2">This will permanently delete:</p>
+                <ul className="text-sm text-red-400 space-y-1">
+                  <li>• All your posts and media</li>
+                  <li>• Your profile information</li>
+                  <li>• Your emergency contacts</li>
+                  <li>• All your notifications</li>
+                  <li>• Your account settings</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-sm text-dark-300 mb-2">
+                  Type <span className="font-bold text-red-400">DELETE</span> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => {
+                    setDeleteConfirmText(e.target.value.toUpperCase());
+                    setDeleteError("");
+                  }}
+                  placeholder="DELETE"
+                  className="w-full px-4 py-3 glass-input text-base"
+                  disabled={deleting}
+                />
+              </div>
+
+              {deleteError && <p className="text-sm text-red-400">{deleteError}</p>}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setDeleteConfirmText("");
+                    setDeleteError("");
+                  }}
+                  disabled={deleting}
+                  className="flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteAccount}
+                  disabled={deleting || deleteConfirmText !== "DELETE"}
+                  className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {deleting ? (
+                    <>
+                      <PejaSpinner className="w-4 h-4" />
+                      Deleting...
+                    </>
+                  ) : (
+                    "Delete Forever"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-    
+
   );
 }

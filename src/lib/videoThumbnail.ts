@@ -110,6 +110,18 @@ export function getCachedVideoUrl(videoUrl: string): string | null {
   return videoCache.get(videoUrl) || null;
 }
 
+// Cross-session cache for client-generated poster data URLs so
+// non-Cloudinary videos don't regenerate their thumbnail each visit.
+const THUMB_CACHE_KEY = "peja-video-thumb-";
+export function getCachedThumb(src: string): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  try { return sessionStorage.getItem(THUMB_CACHE_KEY + src); } catch { return null; }
+}
+export function setCachedThumb(src: string, dataUrl: string): void {
+  if (typeof sessionStorage === "undefined") return;
+  try { sessionStorage.setItem(THUMB_CACHE_KEY + src, dataUrl); } catch {}
+}
+
 export function preloadFeedVideos(posts: { media?: { url: string; media_type: string }[] }[]): void {
   if (typeof window === "undefined") return;
   

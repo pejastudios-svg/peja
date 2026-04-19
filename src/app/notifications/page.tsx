@@ -21,7 +21,6 @@ import {
   CheckCircle,
   MapPin,
   Clock,
-  Loader2,
   Trash2,
   Check,
   Heart,
@@ -351,9 +350,13 @@ export default function NotificationsPage() {
 
       case "nearby_incident":
       case "post_confirmed":
+      case "post_confirmed_digest":
       case "post_comment":
+      case "post_comment_digest":
       case "comment_liked":
+      case "comment_liked_digest":
       case "comment_reply":
+      case "comment_reply_digest":
         if (data.post_id) {
           router.push(`/post/${data.post_id}`);
         }
@@ -365,6 +368,7 @@ export default function NotificationsPage() {
         break;
 
       case "dm_message":
+      case "dm_message_digest":
       case "dm_reaction":
         if (data.conversation_id) {
           router.push(`/messages/${data.conversation_id}`, { scroll: false });
@@ -401,12 +405,16 @@ export default function NotificationsPage() {
       case "nearby_incident":
         return <MapPin className="w-5 h-5 text-orange-400" />;
       case "post_comment":
+      case "post_comment_digest":
         return <MessageCircle className="w-5 h-5 text-blue-400" />;
       case "post_confirmed":
+      case "post_confirmed_digest":
         return <CheckCircle className="w-5 h-5 text-green-400" />;
       case "comment_liked":
+      case "comment_liked_digest":
         return <Heart className="w-5 h-5 text-red-400" />;
       case "comment_reply":
+      case "comment_reply_digest":
         return <MessageCircle className="w-5 h-5 text-blue-400" />;
       default:
         return <Bell className="w-5 h-5 text-primary-400" />;

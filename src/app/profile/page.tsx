@@ -6,7 +6,6 @@ import { useRouter, usePathname } from "next/navigation";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
-import { apiUrl } from "@/lib/api";
 import { VipBadge } from "@/components/ui/VipBadge";
 import {
   User,
@@ -15,12 +14,9 @@ import {
   Briefcase,
   Shield,
   Settings,
-  LogOut,
   ChevronLeft,
   ChevronRight,
   Camera,
-  Trash2,
-  AlertTriangle,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -28,7 +24,6 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Post } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
-import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export default function ProfilePage() {
   // ============================================================
@@ -39,7 +34,7 @@ export default function ProfilePage() {
   const feedCache = useFeedCache();
   const router = useRouter();
   const pathname = usePathname();
-    const { user, signOut, loading: authLoading } = useAuth();
+    const { user, loading: authLoading } = useAuth();
 
   // --- INSTANT CACHE INITIALIZATION ---
   const [userPosts, setUserPosts] = useState<Post[]>(() => {
@@ -68,10 +63,6 @@ export default function ProfilePage() {
 
   const [confirmedLoading, setConfirmedLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"posts" | "confirmed">("posts");
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
 
   // --- SAVE SCROLL (skip when on modal paths like /profile/edit) ---
   useEffect(() => {
@@ -271,53 +262,6 @@ export default function ProfilePage() {
     }
   };
 
-  const handleSignOut = async () => {
-    await signOut();
-    router.push("/login");
-  };
-
-  const handleDeleteAccount = async () => {
-    if (!user) return;
-
-    if (deleteConfirmText !== "DELETE") {
-      setDeleteError("Please type DELETE to confirm");
-      return;
-    }
-
-    setDeleting(true);
-    setDeleteError("");
-
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      if (!session?.access_token) {
-        throw new Error("No active session");
-      }
-
-      const response = await fetch(apiUrl("/api/delete-account"), {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to delete account");
-      }
-
-      await signOut();
-      router.push("/login");
-    } catch (err: any) {
-      setDeleteError(err.message || "Failed to delete account. Please try again.");
-      setDeleting(false);
-    }
-  };
-
   // ============================================================
   // ALL HOOKS ARE DONE — early returns are now safe
   // ============================================================
@@ -452,26 +396,6 @@ export default function ProfilePage() {
                 </div>
                 <ChevronRight className="w-4 h-4 text-dark-500" />
               </button>
-              <button
-                onClick={handleSignOut}
-                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-red-500/10 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <LogOut className="w-5 h-5 text-red-500" />
-                  <span className="text-sm text-red-500">Sign Out</span>
-                </div>
-                <ChevronRight className="w-4 h-4 text-red-500" />
-              </button>
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-red-500/10 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <Trash2 className="w-5 h-5 text-red-500" />
-                  <span className="text-sm text-red-500">Delete Account</span>
-                </div>
-                <ChevronRight className="w-4 h-4 text-red-500" />
-              </button>
             </div>
           </div>
 
@@ -515,83 +439,6 @@ export default function ProfilePage() {
             )}
           </div>
 
-          {/* Delete Account Modal */}
-          {showDeleteModal && (
-            <div className="fixed inset-0 z-[5000] flex items-center justify-center p-4">
-              <div className="absolute inset-0 bg-black/80" onClick={() => !deleting && setShowDeleteModal(false)} />
-              <div className="relative glass-strong rounded-2xl max-w-md w-full p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
-                    <AlertTriangle className="w-6 h-6 text-red-500" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-white">Delete Account</h3>
-                    <p className="text-sm text-dark-400">This action cannot be undone</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
-                    <p className="text-sm text-red-300 mb-2">This will permanently delete:</p>
-                    <ul className="text-sm text-red-400 space-y-1">
-                      <li>• All your posts and media</li>
-                      <li>• Your profile information</li>
-                      <li>• Your emergency contacts</li>
-                      <li>• All your notifications</li>
-                      <li>• Your account settings</li>
-                    </ul>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-dark-300 mb-2">
-                      Type <span className="font-bold text-red-400">DELETE</span> to confirm:
-                    </label>
-                    <input
-                      type="text"
-                      value={deleteConfirmText}
-                      onChange={(e) => {
-                        setDeleteConfirmText(e.target.value.toUpperCase());
-                        setDeleteError("");
-                      }}
-                      placeholder="DELETE"
-                      className="w-full px-4 py-3 glass-input text-base"
-                      disabled={deleting}
-                    />
-                  </div>
-
-                  {deleteError && <p className="text-sm text-red-400">{deleteError}</p>}
-
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      onClick={() => {
-                        setShowDeleteModal(false);
-                        setDeleteConfirmText("");
-                        setDeleteError("");
-                      }}
-                      disabled={deleting}
-                      className="flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleDeleteAccount}
-                      disabled={deleting || deleteConfirmText !== "DELETE"}
-                      className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {deleting ? (
-                        <>
-                          <PejaSpinner className="w-4 h-4" />
-                          Deleting...
-                        </>
-                      ) : (
-                        "Delete Forever"
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </main>
     </div>

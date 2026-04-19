@@ -6,7 +6,7 @@ import { ChevronLeft, Play, Pause, Volume2, VolumeX } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { useAudio } from "@/context/AudioContext";
 import { useVideoHandoff } from "@/context/VideoHandoffContext";
-import { getVideoThumbnailUrl, getOptimizedVideoUrl, generateVideoThumbnail, getCachedVideoUrl } from "@/lib/videoThumbnail";
+import { getVideoThumbnailUrl, getOptimizedVideoUrl, generateVideoThumbnail, getCachedVideoUrl, getCachedThumb, setCachedThumb } from "@/lib/videoThumbnail";
 import { useHlsPlayer } from "@/hooks/useHlsPlayer";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import { recordPostView } from "@/lib/postViews";
@@ -39,7 +39,9 @@ export function VideoLightbox({
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [showPoster, setShowPoster] = useState(true);
-    const [generatedPoster, setGeneratedPoster] = useState<string | null>(null);
+    const [generatedPoster, setGeneratedPoster] = useState<string | null>(
+      () => (videoUrl ? getCachedThumb(videoUrl) : null)
+    );
     const cachedPosterRef = useRef<string | null>(null);
     const { user } = useAuth();
   const [videoBuffering, setVideoBuffering] = useState(true);
@@ -143,7 +145,7 @@ const getEffectiveStartData = () => {
       setDragOffset({ x: 0, y: 0 });
       setShowPoster(true);
       setVideoBuffering(true);
-      setGeneratedPoster(null);
+      setGeneratedPoster(videoUrl ? getCachedThumb(videoUrl) : null);
       cachedPosterRef.current = null;
       setAnimPhase("idle");
       animSourceRectRef.current = null;
@@ -164,11 +166,18 @@ const getEffectiveStartData = () => {
     if (!videoUrl || !isOpen) return;
     if (posterUrl || getVideoThumbnailUrl(videoUrl)) return; // Already have a poster
 
+    const cached = getCachedThumb(videoUrl);
+    if (cached) {
+      setGeneratedPoster(cached);
+      return;
+    }
+
     let cancelled = false;
 
     generateVideoThumbnail(videoUrl, 640).then((thumb) => {
       if (!cancelled && thumb) {
         setGeneratedPoster(thumb);
+        setCachedThumb(videoUrl, thumb);
       }
     });
 
@@ -409,10 +418,15 @@ if (animPhase === "enter") {
           <div className="absolute inset-0 z-[2] pointer-events-none">
             {effectivePoster ? (
               <img
-              src={effectivePoster}
-              alt=""
-              className="absolute inset-0 w-full h-full object-contain"
-            />
+                src={effectivePoster}
+                alt=""
+                loading="eager"
+                decoding="async"
+                // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                // @ts-ignore — fetchpriority is valid HTML but not yet in React types
+                fetchpriority="high"
+                className="absolute inset-0 w-full h-full object-contain"
+              />
             ) : (
               <div className="w-full h-full bg-black" />
             )}
