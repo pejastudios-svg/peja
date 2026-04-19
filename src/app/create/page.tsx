@@ -156,6 +156,8 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const preUploadStatusMapRef = useRef<Map<File, "uploading" | "done" | "failed">>(new Map());
   // Per-file upload progress 0-100 for the pre-upload XHR
   const preUploadProgressRef = useRef<Map<File, number>>(new Map());
+  // Per-file error message when pre-upload fails
+  const preUploadErrorRef = useRef<Map<File, string>>(new Map());
   // In-flight video XHRs so we can abort on swap/remove/unmount
   const videoXhrRef = useRef<Map<File, XMLHttpRequest>>(new Map());
   const [preUploadTick, setPreUploadTick] = useState(0);
@@ -332,7 +334,17 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       });
 
       xhr.addEventListener("load", () => {
-        if (xhr.status !== 200) return resolve(null);
+        if (xhr.status !== 200) {
+          let msg = `HTTP ${xhr.status}`;
+          try {
+            const err = JSON.parse(xhr.responseText);
+            if (err?.error?.message) msg = err.error.message;
+          } catch {
+            if (xhr.responseText) msg = xhr.responseText.slice(0, 120);
+          }
+          preUploadErrorRef.current.set(file, msg);
+          return resolve(null);
+        }
         try {
           const data = JSON.parse(xhr.responseText);
           let thumbnailUrl: string | null = null;
@@ -358,9 +370,15 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
           resolve(null);
         }
       });
-      xhr.addEventListener("error", () => resolve(null));
+      xhr.addEventListener("error", () => {
+        preUploadErrorRef.current.set(file, "Network error");
+        resolve(null);
+      });
       xhr.addEventListener("abort", () => resolve(null));
-      xhr.addEventListener("timeout", () => resolve(null));
+      xhr.addEventListener("timeout", () => {
+        preUploadErrorRef.current.set(file, "Upload timed out");
+        resolve(null);
+      });
 
       xhr.timeout = 5 * 60 * 1000; // 5 minutes
       xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`);
@@ -581,6 +599,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       preUploadRef.current.delete(file);
       preUploadStatusMapRef.current.delete(file);
       preUploadProgressRef.current.delete(file);
+      preUploadErrorRef.current.delete(file);
     }
     if (mediaPreviews[index]?.url) URL.revokeObjectURL(mediaPreviews[index].url);
     setMedia((prev) => prev.filter((_, i) => i !== index));
@@ -996,8 +1015,11 @@ setToast("Processing video...");
                     </div>
                   )}
                   {preUploadStatusMapRef.current.get(media[index]) === "failed" && (
-                    <div className="absolute inset-x-0 bottom-0 bg-red-500/80 text-[9px] text-white text-center py-0.5 z-20">
-                      Upload failed
+                    <div
+                      className="absolute inset-x-0 bottom-0 bg-red-500/85 text-[9px] text-white text-center py-0.5 px-1 z-20 truncate"
+                      title={preUploadErrorRef.current.get(media[index]) || "Upload failed"}
+                    >
+                      {preUploadErrorRef.current.get(media[index]) || "Upload failed"}
                     </div>
                   )}
                   <button
