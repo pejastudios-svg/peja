@@ -395,6 +395,7 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
         if (fetchError) {
           setError("Post not found");
           setLoading(false);
+          feedCache.removePost(postId);
           return;
         }
 confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);

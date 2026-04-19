@@ -22,7 +22,7 @@ type FeedContextType = {
 
 const FeedContext = createContext<FeedContextType | null>(null);
 
-const STORAGE_KEY = "peja-feed-v1";
+const STORAGE_KEY = "peja-feed-v2";
 const MAX_AGE = 10 * 60 * 1000; // 10 minutes
 
 function loadPersistedFeed(): Map<FeedKey, FeedCacheValue> {

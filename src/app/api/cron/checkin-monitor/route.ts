@@ -4,7 +4,12 @@ import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const queryToken = req.nextUrl.searchParams.get("secret");
+  const expected = process.env.CRON_SECRET;
+  const authorized =
+    (expected && authHeader === `Bearer ${expected}`) ||
+    (expected && queryToken === expected);
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
