@@ -21,6 +21,10 @@ public class MainActivity extends BridgeActivity {
             webSettings.setDatabaseEnabled(true);
             webSettings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
+            // Clear WebView HTTP cache on launch so new deploys propagate without
+            // needing a fresh install. Service Worker Cache API still handles offline.
+            webView.clearCache(true);
+
             String dbPath = getApplicationContext().getDir("database", MODE_PRIVATE).getPath();
             webSettings.setDatabasePath(dbPath);
             webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
