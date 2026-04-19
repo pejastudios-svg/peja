@@ -148,7 +148,7 @@ export async function compressVideo(
 // =====================================================
 // GET VIDEO DURATION (helper)
 // =====================================================
-function getVideoDuration(file: File): Promise<number> {
+export function getVideoDuration(file: File): Promise<number> {
   return new Promise((resolve, reject) => {
     const video = document.createElement("video");
     video.preload = "metadata";

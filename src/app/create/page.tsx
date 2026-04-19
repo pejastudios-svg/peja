@@ -139,11 +139,20 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
   // Pre-upload: maps each File → promise of its temp storage result
-  const preUploadRef = useRef<Map<File, Promise<{ url: string; tempPath: string; thumbnailUrl: string | null } | null>>>(new Map());
+  type PreUploadResult = {
+    url: string;
+    tempPath: string | null;
+    thumbnailUrl: string | null;
+    cloudinaryPublicId?: string;
+    resourceType?: "video" | "image";
+  };
+  const preUploadRef = useRef<Map<File, Promise<PreUploadResult | null>>>(new Map());
   // Tracks which pre-uploads were consumed by a successful post (so unmount cleanup skips them)
   const usedPreUploadsRef = useRef<Set<File>>(new Set());
   // Per-file upload status for UI spinner (stored in a ref to avoid stale closure issues)
   const preUploadStatusMapRef = useRef<Map<File, "uploading" | "done" | "failed">>(new Map());
+  // In-flight video XHRs so we can abort on swap/remove/unmount
+  const videoXhrRef = useRef<Map<File, XMLHttpRequest>>(new Map());
   const [preUploadTick, setPreUploadTick] = useState(0);
 
   useEffect(() => {
@@ -151,13 +160,19 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     return () => {
       isMounted.current = false;
       mediaPreviews.forEach(p => URL.revokeObjectURL(p.url));
-      // Clean up any temp files that were never posted
+      // Abort any in-flight video uploads so Cloudinary never finalizes them
+      videoXhrRef.current.forEach((xhr) => { try { xhr.abort(); } catch {} });
+      videoXhrRef.current.clear();
+      // Clean up any completed temp uploads that were never posted
       preUploadRef.current.forEach(async (promise, file) => {
-        if (!usedPreUploadsRef.current.has(file)) {
-          const result = await promise;
-          if (result?.tempPath) {
-            supabase.storage.from("media").remove([result.tempPath]).catch(() => {});
-          }
+        if (usedPreUploadsRef.current.has(file)) return;
+        const result = await promise;
+        if (!result) return;
+        if (result.tempPath) {
+          supabase.storage.from("media").remove([result.tempPath]).catch(() => {});
+        }
+        if (result.cloudinaryPublicId) {
+          destroyCloudinaryAsset(result.cloudinaryPublicId, result.resourceType || "video");
         }
       });
     };
@@ -277,7 +292,66 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     }
   };
 
-  const preUploadFile = async (file: File): Promise<{ url: string; tempPath: string; thumbnailUrl: string | null } | null> => {
+  const destroyCloudinaryAsset = async (publicId: string, resourceType: "video" | "image") => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      await fetch("/api/cloudinary/destroy", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ publicId, resourceType }),
+      });
+    } catch {}
+  };
+
+  const preUploadVideo = (file: File, xhr: XMLHttpRequest): Promise<PreUploadResult | null> => {
+    return new Promise((resolve) => {
+      const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+      const preset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+      if (!cloudName || !preset) return resolve(null);
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("upload_preset", preset);
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status !== 200) return resolve(null);
+        try {
+          const data = JSON.parse(xhr.responseText);
+          let thumbnailUrl: string | null = null;
+          try {
+            const parts = (data.secure_url as string).split("/video/upload/");
+            if (parts.length === 2) {
+              const versionMatch = parts[1].match(/(v\d+\/.+)/);
+              if (versionMatch) {
+                const jpgPath = versionMatch[1].replace(/\.[^.]+$/, ".jpg");
+                thumbnailUrl = `${parts[0]}/video/upload/so_0,w_480,h_480,c_limit,f_jpg,q_auto/${jpgPath}`;
+              }
+            }
+          } catch {}
+          resolve({
+            url: data.secure_url,
+            tempPath: null,
+            thumbnailUrl,
+            cloudinaryPublicId: data.public_id,
+            resourceType: "video",
+          });
+        } catch {
+          resolve(null);
+        }
+      });
+      xhr.addEventListener("error", () => resolve(null));
+      xhr.addEventListener("abort", () => resolve(null));
+
+      xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`);
+      xhr.send(formData);
+    });
+  };
+
+  const preUploadFile = async (file: File): Promise<PreUploadResult | null> => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) return null;
@@ -368,60 +442,95 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       }
     }
 
+    const MAX_VIDEO_DURATION_SECONDS = 5 * 60;
+    const { getVideoDuration } = await import("@/lib/mediaCompression");
+    const accepted: File[] = [];
     const newPreviews: { url: string; type: string }[] = [];
 
     for (const file of files) {
       if (file.type.startsWith("video/")) {
+        let duration = 0;
+        try {
+          duration = await getVideoDuration(file);
+        } catch {
+          setError(`Could not read video "${file.name}". Try a different file.`);
+          continue;
+        }
+        if (duration > MAX_VIDEO_DURATION_SECONDS) {
+          setError(`"${file.name}" is too long. Maximum 5 minutes per video.`);
+          continue;
+        }
         let thumbUrl: string | null = null;
         try {
           const { generateVideoThumbnail } = await import("@/lib/videoThumbnail");
           thumbUrl = await generateVideoThumbnail(file);
         } catch {}
-        newPreviews.push({
-          url: thumbUrl || "",
-          type: "video",
-        });
+        accepted.push(file);
+        newPreviews.push({ url: thumbUrl || "", type: "video" });
       } else {
-        newPreviews.push({
-          url: URL.createObjectURL(file),
-          type: "image",
-        });
+        accepted.push(file);
+        newPreviews.push({ url: URL.createObjectURL(file), type: "image" });
       }
     }
 
-    setMedia((prev) => [...prev, ...files]);
+    if (accepted.length === 0) {
+      e.target.value = "";
+      return;
+    }
+
+    setMedia((prev) => [...prev, ...accepted]);
     setMediaPreviews((prev) => [...prev, ...newPreviews]);
-    setError("");
     e.target.value = "";
 
-    // Start background pre-upload for images only — videos always go through Cloudinary at submit time
-    for (const file of files) {
-      if (file.type.startsWith("video/")) continue;
+    // Kick off background pre-upload for every accepted file
+    for (const file of accepted) {
       preUploadStatusMapRef.current.set(file, "uploading");
-      const promise = preUploadFile(file).then((result) => {
-        preUploadStatusMapRef.current.set(file, result ? "done" : "failed");
-        setPreUploadTick((t) => t + 1);
-        return result;
-      });
-      preUploadRef.current.set(file, promise);
+      if (file.type.startsWith("video/")) {
+        const xhr = new XMLHttpRequest();
+        videoXhrRef.current.set(file, xhr);
+        const promise = preUploadVideo(file, xhr).then((result) => {
+          videoXhrRef.current.delete(file);
+          preUploadStatusMapRef.current.set(file, result ? "done" : "failed");
+          setPreUploadTick((t) => t + 1);
+          return result;
+        });
+        preUploadRef.current.set(file, promise);
+      } else {
+        const promise = preUploadFile(file).then((result) => {
+          preUploadStatusMapRef.current.set(file, result ? "done" : "failed");
+          setPreUploadTick((t) => t + 1);
+          return result;
+        });
+        preUploadRef.current.set(file, promise);
+      }
     }
     setPreUploadTick((t) => t + 1);
   };
 
   const handleRemoveMedia = (index: number) => {
     const file = media[index];
-    // Clean up temp storage for this file if pre-uploaded
+    // Abort any in-flight video upload so Cloudinary never finalizes it
+    const inFlight = videoXhrRef.current.get(file);
+    if (inFlight) {
+      try { inFlight.abort(); } catch {}
+      videoXhrRef.current.delete(file);
+    }
+    // Clean up whatever completed before abort (if anything)
     const preUploadPromise = preUploadRef.current.get(file);
     if (preUploadPromise) {
       preUploadPromise.then((result) => {
-        if (result?.tempPath) {
+        if (!result) return;
+        if (result.tempPath) {
           supabase.storage.from("media").remove([result.tempPath]).catch(() => {});
+        }
+        if (result.cloudinaryPublicId) {
+          destroyCloudinaryAsset(result.cloudinaryPublicId, result.resourceType || "video");
         }
       });
       preUploadRef.current.delete(file);
       preUploadStatusMapRef.current.delete(file);
     }
-    URL.revokeObjectURL(mediaPreviews[index].url);
+    if (mediaPreviews[index]?.url) URL.revokeObjectURL(mediaPreviews[index].url);
     setMedia((prev) => prev.filter((_, i) => i !== index));
     setMediaPreviews((prev) => prev.filter((_, i) => i !== index));
   };
