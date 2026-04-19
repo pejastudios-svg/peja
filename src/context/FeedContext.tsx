@@ -1,7 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useMemo, useRef } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import { Post } from "@/lib/types";
+import { realtimeManager } from "@/lib/realtime";
 
 type FeedKey = string;
 
@@ -55,6 +56,36 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
   if (storeRef.current === null) {
     storeRef.current = loadPersistedFeed();
   }
+
+  // Global realtime sync: clear deleted/archived posts from every cached feed,
+  // even when the page that would normally handle the event is unmounted.
+  useEffect(() => {
+    const removeEverywhere = (id?: string) => {
+      if (!id) return;
+      const store = storeRef.current!;
+      let changed = false;
+      store.forEach((value, key) => {
+        const filtered = value.posts.filter((p) => p.id !== id);
+        if (filtered.length !== value.posts.length) {
+          store.set(key, { ...value, posts: filtered });
+          changed = true;
+        }
+      });
+      if (changed) persistFeed(store);
+    };
+
+    const unsubscribe = realtimeManager.subscribeToPosts(
+      undefined,
+      (updated: any) => {
+        if (updated?.status === "archived" || updated?.status === "deleted") {
+          removeEverywhere(updated.id);
+        }
+      },
+      (deleted: any) => removeEverywhere(deleted?.id)
+    );
+
+    return unsubscribe;
+  }, []);
 
   const api = useMemo<FeedContextType>(() => {
     return {

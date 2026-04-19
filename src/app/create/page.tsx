@@ -955,7 +955,7 @@ setToast("Processing video...");
         tags: [...tags],
       };
 
-      for (const key of ["home:trending", "home:nearby"]) {
+      for (const key of ["home:trending", "home:nearby", "profile:posts"]) {
         const cached = feedCache.get(key);
         const existing = cached?.posts || [];
         if (!existing.some((p) => p.id === post.id)) {
