@@ -6,7 +6,7 @@ const config: CapacitorConfig = {
   appName: "Peja",
   webDir: "out",
   server: {
-    url: "https://peja.vercel.app",
+    url: "https://peja.life",
     cleartext: true,
   },
   android: {
