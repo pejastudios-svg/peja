@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Video, Square, RotateCcw, X, Check, AlertCircle, RefreshCw } from "lucide-react";
+import { VideoPlayer } from "./VideoPlayer";
 
 interface VideoRecorderProps {
   isOpen: boolean;
@@ -64,6 +65,8 @@ export function VideoRecorder({
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAtRef = useRef(0);
   const mimeRef = useRef("");
+  const finalizedRef = useRef(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const stopStream = useCallback(() => {
     if (streamRef.current) {
@@ -162,19 +165,65 @@ export function VideoRecorder({
     await startCamera(next);
   };
 
+  const finalizeRecording = useCallback(() => {
+    if (finalizedRef.current) return;
+    finalizedRef.current = true;
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+    const rec = recorderRef.current;
+    const type = rec?.mimeType || mimeRef.current || "video/webm";
+    const chunks = chunksRef.current;
+    const totalBytes = chunks.reduce((sum, c) => sum + c.size, 0);
+    if (chunks.length === 0 || totalBytes === 0) {
+      setError("Recording was empty — try again");
+      return;
+    }
+    const blob = new Blob(chunks, { type });
+    const url = URL.createObjectURL(blob);
+    setRecordedBlob(blob);
+    setPreviewUrl(url);
+  }, []);
+
   const stopRecording = useCallback(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
     const rec = recorderRef.current;
-    if (rec && rec.state !== "inactive") {
-      try { rec.requestData(); } catch {}
-      try { rec.stop(); } catch {}
-    }
+    try {
+      if (rec) {
+        try { rec.requestData(); } catch {}
+        if (rec.state !== "inactive") {
+          try { rec.stop(); } catch {}
+        }
+      }
+    } catch {}
+    // Always schedule finalize — never depend on the recorder's stop event.
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+    let attempts = 0;
+    const poll = () => {
+      attempts += 1;
+      if (finalizedRef.current) return;
+      const r = recorderRef.current;
+      const inactive = !r || r.state === "inactive";
+      const hasBytes = chunksRef.current.reduce((s, c) => s + c.size, 0) > 0;
+      if (inactive && hasBytes) {
+        finalizeRecording();
+        return;
+      }
+      if (attempts >= 30) {
+        // ~3s elapsed; finalize with whatever we have (may show empty error)
+        finalizeRecording();
+        return;
+      }
+      fallbackTimerRef.current = setTimeout(poll, 100);
+    };
+    fallbackTimerRef.current = setTimeout(poll, 100);
     setIsRecording(false);
     pauseStreamPreview();
-  }, [pauseStreamPreview]);
+  }, [pauseStreamPreview, finalizeRecording]);
 
   const startRecording = () => {
     if (!streamRef.current) {
@@ -189,6 +238,7 @@ export function VideoRecorder({
     }
     chunksRef.current = [];
     bytesRef.current = 0;
+    finalizedRef.current = false;
     setSizeBytes(0);
     setDuration(0);
 
@@ -203,7 +253,7 @@ export function VideoRecorder({
     }
     recorderRef.current = recorder;
 
-    const onData = (e: BlobEvent) => {
+    recorder.ondataavailable = (e: BlobEvent) => {
       if (!e.data || e.data.size === 0) return;
       chunksRef.current.push(e.data);
       bytesRef.current += e.data.size;
@@ -213,35 +263,16 @@ export function VideoRecorder({
       }
     };
 
-    const finalize = () => {
-      const type = recorder.mimeType || mime || "video/webm";
-      const blob = new Blob(chunksRef.current, { type });
-      if (blob.size === 0) {
-        setError("Recording was empty — try again");
-        return;
-      }
-      const url = URL.createObjectURL(blob);
-      setRecordedBlob(blob);
-      setPreviewUrl(url);
+    recorder.onstop = () => {
+      setTimeout(() => finalizeRecording(), 0);
     };
 
-    const onStop = () => {
-      // Give the browser one microtask to deliver any trailing dataavailable
-      setTimeout(finalize, 0);
-    };
-
-    const onError = () => {
+    recorder.onerror = () => {
       setError("Recording failed");
       stopRecording();
     };
 
-    recorder.addEventListener("dataavailable", onData);
-    recorder.addEventListener("stop", onStop);
-    recorder.addEventListener("error", onError);
-
-    // Timeslice of 1000ms — delivers chunks every second; required on
-    // some WebKit/WebView builds to receive any data at all.
-    recorder.start(1000);
+    recorder.start(500);
     startedAtRef.current = Date.now();
     setIsRecording(true);
 
@@ -322,15 +353,17 @@ export function VideoRecorder({
       {/* Preview area */}
       <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
         {previewUrl ? (
-          <video
+          <VideoPlayer
+            key="preview"
             src={previewUrl}
-            className="w-full h-full object-contain"
-            controls
-            playsInline
+            className="w-full h-full"
             autoPlay
+            loop
+            playsInline
           />
         ) : (
           <video
+            key="live"
             ref={videoElRef}
             className="w-full h-full object-cover"
             playsInline
