@@ -1,7 +1,7 @@
 // src/app/(auth)/signup/page.tsx
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, User, Phone, Loader2 } from "lucide-react";
@@ -14,6 +14,14 @@ import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { getSafeNext } from "@/lib/safeNext";
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupPageInner />
+    </Suspense>
+  );
+}
+
+function SignupPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = getSafeNext(searchParams.get("next"));
