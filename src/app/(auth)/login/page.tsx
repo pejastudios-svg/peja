@@ -3,16 +3,19 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { getSafeNext } from "@/lib/safeNext";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = getSafeNext(searchParams.get("next"));
   const { signIn } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -50,7 +53,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/");
+      router.push(next || "/");
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
       setLoading(false);
@@ -62,7 +65,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: window.location.origin + (next || "/"),
         },
       });
       if (error) setError(error.message);
@@ -170,7 +173,7 @@ export default function LoginPage() {
 
           <p className="text-center text-dark-400 text-sm mt-6">
             Don't have an account?{" "}
-            <Link href="/signup" className="text-primary-400 hover:text-primary-300 font-medium">
+            <Link href={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"} className="text-primary-400 hover:text-primary-300 font-medium">
               Sign up
             </Link>
           </p>

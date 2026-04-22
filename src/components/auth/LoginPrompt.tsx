@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { LogIn, UserPlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { buildLoginHref } from "@/lib/safeNext";
 
 const PUBLIC_PATHS = ["/login", "/signup", "/terms", "/privacy", "/help", "/offline.html"];
 const DISMISSED_KEY = "peja-login-prompt-dismissed";
@@ -134,8 +135,9 @@ export function LoginPrompt() {
 
             <button
               onClick={() => {
+                const href = buildLoginHref(pathname, "/signup");
                 handleClose();
-                setTimeout(() => router.push("/signup"), 300);
+                setTimeout(() => router.push(href), 300);
               }}
               className="w-full py-3.5 rounded-xl font-semibold text-white transition-all active:scale-[0.98] mb-3 flex items-center justify-center gap-2"
               style={{
@@ -150,8 +152,9 @@ export function LoginPrompt() {
 
             <button
                 onClick={() => {
+                const href = buildLoginHref(pathname, "/login");
                 handleClose();
-                setTimeout(() => router.push("/login"), 300);
+                setTimeout(() => router.push(href), 300);
               }}
               className="w-full py-3 rounded-xl text-sm font-medium text-primary-400 transition-colors hover:bg-white/5 active:bg-white/10 flex items-center justify-center gap-2"
               style={{

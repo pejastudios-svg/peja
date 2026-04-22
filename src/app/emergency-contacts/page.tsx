@@ -222,21 +222,43 @@ export default function EmergencyContactsPage() {
 
       if (insertError) throw insertError;
 
-      // Send notification to the contact
+      // In-app notification
+      const inviteTitle = "Emergency Contact Request";
+      const inviteBody = `${user?.full_name || "Someone"} wants to add you as their emergency contact (${relationship}).`;
+      const inviteData = {
+        type: "emergency_contact_invite",
+        contact_id: data.id,
+        requester_name: user?.full_name,
+        requester_avatar: user?.avatar_url,
+        relationship: relationship,
+      };
+
       await supabase.from("notifications").insert({
         user_id: selectedUser.id,
         type: "system",
-        title: "Emergency Contact Request",
-        body: `${user?.full_name || "Someone"} wants to add you as their emergency contact (${relationship}).`,
-        data: {
-          type: "emergency_contact_invite",
-          contact_id: data.id,
-          requester_name: user?.full_name,
-          requester_avatar: user?.avatar_url,
-          relationship: relationship,
-        },
+        title: inviteTitle,
+        body: inviteBody,
+        data: inviteData,
         is_read: false,
       });
+
+      // Push notification — picks up the standard 24h TTL policy automatically
+      // because data.type === "emergency_contact_invite" isn't in the urgent set.
+      fetch("/api/send-push", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          userId: selectedUser.id,
+          title: inviteTitle,
+          body: inviteBody,
+          data: Object.fromEntries(
+            Object.entries(inviteData).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)])
+          ),
+        }),
+      }).catch(() => {});
 
       setContacts(prev => [...prev, { ...data, contact_user: selectedUser }]);
       toast.success("Invite sent! Waiting for acceptance.");

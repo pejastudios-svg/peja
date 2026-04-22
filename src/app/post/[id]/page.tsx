@@ -25,6 +25,7 @@ import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { apiUrl } from "@/lib/api";
 import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
 import { shareUrl } from "@/lib/share";
+import { buildLoginHref } from "@/lib/safeNext";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 import {
@@ -273,7 +274,7 @@ export default function PostDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const sourceKey = searchParams.get("sourceKey");
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const postId = params.id as string;
   const commentInputRef = useRef<HTMLInputElement>(null);
   const isMounted = useRef(true);
@@ -291,12 +292,21 @@ export default function PostDetailPage() {
     return () => {
       isMounted.current = false;
       if (abortController.current) abortController.current.abort();
-      
+
       // Resume background videos when leaving
       window.dispatchEvent(new Event("peja-modal-close"));
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postId]);
+
+  // Auth gate: shared post links should never expose content to guests.
+  // Bounce to login with a `next` so we land back here after sign-in/up.
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) return;
+    if (!postId) return;
+    router.replace(buildLoginHref(`/post/${postId}`));
+  }, [authLoading, user, postId, router]);
   
   // CRITICAL: Track ongoing like operations to prevent double-clicks
   const likingInProgress = useRef<Set<string>>(new Set());
