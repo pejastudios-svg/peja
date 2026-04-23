@@ -93,11 +93,9 @@ function LoginPageInner() {
 
   const handleGoogleSignIn = async () => {
     try {
-      // Land OAuth directly on the destination. Once Supabase parses the
-      // #access_token fragment and the session is established, the
-      // PostAuthRedirect component swaps the current history entry to `/` and
-      // re-pushes the destination on top, giving history [..., /, /post] so
-      // back lands on home in one press.
+      // Flag the OAuth round-trip so PostAuthRedirect knows to fix history
+      // (stack home behind the destination) once we land back authed.
+      sessionStorage.setItem("peja-oauth-pending", "1");
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {

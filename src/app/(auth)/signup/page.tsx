@@ -120,9 +120,9 @@ function SignupPageInner() {
 
   const handleGoogleSignIn = async () => {
     try {
-      // Land OAuth directly on the destination. PostAuthRedirect (mounted at
-      // app root) sanitizes history afterwards so back from the destination
-      // returns to home in a single press.
+      // Flag the OAuth round-trip so PostAuthRedirect knows to fix history
+      // (stack home behind the destination) once we land back authed.
+      sessionStorage.setItem("peja-oauth-pending", "1");
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
