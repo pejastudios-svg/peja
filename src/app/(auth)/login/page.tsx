@@ -1,7 +1,7 @@
 // src/app/(auth)/login/page.tsx
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
@@ -26,20 +26,18 @@ function LoginPageInner() {
   const next = getSafeNext(searchParams.get("next"));
   const { signIn, user, loading: authLoading } = useAuth();
 
-  // Single navigation path: as soon as we have an authed user (whether they
-  // just submitted the form, came from OAuth, or back-navigated to /login),
-  // route them to `next` if present (with home pushed behind so back lands on
-  // the feed), otherwise straight home.
+  // Distinguish "back-navigated to /login while already authed" from "just
+  // submitted the form". The first run of this effect captures the initial
+  // auth state — if the user was already authed at mount, this is a back-nav
+  // and we leave for home (ignoring `next` to avoid a redirect loop). For the
+  // form-submit case, the form handler navigates explicitly.
+  const initialAuthCapturedRef = useRef(false);
   useEffect(() => {
     if (authLoading) return;
-    if (!user) return;
-    if (next) {
-      router.replace("/");
-      router.push(next);
-    } else {
-      router.replace("/");
-    }
-  }, [user, authLoading, next, router]);
+    if (initialAuthCapturedRef.current) return;
+    initialAuthCapturedRef.current = true;
+    if (user) router.replace("/");
+  }, [authLoading, user, router]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -76,8 +74,14 @@ function LoginPageInner() {
         return;
       }
 
-      // Navigation is handled by the useEffect above — it fires as soon as
-      // the auth context picks up the new session.
+      // Stack home behind the destination so back from there returns to the
+      // feed, not back to the login screen.
+      if (next) {
+        router.replace("/");
+        router.push(next);
+      } else {
+        router.push("/");
+      }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
       setLoading(false);

@@ -1,7 +1,7 @@
 // src/app/(auth)/signup/page.tsx
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, User, Phone, Loader2 } from "lucide-react";
@@ -27,17 +27,16 @@ function SignupPageInner() {
   const next = getSafeNext(searchParams.get("next"));
   const { signUp, user, loading: authLoading } = useAuth();
 
-  // Single navigation path: route once the user is authed.
+  // Distinguish back-nav-while-authed from form-submit. On the first auth
+  // resolution after mount, if the user is already authed, this is a back
+  // navigation and we leave for home (ignoring `next` to break the loop).
+  const initialAuthCapturedRef = useRef(false);
   useEffect(() => {
     if (authLoading) return;
-    if (!user) return;
-    if (next) {
-      router.replace("/");
-      router.push(next);
-    } else {
-      router.replace("/");
-    }
-  }, [user, authLoading, next, router]);
+    if (initialAuthCapturedRef.current) return;
+    initialAuthCapturedRef.current = true;
+    if (user) router.replace("/");
+  }, [authLoading, user, router]);
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -104,8 +103,14 @@ function SignupPageInner() {
         return;
       }
 
-      // Navigation is handled by the useEffect above — fires as soon as the
-      // auth context picks up the new session.
+      // Stack home behind the destination so back from there returns to the
+      // feed, not back to the signup screen.
+      if (next) {
+        router.replace("/");
+        router.push(next);
+      } else {
+        router.push("/");
+      }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
       setLoading(false);
