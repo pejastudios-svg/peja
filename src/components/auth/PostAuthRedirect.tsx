@@ -26,6 +26,12 @@ export function PostAuthRedirect() {
     const target = getSafeNext(raw);
     if (!target) return;
 
+    // Make sure the current history entry is a clean `/` (Supabase may not
+    // have stripped the #access_token=... fragment yet, and we don't want
+    // back from the destination to land on the OAuth-fragment URL — which
+    // would silently bounce the user back to Google's account chooser).
+    try { window.history.replaceState(null, "", "/"); } catch {}
+
     // Full-page nav so the (.)post intercepting route doesn't render the
     // destination as a modal on top of the current page.
     window.location.href = target;
