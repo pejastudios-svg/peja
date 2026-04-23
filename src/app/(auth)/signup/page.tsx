@@ -120,10 +120,14 @@ function SignupPageInner() {
 
   const handleGoogleSignIn = async () => {
     try {
+      // Same pattern as login: stash destination, land on `/`, let
+      // PostAuthRedirect take over once the session is restored. Avoids the
+      // OAuth fragment landing on /post/[id] and the extra back press.
+      if (next) sessionStorage.setItem("peja-after-auth-redirect", next);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: window.location.origin + (next || "/"),
+          redirectTo: window.location.origin + "/",
         },
       });
       if (error) setError(error.message);

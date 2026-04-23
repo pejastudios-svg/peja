@@ -28,6 +28,7 @@ import { TutorialProvider } from "@/components/tutorial/TutorialOverlay";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { CheckInMonitor } from "@/components/safety/CheckInMonitor";
 import { LoginPrompt } from "@/components/auth/LoginPrompt";
+import { PostAuthRedirect } from "@/components/auth/PostAuthRedirect";
 import { SlowConnectionBanner } from "@/components/system/SlowConnectionBanner";
 import { BackgroundPrefetcher } from "@/components/navigation/BackgroundPrefetcher";
 import { Analytics } from "@vercel/analytics/next"
@@ -135,6 +136,7 @@ export default function RootLayout({
                         <SlowConnectionBanner />
                         <OfflineBanner />
                         <LoginPrompt />
+                        <PostAuthRedirect />
                         <BackgroundPrefetcher />
                         <ServiceWorkerRegistration />
                         <Analytics/>

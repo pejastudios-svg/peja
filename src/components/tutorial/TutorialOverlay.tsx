@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
@@ -463,15 +464,18 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [mounted, setMounted] = useState(false);
   const { user, loading: authLoading } = useAuth();
+  const pathname = usePathname();
+  const isHome = pathname === "/";
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Only show tutorial when user is logged in (run once)
+  // Only show tutorial when user is logged in AND on the home page (run once)
   const tutorialCheckedRef = useRef(false);
   useEffect(() => {
     if (authLoading || !user) return;
+    if (!isHome) return;
     if (tutorialCheckedRef.current) return;
     tutorialCheckedRef.current = true;
     if (typeof window === "undefined") return;
@@ -490,7 +494,7 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
       const timer = setTimeout(() => setPhase("welcome"), 2000);
       return () => clearTimeout(timer);
     }
-  }, [user, authLoading]);
+  }, [user, authLoading, isHome]);
 
   // Listen for manual trigger from Settings
   useEffect(() => {
@@ -528,11 +532,14 @@ const handleStart = useCallback(() => {
 
   if (!mounted) return <>{children}</>;
 
+  // Tutorial spotlights/welcome rely on `data-tutorial` targets that only
+  // exist on the home page. Suppress the overlay everywhere else even if it
+  // somehow got triggered while navigating.
   return (
     <>
       {children}
-      {phase === "welcome" && createPortal(<WelcomeScreen onStart={handleStart} onSkip={handleSkip} />, document.body)}
-      {phase === "spotlight" && createPortal(
+      {isHome && phase === "welcome" && createPortal(<WelcomeScreen onStart={handleStart} onSkip={handleSkip} />, document.body)}
+      {isHome && phase === "spotlight" && createPortal(
         <SpotlightOverlay
           steps={TUTORIAL_STEPS}
           currentStep={currentStep}

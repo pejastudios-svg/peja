@@ -93,12 +93,16 @@ function LoginPageInner() {
 
   const handleGoogleSignIn = async () => {
     try {
-      // Land on next directly; the post page itself handles back→home for
-      // OAuth redirects (no chance to script two history entries here).
+      // Stash the destination and always land back on `/`. The PostAuthRedirect
+      // root component picks this up once the session is restored and does a
+      // full-page nav to the destination — gives history [/, /post] so back
+      // lands on home in one press, and avoids leaving a #access_token=...
+      // fragment on the post URL.
+      if (next) sessionStorage.setItem("peja-after-auth-redirect", next);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: window.location.origin + (next || "/"),
+          redirectTo: window.location.origin + "/",
         },
       });
       if (error) setError(error.message);
