@@ -92,7 +92,12 @@ function SignupPageInner() {
         return;
       }
 
-      router.push(next || "/");
+      if (next) {
+        router.replace("/");
+        router.push(next);
+      } else {
+        router.push("/");
+      }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
       setLoading(false);

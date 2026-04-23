@@ -61,7 +61,14 @@ function LoginPageInner() {
         return;
       }
 
-      router.push(next || "/");
+      // When deep-linked to a destination, stack home behind it so back from
+      // the destination returns to the feed instead of looping into login.
+      if (next) {
+        router.replace("/");
+        router.push(next);
+      } else {
+        router.push("/");
+      }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
       setLoading(false);
@@ -70,6 +77,8 @@ function LoginPageInner() {
 
   const handleGoogleSignIn = async () => {
     try {
+      // Land on next directly; the post page itself handles back→home for
+      // OAuth redirects (no chance to script two history entries here).
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
