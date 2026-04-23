@@ -385,6 +385,9 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
   // Fetch post
   useEffect(() => {
     if (!postId) return;
+    // Wait for auth to resolve so RLS sees the user and doesn't 404 a post
+    // they actually have permission to read.
+    if (authLoading) return;
 
     abortController.current = new AbortController();
 
@@ -405,7 +408,12 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
         if (fetchError) {
           setError("Post not found");
           setLoading(false);
-          feedCache.removePost(postId);
+          // Only evict from local caches if Postgres confirms the row truly
+          // doesn't exist (PGRST116). RLS denials and transient network errors
+          // must NOT remove a real post from the user's feed cache.
+          if ((fetchError as any)?.code === "PGRST116") {
+            feedCache.removePost(postId);
+          }
           return;
         }
 confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
@@ -450,7 +458,7 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [postId]);
+}, [postId, authLoading]);
 
   // Fetch comments
   const fetchComments = useCallback(async () => {
