@@ -1,7 +1,7 @@
 // src/app/(auth)/signup/page.tsx
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, User, Phone, Loader2 } from "lucide-react";
@@ -25,7 +25,14 @@ function SignupPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = getSafeNext(searchParams.get("next"));
-  const { signUp } = useAuth();
+  const { signUp, user, loading: authLoading } = useAuth();
+
+  // If an already-authed user lands here (typical: back navigation after a
+  // post-signup deep link), bounce straight home.
+  useEffect(() => {
+    if (authLoading) return;
+    if (user) router.replace("/");
+  }, [user, authLoading, router]);
 
   const [formData, setFormData] = useState({
     fullName: "",
