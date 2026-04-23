@@ -103,11 +103,12 @@ function SignupPageInner() {
         return;
       }
 
-      // Stack home behind the destination so back from there returns to the
-      // feed, not back to the signup screen.
+      // Full-page nav for `next` so we render the real /post/[id] page rather
+      // than the (.)post modal interceptor on top of /signup. Replace history
+      // first so back from the destination lands on home.
       if (next) {
-        router.replace("/");
-        router.push(next);
+        try { window.history.replaceState(null, "", "/"); } catch {}
+        window.location.href = next;
       } else {
         router.push("/");
       }

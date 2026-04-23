@@ -74,11 +74,14 @@ function LoginPageInner() {
         return;
       }
 
-      // Stack home behind the destination so back from there returns to the
-      // feed, not back to the login screen.
+      // Use a full-page navigation for `next` so we bypass the (.)post
+      // intercepting route — otherwise the post would render as a modal on
+      // top of /login and "closing" it would just reveal the login page.
+      // First silently replace /login with / in history so the browser back
+      // button from the destination lands on home, not back on login.
       if (next) {
-        router.replace("/");
-        router.push(next);
+        try { window.history.replaceState(null, "", "/"); } catch {}
+        window.location.href = next;
       } else {
         router.push("/");
       }
