@@ -27,12 +27,17 @@ function SignupPageInner() {
   const next = getSafeNext(searchParams.get("next"));
   const { signUp, user, loading: authLoading } = useAuth();
 
-  // If an already-authed user lands here (typical: back navigation after a
-  // post-signup deep link), bounce straight home.
+  // Single navigation path: route once the user is authed.
   useEffect(() => {
     if (authLoading) return;
-    if (user) router.replace("/");
-  }, [user, authLoading, router]);
+    if (!user) return;
+    if (next) {
+      router.replace("/");
+      router.push(next);
+    } else {
+      router.replace("/");
+    }
+  }, [user, authLoading, next, router]);
 
   const [formData, setFormData] = useState({
     fullName: "",
@@ -99,12 +104,8 @@ function SignupPageInner() {
         return;
       }
 
-      if (next) {
-        router.replace("/");
-        router.push(next);
-      } else {
-        router.push("/");
-      }
+      // Navigation is handled by the useEffect above — fires as soon as the
+      // auth context picks up the new session.
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
       setLoading(false);

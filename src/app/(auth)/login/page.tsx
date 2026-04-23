@@ -26,13 +26,20 @@ function LoginPageInner() {
   const next = getSafeNext(searchParams.get("next"));
   const { signIn, user, loading: authLoading } = useAuth();
 
-  // If an already-authed user lands here (typical: back navigation after a
-  // post-login deep link), bounce straight home instead of asking them to
-  // sign in again.
+  // Single navigation path: as soon as we have an authed user (whether they
+  // just submitted the form, came from OAuth, or back-navigated to /login),
+  // route them to `next` if present (with home pushed behind so back lands on
+  // the feed), otherwise straight home.
   useEffect(() => {
     if (authLoading) return;
-    if (user) router.replace("/");
-  }, [user, authLoading, router]);
+    if (!user) return;
+    if (next) {
+      router.replace("/");
+      router.push(next);
+    } else {
+      router.replace("/");
+    }
+  }, [user, authLoading, next, router]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -69,14 +76,8 @@ function LoginPageInner() {
         return;
       }
 
-      // When deep-linked to a destination, stack home behind it so back from
-      // the destination returns to the feed instead of looping into login.
-      if (next) {
-        router.replace("/");
-        router.push(next);
-      } else {
-        router.push("/");
-      }
+      // Navigation is handled by the useEffect above — it fires as soon as
+      // the auth context picks up the new session.
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
       setLoading(false);
