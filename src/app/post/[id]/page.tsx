@@ -388,6 +388,10 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
     // Wait for auth to resolve so RLS sees the user and doesn't 404 a post
     // they actually have permission to read.
     if (authLoading) return;
+    // Don't fetch as anonymous — the auth-gate effect above will redirect us
+    // to login. Running the query here would just produce a misleading
+    // "Post not found" before the redirect lands.
+    if (!user) return;
 
     abortController.current = new AbortController();
 
@@ -458,7 +462,7 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [postId, authLoading]);
+}, [postId, authLoading, user?.id]);
 
   // Fetch comments
   const fetchComments = useCallback(async () => {
