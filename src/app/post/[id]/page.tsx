@@ -309,6 +309,9 @@ export default function PostDetailPage() {
     if (authLoading) return;
     if (user) return;
     if (!postId) return;
+    // Don't redirect during an OAuth landing — Supabase is mid-way through
+    // parsing the #access_token=... fragment and the user is about to be set.
+    if (typeof window !== "undefined" && window.location.hash.includes("access_token=")) return;
     router.replace(buildLoginHref(`/post/${postId}`));
   }, [authLoading, user, postId, router]);
   

@@ -93,16 +93,15 @@ function LoginPageInner() {
 
   const handleGoogleSignIn = async () => {
     try {
-      // Stash the destination and always land back on `/`. The PostAuthRedirect
-      // root component picks this up once the session is restored and does a
-      // full-page nav to the destination — gives history [/, /post] so back
-      // lands on home in one press, and avoids leaving a #access_token=...
-      // fragment on the post URL.
-      if (next) sessionStorage.setItem("peja-after-auth-redirect", next);
+      // Land OAuth directly on the destination. Once Supabase parses the
+      // #access_token fragment and the session is established, the
+      // PostAuthRedirect component swaps the current history entry to `/` and
+      // re-pushes the destination on top, giving history [..., /, /post] so
+      // back lands on home in one press.
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: window.location.origin + "/",
+          redirectTo: window.location.origin + (next || "/"),
         },
       });
       if (error) setError(error.message);

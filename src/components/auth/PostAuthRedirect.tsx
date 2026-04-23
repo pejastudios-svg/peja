@@ -2,39 +2,32 @@
 
 import { useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { getSafeNext } from "@/lib/safeNext";
 
-// OAuth providers do a full-page redirect, so we can't script the history
-// stack from the login/signup page like we can for form sign-in. Instead, the
-// OAuth flow saves the destination here and lands on `/`, and this component
-// (mounted at app root) picks it up once the user becomes authed and does a
-// full-page navigation. Net history: [/, /post] — back lands on home in one
-// press, no leftover hash from the OAuth fragment.
-const KEY = "peja-after-auth-redirect";
-
+// OAuth providers redirect to the destination URL with a #access_token=...
+// fragment. Without intervention, the previous history entry is the OAuth
+// hash URL — pressing back from the post bounces the user to that fragment,
+// which then re-runs the Google flow / lands on the account picker.
+//
+// Once the user is authed and Supabase has processed the hash, we:
+// 1. Replace the current entry's URL with `/` (sanitizes any leftover hash
+//    AND turns this slot into "home" in history).
+// 2. Push the actual destination URL back on top — same path, same React
+//    tree, no navigation, no modal interceptor.
+//
+// Net history: [..., /, /post/abc]. Back lands on home in a single press.
 export function PostAuthRedirect() {
   const { user, loading } = useAuth();
 
   useEffect(() => {
     if (loading || !user) return;
     if (typeof window === "undefined") return;
+    if (!window.location.hash.includes("access_token=")) return;
 
-    const raw = sessionStorage.getItem(KEY);
-    if (!raw) return;
-    sessionStorage.removeItem(KEY);
-
-    const target = getSafeNext(raw);
-    if (!target) return;
-
-    // Make sure the current history entry is a clean `/` (Supabase may not
-    // have stripped the #access_token=... fragment yet, and we don't want
-    // back from the destination to land on the OAuth-fragment URL — which
-    // would silently bounce the user back to Google's account chooser).
-    try { window.history.replaceState(null, "", "/"); } catch {}
-
-    // Full-page nav so the (.)post intercepting route doesn't render the
-    // destination as a modal on top of the current page.
-    window.location.href = target;
+    const path = window.location.pathname + window.location.search;
+    try {
+      window.history.replaceState(null, "", "/");
+      window.history.pushState(null, "", path);
+    } catch {}
   }, [user, loading]);
 
   return null;
