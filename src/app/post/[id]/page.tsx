@@ -275,7 +275,11 @@ export default function PostDetailPage() {
   const searchParams = useSearchParams();
   const sourceKey = searchParams.get("sourceKey");
   const { user, loading: authLoading } = useAuth();
-  const postId = params.id as string;
+  // Some messaging clients append the post body to the URL when sharing,
+  // producing paths like /post/<uuid>%20Armed%20bandits... — extract just the
+  // leading UUID so the deep link still resolves.
+  const rawId = params.id as string;
+  const postId = (rawId?.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0]) || rawId;
   const commentInputRef = useRef<HTMLInputElement>(null);
   const isMounted = useRef(true);
   const abortController = useRef<AbortController | null>(null);
