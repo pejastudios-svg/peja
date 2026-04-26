@@ -744,11 +744,22 @@ peakHours: "No data yet",
         <div class="footer">PEJA (Your Brother's Keeper) - Confidential Report</div>
       </body></html>`;
 
-      const w = window.open("", "_blank");
-      if (w) {
-        w.document.write(html);
-        w.document.close();
-      }
+      // Download as a .html file. Safari blocks window.open() that follows
+      // any awaits because the user-gesture context is gone — using a Blob
+      // download bypasses the popup blocker entirely and works on every
+      // browser. Users get a file they can open in Safari from Downloads.
+      const slug = rangeLabel.toLowerCase().replace(/\s+/g, "-");
+      const stamp = new Date().toISOString().slice(0, 10);
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `peja-report-${slug}-${stamp}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoke after a tick so Safari has time to commit the download
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
       /* silent */
     } finally {
