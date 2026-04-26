@@ -23,6 +23,8 @@ import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
 import { VoiceNoteRecorder } from "@/components/messages/VoiceNoteRecorder";
 import { useMessageCache } from "@/context/MessageCacheContext";
 import { DocumentViewer } from "@/components/messages/DocumentViewer";
+import { SignedImage, SignedVideo } from "@/components/messages/SignedMedia";
+import { signMessageUrl } from "@/hooks/useSignedMessageUrl";
 import { CATEGORIES } from "@/lib/types";
 import {
   ArrowLeft,
@@ -1756,8 +1758,11 @@ useEffect(() => {
     // =====================================================
   // DOCUMENT DOWNLOAD (with proper filename)
   // =====================================================
-const handleDocumentOpen = useCallback((url: string, fileName: string | null, fileSize?: number | null) => {
-    setDocViewer({ url, fileName, fileSize: fileSize || null });
+const handleDocumentOpen = useCallback(async (url: string, fileName: string | null, fileSize?: number | null) => {
+    // Resolve to a signed URL when the file is in the private message-media
+    // bucket. Falls through to the original URL for legacy/public files.
+    const signed = await signMessageUrl(url);
+    setDocViewer({ url: signed || url, fileName, fileSize: fileSize || null });
   }, []);
 
   // =====================================================
@@ -2270,7 +2275,15 @@ const handleTouchEnd = () => {
     // Remove the failed optimistic message
     setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
 
-    toast.danger(e.message || "Failed to send voice note");
+    const raw = String(e?.message || "");
+    const lower = raw.toLowerCase();
+    let friendly = raw || "Failed to send voice note";
+    if (lower.includes("payload too large") || lower.includes("too large") || lower.includes("status 413")) {
+      friendly = "Voice note too large.";
+    } else if (lower.includes("network")) {
+      friendly = "Couldn't send — check your connection and try again.";
+    }
+    toast.danger(friendly);
   } finally {
     setVoiceNoteUploading(false);
   }
@@ -2559,11 +2572,49 @@ const handleTouchEnd = () => {
       setUploadingMsgIds((prev) => new Map(prev).set(tempId, progress));
 
     } catch (error: any) {
-      toast.danger(error.message || "Failed to process media");
+      const raw = String(error?.message || "");
+      const lower = raw.toLowerCase();
+      // Translate noisy upstream errors into something a user can act on.
+      // Anything that hints at file size collapses to the limit message.
+      let friendly = raw || "Failed to process media";
+      if (
+        lower.includes("file size too large") ||
+        lower.includes("size limit") ||
+        lower.includes("too large") ||
+        lower.includes("too big") ||
+        lower.includes("size exceeds") ||
+        (lower.includes("cloudinary") && (lower.includes("size") || lower.includes("large"))) ||
+        (lower.includes("status 413"))
+      ) {
+        friendly = "File size exceeds the 100MB limit.";
+      } else if (lower.startsWith("cloudinary error:")) {
+        friendly = "Upload failed. Try a smaller file or check your connection.";
+      } else if (lower.includes("network error")) {
+        friendly = "Upload failed — check your connection and try again.";
+      }
+      toast.danger(friendly);
       continue;
     }
   }
 }
+
+      // If the user attached files but every upload failed (and there's no
+      // text either), don't write an empty message — drop the optimistic
+      // bubble and surface a clear error instead.
+      const hasText = !!(markdownContent && markdownContent.trim());
+      const hasMedia = mediaItems.length > 0;
+      if (!hasText && !hasMedia) {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setUploadingMsgIds((prev) => {
+          const next = new Map(prev);
+          next.delete(tempId);
+          return next;
+        });
+        if (mediaToSend.length > 0) {
+          toast.danger("Couldn't send — all attachments failed to upload.");
+        }
+        return;
+      }
 
       const messageData: any = {
         conversation_id: conversationId,
@@ -3090,16 +3141,17 @@ onTouchEnd={() => {
                                     {m.media_type === "image" && (
   <>
     {m.url ? (
-      <img
-        src={m.url}
+      <SignedImage
+        url={m.url}
         alt=""
         loading="lazy"
         className="rounded-xl max-w-full max-h-60 object-cover cursor-pointer active:scale-[0.98] transition-transform"
-        onClick={(e) => {
+        onClick={async (e) => {
           e.stopPropagation();
-          setLightboxImage(m.url);
+          const signed = await signMessageUrl(m.url);
+          setLightboxImage(signed || m.url);
         }}
-        onTouchEnd={(e) => {
+        onTouchEnd={() => {
           if (longPressTimerRef.current) {
             clearTimeout(longPressTimerRef.current);
             longPressTimerRef.current = null;
@@ -3130,11 +3182,12 @@ onTouchEnd={() => {
     return (
       <div
         className="cursor-pointer active:scale-[0.98] transition-transform relative rounded-xl overflow-hidden"
-        onClick={(e) => {
+        onClick={async (e) => {
           e.stopPropagation();
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
           setLightboxVideoRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-          setLightboxVideo(m.url);
+          const signed = await signMessageUrl(m.url);
+          setLightboxVideo(signed || m.url);
         }}
         onTouchEnd={() => {
           if (longPressTimerRef.current) {
@@ -3144,8 +3197,8 @@ onTouchEnd={() => {
         }}
       >
         {thumbSrc ? (
-          <img
-            src={thumbSrc}
+          <SignedImage
+            url={thumbSrc}
             alt=""
             className="rounded-xl max-w-full max-h-60 object-cover"
             loading="lazy"
@@ -3169,8 +3222,8 @@ onTouchEnd={() => {
   if (thumbSrc) {
     return (
       <div className="relative rounded-xl overflow-hidden">
-        <img
-          src={thumbSrc}
+        <SignedImage
+          url={thumbSrc}
           alt=""
           className="rounded-xl max-w-full max-h-60 object-cover"
         />
@@ -3795,15 +3848,15 @@ onTouchEnd={() => {
                       {contextMenuMsg.media.map((m) => (
                         <div key={m.id}>
                           {m.media_type === "image" && m.url && (
-                            <img
-                              src={m.url}
+                            <SignedImage
+                              url={m.url}
                               alt=""
                               className="rounded-xl max-w-full max-h-32 object-cover pointer-events-none"
                             />
                           )}
                           {m.media_type === "video" && m.url && (
                             <div className="relative pointer-events-none">
-                              <video src={m.url} className="rounded-xl max-w-full max-h-32" preload="metadata" />
+                              <SignedVideo url={m.url} className="rounded-xl max-w-full max-h-32" preload="metadata" />
                               <div className="absolute inset-0 flex items-center justify-center">
                                 <div className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
                                   <div className="w-0 h-0 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent border-l-[8px] border-l-white ml-0.5" />
@@ -4155,23 +4208,27 @@ onTouchEnd={() => {
                         <div key={m.id}>
                           {m.media_type === "image" ? (
                             <button
-                              onClick={() => setLightboxImage(m.url)}
+                              onClick={async () => {
+                                const signed = await signMessageUrl(m.url);
+                                setLightboxImage(signed || m.url);
+                              }}
                               className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800"
                             >
-                              <img src={m.url} alt="" className="w-full h-full object-cover" />
+                              <SignedImage url={m.url} alt="" className="w-full h-full object-cover" />
                             </button>
                           ) : m.media_type === "video" ? (
                             <button
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                                 setLightboxVideoRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-                                setLightboxVideo(m.url);
+                                const signed = await signMessageUrl(m.url);
+                                setLightboxVideo(signed || m.url);
                               }}
                               className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800 relative"
                             >
                               {(m.thumbnail_url || getVideoThumbnailUrl(m.url)) ? (
-                                <img
-                                  src={m.thumbnail_url || getVideoThumbnailUrl(m.url)!}
+                                <SignedImage
+                                  url={m.thumbnail_url || getVideoThumbnailUrl(m.url)!}
                                   alt=""
                                   className="w-full h-full object-cover"
                                   loading="lazy"

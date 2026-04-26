@@ -11,12 +11,28 @@ export function getSafeNext(value: string | null | undefined): string | null {
   } catch {
     return null;
   }
+
+  // Strip leading whitespace and zero-width characters some chat clients
+  // inject. Reject control chars outright since some browsers normalize
+  // them in URLs and they can be used to slip past prefix checks.
+  decoded = decoded.replace(/^[\s\u200B-\u200D\uFEFF]+/, "");
+  if (/[\x00-\x1f\x7f]/.test(decoded)) return null;
+
+  // Backslashes get normalized to forward slashes in some URL parsers, so
+  // `/\\evil.com` would become `//evil.com` — block any backslash entirely.
+  if (decoded.includes("\\")) return null;
+
   if (!decoded.startsWith("/")) return null;
   if (decoded.startsWith("//")) return null;
-  if (decoded.startsWith("/\\")) return null;
-  if (BLOCKED_PREFIXES.some((p) => decoded === p || decoded.startsWith(p + "/") || decoded.startsWith(p + "?"))) {
+
+  if (
+    BLOCKED_PREFIXES.some(
+      (p) => decoded === p || decoded.startsWith(p + "/") || decoded.startsWith(p + "?")
+    )
+  ) {
     return null;
   }
+
   return decoded;
 }
 

@@ -7,34 +7,20 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { NotificationPopupListener } from "@/components/notifications/NotificationPopupListener";
 import AdminPinGate from "@/components/admin/AdminPinGate";
-import {
-  LayoutDashboard,
-  Users,
-  FileText,
-  AlertTriangle,
-  Flag,
-  Shield,
-  BarChart3,
-  Bell,
-  LogOut,
-  Menu,
-  X,
-  Loader2,
-  Crown,     
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
-const navItems = [
-  { href: "/admin", icon: LayoutDashboard, label: "Overview", badge: false },
-  { href: "/admin/notifications", icon: Bell, label: "Notifications", badge: true },
-  { href: "/admin/users", icon: Users, label: "Users", badge: false },
-  { href: "/admin/posts", icon: FileText, label: "Posts", badge: false },
-  { href: "/admin/sos", icon: AlertTriangle, label: "SOS Alerts", badge: false },
-  { href: "/admin/flagged", icon: Flag, label: "Flagged Content", badge: false },
-  { href: "/admin/guardians", icon: Shield, label: "Guardians", badge: false },
-  { href: "/admin/vips", icon: Crown, label: "VIPs", badge: false }, 
-  { href: "/admin/analytics", icon: BarChart3, label: "Analytics", badge: false },
-  { href: "/admin/security", icon: Shield, label: "Security" },
+const navItems: { href: string; label: string; badge?: boolean }[] = [
+  { href: "/admin", label: "Overview" },
+  { href: "/admin/notifications", label: "Notifications", badge: true },
+  { href: "/admin/users", label: "Users" },
+  { href: "/admin/posts", label: "Posts" },
+  { href: "/admin/sos", label: "SOS Alerts" },
+  { href: "/admin/flagged", label: "Flagged" },
+  { href: "/admin/guardians", label: "Guardians" },
+  { href: "/admin/vips", label: "VIPs" },
+  { href: "/admin/analytics", label: "Analytics" },
+  { href: "/admin/security", label: "Security" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -44,90 +30,42 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [checking, setChecking] = useState(true);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  
-  // Force re-render key
-  const [badgeKey, setBadgeKey] = useState(0);
+
   const channelRef = useRef<any>(null);
 
-  // Fetch unread count
   const fetchUnreadCount = useCallback(async () => {
     if (!user?.id) return;
-
     try {
       const { count, error } = await supabase
         .from("admin_notifications")
         .select("*", { count: "exact", head: true })
         .eq("recipient_id", user.id)
         .eq("is_read", false);
-
-      if (!error) {
-        setUnreadCount(count || 0);
-        setBadgeKey(prev => prev + 1); // Force re-render
-      }
-    } catch (e) {
-    }
+      if (!error) setUnreadCount(count || 0);
+    } catch {}
   }, [user?.id]);
 
-  // Initial fetch and realtime setup
   useEffect(() => {
     if (!user?.id) return;
-
     fetchUnreadCount();
 
-    // Cleanup existing channel
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
     }
 
-    // Create unique channel
-    const channelName = `admin-layout-badge-${user.id}-${Date.now()}`;
-
     const channel = supabase
-      .channel(channelName)
+      .channel(`admin-layout-badge-${user.id}-${Date.now()}`)
       .on(
         "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "admin_notifications",
-          filter: `recipient_id=eq.${user.id}`,
-        },
-        (payload) => {
-          fetchUnreadCount();
-        }
+        { event: "*", schema: "public", table: "admin_notifications", filter: `recipient_id=eq.${user.id}` },
+        () => fetchUnreadCount()
       )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "admin_notifications",
-          filter: `recipient_id=eq.${user.id}`,
-        },
-        (payload) => {
-          fetchUnreadCount();
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "DELETE",
-          schema: "public",
-          table: "admin_notifications",
-          filter: `recipient_id=eq.${user.id}`,
-        },
-        (payload) => {
-          fetchUnreadCount();
-        }
-      )
-      .subscribe((status) => {
-      });
+      .subscribe();
 
     channelRef.current = channel;
-
     return () => {
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
@@ -136,44 +74,37 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     };
   }, [user?.id, fetchUnreadCount]);
 
-  // Listen for manual badge refresh events
-useEffect(() => {
-  const handleBadgeRefresh = () => {
-    fetchUnreadCount();
-  };
+  useEffect(() => {
+    const handleBadgeRefresh = () => fetchUnreadCount();
+    window.addEventListener("admin-badge-refresh", handleBadgeRefresh);
+    return () => window.removeEventListener("admin-badge-refresh", handleBadgeRefresh);
+  }, [fetchUnreadCount]);
 
-  window.addEventListener("admin-badge-refresh", handleBadgeRefresh);
-  
-  return () => {
-    window.removeEventListener("admin-badge-refresh", handleBadgeRefresh);
-  };
-}, [fetchUnreadCount]);
-
-  // Check admin status
   useEffect(() => {
     const checkAdmin = async () => {
       if (!user) {
         setChecking(false);
         return;
       }
-
       const { data } = await supabase
         .from("users")
         .select("is_admin")
         .eq("id", user.id)
         .single();
-
       if (!data?.is_admin) {
         router.push("/");
         return;
       }
-
       setIsAdmin(true);
       setChecking(false);
     };
-
     checkAdmin();
   }, [user, router]);
+
+  // Auto-close the mobile menu on navigation
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
 
   const handleLogout = async () => {
     await signOut();
@@ -200,142 +131,138 @@ useEffect(() => {
     );
   }
 
-  // Badge component with key for forced re-render
-  const Badge = ({ count }: { count: number }) => {
-    if (count === 0) return null;
-    return (
-      <span 
-        key={`badge-${badgeKey}-${count}`}
-        className="min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center animate-pulse"
-      >
-        {count > 99 ? "99+" : count}
-      </span>
-    );
-  };
+  const isActive = (href: string) =>
+    href === "/admin" ? pathname === "/admin" : pathname.startsWith(href);
 
-return (
+  const linkClass = (active: boolean) =>
+    `relative h-14 inline-flex items-center whitespace-nowrap text-sm font-medium tracking-wide transition-colors ${
+      active ? "text-primary-400" : "text-dark-300 hover:text-dark-100"
+    }`;
+
+  return (
     <AdminPinGate>
-    <div className="min-h-screen peja-hud">
-      {/* Notification Popup Listener */}
-      <NotificationPopupListener
-        table="admin_notifications"
-        userColumn="recipient_id"
-        onNotification={fetchUnreadCount}
-      />
+      <div className="min-h-screen peja-hud">
+        <NotificationPopupListener
+          table="admin_notifications"
+          userColumn="recipient_id"
+          onNotification={fetchUnreadCount}
+        />
 
-      {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass-header h-14 flex items-center justify-between px-4">
-        <button onClick={() => setSidebarOpen(true)} className="p-2">
-          <Menu className="w-5 h-5 text-dark-200" />
-        </button>
-        <span className="text-lg font-bold text-primary-400">Peja Admin</span>
-        <Link href="/admin/notifications" className="p-2 relative">
-          <Bell className="w-5 h-5 text-dark-200" />
-          {unreadCount > 0 && (
-            <span 
-              key={`mobile-badge-${badgeKey}`}
-              className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full animate-pulse"
-            >
-              {unreadCount > 99 ? "99+" : unreadCount}
-            </span>
-          )}
-        </Link>
-      </header>
+        {/* ── Top nav ─────────────────────────────────────────── */}
+        <header className="fixed top-0 left-0 right-0 z-50 glass-header border-b border-white/10">
+          <div className="mx-auto flex h-14 items-center gap-6 px-4 lg:px-8">
+            <Link href="/admin" className="text-lg font-bold text-primary-400 shrink-0">
+              Peja Admin
+            </Link>
 
-      {/* Mobile Sidebar Overlay */}
-      {sidebarOpen && (
-        <div className="lg:hidden fixed inset-0 z-50">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-dark-900 border-r border-white/10">
-            <div className="flex items-center justify-between p-4 border-b border-white/10">
-              <span className="text-lg font-bold text-primary-400">Peja Admin</span>
-              <button onClick={() => setSidebarOpen(false)} className="p-1">
-                <X className="w-5 h-5 text-dark-400" />
+            {/* Desktop: inline nav */}
+            <nav className="hidden lg:flex items-center gap-6 flex-1 min-w-0 overflow-x-auto">
+              {navItems.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link key={item.href} href={item.href} className={linkClass(active)}>
+                    <span className="inline-flex items-center gap-2">
+                      {item.label}
+                      {item.badge && unreadCount > 0 && (
+                        <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                          {unreadCount > 99 ? "99+" : unreadCount}
+                        </span>
+                      )}
+                    </span>
+                    {active && (
+                      <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-primary-400 rounded-full" />
+                    )}
+                  </Link>
+                );
+              })}
+            </nav>
+
+            <div className="hidden lg:flex items-center gap-3 ml-auto shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
+                  <span className="text-primary-400 text-sm font-semibold">
+                    {user.full_name?.charAt(0) || "A"}
+                  </span>
+                </div>
+                <span className="text-sm text-dark-200 max-w-[140px] truncate">{user.full_name}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Log Out</span>
               </button>
             </div>
-            <nav className="p-4 space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.href;
 
+            {/* Mobile: burger toggle (2-line ↔ X) */}
+            <button
+              type="button"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+              className="lg:hidden ml-auto relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white/5 transition-colors"
+            >
+              <span
+                className={`absolute block h-[2px] w-6 bg-white rounded-full transition-all duration-300 ease-out ${
+                  menuOpen ? "rotate-45 translate-y-0" : "-translate-y-[5px]"
+                }`}
+              />
+              <span
+                className={`absolute block h-[2px] w-6 bg-white rounded-full transition-all duration-300 ease-out ${
+                  menuOpen ? "-rotate-45 translate-y-0" : "translate-y-[5px]"
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Mobile drawer (slides down from under the header) */}
+          <div
+            className={`lg:hidden overflow-hidden border-t border-white/10 transition-[max-height,opacity] duration-300 ease-out ${
+              menuOpen ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0 pointer-events-none"
+            }`}
+          >
+            <nav className="px-4 py-3 space-y-1 bg-dark-950/90 backdrop-blur-md">
+              {navItems.map((item) => {
+                const active = isActive(item.href);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                      isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-white/5"
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                      active ? "text-primary-400 bg-primary-600/10" : "text-dark-200 hover:bg-white/5"
                     }`}
                   >
-                    <Icon className="w-5 h-5" />
-                    <span className="flex-1">{item.label}</span>
-                    {item.badge && <Badge count={unreadCount} />}
+                    <span>{item.label}</span>
+                    {item.badge && unreadCount > 0 && (
+                      <span className="min-w-[18px] h-[18px] px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                        {unreadCount > 99 ? "99+" : unreadCount}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 mt-4"
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-red-400 hover:bg-red-500/10 mt-2"
               >
-                <LogOut className="w-5 h-5" />
+                <LogOut className="w-4 h-4" />
                 <span>Log Out</span>
               </button>
             </nav>
-          </aside>
-        </div>
-      )}
-
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-dark-900 border-r border-white/10">
-        <div className="p-6 border-b border-white/10">
-          <h1 className="text-xl font-bold text-primary-400">Peja Admin</h1>
-          <p className="text-sm text-dark-500 mt-1">Management Dashboard</p>
-        </div>
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = pathname === item.href;
-
-            return (
-              <Link
-                key={`${item.href}-${badgeKey}`}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                  isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-white/5"
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                <span className="flex-1">{item.label}</span>
-                {item.badge && <Badge count={unreadCount} />}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="p-4 border-t border-white/10">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center">
-              <span className="text-primary-400 font-semibold">
-                {user.full_name?.charAt(0) || "A"}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-dark-100 truncate">{user.full_name}</p>
-              <p className="text-xs text-dark-500 truncate">{user.email}</p>
-            </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            <span>Log Out</span>
-          </button>
-        </div>
-      </aside>
+        </header>
 
-      {/* Main Content */}
-<main className="lg:ml-64 pt-14 lg:pt-0 min-h-screen">{children}</main>
-    </div>
+        {/* Backdrop to dim content while drawer is open */}
+        {menuOpen && (
+          <div
+            className="lg:hidden fixed inset-0 top-14 z-40 bg-black/40"
+            onClick={() => setMenuOpen(false)}
+          />
+        )}
+
+        <main className="pt-14 min-h-screen">{children}</main>
+      </div>
     </AdminPinGate>
   );
 }

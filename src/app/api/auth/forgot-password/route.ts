@@ -5,12 +5,34 @@ import crypto from "crypto";
 
 export const runtime = "nodejs";
 
+// Per-IP rate limit (in-memory, complements the per-email DB limit). Stops
+// an attacker rotating across emails from email-bombing the webhook / quota.
+const ipBuckets = new Map<string, { count: number; resetAt: number }>();
+const IP_LIMIT = 10; // requests per hour per IP
+const IP_WINDOW = 60 * 60 * 1000;
+
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin();
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
     "unknown";
+
+  if (ip !== "unknown") {
+    const now = Date.now();
+    const entry = ipBuckets.get(ip);
+    if (!entry || now > entry.resetAt) {
+      ipBuckets.set(ip, { count: 1, resetAt: now + IP_WINDOW });
+    } else {
+      entry.count++;
+      if (entry.count > IP_LIMIT) {
+        return NextResponse.json(
+          { ok: false, error: "Too many requests. Try again later." },
+          { status: 429 }
+        );
+      }
+    }
+  }
 
   const { email } = await req.json();
   if (!email || typeof email !== "string") {

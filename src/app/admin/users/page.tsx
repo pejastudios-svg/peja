@@ -161,6 +161,10 @@ const deleteUser = async (userId: string, userName: string) => {
     if (!confirm(`Permanently delete ${userName || "this user"} and ALL their data? This cannot be undone.`)) return;
     if (!confirm("Are you absolutely sure? This deletes posts, comments, messages, SOS alerts, everything.")) return;
 
+    // Optimistic removal so the row disappears instantly.
+    const prev = users;
+    setUsers(users.filter((u) => u.id !== userId));
+
     setActionLoading(userId);
     try {
       const res = await fetch("/api/admin/delete-user", {
@@ -176,10 +180,9 @@ const deleteUser = async (userId: string, userName: string) => {
       if (!res.ok || !json.ok) {
         throw new Error(json.error || "Failed to delete user");
       }
-
-      refreshUsers();
     } catch (err: any) {
       alert(err.message || "Failed to delete user");
+      setUsers(prev);
     } finally {
       setActionLoading(null);
     }

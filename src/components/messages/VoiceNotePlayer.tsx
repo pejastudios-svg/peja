@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Play, Pause, Loader2 } from "lucide-react";
 import { PejaSpinner } from "../ui/PejaSpinner";
+import { useSignedMessageUrl } from "@/hooks/useSignedMessageUrl";
 
 const NUM_BARS = 32;
 
@@ -23,10 +24,15 @@ interface VoiceNotePlayerProps {
 }
 
 export function VoiceNotePlayer({
-  src,
+  src: rawSrc,
   duration: initialDuration,
   isMine = false,
 }: VoiceNotePlayerProps) {
+  // Resolve to a signed URL when the file lives in the private message-media
+  // bucket. Returns the original URL for non-message-media inputs (legacy
+  // public URLs etc.), so this is a safe drop-in.
+  const signed = useSignedMessageUrl(rawSrc);
+  const src = signed || "";
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | null>(null);

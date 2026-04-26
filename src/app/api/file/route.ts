@@ -32,10 +32,29 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
     }
 
+    // Pin the proxy to THIS project's Supabase host and only the public
+    // storage prefix. Without this, anyone could use the edge proxy to fetch
+    // any file from any Supabase project (free CDN / scraping vehicle), or
+    // poke at non-public storage paths.
+    const allowedHost = (() => {
+      try {
+        const env = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        return env ? new URL(env).hostname : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    // Allow proxying public files and short-lived signed URLs (used by DM
+    // attachments). Both flow through Supabase storage's standard paths.
+    const isPublic = parsedUrl.pathname.startsWith("/storage/v1/object/public/");
+    const isSigned = parsedUrl.pathname.startsWith("/storage/v1/object/sign/");
+
     if (
       parsedUrl.protocol !== "https:" ||
-      !parsedUrl.hostname.endsWith(".supabase.co") ||
-      !parsedUrl.pathname.startsWith("/storage/")
+      !allowedHost ||
+      parsedUrl.hostname !== allowedHost ||
+      (!isPublic && !isSigned)
     ) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

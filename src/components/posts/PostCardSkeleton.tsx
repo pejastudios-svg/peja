@@ -11,8 +11,11 @@ export function PostCardSkeleton() {
         <Skeleton className="h-3 w-20" />
       </div>
 
-      {/* media */}
-      <Skeleton className="h-[220px] w-full -mx-6 mb-3 rounded-none" />
+      {/* media — match the real card's aspect-video frame so content lands
+          in the same position when the skeleton swaps out */}
+      <div className="-mx-6 mb-3">
+        <Skeleton className="aspect-video w-full rounded-none" />
+      </div>
 
       {/* badge */}
       <Skeleton className="h-6 w-28 mb-3" />

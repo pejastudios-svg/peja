@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { InlineVideo } from "@/components/reels/InlineVideo";
@@ -137,19 +137,34 @@ if (!wasConfirmed) {
   const badgeVariant =
     category?.color === "danger" ? "danger" : category?.color === "warning" ? "warning" : "info";
 
+  // Scroll-snap carousel: chevrons scroll the container; index updates via
+  // onScroll. Native swipe just works because the container is overflow-x.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+
   const handlePrevMedia = (e: React.MouseEvent) => {
     e.stopPropagation();
     setVideoError(false);
-    setCurrentMediaIndex((prev) => (prev === 0 ? (post.media?.length || 1) - 1 : prev - 1));
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollBy({ left: -el.clientWidth, behavior: "smooth" });
   };
 
   const handleNextMedia = (e: React.MouseEvent) => {
     e.stopPropagation();
     setVideoError(false);
-    setCurrentMediaIndex((prev) =>
-      prev === (post.media?.length || 1) - 1 ? 0 : prev + 1
-    );
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollBy({ left: el.clientWidth, behavior: "smooth" });
   };
+
+  const handleScrollerScroll = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el || !post.media?.length) return;
+    const idx = Math.round(el.scrollLeft / el.clientWidth);
+    if (idx >= 0 && idx < post.media.length && idx !== currentMediaIndex) {
+      setCurrentMediaIndex(idx);
+    }
+  }, [currentMediaIndex, post.media]);
 
   // ✅ FIXED: Save scroll position before navigating to watch
   const handleCardClick = () => {
@@ -276,30 +291,70 @@ const handleShareClick = async (e: React.MouseEvent) => {
             </div>
           ) : (
             <>
-              <div className="aspect-video relative bg-dark-900">
-                {currentMedia?.media_type === "video" ? (
-                  videoError ? (
-                    <div className="w-full h-full flex items-center justify-center bg-dark-800">
-                      <div className="text-center">
-                        <Play className="w-10 h-10 text-dark-500 mx-auto mb-2" />
-                        <p className="text-dark-400 text-sm">Video unavailable</p>
-                      </div>
+              <div
+                ref={scrollerRef}
+                onScroll={handleScrollerScroll}
+                className="aspect-video relative bg-dark-900 flex overflow-x-auto snap-x snap-mandatory scroll-smooth"
+                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+              >
+                <style jsx>{`
+                  div::-webkit-scrollbar { display: none; }
+                `}</style>
+                {post.media.map((m, idx) => {
+                  const isCurrent = idx === currentMediaIndex;
+                  const isVideo = m.media_type === "video";
+                  return (
+                    <div
+                      key={m.id || `${idx}-${m.url}`}
+                      className="snap-center shrink-0 w-full h-full relative"
+                    >
+                      {isVideo ? (
+                        isCurrent && !videoError ? (
+                          <InlineVideo
+                            src={m.url}
+                            poster={m.thumbnail_url || getVideoThumbnailUrl(m.url) || undefined}
+                            className="w-full h-full object-cover"
+                            showExpand={true}
+                            showMute={true}
+                            postId={post.id}
+                            onExpand={handleExpandVideo}
+                            onError={() => setVideoError(true)}
+                          />
+                        ) : isCurrent && videoError ? (
+                          <div className="w-full h-full flex items-center justify-center bg-dark-800">
+                            <div className="text-center">
+                              <Play className="w-10 h-10 text-dark-500 mx-auto mb-2" />
+                              <p className="text-dark-400 text-sm">Video unavailable</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-full h-full bg-dark-800 relative">
+                            {(m.thumbnail_url || getVideoThumbnailUrl(m.url)) && (
+                              <img
+                                src={m.thumbnail_url || getVideoThumbnailUrl(m.url) || ""}
+                                alt=""
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            )}
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                              <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center">
+                                <Play className="w-5 h-5 text-white ml-0.5" />
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      ) : (
+                        <img
+                          src={m.url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          loading={idx === 0 ? "eager" : "lazy"}
+                        />
+                      )}
                     </div>
-                  ) : (
-                    <InlineVideo
-                      src={currentMedia.url}
-                      poster={currentMedia.thumbnail_url || getVideoThumbnailUrl(currentMedia.url) || undefined}
-                      className="w-full h-full object-cover"
-                      showExpand={true}
-                      showMute={true}
-                      postId={post.id}
-                      onExpand={handleExpandVideo}
-                      onError={() => setVideoError(true)}
-                    />
-                  )
-                ) : (
-                  <img src={currentMedia?.url} alt="" className="w-full h-full object-cover" />
-                )}
+                  );
+                })}
               </div>
 
               {post.media.length > 1 && (
@@ -316,11 +371,11 @@ const handleShareClick = async (e: React.MouseEvent) => {
                   >
                     <ChevronRight className="w-5 h-5 text-white" />
                   </button>
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 z-10">
                     {post.media.map((_, idx) => (
                       <div
                         key={idx}
-                        className={`w-1.5 h-1.5 rounded-full ${
+                        className={`w-1.5 h-1.5 rounded-full transition-colors ${
                           idx === currentMediaIndex ? "bg-white" : "bg-white/40"
                         }`}
                       />
