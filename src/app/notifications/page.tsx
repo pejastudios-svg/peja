@@ -49,7 +49,7 @@ interface InviteModalData {
   requesterAvatar?: string;
   relationship?: string;
   notificationId: string;
-  status: "loading" | "pending" | "accepted" | "declined" | "missing";
+  status: "loading" | "pending" | "accepted" | "declined" | "missing" | "error";
 }
 
 function NotificationRowSkeleton() {
@@ -315,13 +315,14 @@ export default function NotificationsPage() {
 
           setInviteModal((prev) => {
             if (!prev || prev.contactId !== contactId) return prev;
-            if (error || !row) return { ...prev, status: "missing" };
+            if (error) return { ...prev, status: "error" };
+            if (!row) return { ...prev, status: "missing" };
             const status = row.status as "pending" | "accepted" | "declined";
             return { ...prev, status };
           });
         } catch {
           setInviteModal((prev) =>
-            prev && prev.contactId === contactId ? { ...prev, status: "missing" } : prev
+            prev && prev.contactId === contactId ? { ...prev, status: "error" } : prev
           );
         }
       })();
@@ -652,6 +653,15 @@ export default function NotificationsPage() {
                   <AlertTriangle className="w-5 h-5 text-dark-300 shrink-0 mt-0.5" />
                   <p className="text-sm text-dark-300">
                     This request no longer exists. It may have been cancelled or deleted.
+                  </p>
+                </div>
+              )}
+
+              {inviteModal.status === "error" && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex gap-3">
+                  <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-300">
+                    Couldn't load this request. Please check your connection and try again.
                   </p>
                 </div>
               )}

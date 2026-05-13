@@ -71,6 +71,8 @@ export default function EmergencyContactsPage() {
 
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
+  const [protectingFor, setProtectingFor] = useState<PendingInvite[]>([]);
+  const [activeTab, setActiveTab] = useState<"mine" | "protecting">("mine");
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -94,6 +96,7 @@ export default function EmergencyContactsPage() {
     if (user) {
       fetchContacts();
       fetchPendingInvites();
+      fetchProtectingFor();
     }
   }, [user]);
 
@@ -123,6 +126,7 @@ export default function EmergencyContactsPage() {
     const handleRefresh = () => {
       fetchContacts();
       fetchPendingInvites();
+      fetchProtectingFor();
     };
     window.addEventListener("peja-emergency-contact-responded", handleRefresh);
     return () => window.removeEventListener("peja-emergency-contact-responded", handleRefresh);
@@ -173,6 +177,31 @@ export default function EmergencyContactsPage() {
         setPendingInvites(data.map(d => ({ ...d, requester: map[d.user_id] || null })));
       } else {
         setPendingInvites([]);
+      }
+    } catch {}
+  };
+
+  const fetchProtectingFor = async () => {
+    if (!user) return;
+    try {
+      const { data } = await supabase
+        .from("emergency_contacts")
+        .select("id, user_id, relationship, status, created_at")
+        .eq("contact_user_id", user.id)
+        .eq("status", "accepted")
+        .order("created_at", { ascending: false });
+
+      if (data && data.length > 0) {
+        const requesterIds = data.map(d => d.user_id);
+        const { data: usersData } = await supabase
+          .from("users").select("id, full_name, avatar_url").in("id", requesterIds);
+
+        const map: Record<string, any> = {};
+        (usersData || []).forEach(u => { map[u.id] = u; });
+
+        setProtectingFor(data.map(d => ({ ...d, requester: map[d.user_id] || null })));
+      } else {
+        setProtectingFor([]);
       }
     } catch {}
   };
@@ -332,6 +361,7 @@ export default function EmergencyContactsPage() {
       }
 
       setContacts(prev => prev.filter(c => c.id !== deleteId));
+      setProtectingFor(prev => prev.filter(c => c.id !== deleteId));
       setDeleteId(null);
       toast.success("Contact removed.");
     } catch {
@@ -379,7 +409,7 @@ export default function EmergencyContactsPage() {
             <Skeleton className="h-9 w-9 rounded-lg" />
           </div>
         </header>
-        <main className="pt-14 max-w-2xl mx-auto px-4 py-6 space-y-3">
+        <main className="pt-20 max-w-2xl mx-auto px-4 py-6 space-y-3">
           <Skeleton className="h-16 w-full rounded-2xl" />
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="glass-card flex items-center gap-4">
@@ -402,96 +432,176 @@ export default function EmergencyContactsPage() {
         </div>
       </header>
 
-      <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
-        <div className="glass-card mb-6 flex gap-3">
-          <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
-          <p className="text-dark-200 text-sm">
-            These Peja users will be notified when you trigger an SOS alert. They must accept your invite to receive notifications.
-          </p>
-</div>
-
+      <main className="pt-20 max-w-2xl mx-auto px-4 py-6">
         {/* Safety Check-In */}
         <SafetyCheckIn contacts={contacts} />
 
-        {/* Pending Invites Received */}
-        {pendingInvites.length > 0 && (
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-dark-400 uppercase mb-3">Pending Requests</h3>
-            <div className="space-y-3">
-              {pendingInvites.map(invite => (
-                <div key={invite.id} className="glass-card flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                    {invite.requester?.avatar_url ? (
-                      <img src={invite.requester.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="w-6 h-6 text-yellow-400" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-dark-100 text-sm">{invite.requester?.full_name || "Unknown"}</p>
-                    <p className="text-xs text-dark-500">Wants you as: {invite.relationship}</p>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => handleRespondToInvite(invite.id, true)}
-                      disabled={respondingId === invite.id}
-                      className="p-2 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded-lg transition-colors"
-                    >
-                      {respondingId === invite.id ?<PejaSpinner className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-                    </button>
-                    <button
-                      onClick={() => handleRespondToInvite(invite.id, false)}
-                      disabled={respondingId === invite.id}
-                      className="p-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* My Contacts */}
-        <div className="space-y-3 mb-6">
-          {contacts.length === 0 ? (
-            <div className="text-center py-12">
-              <Users className="w-12 h-12 text-dark-600 mx-auto mb-4" />
-              <p className="text-dark-400 mb-2">No emergency contacts yet</p>
-              <p className="text-sm text-dark-500 mb-4">Add Peja users who should be notified in emergencies</p>
-            </div>
-          ) : (
-            contacts.map(contact => (
-              <div key={contact.id} className="glass-card flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                  {contact.contact_user?.avatar_url ? (
-                    <img src={contact.contact_user.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <User className="w-6 h-6 text-primary-400" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-dark-100">{contact.contact_user?.full_name || "Unknown"}</p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs text-dark-500">{contact.relationship}</p>
-                    {statusBadge(contact.status)}
-                  </div>
-                </div>
-                <button onClick={() => setDeleteId(contact.id)} className="p-2 hover:bg-white/10 rounded-lg text-dark-400 hover:text-red-400">
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </div>
-            ))
-          )}
+        {/* Tabs */}
+        <div className="flex border-b border-white/10 mb-6">
+          <button
+            onClick={() => setActiveTab("mine")}
+            className={`flex-1 py-3 text-sm font-medium transition-colors ${
+              activeTab === "mine"
+                ? "text-primary-400 border-b-2 border-primary-400"
+                : "text-dark-400 hover:text-dark-200"
+            }`}
+          >
+            My Contacts
+          </button>
+          <button
+            onClick={() => setActiveTab("protecting")}
+            className={`flex-1 py-3 text-sm font-medium transition-colors relative ${
+              activeTab === "protecting"
+                ? "text-primary-400 border-b-2 border-primary-400"
+                : "text-dark-400 hover:text-dark-200"
+            }`}
+          >
+            Protecting
+            {pendingInvites.length > 0 && (
+              <span className="ml-2 inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-yellow-500/30 text-yellow-300 rounded-full">
+                {pendingInvites.length}
+              </span>
+            )}
+          </button>
         </div>
 
-        {contacts.length < 10 && (
-          <Button variant="primary" className="w-full" onClick={() => setShowAddModal(true)} leftIcon={<Plus className="w-4 h-4" />}>
-            Add Emergency Contact
-          </Button>
+        {/* My Contacts tab */}
+        {activeTab === "mine" && (
+          <>
+            <div className="glass-card mb-6 flex gap-3">
+              <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+              <p className="text-dark-200 text-sm">
+                These Peja users will be notified when you trigger an SOS alert. They must accept your invite to receive notifications.
+              </p>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              {contacts.length === 0 ? (
+                <div className="text-center py-12">
+                  <Users className="w-12 h-12 text-dark-600 mx-auto mb-4" />
+                  <p className="text-dark-400 mb-2">No emergency contacts yet</p>
+                  <p className="text-sm text-dark-500 mb-4">Add Peja users who should be notified in emergencies</p>
+                </div>
+              ) : (
+                contacts.map(contact => (
+                  <div key={contact.id} className="glass-card flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
+                      {contact.contact_user?.avatar_url ? (
+                        <img src={contact.contact_user.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-6 h-6 text-primary-400" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-dark-100">{contact.contact_user?.full_name || "Unknown"}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-dark-500">{contact.relationship}</p>
+                        {statusBadge(contact.status)}
+                      </div>
+                    </div>
+                    <button onClick={() => setDeleteId(contact.id)} className="p-2 hover:bg-white/10 rounded-lg text-dark-400 hover:text-red-400">
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {contacts.length < 10 && (
+              <Button variant="primary" className="w-full" onClick={() => setShowAddModal(true)} leftIcon={<Plus className="w-4 h-4" />}>
+                Add Emergency Contact
+              </Button>
+            )}
+            {contacts.length >= 10 && <p className="text-center text-sm text-dark-500">Maximum 10 contacts reached</p>}
+          </>
         )}
-        {contacts.length >= 10 && <p className="text-center text-sm text-dark-500">Maximum 10 contacts reached</p>}
+
+        {/* Protecting tab */}
+        {activeTab === "protecting" && (
+          <>
+            <div className="glass-card mb-6 flex gap-3">
+              <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+              <p className="text-dark-200 text-sm">
+                These Peja users have added you as their emergency contact. You'll be notified when they trigger an SOS alert.
+              </p>
+            </div>
+
+            {/* Pending Invites Received */}
+            {pendingInvites.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-dark-400 uppercase mb-3">Pending Requests</h3>
+                <div className="space-y-3">
+                  {pendingInvites.map(invite => (
+                    <div key={invite.id} className="glass-card flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden">
+                        {invite.requester?.avatar_url ? (
+                          <img src={invite.requester.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <User className="w-6 h-6 text-yellow-400" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-dark-100 text-sm">{invite.requester?.full_name || "Unknown"}</p>
+                        <p className="text-xs text-dark-500">Wants you as: {invite.relationship}</p>
+                      </div>
+                      <div className="flex gap-2 shrink-0">
+                        <button
+                          onClick={() => handleRespondToInvite(invite.id, true)}
+                          disabled={respondingId === invite.id}
+                          className="p-2 bg-green-600/20 hover:bg-green-600/30 text-green-400 rounded-lg transition-colors"
+                        >
+                          {respondingId === invite.id ? <PejaSpinner className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                        </button>
+                        <button
+                          onClick={() => handleRespondToInvite(invite.id, false)}
+                          disabled={respondingId === invite.id}
+                          className="p-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Accepted — people I'm a contact for */}
+            <div className="space-y-3">
+              {protectingFor.length === 0 && pendingInvites.length === 0 ? (
+                <div className="text-center py-12">
+                  <Users className="w-12 h-12 text-dark-600 mx-auto mb-4" />
+                  <p className="text-dark-400 mb-2">You're not an emergency contact for anyone yet</p>
+                  <p className="text-sm text-dark-500">When someone adds you and you accept, they'll appear here</p>
+                </div>
+              ) : (
+                protectingFor.map(row => (
+                  <div key={row.id} className="glass-card flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
+                      {row.requester?.avatar_url ? (
+                        <img src={row.requester.avatar_url} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="w-6 h-6 text-primary-400" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-dark-100">{row.requester?.full_name || "Unknown"}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs text-dark-500">Their {row.relationship}</p>
+                        <span className="flex items-center gap-1 text-xs text-green-400">
+                          <CheckCircle className="w-3.5 h-3.5" />Accepted
+                        </span>
+                      </div>
+                    </div>
+                    <button onClick={() => setDeleteId(row.id)} className="p-2 hover:bg-white/10 rounded-lg text-dark-400 hover:text-red-400" title="Stop being their contact">
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
       </main>
 
       {/* Add Modal */}
@@ -573,7 +683,11 @@ export default function EmergencyContactsPage() {
 
       <Modal isOpen={!!deleteId} onClose={() => setDeleteId(null)} title="Remove Contact">
         <div className="space-y-4">
-          <p className="text-dark-300">Remove this emergency contact? They will no longer receive your SOS alerts. You can re-add them later.</p>
+          <p className="text-dark-300">
+            {protectingFor.some(p => p.id === deleteId)
+              ? "Stop being their emergency contact? You'll no longer receive their SOS alerts. They can re-invite you later."
+              : "Remove this emergency contact? They will no longer receive your SOS alerts. You can re-add them later."}
+          </p>
           <div className="flex gap-3 pt-4">
             <Button variant="secondary" className="flex-1" onClick={() => setDeleteId(null)}>Cancel</Button>
             <Button variant="danger" className="flex-1" onClick={handleDeleteContact} isLoading={deleting}>Remove</Button>
