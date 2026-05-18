@@ -274,7 +274,16 @@ export default function MapClient() {
           tags: [],
         }));
 
-      setPosts(formatted);
+      // Merge with anything already in state — preserves posts pulled in by
+      // the ?post=<id> URL handler that may sit outside the 24-hour window.
+      // Without this, fetchPosts() racing after the URL handler would wipe
+      // the previewed post and leave a centered map with no marker/popup.
+      setPosts((prev) => {
+        if (prev.length === 0) return formatted;
+        const formattedIds = new Set(formatted.map((p) => p.id));
+        const extras = prev.filter((p) => !formattedIds.has(p.id));
+        return [...formatted, ...extras];
+      });
       feedCache.setPosts("map:posts", formatted);
     } catch (e) {
     } finally {
@@ -555,7 +564,7 @@ export default function MapClient() {
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header variant="back" title="Map" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
 
-      <main className="pt-app-header h-screen">
+      <main className="pt-app-header-pill h-screen">
         <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">
           {loading && !mapReady && posts.length === 0 ? (
             <div className="h-full bg-dark-800 flex items-center justify-center">

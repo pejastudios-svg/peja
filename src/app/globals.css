@@ -2255,9 +2255,17 @@ html.capacitor-native {
    exactly 56px — same as the legacy `pt-14`. On a notched / Capacitor-native
    device it adds the actual status-bar inset on top so the header doesn't
    tuck under system chrome. No extra breathing-room constant — the header's
-   own border-bottom is the visual separator. */
+   own border-bottom is the visual separator.
+   Use this on pages that have an inline `<header className="glass-header">`. */
 .pt-app-header {
   padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 56px);
+}
+
+/* For pages using the shared <Header /> component (the *floating* pill).
+   That header's actual bottom edge is max(inset, 16) + 8 (outer) + 8 (pt-2)
+   + 44 (h-11) = max(inset, 16) + 60. This utility matches that exactly. */
+.pt-app-header-pill {
+  padding-top: calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 60px);
 }
 
 /* Android-specific overrides */

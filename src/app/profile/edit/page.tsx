@@ -46,13 +46,19 @@ export default function EditProfilePage() {
     };
   }, []);
 
+  // Seed formData synchronously from the in-memory auth user so the very
+  // first render already has the saved values. The DB fetch below then
+  // overlays anything that wasn't on the cached user object. Doing this in
+  // a useEffect (the previous approach) meant the empty-state form rendered
+  // for one frame before the effect ran, and users had to bounce out/in.
+  const u = user as any;
   const [formData, setFormData] = useState({
-    full_name: "",
-    phone: "",
-    occupation: "",
-    date_of_birth: "",
-    avatar_url: "",
-    home_address: "",
+    full_name: u?.full_name || "",
+    phone: u?.phone || "",
+    occupation: u?.occupation || "",
+    date_of_birth: u?.date_of_birth || "",
+    avatar_url: u?.avatar_url || "",
+    home_address: u?.home_address || "",
   });
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -65,19 +71,18 @@ export default function EditProfilePage() {
     }
   }, [user, authLoading, router]);
 
-  // Prefill from the in-memory auth user as soon as it's available so the
-  // form fields show what's already saved on the very first render. The DB
-  // fetch below then overlays anything that wasn't on the cached user object
-  // (e.g. fields the AuthContext doesn't track yet).
+  // If user wasn't ready at first mount (initialiser ran with null), this
+  // keeps the form in sync once AuthContext finishes hydrating. Only fills
+  // empty fields so we don't clobber what the admin is actively typing.
   useEffect(() => {
     if (!user) return;
     setFormData((prev) => ({
-      full_name: (user as any).full_name || prev.full_name,
-      phone: (user as any).phone || prev.phone,
-      occupation: (user as any).occupation || prev.occupation,
-      date_of_birth: (user as any).date_of_birth || prev.date_of_birth,
-      avatar_url: (user as any).avatar_url || prev.avatar_url,
-      home_address: (user as any).home_address || prev.home_address,
+      full_name: prev.full_name || (user as any).full_name || "",
+      phone: prev.phone || (user as any).phone || "",
+      occupation: prev.occupation || (user as any).occupation || "",
+      date_of_birth: prev.date_of_birth || (user as any).date_of_birth || "",
+      avatar_url: prev.avatar_url || (user as any).avatar_url || "",
+      home_address: prev.home_address || (user as any).home_address || "",
     }));
   }, [user]);
 
@@ -242,7 +247,7 @@ export default function EditProfilePage() {
       className="fixed inset-0 z-50 overflow-y-auto overscroll-none"
       style={{ touchAction: "pan-y", background: "var(--page-bg)" }}
     >
-      <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
+      <header className="fixed top-0 left-0 right-0 z-40 glass-header">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button
             onClick={() => router.back()}
@@ -255,7 +260,7 @@ export default function EditProfilePage() {
         </div>
       </header>
 
-            <main className="pt-24 px-4 max-w-2xl mx-auto pb-20">
+            <main className="pt-app-header px-4 max-w-2xl mx-auto pb-20">
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-400">{error}</p>

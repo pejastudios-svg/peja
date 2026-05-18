@@ -466,7 +466,7 @@ export default function NotificationsPage() {
       <div className="min-h-screen pb-20 lg:pb-0">
         <Header variant="back" title="Notifications" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
 
-        <main className="pt-app-header lg:pl-64">
+        <main className="pt-app-header-pill lg:pl-64">
           <div className="max-w-2xl mx-auto px-4 py-4">
             <div className="flex items-center justify-between mb-4">
               <div>

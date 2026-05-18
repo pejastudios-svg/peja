@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES, REPORT_REASONS } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -1584,12 +1585,12 @@ if (error || !post) {
               <p className="text-xs text-dark-300 leading-snug min-w-0 flex-1">
                 Complete your profile to comment.
               </p>
-              <a
+              <Link
                 href="/profile/edit"
                 className="shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
               >
                 Complete profile
-              </a>
+              </Link>
             </div>
           ) : (
             <>

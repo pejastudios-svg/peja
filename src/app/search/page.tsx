@@ -317,7 +317,7 @@ useEffect(() => {
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header onCreateClick={() => router.push("/create")} />
 
-      <main className="pt-app-header">
+      <main className="pt-app-header-pill">
         <div className="max-w-2xl mx-auto px-4 py-4">
           {/* Search Input */}
           <div className="relative mb-4">

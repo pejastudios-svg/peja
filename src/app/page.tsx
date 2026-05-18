@@ -691,7 +691,7 @@ posts.forEach((p: any) => {
         <Header onCreateClick={() => {}} />
         <main
           className="max-w-2xl mx-auto px-4 py-4 space-y-4"
-          style={{ paddingTop: "calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 56px)" }}
+          style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 60px)" }}
         >
           {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
         </main>
@@ -706,7 +706,7 @@ posts.forEach((p: any) => {
         <Header onCreateClick={() => {}} />
         <main
           className="max-w-2xl mx-auto px-4 py-4 space-y-4"
-          style={{ paddingTop: "calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 56px)" }}
+          style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 60px)" }}
         >
           {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
         </main>
@@ -739,7 +739,7 @@ const nearbyBg = swipeProgress < 0.5
       <PullToRefresh onRefresh={handleRefresh}>
       <main
         className="hide-scrollbar"
-        style={{ paddingTop: "calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 56px)" }}
+        style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 60px)" }}
       >
         {user && !profileCompletion(user as any).complete && (
           <div className="max-w-2xl mx-auto px-4 pt-4">

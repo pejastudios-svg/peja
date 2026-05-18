@@ -10,6 +10,7 @@ import { notifyPostComment, notifyCommentLiked, notifyCommentReply } from "@/lib
 import { useLongPress } from "@/components/hooks/useLongPress";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import Link from "next/link";
 import { useToast } from "@/context/ToastContext";
 import { profileCompletion } from "@/lib/profileComplete";
 import { PejaSpinner } from "../ui/PejaSpinner";
@@ -640,12 +641,12 @@ export function WatchCommentSheet({
                 <p className="text-xs text-dark-300 min-w-0 flex-1">
                   Complete your profile to comment.
                 </p>
-                <a
+                <Link
                   href="/profile/edit"
                   className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
                 >
                   Complete profile
-                </a>
+                </Link>
               </div>
             ) : (
               <>
