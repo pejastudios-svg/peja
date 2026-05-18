@@ -47,20 +47,20 @@ export default function EditProfilePage() {
     };
   }, []);
 
-  // Seed formData synchronously from the in-memory auth user so the very
-  // first render already has the saved values. The DB fetch below then
-  // overlays anything that wasn't on the cached user object. Doing this in
-  // a useEffect (the previous approach) meant the empty-state form rendered
-  // for one frame before the effect ran, and users had to bounce out/in.
-  const u = user as any;
-  const [formData, setFormData] = useState({
-    full_name: u?.full_name || "",
-    phone: u?.phone || "",
-    occupation: u?.occupation || "",
-    date_of_birth: u?.date_of_birth || "",
-    avatar_url: u?.avatar_url || "",
-    home_address: u?.home_address || "",
-  });
+  // formData stays null until the DB fetch resolves. The form (and Save
+  // button) are gated on `formData != null`, so the user can never click
+  // Save with a partially-seeded state and wipe fields that hadn't loaded
+  // yet. The earlier dual-effect approach raced the save and silently
+  // blanked unseeded fields on submit.
+  type FormState = {
+    full_name: string;
+    phone: string;
+    occupation: string;
+    date_of_birth: string;
+    avatar_url: string;
+    home_address: string;
+  };
+  const [formData, setFormData] = useState<FormState | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [error, setError] = useState("");
@@ -72,56 +72,46 @@ export default function EditProfilePage() {
     }
   }, [user, authLoading, router]);
 
-  // Cold-start hydration. The previous approach waited for AuthContext's
-  // `user` to populate, but on first-ever open of /profile/edit that hadn't
-  // happened yet — leaving everything except Email blank until the user
-  // bounced out and back in. Fetch the profile directly from Supabase using
-  // the session, independent of AuthContext. Only fills fields the user
-  // hasn't actively edited so it never clobbers in-progress input.
+  // Single source of truth: once auth is settled, fetch the row from
+  // Supabase and seed the form. The form doesn't render until this resolves,
+  // so there's no window for a save-before-hydration race.
   useEffect(() => {
+    if (!user) return;
     let cancelled = false;
     (async () => {
+      const fallback = (): FormState => ({
+        full_name: (user as any).full_name || "",
+        phone: (user as any).phone || "",
+        occupation: (user as any).occupation || "",
+        date_of_birth: (user as any).date_of_birth || "",
+        avatar_url: (user as any).avatar_url || "",
+        home_address: (user as any).home_address || "",
+      });
       try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (cancelled || !authUser) return;
         const { data } = await supabase
           .from("users")
           .select("full_name, phone, occupation, date_of_birth, avatar_url, home_address")
-          .eq("id", authUser.id)
+          .eq("id", user.id)
           .single();
-        if (cancelled || !data) return;
-        setFormData((prev) => ({
-          full_name: prev.full_name || data.full_name || "",
-          phone: prev.phone || data.phone || "",
-          occupation: prev.occupation || data.occupation || "",
-          date_of_birth: prev.date_of_birth || data.date_of_birth || "",
-          avatar_url: prev.avatar_url || data.avatar_url || "",
-          home_address: prev.home_address || data.home_address || "",
-        }));
-      } catch {}
+        if (cancelled) return;
+        const src: any = data ?? user;
+        setFormData({
+          full_name: src.full_name || "",
+          phone: src.phone || "",
+          occupation: src.occupation || "",
+          date_of_birth: src.date_of_birth || "",
+          avatar_url: src.avatar_url || "",
+          home_address: src.home_address || "",
+        });
+      } catch {
+        if (!cancelled) setFormData(fallback());
+      }
     })();
     return () => { cancelled = true; };
-  }, []);
-
-  // Also keep in sync when AuthContext eventually populates `user` — covers
-  // the case where AuthContext is faster than the direct fetch above.
-  useEffect(() => {
-    if (!user) return;
-    setFormData((prev) => ({
-      full_name: prev.full_name || (user as any).full_name || "",
-      phone: prev.phone || (user as any).phone || "",
-      occupation: prev.occupation || (user as any).occupation || "",
-      date_of_birth: prev.date_of_birth || (user as any).date_of_birth || "",
-      avatar_url: prev.avatar_url || (user as any).avatar_url || "",
-      home_address: prev.home_address || (user as any).home_address || "",
-    }));
   }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData((prev) => (prev ? { ...prev, [e.target.name]: e.target.value } : prev));
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,10 +140,7 @@ export default function EditProfilePage() {
         .from("media")
         .getPublicUrl(filePath);
 
-      setFormData({
-        ...formData,
-        avatar_url: publicUrl.publicUrl,
-      });
+      setFormData((prev) => (prev ? { ...prev, avatar_url: publicUrl.publicUrl } : prev));
       
       await supabase
         .from("users")
@@ -174,7 +161,7 @@ export default function EditProfilePage() {
     setSuccess(false);
     setLoading(true);
 
-    if (!user) {
+    if (!user || !formData) {
       setError("Not logged in");
       setLoading(false);
       return;
@@ -211,7 +198,9 @@ export default function EditProfilePage() {
     }
   };
 
-  if (authLoading) {
+  // Skeleton until auth is settled AND the DB row is loaded. Form (and Save
+  // button) below this point can safely assume formData is non-null.
+  if (authLoading || !formData) {
     return (
       <div
         ref={containerRef}
