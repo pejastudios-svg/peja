@@ -27,6 +27,7 @@ import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
 import { shareUrl } from "@/lib/share";
 import { buildLoginHref } from "@/lib/safeNext";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { profileCompletion } from "@/lib/profileComplete";
 
 import {
   ArrowLeft,
@@ -742,6 +743,14 @@ setLikeBusy(prev => {
       return;
     }
 
+    // Server-side check would be ideal, but at minimum block the request
+    // path here so a stale client UI can't slip a comment through.
+    if (!profileCompletion(user as any).complete) {
+      toastApi.warning("Complete your profile to comment.");
+      router.push("/profile/edit");
+      return;
+    }
+
     const tempId = `temp-${Date.now()}`;
     const commentContent = newComment.trim();
 
@@ -1287,7 +1296,7 @@ if (error || !post) {
   const displayDesc = isLongDesc && !showFullDescription ? descText.slice(0, 200) + "..." : descText;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-black">
+    <div className="fixed inset-0 flex flex-col bg-[var(--page-bg)]">
        {/* Header - Absolute Top */}
       <header className="absolute top-0 inset-x-0 z-50 glass-header">
         <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto w-full">
@@ -1338,10 +1347,9 @@ if (error || !post) {
       </header>
 
       {/* Main Content - Scrollable Area */}
-               <main
-  className="flex-1 overflow-y-auto w-full overscroll-contain post-detail-messages"
-  style={{ paddingTop: "calc(3.5rem + var(--cap-status-bar-height, 0px))" }}
->
+      <main
+        className="flex-1 overflow-y-auto w-full overscroll-contain post-detail-messages pt-app-header"
+      >
         <div className="max-w-2xl mx-auto">
          {/* Media Carousel */}
 {post.media && post.media.length > 0 && (
@@ -1505,7 +1513,7 @@ if (error || !post) {
           </div>
 
           {/* Comments Section */}
-          <div className="border-t border-white/5 p-4">
+          <div className="border-t border-[var(--glass-border)] p-4">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-semibold text-dark-100 flex items-center gap-2">
                 <MessageCircle className="w-5 h-5" />
@@ -1568,44 +1576,63 @@ if (error || !post) {
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
         <div className="max-w-2xl mx-auto p-3 w-full">
-          {replyingTo && (
-            <div className="flex items-center justify-between mb-2 px-1">
-              <span className="text-xs text-primary-400">Replying to @{replyingTo.name}</span>
-              <button onClick={() => setReplyingTo(null)} className="text-xs text-dark-400 hover:text-dark-200">
-                Cancel
-              </button>
+          {/* Block commenting when the user hasn't completed their profile.
+              Keeps the bar visible (visual continuity) but swaps the input
+              for a CTA that links to /profile/edit. */}
+          {user && !profileCompletion(user as any).complete ? (
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-dark-300 leading-snug min-w-0 flex-1">
+                Complete your profile to comment.
+              </p>
+              <a
+                href="/profile/edit"
+                className="shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
+              >
+                Complete profile
+              </a>
             </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <input
-              ref={commentInputRef}
-              type="text"
-              value={newComment}
-              onChange={e => setNewComment(e.target.value)}
-              placeholder={replyingTo ? `Reply to @${replyingTo.name}...` : "Add a comment..."}
-              className="flex-1 px-4 py-2.5 bg-dark-800 border border-dark-700 rounded-xl text-dark-100 placeholder-dark-500 text-sm focus:outline-none focus:border-primary-500"
-              onKeyDown={e => {
-                if (e.key === "Enter" && !e.shiftKey && !submittingComment) {
-                  e.preventDefault();
-                  handleSubmitComment();
-                }
-              }}
-              disabled={submittingComment}
-            />
-
-            <button
-              onClick={handleSubmitComment}
-              disabled={submittingComment || !newComment.trim()}
-              className="p-2.5 bg-primary-600 rounded-xl text-white disabled:opacity-50 shrink-0"
-            >
-              {submittingComment ? (
-                <PejaSpinner className="w-5 h-5" />
-              ) : (
-                <Send className="w-5 h-5" />
+          ) : (
+            <>
+              {replyingTo && (
+                <div className="flex items-center justify-between mb-2 px-1">
+                  <span className="text-xs text-primary-400">Replying to @{replyingTo.name}</span>
+                  <button onClick={() => setReplyingTo(null)} className="text-xs text-dark-400 hover:text-dark-200">
+                    Cancel
+                  </button>
+                </div>
               )}
-            </button>
-          </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  ref={commentInputRef}
+                  type="text"
+                  value={newComment}
+                  onChange={e => setNewComment(e.target.value)}
+                  placeholder={replyingTo ? `Reply to @${replyingTo.name}...` : "Add a comment..."}
+                  className="flex-1 px-4 py-2.5 bg-[var(--glass-input-bg)] border border-[var(--glass-border)] rounded-xl text-dark-100 placeholder-dark-500 text-sm focus:outline-none focus:border-primary-500"
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && !e.shiftKey && !submittingComment) {
+                      e.preventDefault();
+                      handleSubmitComment();
+                    }
+                  }}
+                  disabled={submittingComment}
+                />
+
+                <button
+                  onClick={handleSubmitComment}
+                  disabled={submittingComment || !newComment.trim()}
+                  className="p-2.5 bg-primary-600 rounded-xl text-white disabled:opacity-50 shrink-0"
+                >
+                  {submittingComment ? (
+                    <PejaSpinner className="w-5 h-5" />
+                  ) : (
+                    <Send className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

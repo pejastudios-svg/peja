@@ -43,6 +43,17 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
   const [badgeKey, setBadgeKey] = useState(0);
   const channelRef = useRef<any>(null);
 
+  // Guardian pages are always dark — isolate from user's theme preference.
+  useEffect(() => {
+    const prev = document.documentElement.getAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", "dark");
+    return () => {
+      if (prev && prev !== "dark") {
+        document.documentElement.setAttribute("data-theme", prev);
+      }
+    };
+  }, []);
+
   // Fetch unread count
   const fetchUnreadCount = useCallback(async () => {
     if (!user?.id) return;

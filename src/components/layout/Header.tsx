@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, ArrowLeft, User, MessageCircle } from "lucide-react";
+import { Bell, ArrowLeft, User, MessageCircle, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useMessageCache } from "@/context/MessageCacheContext";
+import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "@/lib/supabase";
 
 interface HeaderProps {
@@ -16,14 +17,13 @@ interface HeaderProps {
   onBack?: () => void;
 }
 
-// Dark-mode liquid glass: light enough to show distortion, dark enough to read icons
+// Theme-aware liquid glass via CSS variables.
 const GLASS: React.CSSProperties = {
-  background: "rgba(50, 25, 80, 0.6)",
+  background: "var(--glass-header-bg)",
   backdropFilter: "blur(50px) saturate(180%)",
   WebkitBackdropFilter: "blur(50px) saturate(180%)",
-  border: "1px solid rgba(139, 92, 246, 0.15)",
-  boxShadow:
-    "0 2px 20px rgba(0, 0, 0, 0.25), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)",
+  border: "1px solid var(--glass-border)",
+  boxShadow: "var(--glass-shadow-header)",
   borderRadius: "16px",
 };
 
@@ -38,6 +38,7 @@ export function Header({
   const pathname = usePathname();
   const { user } = useAuth();
   const { conversations } = useMessageCache();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [unreadCount, setUnreadCount] = useState(0);
 
   const isVip = user?.is_vip === true;
@@ -95,7 +96,7 @@ export function Header({
     return (
       <header
         className="fixed top-0 left-0 right-0 z-50"
-        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+        style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 8px)" }}
       >
         <div className="flex items-center gap-2 px-3 pt-2">
           <div className="flex items-center h-11 px-3 flex-1" style={GLASS}>
@@ -103,19 +104,31 @@ export function Header({
               onClick={onBack || (() => router.back())}
               className="flex items-center gap-1.5 p-0.5 rounded-lg active:opacity-70 transition-opacity"
             >
-              <ArrowLeft className="w-5 h-5 text-white/80" strokeWidth={2.5} />
-              <span className="text-[15px] font-semibold text-white/90">
+              <ArrowLeft className="w-5 h-5 text-dark-200" strokeWidth={2.5} />
+              <span className="text-[15px] font-semibold text-dark-100">
                 {title || "Back"}
               </span>
             </button>
           </div>
 
           <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? (
+                <Sun className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
+              ) : (
+                <Moon className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
+              )}
+            </button>
             <Link
               href="/notifications"
               className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
             >
-              <Bell className="w-5 h-5 text-white/60" strokeWidth={2.3} />
+              <Bell className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
               {unreadCount > 0 && (
                 <span
                   className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1"
@@ -139,7 +152,7 @@ export function Header({
   return (
     <header
       className="fixed top-0 left-0 right-0 z-50"
-      style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 32px)" }}
     >
       <div className="flex items-center gap-2 px-3 pt-2">
   {/* ── Logo pill ── */}
@@ -173,6 +186,20 @@ export function Header({
 
         {/* ── Actions pill ── */}
         <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
+          {/* Theme toggle */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? (
+              <Sun className="w-5 h-5" style={{ color: "var(--color-dark-300)" }} strokeWidth={2.3} />
+            ) : (
+              <Moon className="w-5 h-5" style={{ color: "var(--color-dark-300)" }} strokeWidth={2.3} />
+            )}
+          </button>
+
           {/* VIP Messages */}
           {isVip && (
             <Link
@@ -187,7 +214,7 @@ export function Header({
                   color:
                     pathname === "/messages"
                       ? "#c4b5fd"
-                      : "rgba(255,255,255,0.55)",
+                      : "var(--color-dark-300)",
                 }}
                 strokeWidth={2.3}
               />
@@ -218,7 +245,7 @@ export function Header({
                 color:
                   pathname === "/notifications"
                     ? "#c4b5fd"
-                    : "rgba(255,255,255,0.55)",
+                    : "var(--color-dark-300)",
               }}
               strokeWidth={2.3}
             />
@@ -261,7 +288,7 @@ export function Header({
               ) : (
                 <User
                   className="w-3.5 h-3.5"
-                  style={{ color: "rgba(255,255,255,0.45)" }}
+                  style={{ color: "var(--color-dark-400)" }}
                 />
               )}
             </div>

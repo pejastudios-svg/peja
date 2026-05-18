@@ -373,7 +373,7 @@ export default function SharedLocationsPage() {
                   </div>
                 </div>
                 <div className="flex-1 text-left min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{u.fullName}</p>
+                  <p className="text-sm font-medium text-dark-100 truncate">{u.fullName}</p>
                   <div className="flex items-center gap-1 mt-0.5">
                     <MapPin className="w-2.5 h-2.5 text-dark-500 shrink-0" />
                     <p className="text-[10px] text-dark-400 truncate">

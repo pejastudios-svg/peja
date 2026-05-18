@@ -11,6 +11,7 @@ import { useLongPress } from "@/components/hooks/useLongPress";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/context/ToastContext";
+import { profileCompletion } from "@/lib/profileComplete";
 import { PejaSpinner } from "../ui/PejaSpinner";
 
 interface Comment {
@@ -272,6 +273,11 @@ export function WatchCommentSheet({
 
   const handleSubmit = async () => {
     if (!newComment.trim() || !user) return;
+    // Safety net so a stale UI can't bypass the profile gate.
+    if (!profileCompletion(user as any).complete) {
+      toast.warning("Complete your profile to comment.");
+      return;
+    }
     setSubmitting(true);
 
     const content = newComment.trim();
@@ -562,7 +568,7 @@ export function WatchCommentSheet({
             {/* 1. Description Section */}
             <div className="px-4 py-3 border-b border-white/5">
                 <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-bold text-white">
+                    <span className="text-sm font-bold text-dark-100">
                         @{post.is_anonymous ? "Anonymous" : (postAuthor?.name || "User")}
                     </span>
                     <span className="text-xs text-white/50">{formatDistanceToNow(new Date(post.created_at))} ago</span>
@@ -626,27 +632,44 @@ export function WatchCommentSheet({
             </div>
         </div>
 
-        {/* Fixed Input Area */}
+        {/* Fixed Input Area. Profile-incomplete users see a CTA instead of
+            the composer; everyone else gets the normal input. */}
         <div className="p-3 border-t border-white/10 bg-dark-1000 pb-safe">
-             {replyingTo && (
-                <div className="flex items-center justify-between px-2 mb-2 text-xs text-primary-400">
-                   <span>Replying to @{replyingTo.name}</span>
-                   <button onClick={() => setReplyingTo(null)} className="text-white/50 hover:text-white"><X className="w-3 h-3" /></button>
+            {user && !profileCompletion(user as any).complete ? (
+              <div className="flex items-center justify-between gap-3 px-2">
+                <p className="text-xs text-dark-300 min-w-0 flex-1">
+                  Complete your profile to comment.
+                </p>
+                <a
+                  href="/profile/edit"
+                  className="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
+                >
+                  Complete profile
+                </a>
+              </div>
+            ) : (
+              <>
+                {replyingTo && (
+                  <div className="flex items-center justify-between px-2 mb-2 text-xs text-primary-400">
+                    <span>Replying to @{replyingTo.name}</span>
+                    <button onClick={() => setReplyingTo(null)} className="text-white/50 hover:text-white"><X className="w-3 h-3" /></button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 border border-white/5">
+                  <input
+                    ref={inputRef}
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    placeholder={replyingTo ? `Reply to @${replyingTo.name}...` : "Add a comment..."}
+                    className="flex-1 bg-transparent border-none outline-none text-sm text-dark-100 placeholder-dark-500"
+                    onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+                  />
+                  <button onClick={handleSubmit} disabled={submitting || !newComment.trim()} className="text-primary-500 disabled:opacity-50 font-medium text-sm">
+                    {submitting ? <PejaSpinner className="w-4 h-4" />: <Send className="w-4 h-4" />}
+                  </button>
                 </div>
-             )}
-             <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 border border-white/5">
-                 <input 
-                   ref={inputRef}
-                   value={newComment}
-                   onChange={(e) => setNewComment(e.target.value)}
-                   placeholder={replyingTo ? `Reply to @${replyingTo.name}...` : "Add a comment..."}
-                   className="flex-1 bg-transparent border-none outline-none text-sm text-white placeholder-white/40"
-                   onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-                 />
-                 <button onClick={handleSubmit} disabled={submitting || !newComment.trim()} className="text-primary-500 disabled:opacity-50 font-medium text-sm">
-                   {submitting ? <PejaSpinner className="w-4 h-4" />: <Send className="w-4 h-4" />}
-                 </button>
-             </div>
+              </>
+            )}
         </div>
       </div>
 

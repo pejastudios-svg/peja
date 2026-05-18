@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Briefcase, Calendar, User, Phone, Mail, Camera, Loader2 } from "lucide-react";
+import { ChevronLeft, Briefcase, Calendar, User, Phone, Mail, Camera, Loader2, Home, CheckCircle2, Circle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { REQUIRED_PROFILE_FIELDS } from "@/lib/profileComplete";
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -51,6 +52,7 @@ export default function EditProfilePage() {
     occupation: "",
     date_of_birth: "",
     avatar_url: "",
+    home_address: "",
   });
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -85,11 +87,12 @@ export default function EditProfilePage() {
         occupation: data.occupation || "",
         date_of_birth: data.date_of_birth || "",
         avatar_url: data.avatar_url || "",
+        home_address: data.home_address || "",
       });
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
@@ -161,6 +164,7 @@ export default function EditProfilePage() {
           occupation: formData.occupation,
           date_of_birth: formData.date_of_birth || null,
           avatar_url: formData.avatar_url || null,
+          home_address: formData.home_address.trim() || null,
         })
         .eq("id", user.id);
 
@@ -197,7 +201,7 @@ export default function EditProfilePage() {
           </div>
         </header>
 
-        <main className="pt-20 px-4 max-w-2xl mx-auto space-y-4">
+        <main className="pt-app-header px-4 max-w-2xl mx-auto space-y-4">
           <div className="flex justify-center">
             <Skeleton className="h-24 w-24 rounded-full" />
           </div>
@@ -247,6 +251,77 @@ export default function EditProfilePage() {
             <p className="text-sm text-green-400">Profile updated successfully!</p>
           </div>
         )}
+
+        {/* Live profile-completion checklist. Reads from formData so it reacts
+            as the user types — once everything is ticked, the in-app gates
+            (post, comment, become-guardian) unlock as soon as they save. */}
+        {(() => {
+          const filled = REQUIRED_PROFILE_FIELDS.filter(
+            (f) => typeof (formData as any)[f.key] === "string" && (formData as any)[f.key].trim() !== ""
+          );
+          const total = REQUIRED_PROFILE_FIELDS.length;
+          const done = filled.length;
+          const pct = Math.round((done / total) * 100);
+          const allDone = done === total;
+
+          return (
+            <div
+              className="mb-6 p-4 rounded-2xl"
+              style={{
+                background: "var(--glass-input-bg)",
+                border: `1px solid ${allDone ? "rgba(34, 197, 94, 0.35)" : "var(--glass-border)"}`,
+              }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-dark-100">
+                  {allDone ? "Profile complete" : "Complete your profile"}
+                </p>
+                <span className={`text-xs font-medium ${allDone ? "text-green-400" : "text-dark-400"}`}>
+                  {done}/{total}
+                </span>
+              </div>
+
+              <div className="h-1.5 rounded-full bg-dark-700 overflow-hidden mb-3">
+                <div
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{
+                    width: `${pct}%`,
+                    background: allDone ? "#22c55e" : "#7c3aed",
+                  }}
+                />
+              </div>
+
+              <ul className="space-y-1.5">
+                {REQUIRED_PROFILE_FIELDS.map((f) => {
+                  const isFilled = typeof (formData as any)[f.key] === "string"
+                    && (formData as any)[f.key].trim() !== "";
+                  return (
+                    <li
+                      key={f.key}
+                      className={`flex items-center gap-2 text-sm ${isFilled ? "text-dark-300" : "text-dark-200"}`}
+                    >
+                      {isFilled ? (
+                        <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                      ) : (
+                        <Circle className="w-4 h-4 text-dark-500 shrink-0" />
+                      )}
+                      <span className={isFilled ? "line-through text-dark-500" : ""}>
+                        {f.label}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {!allDone && (
+                <p className="mt-3 text-[11px] text-dark-500 leading-relaxed">
+                  Posting, commenting, and the Guardian application unlock once everything is filled in.
+                  Safety features (SOS, alerts, Check-In) stay on regardless.
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="flex justify-center mb-6">
           <div className="relative">
@@ -331,6 +406,21 @@ export default function EditProfilePage() {
               onChange={handleChange}
               leftIcon={<Calendar className="w-4 h-4" />}
             />
+
+            <div>
+              <Input
+                type="text"
+                name="home_address"
+                label="Home Address"
+                placeholder="Street, area, city, state"
+                value={formData.home_address}
+                onChange={handleChange}
+                leftIcon={<Home className="w-4 h-4" />}
+              />
+              <p className="mt-1.5 text-[11px] text-dark-500">
+                Only visible to you and Peja admins. Used so support can help locate you in an emergency.
+              </p>
+            </div>
           </div>
 
           <Button

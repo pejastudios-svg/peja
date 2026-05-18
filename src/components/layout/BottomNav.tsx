@@ -19,12 +19,11 @@ const navItems = [
 ];
 
 const GLASS: React.CSSProperties = {
-  background: "rgba(30, 20, 50, 0.75)",
+  background: "var(--glass-footer-bg)",
   backdropFilter: "blur(40px) saturate(180%)",
   WebkitBackdropFilter: "blur(40px) saturate(180%)",
-  border: "1px solid rgba(255, 255, 255, 0.1)",
-  boxShadow:
-    "0 2px 20px rgba(0, 0, 0, 0.3), inset 0 0.5px 0 rgba(255, 255, 255, 0.08)",
+  border: "1px solid var(--glass-border)",
+  boxShadow: "var(--glass-shadow-footer)",
 };
 
 export function BottomNav() {
@@ -155,7 +154,7 @@ export function BottomNav() {
           <Icon
             className="w-[22px] h-[22px]"
             style={{
-              color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.5)",
+              color: isActive ? "var(--color-primary-600)" : "var(--color-dark-400)",
               filter: isActive ? "drop-shadow(0 0 6px rgba(167,139,250,0.5))" : "none",
               transition: "all 0.3s ease",
             }}
@@ -165,7 +164,7 @@ export function BottomNav() {
         <span
           className="text-[10px] mt-0.5 font-semibold"
           style={{
-            color: isActive ? "#c4b5fd" : "rgba(255,255,255,0.4)",
+            color: isActive ? "var(--color-primary-600)" : "var(--color-dark-500)",
             transition: "color 0.3s ease",
           }}
         >
@@ -333,22 +332,22 @@ export function BottomNav() {
                     setMenuOpen(true);
                   }
                 }}
-                className="relative flex items-center justify-center"
+                className="relative flex items-center justify-center peja-center-btn"
                 style={{
                   width: 58,
                   height: 58,
                   borderRadius: "50%",
                   background: menuOpen && !menuClosing
-                    ? "rgba(40, 25, 65, 0.95)"
-                    : "linear-gradient(135deg, rgba(100, 50, 200, 0.35) 0%, rgba(80, 40, 160, 0.55) 100%)",
+                    ? "var(--peja-btn-pressed-bg)"
+                    : "var(--peja-btn-bg)",
                   backdropFilter: "blur(40px) saturate(180%)",
                   WebkitBackdropFilter: "blur(40px) saturate(180%)",
                   border: `2px solid ${
-                    menuOpen && !menuClosing 
-                      ? "rgba(139, 92, 246, 0.5)" 
+                    menuOpen && !menuClosing
+                      ? "var(--peja-btn-pressed-bg)"
                       : sosActive || smlActive
                         ? "transparent"
-                        : "rgba(139, 92, 246, 0.25)"
+                        : "var(--peja-btn-outline, rgba(139, 92, 246, 0.5))"
                   }`,
                   boxShadow: menuOpen && !menuClosing
                     ? "0 0 30px rgba(139, 92, 246, 0.35), 0 4px 20px rgba(0, 0, 0, 0.4)"
@@ -386,7 +385,6 @@ export function BottomNav() {
                       height: 18,
                       borderRadius: "50%",
                       background: "#22c55e",
-                      border: "2px solid rgba(12, 8, 24, 0.9)",
                       fontSize: 10,
                       fontWeight: 700,
                       color: "white",

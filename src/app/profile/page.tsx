@@ -309,7 +309,7 @@ export default function ProfilePage() {
     // AuthLoading=true: show skeleton briefly while session is being checked
     // AuthLoading=false: the useEffect above will redirect to /login
     return (
-      <div className="min-h-screen pb-20 pt-14">
+      <div className="min-h-screen pb-20 pt-app-header">
         <div className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5 h-14" />
         <div className="glass border-b border-white/5 px-4 py-6">
           <div className="max-w-2xl mx-auto flex items-center gap-4">
@@ -346,7 +346,7 @@ export default function ProfilePage() {
         </div>
       </header>
 
-      <main className="pt-14">
+      <main className="pt-app-header">
         <div className="glass border-b border-white/5 px-4 py-6">
           <div className="max-w-2xl mx-auto">
             <div className="flex items-center gap-4">

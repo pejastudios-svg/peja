@@ -7,6 +7,7 @@ export interface User {
   date_of_birth?: string;
   gender?: string;
   avatar_url?: string;
+  home_address?: string;
   reputation_score: number;
   is_guardian: boolean;
   is_admin?: boolean;

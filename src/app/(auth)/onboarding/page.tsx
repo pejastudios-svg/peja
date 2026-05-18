@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Briefcase, Calendar, CheckCircle } from "lucide-react";
+import { Briefcase, Calendar, CheckCircle, Home } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
@@ -41,9 +41,15 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [occupation, setOccupation] = useState("");
   const [dateOfBirth, setDateOfBirth] = useState("");
+  const [homeAddress, setHomeAddress] = useState("");
   const [quizAnswers, setQuizAnswers] = useState<number[]>([-1, -1, -1]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const step1Complete =
+    occupation.trim().length > 0 &&
+    dateOfBirth.trim().length > 0 &&
+    homeAddress.trim().length > 0;
 
   const handleQuizAnswer = (questionIndex: number, answerIndex: number) => {
     const newAnswers = [...quizAnswers];
@@ -70,6 +76,7 @@ export default function OnboardingPage() {
         .update({
           occupation,
           date_of_birth: dateOfBirth,
+          home_address: homeAddress.trim() || null,
         })
         .eq("id", user.id);
 
@@ -129,9 +136,24 @@ export default function OnboardingPage() {
                 leftIcon={<Calendar className="w-4 h-4" />}
               />
 
+              <div>
+                <Input
+                  type="text"
+                  label="Home Address"
+                  placeholder="Street, area, city, state"
+                  value={homeAddress}
+                  onChange={(e) => setHomeAddress(e.target.value)}
+                  leftIcon={<Home className="w-4 h-4" />}
+                />
+                <p className="mt-1.5 text-[11px] text-dark-500">
+                  Only visible to you and Peja admins — helps support reach you in an emergency.
+                </p>
+              </div>
+
               <Button
                 variant="primary"
                 className="w-full mt-6"
+                disabled={!step1Complete}
                 onClick={() => setStep(2)}
               >
                 Continue

@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES, SOSAlert } from "@/lib/types";
 import { Header } from "@/components/layout/Header";
 import { Badge } from "@/components/ui/Badge";
-import { Loader2, Navigation, Map as MapIcon, AlertTriangle, BarChart3, Compass } from "lucide-react";
+import { Loader2, Navigation, Map as MapIcon, AlertTriangle, BarChart3, Compass, MapPin } from "lucide-react";
 import { subHours } from "date-fns";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFeedCache } from "@/context/FeedContext";
@@ -36,9 +36,12 @@ export default function MapClient() {
   const searchParams = useSearchParams();
 
   const sosIdFromUrl = searchParams.get("sos");
+  const postIdFromUrl = searchParams.get("post");
   const latFromUrl = searchParams.get("lat");
   const lngFromUrl = searchParams.get("lng");
   const handledSosParamRef = useRef(false);
+  const handledPostParamRef = useRef<string | null>(null);
+  const [previewPostId, setPreviewPostId] = useState<string | null>(null);
 
   const sosUserCacheRef = useRef<Record<string, SOSUserPublic>>({});
 
@@ -232,7 +235,7 @@ export default function MapClient() {
           latitude, longitude,
           is_anonymous, status, is_sensitive,
           confirmations, views, comment_count, report_count, created_at,
-          post_media (id, post_id, url, media_type, is_sensitive)
+          post_media (id, post_id, url, thumbnail_url, media_type, is_sensitive)
         `)
         .eq("status", "live")
         .gte("created_at", twentyFourHoursAgo)
@@ -264,6 +267,7 @@ export default function MapClient() {
             id: m.id,
             post_id: m.post_id,
             url: m.url,
+            thumbnail_url: m.thumbnail_url,
             media_type: m.media_type as "photo" | "video",
             is_sensitive: m.is_sensitive,
           })),
@@ -335,27 +339,106 @@ export default function MapClient() {
       setSOSAlerts(formatted);
       feedCache.setPosts("map:sos", formatted as any[]);
 
-      if (sosIdFromUrl && !handledSosParamRef.current) {
-        const match = formatted.find((x) => x.id === sosIdFromUrl);
-
-        if (match) {
-          setCenterOnSOS({ lat: match.latitude, lng: match.longitude });
-          setOpenSOSId(match.id);
-          handledSosParamRef.current = true;
-        } else {
-          const lat = latFromUrl ? Number(latFromUrl) : NaN;
-          const lng = lngFromUrl ? Number(lngFromUrl) : NaN;
-
-          if (Number.isFinite(lat) && Number.isFinite(lng)) {
-            setCenterOnSOS({ lat, lng });
-            setOpenSOSId(sosIdFromUrl);
+      if (!handledSosParamRef.current) {
+        // 1) /map?sos=<id> — center on that SOS alert (and open it).
+        if (sosIdFromUrl) {
+          const match = formatted.find((x) => x.id === sosIdFromUrl);
+          if (match) {
+            setCenterOnSOS({ lat: match.latitude, lng: match.longitude });
+            setOpenSOSId(match.id);
             handledSosParamRef.current = true;
+            return;
           }
+        }
+
+        // 2) /map?lat=<n>&lng=<n> — pan/zoom to those coords. Used by post-card
+        //    distance pills so tapping the distance navigates to that location.
+        const lat = latFromUrl ? Number(latFromUrl) : NaN;
+        const lng = lngFromUrl ? Number(lngFromUrl) : NaN;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          setCenterOnSOS({ lat, lng });
+          if (sosIdFromUrl) setOpenSOSId(sosIdFromUrl);
+          handledSosParamRef.current = true;
         }
       }
     } catch (e) {
     }
   }, [sosIdFromUrl, latFromUrl, lngFromUrl, feedCache]);
+
+  // Open the post-preview popup if we arrived via /map?post=<id> (PostCard distance pill).
+  // The default fetchPosts() filters to the last 24h + status=live, so a post
+  // outside that window won't be in `posts`. In that case we fetch the single
+  // post directly and merge it into state so its marker and popup render.
+  // The ref guard ensures we only act once per URL value — otherwise dismissing
+  // the popup would immediately reopen it on the next render.
+  useEffect(() => {
+    if (!postIdFromUrl) return;
+    if (handledPostParamRef.current === postIdFromUrl) return;
+    let cancelled = false;
+
+    const match = posts.find((p) => p.id === postIdFromUrl);
+    if (match) {
+      handledPostParamRef.current = postIdFromUrl;
+      setPreviewPostId(match.id);
+      if (match.location?.latitude && match.location?.longitude) {
+        setCenterOnSOS({ lat: match.location.latitude, lng: match.location.longitude });
+      }
+      return;
+    }
+
+    // Not in local list — fetch it.
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("posts")
+          .select(`
+            id, user_id, category, comment, address,
+            latitude, longitude,
+            is_anonymous, status, is_sensitive,
+            confirmations, views, comment_count, report_count, created_at,
+            post_media (id, post_id, url, thumbnail_url, media_type, is_sensitive)
+          `)
+          .eq("id", postIdFromUrl)
+          .maybeSingle();
+
+        if (cancelled || !data || !data.latitude || !data.longitude) return;
+
+        const fetched: Post = {
+          id: data.id,
+          user_id: data.user_id,
+          category: data.category,
+          comment: data.comment,
+          location: { latitude: data.latitude, longitude: data.longitude },
+          address: data.address,
+          is_anonymous: data.is_anonymous,
+          status: data.status,
+          is_sensitive: data.is_sensitive,
+          confirmations: data.confirmations || 0,
+          views: data.views || 0,
+          comment_count: data.comment_count || 0,
+          report_count: data.report_count || 0,
+          created_at: data.created_at,
+          media: (data.post_media || []).map((m: any) => ({
+            id: m.id,
+            post_id: m.post_id,
+            url: m.url,
+            thumbnail_url: m.thumbnail_url,
+            media_type: m.media_type as "photo" | "video",
+            is_sensitive: m.is_sensitive,
+          })),
+          tags: [],
+        };
+        handledPostParamRef.current = postIdFromUrl;
+        setPosts((prev) => (prev.some((p) => p.id === fetched.id) ? prev : [fetched, ...prev]));
+        setPreviewPostId(fetched.id);
+        setCenterOnSOS({ lat: fetched.location!.latitude, lng: fetched.location!.longitude });
+      } catch {}
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [postIdFromUrl, posts]);
 
   useEffect(() => {
     const timer = setTimeout(() => setMapReady(true), 100);
@@ -472,7 +555,7 @@ export default function MapClient() {
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header variant="back" title="Map" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
 
-      <main className="pt-16 h-screen">
+      <main className="pt-app-header h-screen">
         <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">
           {loading && !mapReady && posts.length === 0 ? (
             <div className="h-full bg-dark-800 flex items-center justify-center">
@@ -489,6 +572,18 @@ export default function MapClient() {
               openSOSId={openSOSId}
               compassEnabled={compassEnabled}
               myUserId={myUserId}
+              previewPostId={previewPostId}
+              onPreviewClose={() => {
+                setPreviewPostId(null);
+                // Remove the post param from the URL so the effect doesn't
+                // reopen the popup, and so a refresh doesn't restore it.
+                if (typeof window !== "undefined" && window.location.search.includes("post=")) {
+                  const params = new URLSearchParams(window.location.search);
+                  params.delete("post");
+                  const next = params.toString();
+                  window.history.replaceState(null, "", `${window.location.pathname}${next ? `?${next}` : ""}`);
+                }
+              }}
             />
           )}
 
@@ -518,63 +613,77 @@ export default function MapClient() {
             </div>
           </div>
 
-          {/* Compass toggle button */}
-          <button
-            onClick={async () => {
-              if (!compassEnabled) {
-                await requestCompassPermission();
-              } else {
-                setCompassEnabled(false);
-              }
-            }}
-            className={`absolute right-4 z-1000 transition-all duration-300 ${showList ? "bottom-[calc(60%+3.5rem)]" : "bottom-[116px]"} p-3 rounded-full shadow-lg transition-all ${
-              compassEnabled
-                ? "bg-primary-600 text-white"
-                : "glass-float text-primary-400 hover:bg-white/10"
-            }`}
-          >
-            <Compass className="w-5 h-5" />
-          </button>
-
-          {/* Center on user button */}
-          <button
-            onClick={() => {
-              handleCenterOnUser();
-            }}
-            disabled={gettingLocation}
-className={`absolute right-4 z-1000 transition-all duration-300 ${showList ? "bottom-[calc(60%+0.5rem)]" : "bottom-[68px]"} p-3 glass-float rounded-full shadow-lg hover:bg-white/10`}
-          >
-            {gettingLocation ? (
-              <PejaSpinner className="w-5 h-5" />
-            ) : (
-              <Navigation className="w-5 h-5 text-primary-400" />
-            )}
-          </button>
-
-          {/* Analytics toggle button */}
-          <button
-            onClick={() => setShowAnalytics(true)}
-className={`absolute left-4 z-1000 transition-all duration-300 ${showList ? "bottom-[calc(60%+0.5rem)]" : "bottom-[68px]"} p-3 glass-float rounded-full shadow-lg hover:bg-white/10`}
-          >
-            <BarChart3 className="w-5 h-5 text-primary-400" />
-          </button>
-
-
-          {/* Bottom drawer */}
+          {/* Bottom drawer (side buttons live INSIDE so they animate together) */}
           <div
-            className={`absolute bottom-0 left-0 right-0 z-2000 glass-strong rounded-t-2xl shadow-2xl transition-transform duration-300 ${
+            className={`absolute bottom-0 left-0 right-0 z-2000 transition-transform duration-300 ${
               showList ? "translate-y-0" : "translate-y-[calc(100%-60px)]"
             }`}
             style={{ maxHeight: "60%" }}
           >
-            <button onClick={() => setShowList(!showList)} className="w-full py-3 flex flex-col items-center">
-              <div className="w-10 h-1 bg-dark-600 rounded-full mb-1" />
-              <span className="text-sm text-dark-400">{filteredPosts.length} incidents</span>
-            </button>
+            {/* Right column: compass + recenter — sit above the drawer's top edge */}
+            <div className="absolute right-4 bottom-full pb-3 flex flex-col gap-2 z-10">
+              <button
+                onClick={async () => {
+                  if (!compassEnabled) {
+                    await requestCompassPermission();
+                  } else {
+                    setCompassEnabled(false);
+                  }
+                }}
+                className={`p-3 rounded-full shadow-lg transition-colors ${
+                  compassEnabled
+                    ? "bg-primary-600 text-white"
+                    : "glass-float text-primary-400 hover:bg-white/10"
+                }`}
+              >
+                <Compass className="w-5 h-5" />
+              </button>
+              <button
+                onClick={() => {
+                  handleCenterOnUser();
+                }}
+                disabled={gettingLocation}
+                className="p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
+              >
+                {gettingLocation ? (
+                  <PejaSpinner className="w-5 h-5" />
+                ) : (
+                  <Navigation className="w-5 h-5 text-primary-400" />
+                )}
+              </button>
+            </div>
 
-            <div className="overflow-y-auto px-4 pb-4" style={{ maxHeight: "calc(60vh - 60px)" }}>
-              {/* SOS Alerts */}
-              {sosAlerts.map((sos) => (
+            {/* Left column: analytics */}
+            <div className="absolute left-4 bottom-full pb-3 z-10">
+              <button
+                onClick={() => setShowAnalytics(true)}
+                className="p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
+              >
+                <BarChart3 className="w-5 h-5 text-primary-400" />
+              </button>
+            </div>
+
+            {/* Drawer surface */}
+            <div className="glass-strong rounded-t-2xl shadow-2xl" style={{ borderBottom: "none" }}>
+              <button onClick={() => setShowList(!showList)} className="w-full py-3 flex flex-col items-center">
+                <div className="w-10 h-1 bg-dark-600 rounded-full mb-1" />
+                <span className="text-sm text-dark-400">{filteredPosts.length} incidents</span>
+              </button>
+
+              <div className="overflow-y-auto px-4 pb-4" style={{ maxHeight: "calc(60vh - 60px)" }}>
+                {sosAlerts.length === 0 && filteredPosts.length === 0 && (
+                  <div className="py-10 flex flex-col items-center text-center">
+                    <div className="w-10 h-10 rounded-full bg-dark-700/50 flex items-center justify-center mb-3">
+                      <MapPin className="w-5 h-5 text-dark-500" />
+                    </div>
+                    <p className="text-sm text-dark-300 font-medium">No nearby incidents</p>
+                    <p className="text-xs text-dark-500 mt-1">
+                      {selectedCategory ? "Try clearing the category filter" : "You're in the clear right now"}
+                    </p>
+                  </div>
+                )}
+                {/* SOS Alerts */}
+                {sosAlerts.map((sos) => (
                 <div
                   key={sos.id}
                   onClick={() => handleSOSClick(sos)}
@@ -623,6 +732,7 @@ className={`absolute left-4 z-1000 transition-all duration-300 ${showList ? "bot
                   </div>
                 );
               })}
+              </div>
             </div>
           </div>
         </div>

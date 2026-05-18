@@ -111,12 +111,8 @@ import("@capacitor/splash-screen")
     // Run after a short delay to let the WebView settle
     setTimeout(detectBottomInset, 500);
 
-    // Style the status bar
-    import("@capacitor/status-bar")
-      .then(({ StatusBar }) => {
-        StatusBar.setBackgroundColor({ color: "#0c0818" }).catch(() => {});
-      })
-      .catch(() => {});
+    // Status bar background/style is driven by ThemeContext so it reflects
+    // the current light/dark preference (not hard-coded to dark here).
 
     // Start continuous session sync to native storage
     startSessionSync();

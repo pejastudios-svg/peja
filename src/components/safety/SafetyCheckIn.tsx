@@ -441,13 +441,13 @@ if (checkingStatus) {
               <div
                 className="w-full max-w-sm rounded-2xl p-6"
                 style={{
-                  background: "rgba(18, 12, 36, 0.98)",
+                  background: "var(--glass-strong-bg)",
                   border: "1px solid rgba(255,255,255,0.1)",
                   boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
                 }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <h3 className="text-lg font-bold text-white mb-2">Stop Sharing Location?</h3>
+                <h3 className="text-lg font-bold text-dark-100 mb-2">Stop Sharing Location?</h3>
                 <p className="text-sm text-dark-400 mb-4">
                   Your emergency contacts will be notified that you stopped sharing. You can start a new check-in anytime.
                 </p>
@@ -509,7 +509,7 @@ if (checkingStatus) {
             <div
               className="w-full max-w-md rounded-t-3xl sm:rounded-2xl max-h-[85vh] overflow-y-auto"
               style={{
-                background: "rgba(18, 12, 36, 0.98)",
+                background: "var(--glass-strong-bg)",
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 -10px 40px rgba(0,0,0,0.5)",
               }}
@@ -524,7 +524,7 @@ if (checkingStatus) {
                 {/* Header */}
                 <div className="flex items-center justify-between mb-6">
                   <div>
-                    <h2 className="text-lg font-bold text-white">Safety Check-In</h2>
+                    <h2 className="text-lg font-bold text-dark-100">Safety Check-In</h2>
                     <p className="text-sm text-dark-400">Share your location and set a check-in timer</p>
                   </div>
                   <button onClick={() => setShowSetup(false)} className="p-1.5 rounded-lg hover:bg-white/10">
@@ -557,7 +557,7 @@ if (checkingStatus) {
                           className={`w-full flex items-center gap-3 p-3 rounded-xl transition-colors text-left ${
                             isSelected
                               ? "bg-primary-600/15 border border-primary-500/30"
-                              : "bg-white/5 border border-white/5 hover:bg-white/10"
+                              : "bg-[var(--glass-input-bg)] border border-[var(--glass-border)] hover:bg-[var(--glass-bg)]"
                           }`}
                         >
                           <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
@@ -597,7 +597,7 @@ if (checkingStatus) {
                         className={`py-2.5 rounded-xl text-sm font-medium transition-colors ${
                           interval === opt.value
                             ? "bg-primary-600 text-white"
-                            : "glass-sm text-dark-300 hover:bg-white/10"
+                            : "bg-[var(--glass-input-bg)] border border-[var(--glass-border)] text-dark-200 hover:bg-[var(--glass-bg)]"
                         }`}
                       >
                         {opt.label}

@@ -19,7 +19,7 @@ export default function ChatLayout({
   return (
     <div
       data-chat-layout
-      className={`fixed inset-0 z-50 bg-[#0a0812] transition-transform duration-250 ease-out ${
+      className={`fixed inset-0 z-50 bg-[var(--page-bg)] transition-transform duration-250 ease-out ${
         animateIn ? "translate-x-0" : "translate-x-full"
       }`}
     >

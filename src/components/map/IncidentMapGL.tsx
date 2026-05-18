@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import MapGL, { Marker, NavigationControl, MapRef, Source, Layer } from "react-map-gl/maplibre";
+import MapGL, { Marker, Popup, NavigationControl, MapRef, Source, Layer } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Post, CATEGORIES, SOSAlert, SOS_TAGS } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { CheckCircle } from "lucide-react";
 import SOSLocation from "@/lib/sosLocation";
 import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
+import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 
 interface IncidentMapGLProps {
   posts: Post[];
@@ -22,6 +23,10 @@ interface IncidentMapGLProps {
   openSOSId?: string | null;
   compassEnabled?: boolean;
   myUserId?: string | null;
+  /** When set, show an inline preview popup over this post's marker. */
+  previewPostId?: string | null;
+  /** Called when the user dismisses the preview popup. */
+  onPreviewClose?: () => void;
 }
 interface Helper {
   id: string;
@@ -182,6 +187,8 @@ export default function IncidentMapGL({
   openSOSId = null,
   compassEnabled = false,
   myUserId = null,
+  previewPostId = null,
+  onPreviewClose,
 }: IncidentMapGLProps) {
   const { user } = useAuth();
   const mapRef = useRef<MapRef>(null);
@@ -1034,6 +1041,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
         {posts.map(post => {
           if (!post.location?.latitude || !post.location?.longitude) return null;
           const color = getCategoryColor(post.category);
+          const isPreview = previewPostId === post.id;
           return (
             <Marker
               key={post.id}
@@ -1047,17 +1055,20 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
             >
               <div
                 style={{
-                  width: 32,
-                  height: 32,
+                  width: isPreview ? 40 : 32,
+                  height: isPreview ? 40 : 32,
                   background: color,
                   borderRadius: "50% 50% 50% 0",
                   transform: "rotate(-45deg)",
-                  border: "3px solid white",
-                  boxShadow: "0 3px 12px rgba(0,0,0,0.4)",
+                  border: `3px solid ${isPreview ? color : "white"}`,
+                  boxShadow: isPreview
+                    ? `0 0 0 3px white, 0 0 24px ${color}, 0 4px 14px rgba(0,0,0,0.45)`
+                    : "0 3px 12px rgba(0,0,0,0.4)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   cursor: "pointer",
+                  transition: "all 0.2s ease",
                 }}
               >
                 <div
@@ -1273,6 +1284,80 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
             </div>
           </div>
         )}
+        {/* Post preview popup — opened when /map?post=<id> is in the URL
+            (PostCard distance pill). Shows the incident in its category color
+            with description, address, and a button to open the full report. */}
+        {(() => {
+          if (!previewPostId) return null;
+          const post = posts.find((p) => p.id === previewPostId);
+          if (!post?.location?.latitude || !post.location?.longitude) return null;
+          const category = CATEGORIES.find((c) => c.id === post.category);
+          const color = getCategoryColor(post.category);
+          // For video media `url` points at the video file (not loadable as an
+          // <img>). Prefer the stored thumbnail_url, fall back to deriving one
+          // from the Cloudinary URL, and only use `url` directly for photos.
+          const firstMedia = post.media?.[0];
+          const thumb = firstMedia
+            ? firstMedia.media_type === "video"
+              ? firstMedia.thumbnail_url || getVideoThumbnailUrl(firstMedia.url) || undefined
+              : firstMedia.url
+            : undefined;
+          return (
+            <Popup
+              longitude={post.location.longitude}
+              latitude={post.location.latitude}
+              anchor="bottom"
+              offset={44}
+              closeButton={false}
+              closeOnClick={false}
+              onClose={() => onPreviewClose?.()}
+              maxWidth="280px"
+              className="peja-post-preview-popup"
+            >
+              <div style={{ width: 260, color: "var(--fg-default)" }}>
+                <div className="flex items-start gap-2 mb-2">
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold text-white shrink-0"
+                    style={{ background: color }}
+                  >
+                    {category?.name || post.category}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onPreviewClose?.()}
+                    aria-label="Close preview"
+                    className="ml-auto text-dark-400 hover:text-dark-200 leading-none text-lg shrink-0"
+                  >
+                    ×
+                  </button>
+                </div>
+                {thumb && (
+                  <img
+                    src={thumb}
+                    alt=""
+                    className="w-full h-28 rounded-lg object-cover mb-2"
+                  />
+                )}
+                {post.comment && (
+                  <p className="text-xs text-dark-200 mb-2 line-clamp-3 break-words">
+                    {post.comment}
+                  </p>
+                )}
+                {post.address && (
+                  <p className="text-[11px] text-dark-500 mb-2 line-clamp-2">{post.address}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onPostClick(post.id)}
+                  className="w-full py-2 rounded-lg text-xs font-semibold text-white"
+                  style={{ background: color }}
+                >
+                  Open full report
+                </button>
+              </div>
+            </Popup>
+          );
+        })()}
       </>}
       </MapGL>
       {/* Toast */}
@@ -1293,7 +1378,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
             {/* User Info Header */}
             <div className="border-b border-white/10 p-4 shrink-0">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xl font-bold text-white">
+                <h3 className="text-xl font-bold text-dark-100">
                   {isOwnSOS ? "Your SOS Alert" : "SOS Alert"}
                 </h3>
                 <button
@@ -1312,7 +1397,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
                   />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-white truncate text-lg">
+                  <p className="font-semibold text-dark-100 truncate text-lg">
                     {isOwnSOS ? "You" : (selectedSOS.user?.full_name || "Someone")}
                   </p>
                   <p className="text-sm text-dark-400 truncate">
@@ -1333,7 +1418,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
               {tagInfo && (
                 <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl">
                   <p className="text-sm text-dark-400">Situation:</p>
-                  <p className="font-semibold text-white">{tagInfo.label}</p>
+                  <p className="font-semibold text-dark-100">{tagInfo.label}</p>
                 </div>
               )}
               {selectedSOS.voice_note_url && (
@@ -1367,7 +1452,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
                           />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">{helper.name}</p>
+                          <p className="text-sm font-medium text-dark-100 truncate">{helper.name}</p>
                           <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
                             <p className="text-xs text-green-400">{formatETA(helper.eta).full}</p>

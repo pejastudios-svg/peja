@@ -33,6 +33,7 @@ import { SlowConnectionBanner } from "@/components/system/SlowConnectionBanner";
 import { BackgroundPrefetcher } from "@/components/navigation/BackgroundPrefetcher";
 import { Analytics } from "@vercel/analytics/next"
 import { OfflineBanner } from "@/components/system/OfflineBanner";
+import { ThemeProvider } from "@/context/ThemeContext";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -64,8 +65,14 @@ export default function RootLayout({
   overlay: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
+        {/* No-flicker theme bootstrap — runs before paint to set data-theme from localStorage. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("peja-theme");document.documentElement.setAttribute("data-theme",(t==="light"||t==="dark")?t:"dark");}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`,
+          }}
+        />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
@@ -108,6 +115,7 @@ export default function RootLayout({
         `}} />
       </head>
       <body className={`${poppins.variable} font-sans antialiased`}>
+        <ThemeProvider>
         <ToastProvider>
           <AuthProvider>
             <ConfirmProvider>
@@ -153,6 +161,7 @@ export default function RootLayout({
             </ConfirmProvider>
           </AuthProvider>
         </ToastProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

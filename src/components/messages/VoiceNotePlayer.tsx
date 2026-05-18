@@ -317,9 +317,8 @@ export function VoiceNotePlayer({
   if (error) {
     return (
       <div
-        className={`flex items-center gap-3 p-3 rounded-2xl min-w-[200px] ${
-          isMine ? "bg-white/10" : "bg-white/5"
-        }`}
+        className="flex items-center gap-3 p-3 rounded-2xl min-w-[200px]"
+        style={{ background: isMine ? "rgba(255,255,255,0.1)" : "var(--soft-surface)" }}
       >
         <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center shrink-0">
           <span className="text-red-400 text-xs">!</span>
@@ -333,9 +332,8 @@ export function VoiceNotePlayer({
 
   return (
     <div
-      className={`flex items-center gap-3 p-3 rounded-2xl min-w-[220px] max-w-[280px] ${
-        isMine ? "bg-white/10" : "bg-white/5"
-      }`}
+      className="flex items-center gap-3 p-3 rounded-2xl min-w-[220px] max-w-[280px]"
+      style={{ background: isMine ? "rgba(255,255,255,0.1)" : "var(--soft-surface)" }}
     >
       {/* Play/Pause Button */}
       <button

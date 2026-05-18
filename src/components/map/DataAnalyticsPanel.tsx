@@ -272,7 +272,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
               <ArrowLeft className="w-5 h-5 text-dark-300" />
             </button>
             <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-bold text-white truncate">{selectedHotspot.area}</h2>
+              <h2 className="text-lg font-bold text-dark-100 truncate">{selectedHotspot.area}</h2>
               <p className="text-xs text-dark-400">{selectedHotspot.count} total incidents</p>
             </div>
             
@@ -287,7 +287,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
                   <AlertTriangle className="w-4 h-4 text-red-400" />
                   <span className="text-xs text-dark-400">Most Common</span>
                 </div>
-                <p className="font-semibold text-white">{categoryInfo.name}</p>
+                <p className="font-semibold text-dark-100">{categoryInfo.name}</p>
                 <p className="text-xs text-dark-500">{selectedHotspot.incidents[selectedHotspot.mostCommon]} incidents</p>
               </div>
               
@@ -296,7 +296,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
                   <Clock className="w-4 h-4 text-primary-400" />
                   <span className="text-xs text-dark-400">Peak Time</span>
                 </div>
-                <p className="font-semibold text-white text-sm">{peakTime}</p>
+                <p className="font-semibold text-dark-100 text-sm">{peakTime}</p>
                 <p className="text-xs text-dark-500">{sortedTimes[0]?.[1] || 0} incidents</p>
               </div>
               
@@ -305,7 +305,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
                   <Calendar className="w-4 h-4 text-green-400" />
                   <span className="text-xs text-dark-400">Peak Day</span>
                 </div>
-                <p className="font-semibold text-white">{peakDay}</p>
+                <p className="font-semibold text-dark-100">{peakDay}</p>
                 <p className="text-xs text-dark-500">{sortedDays[0]?.[1] || 0} incidents</p>
               </div>
               
@@ -331,7 +331,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
             <div className="glass-sm rounded-xl p-4">
               <div className="flex items-center gap-2 mb-4">
                 <PieChart className="w-5 h-5 text-primary-400" />
-                <h3 className="font-semibold text-white">Incident Types</h3>
+                <h3 className="font-semibold text-dark-100">Incident Types</h3>
               </div>
               <div className="space-y-2">
                 {sortedIncidents.map(([category, count]) => {
@@ -364,7 +364,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
             <div className="glass-sm rounded-xl p-4">
               <div className="flex items-center gap-2 mb-4">
                 <BarChart3 className="w-5 h-5 text-primary-400" />
-                <h3 className="font-semibold text-white">Time Analysis</h3>
+                <h3 className="font-semibold text-dark-100">Time Analysis</h3>
               </div>
               <div className="space-y-2">
                 {["Morning (6am-12pm)", "Afternoon (12pm-6pm)", "Evening (6pm-12am)", "Night (12am-6am)"].map(timeSlot => {
@@ -393,7 +393,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
             <div className="glass-sm rounded-xl p-4">
               <div className="flex items-center gap-2 mb-4">
                 <Calendar className="w-5 h-5 text-primary-400" />
-                <h3 className="font-semibold text-white">Day Analysis</h3>
+                <h3 className="font-semibold text-dark-100">Day Analysis</h3>
               </div>
               <div className="grid grid-cols-7 gap-1">
                 {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => {
@@ -422,7 +422,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
 
             {/* Recent Incidents */}
             <div className="glass-sm rounded-xl p-4">
-              <h3 className="font-semibold text-white mb-3">Recent Incidents</h3>
+              <h3 className="font-semibold text-dark-100 mb-3">Recent Incidents</h3>
               <div className="space-y-2">
                 {selectedHotspot.recentIncidents.slice(0, 5).map(incident => {
                   const info = getCategoryInfo(incident.category);
@@ -461,7 +461,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
               <TrendingUp className="w-5 h-5 text-primary-400" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Incident Hotspots</h2>
+              <h2 className="text-lg font-bold text-dark-100">Incident Hotspots</h2>
               <p className="text-xs text-dark-400">All-time data • {hotspots.length} areas</p>
             </div>
           </div>
@@ -517,7 +517,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
                       
                       {/* Info */}
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-white truncate">{hotspot.area}</p>
+                        <p className="font-medium text-dark-100 truncate">{hotspot.area}</p>
                         <p className="text-xs text-dark-400">
                           Most common: <span className={`${
                             categoryInfo.color === "danger" ? "text-red-400" :

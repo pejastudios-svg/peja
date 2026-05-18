@@ -242,7 +242,7 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
           <div className="p-2 rounded-xl bg-dark-800 shrink-0">{getIcon()}</div>
 
           <button type="button" onClick={handleClick} className="flex-1 min-w-0 text-left">
-            <p className="text-sm font-semibold text-white">{popup.title}</p>
+            <p className="text-sm font-semibold text-dark-100">{popup.title}</p>
             {popup.body && <p className="text-xs text-dark-300 mt-1 line-clamp-2">{popup.body}</p>}
             <p className="text-[11px] text-primary-400 mt-2">{getActionText()}</p>
           </button>

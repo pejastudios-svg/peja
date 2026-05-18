@@ -22,7 +22,7 @@ export default function TermsPage() {
         </div>
       </header>
 
-      <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
+      <main className="pt-app-header max-w-2xl mx-auto px-4 py-6">
         <div className="prose prose-invert max-w-none">
           <p className="text-dark-400 text-sm mb-6">Last updated: December 2025</p>
 

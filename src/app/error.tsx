@@ -17,7 +17,7 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6" style={{ background: "#0c0818" }}>
+    <div className="min-h-screen flex items-center justify-center px-6" style={{ background: "var(--page-bg)" }}>
       <div className="text-center max-w-sm">
         <div
           className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
@@ -32,7 +32,7 @@ export default function Error({
             className="w-10 h-10 object-contain"
           />
         </div>
-        <h2 className="text-xl font-bold text-white mb-2">Something went wrong</h2>
+        <h2 className="text-xl font-bold text-dark-100 mb-2">Something went wrong</h2>
         <p className="text-sm text-dark-400 mb-6 leading-relaxed">
           We hit an unexpected issue. This is usually temporary.
         </p>

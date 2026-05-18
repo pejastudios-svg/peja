@@ -535,7 +535,7 @@ export function VoiceNoteRecorder({
   // =====================================================
   if (recordedBlob && !isRecording) {
     return (
-      <div className="flex items-center gap-2 p-2 bg-[#1a1525] border border-white/10 rounded-2xl">
+      <div className="flex items-center gap-2 p-2 bg-[var(--glass-card-bg)] border border-white/10 rounded-2xl">
         <button
           onClick={handleCancel}
           disabled={isUploading}
@@ -583,7 +583,7 @@ export function VoiceNoteRecorder({
   // =====================================================
   if (isRecording) {
     return (
-      <div className="flex items-center gap-2 p-2 bg-[#1a1525] border border-red-500/30 rounded-2xl">
+      <div className="flex items-center gap-2 p-2 bg-[var(--glass-card-bg)] border border-red-500/30 rounded-2xl">
         <button
           onClick={handleCancel}
           className="w-10 h-10 rounded-full flex items-center justify-center bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors active:scale-95"
@@ -658,7 +658,7 @@ export function VoiceNoteRecorder({
   // RENDER: Default State
   // =====================================================
   return (
-    <div className="flex items-center gap-2 p-2 bg-[#1a1525] border border-white/10 rounded-2xl">
+    <div className="flex items-center gap-2 p-2 bg-[var(--glass-card-bg)] border border-white/10 rounded-2xl">
       <button
         onClick={handleCancel}
         className="w-10 h-10 rounded-full flex items-center justify-center bg-dark-800 hover:bg-dark-700 text-dark-400 transition-colors active:scale-95"

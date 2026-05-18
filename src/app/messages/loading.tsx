@@ -10,7 +10,7 @@ export default function MessagesLoading() {
           <Skeleton className="w-5 h-5 rounded" />
         </div>
       </div>
-      <div className="pt-16 px-4 space-y-1">
+      <div className="pt-app-header px-4 space-y-1">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex items-center gap-3 p-3">
             <Skeleton className="w-[52px] h-[52px] rounded-full shrink-0" />

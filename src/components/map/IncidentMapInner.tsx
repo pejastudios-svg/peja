@@ -763,7 +763,7 @@ export default function IncidentMapInner({
             {/* User Info Header - Always at top */}
             <div className="border-b border-white/10 p-4 shrink-0">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-xl font-bold text-white">
+                <h3 className="text-xl font-bold text-dark-100">
                   {isOwnSOS ? "Your SOS Alert" : "SOS Alert"}
                 </h3>
                 <button
@@ -784,7 +784,7 @@ export default function IncidentMapInner({
                   />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-white truncate text-lg">
+                  <p className="font-semibold text-dark-100 truncate text-lg">
                     {isOwnSOS ? "You" : (selectedSOS.user?.full_name || "Someone")}
                   </p>
                   <p className="text-sm text-dark-400 truncate">
@@ -807,14 +807,14 @@ export default function IncidentMapInner({
               {tagInfo && (
                 <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl">
                   <p className="text-sm text-dark-400">Situation:</p>
-                  <p className="font-semibold text-white">{tagInfo.label}</p>
+                  <p className="font-semibold text-dark-100">{tagInfo.label}</p>
                 </div>
               )}
 
               {selectedSOS.message && (
                 <div className="p-3 bg-white/5 rounded-xl">
                   <p className="text-sm text-dark-400 mb-1">Message:</p>
-                  <p className="text-white">{selectedSOS.message}</p>
+                  <p className="text-dark-100">{selectedSOS.message}</p>
                 </div>
               )}
               {selectedSOS.voice_note_url && (
@@ -849,7 +849,7 @@ export default function IncidentMapInner({
                           />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">{helper.name}</p>
+                          <p className="text-sm font-medium text-dark-100 truncate">{helper.name}</p>
                           <div className="flex items-center gap-2">
                             <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
                             <p className="text-xs text-green-400">ETA: {helper.eta} min</p>

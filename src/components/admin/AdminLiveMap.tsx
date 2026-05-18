@@ -516,7 +516,9 @@ return (
             <NavigationControl position="top-right" showCompass={false} />
             {/* Fullscreen toggle */}
             {!hideExpand && (
-            <div className="absolute top-2 left-2 z-10">
+            // Sits below the Hotspots/Pins toggle row on the analytics page,
+            // so the icon doesn't overlap those buttons in the top-left.
+            <div className="absolute top-14 left-2 z-10">
              <button
                 onClick={() => window.dispatchEvent(new Event("peja-expand-admin-map"))}
                 className="p-2 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 text-white hover:bg-black/80 transition-colors"

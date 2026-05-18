@@ -136,8 +136,8 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
           onClick={startRecording}
           className="w-full flex items-center gap-3 p-3 rounded-xl transition-all active:scale-[0.97]"
           style={{
-            background: "rgba(20, 12, 36, 0.8)",
-            border: "1px solid rgba(255,255,255,0.06)",
+            background: "#ffffff",
+            border: "1px solid #d4d4d8",
           }}
         >
           <div className="w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center">
@@ -146,8 +146,8 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
               <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
             </svg>
           </div>
-          <span className="text-sm text-dark-300">Tap to record voice note</span>
-          <span className="text-[10px] text-dark-500 ml-auto">Max 60s</span>
+          <span className="text-sm text-zinc-600">Tap to record voice note</span>
+          <span className="text-[10px] text-zinc-500 ml-auto">Max 60s</span>
         </button>
       )}
 
@@ -763,7 +763,7 @@ const closeOptions = () => {
           <div
             className={`relative w-full max-w-md rounded-2xl overflow-hidden select-none ${disclosureClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
             style={{
-              background: "rgba(12, 8, 24, 0.98)",
+              background: "var(--glass-strong-bg)",
               border: "1px solid rgba(239, 68, 68, 0.15)",
               boxShadow: "0 0 80px rgba(239, 68, 68, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
               maxHeight: "calc(100dvh - 64px)",
@@ -785,7 +785,7 @@ const closeOptions = () => {
                 <Shield className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">Before You Continue</h3>
+                <h3 className="text-lg font-bold text-dark-100">Before You Continue</h3>
                 <p className="text-xs text-dark-500">Please read carefully</p>
               </div>
             </div>
@@ -804,7 +804,7 @@ const closeOptions = () => {
                   <h4 className="font-semibold text-blue-300 text-sm">Location Sharing</h4>
                 </div>
                 <p className="text-sm text-dark-300 leading-relaxed">
-                  When you activate SOS, Peja will <strong className="text-white">continuously track and share your real-time location</strong> with your emergency contacts and nearby users - even when the app is in the background or your screen is off.
+                  When you activate SOS, Peja will <strong className="text-dark-100">continuously track and share your real-time location</strong> with your emergency contacts and nearby users - even when the app is in the background or your screen is off.
                 </p>
                 <p className="text-sm text-dark-400 leading-relaxed">
                   This allows helpers to find you during an emergency. Location sharing stops only when you cancel the SOS alert.
@@ -824,7 +824,7 @@ const closeOptions = () => {
                   <h4 className="font-semibold text-red-300 text-sm">Misuse Warning</h4>
                 </div>
                 <p className="text-sm text-dark-300 leading-relaxed">
-                  The SOS feature is <strong className="text-white">strictly for genuine emergencies</strong> where you or someone nearby is in serious personal danger.
+                  The SOS feature is <strong className="text-dark-100">strictly for genuine emergencies</strong> where you or someone nearby is in serious personal danger.
                 </p>
                 <p className="text-sm text-red-400/90 leading-relaxed font-medium">
                   Misuse of the SOS feature - including false alerts, pranks, or non-emergency use - will result in a permanent ban from Peja with no appeal.
@@ -913,7 +913,7 @@ const closeOptions = () => {
                   </div>
                 </div>
                 
-                <p className="text-center text-lg font-medium text-white mb-6 select-none">
+                <p className="text-center text-lg font-medium text-dark-100 mb-6 select-none">
                   {loadingSteps[currentStep]?.text}
                 </p>
                 
@@ -939,7 +939,7 @@ const closeOptions = () => {
                   </div>
                 </div>
                 
-                <h3 className="text-xl font-bold text-white mb-2 select-none">SOS Sent Successfully</h3>
+                <h3 className="text-xl font-bold text-dark-100 mb-2 select-none">SOS Sent Successfully</h3>
                 
                 <div className="flex items-center justify-center gap-2 mb-4">
                   <Users className="w-5 h-5 text-primary-400" />
@@ -970,7 +970,7 @@ const closeOptions = () => {
                   </div>
                 </div>
                 
-                <h3 className="text-xl font-bold text-white mb-2 select-none">SOS Failed</h3>
+                <h3 className="text-xl font-bold text-dark-100 mb-2 select-none">SOS Failed</h3>
                 <p className="text-sm text-dark-400 mb-6 select-none">
                   Unable to send SOS. Please call emergency services directly.
                 </p>
@@ -1014,9 +1014,9 @@ const closeOptions = () => {
             className={`relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-y-auto select-none ${modalClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
             style={{
               maxHeight: "calc(100dvh - var(--cap-status-bar-height, 0px) - env(safe-area-inset-bottom, 0px) - 32px)",
-              background: "rgba(12, 8, 24, 0.98)",
-              border: "1px solid rgba(239, 68, 68, 0.15)",
-              boxShadow: "0 0 80px rgba(239, 68, 68, 0.08), 0 -20px 60px rgba(0,0,0,0.5)",
+              background: "var(--glass-strong-bg)",
+              border: "1px solid rgba(239, 68, 68, 0.25)",
+              boxShadow: "0 0 80px rgba(239, 68, 68, 0.12), 0 -20px 60px rgba(0,0,0,0.25)",
             }}
           >
             {/* Header */}
@@ -1037,7 +1037,7 @@ const closeOptions = () => {
                 >
                   <AlertTriangle className="w-4 h-4 text-red-400" />
                 </div>
-                <h3 className="text-lg font-bold text-white">Emergency SOS</h3>
+                <h3 className="text-lg font-bold text-dark-100">Emergency SOS</h3>
               </div>
               <div className="w-9" />
             </div>
@@ -1060,8 +1060,8 @@ const closeOptions = () => {
                         style={{
                           background: isSelected
                             ? `${tag.color}15`
-                            : "rgba(255, 255, 255, 0.02)",
-                          border: `1px solid ${isSelected ? `${tag.color}50` : "rgba(255,255,255,0.06)"}`,
+                            : "var(--glass-input-bg)",
+                          border: `1px solid ${isSelected ? `${tag.color}50` : "var(--glass-border)"}`,
                           boxShadow: isSelected ? `0 0 20px ${tag.color}15` : "none",
                         }}
                       >
@@ -1071,17 +1071,17 @@ const closeOptions = () => {
                             style={{
                               background: isSelected
                                 ? `${tag.color}20`
-                                : "rgba(255,255,255,0.04)",
+                                : "var(--glass-bg)",
                             }}
                           >
                             <TagIcon
                               className="w-4 h-4"
-                              style={{ color: isSelected ? tag.color : "#94a3b8" }}
+                              style={{ color: isSelected ? tag.color : "var(--color-dark-400)" }}
                             />
                           </div>
                           <span
                             className="text-sm font-medium transition-colors leading-tight"
-                            style={{ color: isSelected ? tag.color : "#e2e8f0" }}
+                            style={{ color: isSelected ? tag.color : "var(--color-dark-200)" }}
                           >
                             {tag.label}
                           </span>
@@ -1109,7 +1109,6 @@ const closeOptions = () => {
                   placeholder="Describe your situation briefly..."
                   rows={3}
                   className="w-full px-4 py-3 glass-input resize-none text-base"
-                  style={{ background: "rgba(20, 12, 36, 0.8)" }}
                 />
               </div>
 
@@ -1185,7 +1184,7 @@ const closeOptions = () => {
           <div
             className="relative w-full max-w-md rounded-2xl overflow-hidden select-none"
             style={{
-              background: "rgba(12, 8, 24, 0.98)",
+              background: "var(--glass-strong-bg)",
               border: "1px solid rgba(239, 68, 68, 0.2)",
               boxShadow: "0 0 60px rgba(239, 68, 68, 0.1), 0 25px 60px rgba(0,0,0,0.6)",
               maxHeight: "calc(100dvh - (32px + env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)))",
@@ -1268,21 +1267,21 @@ const closeOptions = () => {
               <div
                 className="flex items-center gap-3 p-3 rounded-xl"
                 style={{
-                  background: "rgba(139, 92, 246, 0.08)",
-                  border: "1px solid rgba(139, 92, 246, 0.15)",
+                  background: "var(--glass-input-bg)",
+                  border: "1px solid var(--glass-border)",
                 }}
               >
                 <div
                   className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: "rgba(139, 92, 246, 0.15)" }}
+                  style={{ background: "rgba(239, 68, 68, 0.12)" }}
                 >
-                  <Users className="w-5 h-5 text-primary-400" />
+                  <Users className="w-5 h-5 text-red-500" />
                 </div>
                 <div>
-                  <span className="text-lg font-bold text-primary-400">
+                  <span className="text-lg font-bold text-red-500">
                     {notifyStatus.contacts + notifyStatus.nearby}
                   </span>
-                  <span className="text-dark-400 text-sm ml-1.5">people notified</span>
+                  <span className="text-dark-100 text-sm ml-1.5 font-medium">people notified</span>
                 </div>
               </div>
 
@@ -1302,9 +1301,9 @@ const closeOptions = () => {
                   href="tel:767"
                   className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium transition-all active:scale-95"
                   style={{
-                    background: "rgba(255,255,255,0.04)",
-                    border: "1px solid rgba(255,255,255,0.08)",
-                    color: "#e2e8f0",
+                    background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+                    boxShadow: "0 4px 15px rgba(239,68,68,0.25)",
+                    color: "white",
                   }}
                 >
                   <Phone className="w-4 h-4" /> Call 767
@@ -1314,11 +1313,10 @@ const closeOptions = () => {
               <button
                 onClick={cancelSOS}
                 disabled={loading}
-                className="w-full py-3 rounded-xl font-medium transition-all hover:bg-white/5 active:scale-[0.98]"
+                className="w-full py-3 rounded-xl font-medium text-dark-300 transition-all hover:bg-white/5 active:scale-[0.98]"
                 style={{
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                  color: "#94a3b8",
+                  background: "var(--glass-input-bg)",
+                  border: "1px solid var(--glass-border)",
                 }}
               >
                 {loading ? (

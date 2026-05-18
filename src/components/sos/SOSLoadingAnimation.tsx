@@ -107,9 +107,9 @@ export function SOSLoadingAnimation({
             {/* Current Step Text */}
             {status === "loading" && (
               <>
-                <h3 className="text-lg font-bold text-white mb-2">
-                  {currentStep > 0 && currentStep <= STEPS.length 
-                    ? STEPS[currentStep - 1].label 
+                <h3 className="text-lg font-bold text-dark-100 mb-2">
+                  {currentStep > 0 && currentStep <= STEPS.length
+                    ? STEPS[currentStep - 1].label
                     : "Initializing..."}
                 </h3>
                 <p className="text-sm text-dark-400 mb-6">
@@ -142,9 +142,9 @@ export function SOSLoadingAnimation({
                   >
                     <Phone className="w-4 h-4" /> Call 112
                   </a>
-                  <a 
-                    href="tel:767" 
-                    className="flex items-center gap-2 px-4 py-2 glass-sm text-white rounded-xl font-medium"
+                  <a
+                    href="tel:767"
+                    className="flex items-center gap-2 px-4 py-2 glass-sm text-dark-100 rounded-xl font-medium"
                   >
                     <Phone className="w-4 h-4" /> Call 767
                   </a>

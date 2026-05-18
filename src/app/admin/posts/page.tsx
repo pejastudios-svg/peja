@@ -16,6 +16,7 @@ import { apiUrl } from "@/lib/api";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 
 import {
   Search,
@@ -49,7 +50,7 @@ interface PostData {
   is_sensitive: boolean;
   created_at: string;
   users?: { full_name: string; email: string };
-  post_media?: { url: string; media_type: string }[];
+  post_media?: { url: string; media_type: string; thumbnail_url?: string | null }[];
 }
 export default function AdminPostsPage() {
   useScrollRestore("admin:posts");
@@ -136,7 +137,7 @@ const [posts, setPosts] = useState<PostData[]>([]);
         // Fetch media
         const { data: mediaData } = await supabase
           .from("post_media")
-          .select("post_id,url,media_type")
+          .select("post_id,url,media_type,thumbnail_url")
           .eq("post_id", postId);
 
         const fullPost: PostData = {
@@ -145,6 +146,7 @@ const [posts, setPosts] = useState<PostData[]>([]);
           post_media: (mediaData || []).map((m: any) => ({
             url: m.url,
             media_type: m.media_type,
+            thumbnail_url: m.thumbnail_url,
           })),
         };
 
@@ -250,12 +252,12 @@ const fetchPosts = async (silent = false) => {
         usersMap[u.id] = { full_name: u.full_name, email: u.email };
       });
       const { data: mediaData } = postIds.length
-        ? await supabase.from("post_media").select("post_id,url,media_type").in("post_id", postIds)
+        ? await supabase.from("post_media").select("post_id,url,media_type,thumbnail_url").in("post_id", postIds)
         : { data: [] };
-      const mediaMap: Record<string, { url: string; media_type: string }[]> = {};
+      const mediaMap: Record<string, { url: string; media_type: string; thumbnail_url?: string | null }[]> = {};
       (mediaData || []).forEach((m: any) => {
         if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
-        mediaMap[m.post_id].push({ url: m.url, media_type: m.media_type });
+        mediaMap[m.post_id].push({ url: m.url, media_type: m.media_type, thumbnail_url: m.thumbnail_url });
       });
       const merged = rows.map((p) => ({
         ...p,
@@ -314,12 +316,12 @@ setPosts(merged);
       const usersMap: Record<string, any> = {};
       (usersData || []).forEach((u: any) => (usersMap[u.id] = { full_name: u.full_name, email: u.email }));
       const { data: mediaData } = postIds.length
-        ? await supabase.from("post_media").select("post_id,url,media_type").in("post_id", postIds)
+        ? await supabase.from("post_media").select("post_id,url,media_type,thumbnail_url").in("post_id", postIds)
         : { data: [] };
       const mediaMap: Record<string, any[]> = {};
       (mediaData || []).forEach((m: any) => {
         if (!mediaMap[m.post_id]) mediaMap[m.post_id] = [];
-        mediaMap[m.post_id].push({ url: m.url, media_type: m.media_type });
+        mediaMap[m.post_id].push({ url: m.url, media_type: m.media_type, thumbnail_url: m.thumbnail_url });
       });
       const merged = rows.map((p) => ({
         ...p,
@@ -640,9 +642,29 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                   <div className="aspect-video bg-dark-900 relative overflow-hidden shrink-0">
                     {post.post_media?.[0] ? (
                       post.post_media[0].media_type === "video" ? (
-                        <div className="w-full h-full flex items-center justify-center bg-dark-800 group-hover:scale-105 transition-transform duration-700">
-                          <Play className="w-10 h-10 text-white/80 backdrop-blur-sm p-2.5 bg-black/40 rounded-full" />
-                        </div>
+                        (() => {
+                          // Prefer the stored thumbnail_url, fall back to deriving one
+                          // from a Cloudinary video URL. If neither resolves, we keep
+                          // the dark placeholder so the play icon stays readable.
+                          const videoThumb =
+                            post.post_media[0].thumbnail_url ||
+                            getVideoThumbnailUrl(post.post_media[0].url) ||
+                            null;
+                          return (
+                            <div className="w-full h-full bg-dark-800 group-hover:scale-105 transition-transform duration-700 relative">
+                              {videoThumb && (
+                                <img
+                                  src={videoThumb}
+                                  alt=""
+                                  className={`w-full h-full object-cover ${post.is_sensitive ? "blur-xl scale-110" : ""}`}
+                                />
+                              )}
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <Play className="w-10 h-10 text-white/90 p-2.5 bg-black/45 backdrop-blur-sm rounded-full" />
+                              </div>
+                            </div>
+                          );
+                        })()
                       ) : (
                         <img
                           src={post.post_media[0].url}

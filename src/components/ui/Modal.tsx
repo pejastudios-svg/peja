@@ -76,23 +76,30 @@ return createPortal(
         onClick={onClose}
       />
 
-      {/* Modal Panel */}
+      {/* Modal Panel — black on dark, white on light, purple outline */}
       <div
-        className={`relative w-full ${sizeClasses[size]} bg-[#121016] border border-white/10 shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 ease-out ${getAnimationClass()}`}
+        className={`relative w-full ${sizeClasses[size]} shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 ease-out ${getAnimationClass()}`}
+        style={{
+          background: "var(--glass-strong-bg)",
+          border: "1px solid var(--glass-border-strong)",
+        }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 shrink-0">
-          <h3 className="text-lg font-bold text-white">{title}</h3>
+        <div
+          className="flex items-center justify-between px-6 py-4 shrink-0"
+          style={{ borderBottom: "1px solid var(--glass-border-sm)" }}
+        >
+          <h3 className="text-lg font-bold text-dark-100">{title}</h3>
           <button
             onClick={onClose}
-            className="p-2 rounded-full hover:bg-white/10 text-dark-400 hover:text-white transition-colors"
+            className="p-2 rounded-full hover:bg-white/10 text-dark-400 hover:text-dark-100 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-white/10 hover:scrollbar-thumb-white/20">
+        <div className="flex-1 overflow-y-auto p-6">
           {children}
         </div>
       </div>

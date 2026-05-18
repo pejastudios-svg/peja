@@ -80,7 +80,7 @@ export function LoginPrompt() {
         <div
           className={`w-full max-w-sm rounded-3xl overflow-hidden ${closing ? "animate-bounce-out" : "animate-bounce-in"}`}
           style={{
-            background: "rgba(18, 12, 36, 0.98)",
+            background: "var(--glass-strong-bg)",
             border: "1px solid rgba(139, 92, 246, 0.2)",
             boxShadow:
               "0 0 80px rgba(139, 92, 246, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
@@ -125,7 +125,7 @@ export function LoginPrompt() {
 
           {/* Content */}
           <div className="p-6 text-center">
-            <h2 className="text-lg font-bold text-white mb-2">
+            <h2 className="text-lg font-bold text-dark-100 mb-2">
               Join Your Community
             </h2>
             <p className="text-sm text-dark-400 leading-relaxed mb-6">

@@ -19,6 +19,7 @@ import { apiUrl } from "@/lib/api";
 import { usePageCache } from "@/context/PageCacheContext";
 import { preloadFeedVideos, getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { profileCompletion } from "@/lib/profileComplete";
 
 type FeedTab = "nearby" | "trending";
 type TrendingMode = "recommended" | "top";
@@ -688,7 +689,10 @@ posts.forEach((p: any) => {
     return (
       <div className="min-h-screen pb-20">
         <Header onCreateClick={() => {}} />
-        <main className="pt-14 max-w-2xl mx-auto px-4 py-4 space-y-4">
+        <main
+          className="max-w-2xl mx-auto px-4 py-4 space-y-4"
+          style={{ paddingTop: "calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 64px)" }}
+        >
           {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
         </main>
         <BottomNav />
@@ -700,7 +704,10 @@ posts.forEach((p: any) => {
     return (
       <div className="min-h-screen pb-20">
         <Header onCreateClick={() => {}} />
-        <main className="pt-14 max-w-2xl mx-auto px-4 py-4 space-y-4">
+        <main
+          className="max-w-2xl mx-auto px-4 py-4 space-y-4"
+          style={{ paddingTop: "calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 64px)" }}
+        >
           {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
         </main>
         <BottomNav />
@@ -717,25 +724,31 @@ posts.forEach((p: any) => {
     return Math.max(0, Math.min(1, base + delta));
   })();
 
+// Active = rich solid purple. Inactive = theme-aware surface (white in light, glass in dark).
 const nearbyBg = swipeProgress < 0.5
-    ? `rgba(124, 58, 237, ${0.8 - swipeProgress * 0.6})`
-    : `rgba(124, 58, 237, ${0.15 + (1 - swipeProgress) * 0.05})`;
+    ? `rgb(124, 58, 237)`
+    : `var(--glass-card-bg)`;
   const trendingBg = swipeProgress > 0.5
-    ? `rgba(124, 58, 237, ${0.2 + swipeProgress * 0.6})`
-    : `rgba(124, 58, 237, ${0.15 + swipeProgress * 0.05})`;
+    ? `rgb(124, 58, 237)`
+    : `var(--glass-card-bg)`;
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header onCreateClick={() => router.push("/create")} />
 
       <PullToRefresh onRefresh={handleRefresh}>
-      <main className="pt-14 hide-scrollbar">
-        {user && !user.occupation && (
+      <main
+        className="hide-scrollbar"
+        style={{ paddingTop: "calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 64px)" }}
+      >
+        {user && !profileCompletion(user as any).complete && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
             <div className="glass-card p-4 flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-dark-200">Complete your profile</p>
-                <p className="text-xs text-dark-400">Add your details to help your community</p>
+                <p className="text-xs text-dark-400">
+                  Unlock posting, commenting, and the Guardian application. Safety features stay on either way.
+                </p>
               </div>
               <Button variant="primary" size="sm" onClick={() => router.push("/profile/edit")}>
                 Complete
@@ -745,13 +758,13 @@ const nearbyBg = swipeProgress < 0.5
         )}
 
 <div
-          className="max-w-2xl mx-auto px-4 py-4"
+          className="max-w-2xl mx-auto py-4"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           style={{ touchAction: isSwiping ? "none" : "pan-y" }}
         >
-<div className="flex items-center justify-center gap-1 mb-4 relative" data-tutorial="home-nearby">
+<div className="flex items-center justify-center gap-1 mb-4 relative px-4" data-tutorial="home-nearby">
           <button
               onClick={() => {
                 setActiveTab("nearby");
@@ -760,7 +773,7 @@ const nearbyBg = swipeProgress < 0.5
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
              style={{
                 background: nearbyBg,
-                color: "white",
+                color: activeTab === "nearby" ? "white" : "var(--color-dark-200)",
                 border: `1px solid rgba(124, 58, 237, ${0.15 + (1 - swipeProgress) * 0.2})`,
                 transition: isSwiping ? "none" : "all 0.35s ease",
               }}
@@ -776,7 +789,7 @@ const nearbyBg = swipeProgress < 0.5
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
               style={{
                 background: trendingBg,
-                color: "white",
+                color: activeTab === "trending" ? "white" : "var(--color-dark-200)",
                 border: `1px solid rgba(124, 58, 237, ${0.15 + swipeProgress * 0.2})`,
                 transition: isSwiping ? "none" : "all 0.35s ease",
               }}

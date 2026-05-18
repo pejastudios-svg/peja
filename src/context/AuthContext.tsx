@@ -16,16 +16,24 @@ interface User {
   full_name?: string;
   avatar_url?: string;
   occupation?: string;
+  // Profile-completion fields. Surfaced so lib/profileComplete.ts can read
+  // them from the in-memory user object without re-querying.
+  date_of_birth?: string;
+  home_address?: string;
+  gender?: string;
+  reputation_score?: number;
+  created_at?: string;
 
   is_guardian?: boolean;
   is_admin?: boolean;
-  is_vip?: boolean;      
+  is_vip?: boolean;
 
   email_verified: boolean;
   phone_verified: boolean;
 
   last_latitude?: number;
   last_longitude?: number;
+  last_location_updated_at?: string;
 
   status?: "active" | "suspended" | "banned";
 }
@@ -631,11 +639,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         full_name: data.full_name,
         avatar_url: data.avatar_url,
         occupation: data.occupation,
+        // The profile-completion gate (lib/profileComplete.ts) reads
+        // date_of_birth and home_address — they MUST flow through here or
+        // the "Complete your profile" banner never clears after a save.
+        date_of_birth: data.date_of_birth,
+        home_address: data.home_address,
+        gender: data.gender,
+        reputation_score: data.reputation_score,
+        created_at: data.created_at,
         status: data.status,
         email_verified: data.email_verified || false,
         phone_verified: data.phone_verified || false,
         last_latitude: data.last_latitude,
         last_longitude: data.last_longitude,
+        last_location_updated_at: data.last_location_updated_at,
         is_guardian: data.is_guardian || false,
         is_admin: data.is_admin || false,
         is_vip: data.is_vip || false,

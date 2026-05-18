@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAdminCache } from "@/hooks/useAdminCache";
 import { supabase } from "@/lib/supabase";
-import { Loader2, Search, Phone, Mail, Shield, Ban, CheckCircle, Trash2, X } from "lucide-react";
+import { Loader2, Search, Phone, Mail, Shield, Ban, CheckCircle, Trash2, X, Home } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
@@ -24,6 +24,7 @@ interface AdminUser {
   phone: string | null;
   avatar_url: string | null;
   occupation: string | null;
+  home_address: string | null;
   status: "active" | "suspended" | "banned" | null;
   is_guardian: boolean | null;
   is_admin: boolean | null;
@@ -47,7 +48,7 @@ export default function AdminUsersPage() {
   const fetchUsersFn = useCallback(async () => {
     let query = supabase
       .from("users")
-      .select("id, full_name, email, phone, avatar_url, occupation, status, is_guardian, is_admin, created_at")
+      .select("id, full_name, email, phone, avatar_url, occupation, home_address, status, is_guardian, is_admin, created_at")
       .order("created_at", { ascending: false })
       .limit(200);
     if (statusFilter !== "all") {
@@ -335,6 +336,12 @@ const deleteUser = async (userId: string, userName: string) => {
                   {user.occupation && (
                     <div className="text-xs text-dark-500 truncate">
                       {user.occupation}
+                    </div>
+                  )}
+                  {user.home_address && (
+                    <div className="flex items-start gap-1 min-w-0 text-xs text-dark-500">
+                      <Home className="w-3 h-3 shrink-0 mt-0.5" />
+                      <span className="line-clamp-2 break-words">{user.home_address}</span>
                     </div>
                   )}
                 </div>

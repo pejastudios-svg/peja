@@ -179,7 +179,7 @@ useEffect(() => {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center bg-dark-950 p-6">
         <AlertTriangle className="w-14 h-14 text-red-400 mb-4" />
-        <h1 className="text-xl font-bold text-white mb-2">
+        <h1 className="text-xl font-bold text-dark-100 mb-2">
           {error === "Check-in not found or ended" ? "Check-In Ended" : "Cannot View Location"}
         </h1>
         <p className="text-dark-400 text-center mb-6">
@@ -255,7 +255,7 @@ useEffect(() => {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-semibold text-white">{owner?.full_name || "User"}</p>
+              <p className="font-semibold text-dark-100">{owner?.full_name || "User"}</p>
               <p className="text-xs text-dark-400">
                 Sharing location since {formatDistanceToNow(new Date(checkin.created_at), { addSuffix: true })}
               </p>

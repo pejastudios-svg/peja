@@ -2731,7 +2731,7 @@ const handleTouchEnd = () => {
 
   if (loading && messages.length === 0) {
   return (
-    <div className="flex flex-col h-full bg-[#0a0812]">
+    <div className="flex flex-col h-full bg-[var(--page-bg)]">
       {/* Header skeleton */}
       <header
         className="glass-header flex items-center justify-between px-4 shrink-0 z-10"
@@ -2781,7 +2781,7 @@ const handleTouchEnd = () => {
 
       {/* Input skeleton */}
       <div
-        className="px-3 py-2 border-t border-white/5 bg-[#0d0a14] shrink-0"
+        className="px-3 py-2 border-t border-white/5 bg-[var(--page-bg)] shrink-0"
         style={{
           paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
         }}
@@ -2801,7 +2801,7 @@ const handleTouchEnd = () => {
   if (!otherUser) {
   // Show skeleton while loading user
   return (
-    <div className="flex flex-col h-full bg-[#0a0812]">
+    <div className="flex flex-col h-full bg-[var(--page-bg)]">
       <header
         className="glass-header flex items-center justify-between px-4 shrink-0 z-10"
         style={{
@@ -2825,7 +2825,7 @@ const handleTouchEnd = () => {
 }
 
 return (
-  <div className="flex flex-col h-full bg-[#0a0812]">
+  <div className="flex flex-col h-full bg-[var(--page-bg)]">
       {/* =====================================================
           HEADER
           ===================================================== */}
@@ -2971,7 +2971,7 @@ return (
                     )}
                   </div>
                 </div>
-                <div className="px-4 py-3 rounded-2xl rounded-bl-md bg-[#1a1525] border border-white/5">
+                <div className="px-4 py-3 rounded-2xl rounded-bl-md bg-[var(--glass-card-bg)] border border-[var(--glass-border-sm)]">
                   <div className="flex gap-1">
                     <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "0ms" }} />
                     <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "150ms" }} />
@@ -2994,7 +2994,13 @@ return (
                 <div key={msg.id} data-msg-id={msg.id} className="mb-1.5">
                   {showDate && (
                     <div className="flex justify-center my-4">
-                      <span className="text-[11px] text-dark-500 bg-dark-900/80 px-3 py-1 rounded-full border border-white/5">
+                      <span
+                        className="text-[11px] text-dark-400 px-3 py-1 rounded-full"
+                        style={{
+                          background: "var(--glass-input-bg)",
+                          border: "1px solid var(--glass-border)",
+                        }}
+                      >
                         {getDateLabel(msg.created_at)}
                       </span>
                     </div>
@@ -3130,7 +3136,7 @@ onTouchEnd={() => {
                             className={`px-4 py-2.5 ${msg.reply_to ? "rounded-b-2xl" : "rounded-2xl"} ${
                               isMine
                                 ? `bg-primary-600/90 text-white ${msg.reply_to ? "rounded-br-md" : "rounded-br-md"}`
-                                : `bg-[#1a1525] border border-white/5 text-dark-100 ${msg.reply_to ? "rounded-bl-md" : "rounded-bl-md"}`
+                                : `bg-[var(--glass-card-bg)] border border-[var(--glass-border-sm)] text-dark-100 ${msg.reply_to ? "rounded-bl-md" : "rounded-bl-md"}`
                             }`}
                           >
                             {/* Media — single tap to open */}
@@ -3470,7 +3476,7 @@ onTouchEnd={() => {
           PENDING MEDIA PREVIEW
           ===================================================== */}
       {pendingMedia.length > 0 && (
-        <div className="px-4 py-2 border-t border-white/5 bg-[#0d0a14] animate-in slide-in-from-bottom-2 duration-150">
+        <div className="px-4 py-2 border-t border-white/5 bg-[var(--page-bg)] animate-in slide-in-from-bottom-2 duration-150">
           <div className="flex gap-2 overflow-x-auto pb-1">
             {pendingMedia.map((m, i) => (
               <div key={i} className="relative shrink-0">
@@ -3513,11 +3519,11 @@ onTouchEnd={() => {
           FORMAT BAR
           ===================================================== */}
       {showFormatBar && !isBlocked && (
-        <div className="px-4 py-2 border-t border-white/5 bg-[#0d0a14] flex items-center justify-center gap-3 animate-in slide-in-from-bottom-2 duration-100">
-          <button onClick={applyBold} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bold"><Bold className="w-4 h-4" /></button>
-          <button onClick={applyItalic} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Italic"><Italic className="w-4 h-4" /></button>
-          <button onClick={applyBulletList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Bullets"><List className="w-4 h-4" /></button>
-          <button onClick={applyNumberedList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-white transition-all" title="Numbers"><ListOrdered className="w-4 h-4" /></button>
+        <div className="px-4 py-2 border-t border-white/5 bg-[var(--page-bg)] flex items-center justify-center gap-3 animate-in slide-in-from-bottom-2 duration-100">
+          <button onClick={applyBold} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-dark-100 transition-all" title="Bold"><Bold className="w-4 h-4" /></button>
+          <button onClick={applyItalic} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-dark-100 transition-all" title="Italic"><Italic className="w-4 h-4" /></button>
+          <button onClick={applyBulletList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-dark-100 transition-all" title="Bullets"><List className="w-4 h-4" /></button>
+          <button onClick={applyNumberedList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-dark-100 transition-all" title="Numbers"><ListOrdered className="w-4 h-4" /></button>
         </div>
       )}
 
@@ -3525,7 +3531,7 @@ onTouchEnd={() => {
           LINK INPUT
           ===================================================== */}
       {showLinkInput && !isBlocked && (
-        <div className="px-4 py-3 border-t border-white/5 bg-[#0d0a14] space-y-2 animate-in slide-in-from-bottom-2 duration-150">
+        <div className="px-4 py-3 border-t border-white/5 bg-[var(--page-bg)] space-y-2 animate-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center justify-between">
             <p className="text-xs text-dark-400 font-medium">Insert Link</p>
             <button onClick={() => { setShowLinkInput(false); setLinkUrl(""); setLinkText(""); }} className="p-1 rounded-lg hover:bg-white/10 text-dark-400 active:scale-90 transition-transform">
@@ -3540,7 +3546,7 @@ onTouchEnd={() => {
               placeholder="https://..."
               autoFocus
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertLink(); } }}
-              className="flex-1 h-9 px-3 bg-[#1a1525] border border-white/10 rounded-lg text-sm text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500/40"
+              className="flex-1 h-9 px-3 bg-[var(--glass-card-bg)] border border-[var(--glass-border)] rounded-lg text-sm text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500/40"
             />
             <button onClick={insertLink} disabled={!linkUrl.trim()} className="px-4 h-9 rounded-lg bg-primary-600 text-white text-sm font-medium disabled:opacity-30 active:scale-95 transition-transform">
               Add
@@ -3552,7 +3558,7 @@ onTouchEnd={() => {
           EMOJI PICKER — with fixed X button
           ===================================================== */}
       {showEmoji && !isBlocked && (
-        <div className="border-t border-white/10 bg-[#0d0a14] flex flex-col shrink-0 animate-in slide-in-from-bottom-3 duration-200" style={{ maxHeight: "40vh" }}>
+        <div className="border-t border-white/10 bg-[var(--page-bg)] flex flex-col shrink-0 animate-in slide-in-from-bottom-3 duration-200" style={{ maxHeight: "40vh" }}>
           {/* Fixed header with tabs and X */}
           <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 shrink-0">
             <div className="flex-1 flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
@@ -3612,7 +3618,7 @@ onTouchEnd={() => {
           ===================================================== */}
       {!isBlocked && (
         <div
-          className="px-3 py-2 border-t border-white/5 bg-[#0d0a14] shrink-0 relative"
+          className="px-3 py-2 border-t border-white/5 bg-[var(--page-bg)] shrink-0 relative"
           style={{
             paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
           }}
@@ -3628,7 +3634,7 @@ onTouchEnd={() => {
                   setShowEmoji(false);
                   setShowLinkInput(false);
                 }}
-                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-dark-400 hover:text-white active:scale-90 transition-all"
+                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-dark-400 hover:text-dark-100 active:scale-90 transition-all"
               >
                 <Plus
                   className="w-5 h-5 transition-transform duration-300"
@@ -3679,7 +3685,7 @@ onTouchEnd={() => {
                   // Close attach menu when focusing editor, but NOT emoji picker
                   if (showAttach) { setShowAttach(false); setPlusRotated(false); }
                 }}
-                className="w-full bg-[#1a1525] border border-white/10 rounded-2xl px-4 py-2.5 text-sm text-dark-100 focus:outline-none focus:border-primary-500/40 resize-none transition-colors overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-dark-500 empty:before:pointer-events-none [&_b]:font-bold [&_strong]:font-bold [&_i]:italic [&_em]:italic [&_a]:text-primary-400 [&_a]:underline [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4"
+                className="w-full bg-[var(--glass-card-bg)] border border-[var(--glass-border)] rounded-2xl px-4 py-2.5 text-sm text-dark-100 focus:outline-none focus:border-primary-500/40 resize-none transition-colors overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-dark-500 empty:before:pointer-events-none [&_b]:font-bold [&_strong]:font-bold [&_i]:italic [&_em]:italic [&_a]:text-primary-400 [&_a]:underline [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4"
                 style={{ minHeight: 40, maxHeight: 120 }}
                 suppressContentEditableWarning
               />
@@ -3695,7 +3701,7 @@ onTouchEnd={() => {
             <button
               onClick={() => { setShowFormatBar(!showFormatBar); setShowEmoji(false); setShowLinkInput(false); }}
               className={`w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 active:scale-90 transition-all shrink-0 ${
-                showFormatBar ? "text-primary-400" : "text-dark-400 hover:text-white"
+                showFormatBar ? "text-primary-400" : "text-dark-400 hover:text-dark-100"
               }`}
             >
               <Bold className="w-4 h-4" />
@@ -3704,7 +3710,7 @@ onTouchEnd={() => {
             <button
               onClick={() => { setShowEmoji(!showEmoji); setShowAttach(false); setPlusRotated(false); setShowFormatBar(false); setShowLinkInput(false); }}
               className={`w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 active:scale-90 transition-all shrink-0 ${
-                showEmoji ? "text-primary-400" : "text-dark-400 hover:text-white"
+                showEmoji ? "text-primary-400" : "text-dark-400 hover:text-dark-100"
               }`}
             >
               <Smile className="w-5 h-5" />
@@ -3719,7 +3725,7 @@ onTouchEnd={() => {
                   setShowAttach(false);
                   setPlusRotated(false);
                 }}
-                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-dark-400 hover:text-white active:scale-90 transition-all shrink-0"
+                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-dark-400 hover:text-dark-100 active:scale-90 transition-all shrink-0"
               >
                 <Mic className="w-5 h-5" />
               </button>
@@ -3840,7 +3846,7 @@ onTouchEnd={() => {
                 } ${
                   isMineCtx
                     ? "bg-primary-600/90 text-white rounded-br-md"
-                    : "bg-[#1a1525] border border-white/5 text-dark-100 rounded-bl-md"
+                    : "bg-[var(--glass-card-bg)] border border-[var(--glass-border-sm)] text-dark-100 rounded-bl-md"
                 }`}>
                   {/* Media preview */}
                   {contextMenuMsg.media && contextMenuMsg.media.length > 0 && (
@@ -4038,7 +4044,7 @@ onTouchEnd={() => {
             onClick={() => setReactionPickerMsgId(null)}
           >
             <div
-              className="bg-[#0d0a14] border-t border-white/10 rounded-t-3xl max-h-[50vh] flex flex-col animate-in slide-in-from-bottom-4 duration-300"
+              className="bg-[var(--page-bg)] border-t border-white/10 rounded-t-3xl max-h-[50vh] flex flex-col animate-in slide-in-from-bottom-4 duration-300"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 shrink-0">
@@ -4126,7 +4132,7 @@ onTouchEnd={() => {
           ===================================================== */}
       {showChatInfo && typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[99998] bg-[#0a0812] flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="fixed inset-0 z-[99998] bg-[var(--page-bg)] flex flex-col animate-in slide-in-from-right duration-200">
             <header
               className="glass-header flex items-center gap-3 px-4 shrink-0"
               style={{

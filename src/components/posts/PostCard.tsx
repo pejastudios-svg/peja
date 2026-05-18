@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 import { useConfirm } from "@/context/ConfirmContext";
@@ -37,6 +38,25 @@ interface PostCardProps {
   sourceKey?: string;
   onConfirm?: (postId: string) => void;
   onShare?: (post: Post) => void;
+}
+
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  if (km < 10) return `${km.toFixed(1)} km`;
+  return `${Math.round(km)} km`;
 }
 
 function PostCardComponent({ post, onConfirm, onShare, sourceKey }: PostCardProps) {
@@ -96,6 +116,16 @@ useEffect(() => {
   }, [post.id]);
 
   const isExpired = differenceInHours(new Date(), new Date(post.created_at)) >= 24;
+
+  // Distance from user — only shown when both user and post have coordinates.
+  const distanceText = (() => {
+    const ulat = user?.last_latitude;
+    const ulng = user?.last_longitude;
+    const plat = post.location?.latitude;
+    const plng = post.location?.longitude;
+    if (ulat == null || ulng == null || !plat || !plng) return null;
+    return formatDistance(haversineKm(ulat, ulng, plat, plng));
+  })();
 
 const handleConfirmClick = async (e: React.MouseEvent) => {
   e.stopPropagation();
@@ -233,36 +263,50 @@ const handleShareClick = async (e: React.MouseEvent) => {
 
   return (
     <article
-      className="glass-card overflow-hidden cursor-pointer hover:ring-1 hover:ring-white/10 transition-all active:scale-[0.99] duration-200"
+      className="glass-card-feed overflow-hidden cursor-pointer sm:hover:ring-1 sm:hover:ring-white/10 transition-all active:scale-[0.99] duration-200"
       onClick={handleCardClick}
     >
+      {/* Top section — padded so header chips don't touch the edge */}
+      <div className="px-4 sm:px-6 pt-4 sm:pt-5">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-       <div className="flex items-center gap-2 min-w-0 flex-1">
-          {!isExpired ? (
-            <span className="flex items-center gap-1.5 shrink-0">
-              <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-              <span className="text-xs font-medium text-red-400">LIVE</span>
-            </span>
-          ) : (
-            <span className="w-2 h-2 bg-dark-500 rounded-full shrink-0" />
-          )}
-          <span className="text-dark-600 shrink-0">|</span>
-          <span className="text-xs text-dark-400 flex items-center gap-1 min-w-0">
-            <MapPin className="w-3 h-3 shrink-0" />
-            <span className="truncate">{post.address || "Unknown location"}</span>
+      <div className="flex items-center gap-2 mb-3 min-w-0">
+        {!isExpired ? (
+          <span className="flex items-center gap-1.5 shrink-0">
+            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+            <span className="text-xs font-bold text-red-400 tracking-wide">LIVE</span>
           </span>
-        </div>
-        <span className="text-xs text-dark-500 flex items-center gap-1 shrink-0 ml-2">
+        ) : (
+          <span className="w-2 h-2 bg-dark-500 rounded-full shrink-0" />
+        )}
+
+        {distanceText && post.location && (
+          <Link
+            href={`/map?post=${post.id}&lat=${post.location.latitude}&lng=${post.location.longitude}`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-600/15 border border-primary-600/40 text-primary-600 text-[11px] font-bold shrink-0 hover:bg-primary-600/25 transition-colors"
+          >
+            <MapPin className="w-2.5 h-2.5" />
+            {distanceText}
+          </Link>
+        )}
+
+        <span className="text-xs text-dark-400 flex items-center gap-1 min-w-0 flex-1">
+          <MapPin className="w-3 h-3 shrink-0" />
+          <span className="truncate">{post.address || "Unknown location"}</span>
+        </span>
+
+        <span className="text-xs text-dark-500 flex items-center gap-1 shrink-0">
           <Clock className="w-3 h-3 shrink-0" />
           {timeAgo}
         </span>
       </div>
+      </div>
+      {/* end top padded section */}
 
-      {/* Media */}
+      {/* Media — edge-to-edge: card has no internal padding so this naturally spans full width */}
       {post.media && post.media.length > 0 && (
         <div
-          className="relative -mx-6 mb-3"
+          className="relative"
           onClick={(e) => {
             e.stopPropagation();
             if (!currentMedia) return;
@@ -388,6 +432,8 @@ const handleShareClick = async (e: React.MouseEvent) => {
         </div>
       )}
 
+      {/* Bottom section — padded so text/buttons don't touch the screen edge */}
+      <div className="px-4 sm:px-6 pt-3 pb-4 sm:pb-5">
       {/* Category */}
       <div className="mb-3">
         <Badge variant={badgeVariant}>{category?.name || post.category}</Badge>
@@ -431,7 +477,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
       {/* Stats */}
       <div className="flex items-center justify-between text-sm text-dark-400 mb-4">
         <span className="flex items-center gap-1">
-          <CheckCircle className={`w-4 h-4 ${isConfirmed ? "text-primary-400 fill-primary-400" : ""}`} />
+          <CheckCircle className={`w-4 h-4 ${isConfirmed ? "text-primary-400" : ""}`} />
           {confirmations}
         </span>
         <span className="flex items-center gap-1">
@@ -455,7 +501,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
   }`}
 >
   <ConfirmConfetti trigger={confettiTrigger} />
-  <CheckCircle className={`w-4 h-4 ${isConfirmed ? "fill-current" : ""}`} />
+  <CheckCircle className="w-4 h-4" strokeWidth={2.2} />
   <span>{isConfirmed ? "Confirmed" : "Confirm"}</span>
 </button>
 
@@ -474,6 +520,8 @@ const handleShareClick = async (e: React.MouseEvent) => {
           <Share2 className="w-4 h-4" />
         </button>
       </div>
+      </div>
+      {/* end bottom padded section */}
 
       <ImageLightbox
   isOpen={lightboxOpen}

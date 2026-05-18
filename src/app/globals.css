@@ -2,7 +2,7 @@
 
 @theme {
   --font-family-sans: "Poppins", system-ui, sans-serif;
-  
+
   --color-primary-50: #f5f3ff;
   --color-primary-100: #ede9fe;
   --color-primary-200: #ddd6fe;
@@ -14,7 +14,7 @@
   --color-primary-800: #5b21b6;
   --color-primary-900: #4c1d95;
   --color-primary-950: #2e1065;
-  
+
   --color-dark-50: #f8fafc;
   --color-dark-100: #f1f5f9;
   --color-dark-200: #e2e8f0;
@@ -24,22 +24,120 @@
   --color-dark-600: #475569;
   --color-dark-700: #334155;
   --color-dark-800: #1e293b;
-  --color-dark-900: #0f172a;
-  --color-dark-950: #020617;
+  --color-dark-900: #0a0612;
+  --color-dark-950: #000000;
 }
 
-html,
-html body {
-  background-color: #0c0818 !important;
+/* Theme tokens — default dark values, identical to pre-theme.
+   Light overrides in [data-theme="light"] below.
+   Tailwind dark- and primary- utilities pick these up automatically. */
+:root {
+  --page-bg: #000000;
+  --body-bg: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 58, 237, 0.12), transparent), #000000;
+  --fg-default: #f8fafc;
+
+  --glass-bg: rgba(15, 10, 26, 0.85);
+  --glass-sm-bg: rgba(15, 10, 26, 0.75);
+  --glass-card-bg: #0a0612;
+  --glass-strong-bg: #000000;
+  --glass-header-bg: rgba(0, 0, 0, 0.85);
+  --glass-footer-bg: rgba(0, 0, 0, 0.9);
+  --glass-float-bg: rgba(10, 6, 18, 0.92);
+  --glass-input-bg: rgba(15, 10, 26, 0.6);
+
+  --glass-border: rgba(139, 92, 246, 0.2);
+  --glass-border-sm: rgba(139, 92, 246, 0.15);
+  --glass-border-strong: rgba(139, 92, 246, 0.45);
+  --glass-border-float: rgba(139, 92, 246, 0.25);
+
+  --glass-shadow: 0 32px 80px 0 rgba(0, 0, 0, 0.45), 0 8px 24px 0 rgba(0, 0, 0, 0.18);
+  --glass-shadow-sm: 0 14px 32px 0 rgba(0, 0, 0, 0.2), 0 2px 8px 0 rgba(0, 0, 0, 0.1);
+  --glass-shadow-strong: 0 32px 80px 0 rgba(0, 0, 0, 0.55);
+  --glass-shadow-header: 0 4px 20px 0 rgba(0, 0, 0, 0.4);
+  --glass-shadow-footer: 0 -4px 20px 0 rgba(0, 0, 0, 0.4);
+  --glass-shadow-float: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
+
+  --peja-btn-outline: rgba(139, 92, 246, 0.5);
+  /* Peja center floating button (BottomNav) */
+  --peja-btn-bg: linear-gradient(135deg, rgba(100, 50, 200, 0.35) 0%, rgba(80, 40, 160, 0.55) 100%);
+  --peja-btn-pressed-bg: #000000;
+
+  /* Soft contrast surface for chips/players/badges that need to read on the
+     page background (not on a colored bubble). Slightly visible in both themes. */
+  --soft-surface: rgba(255, 255, 255, 0.05);
+  --soft-surface-strong: rgba(255, 255, 255, 0.1);
+}
+
+/* ── Light mode overrides ──
+ * Inverts the dark-* neutral scale (text-dark-200 etc. flip automatically),
+ * swaps glass surfaces to cream/white, lightens shadows.
+ * primary-* stays the same — purple is purple.
+ */
+:root[data-theme="light"] {
+  --page-bg: #ffffff;
+  --body-bg: #ffffff;
+  --fg-default: #0c0a14;
+
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-sm-bg: rgba(255, 255, 255, 0.75);
+  --glass-card-bg: #ffffff;
+  --glass-strong-bg: #ffffff;
+  --glass-header-bg: rgba(255, 255, 255, 0.9);
+  --glass-footer-bg: rgba(255, 255, 255, 0.95);
+  --glass-float-bg: rgba(255, 255, 255, 0.92);
+  --glass-input-bg: rgba(255, 255, 255, 0.7);
+
+  --glass-border: rgba(0, 0, 0, 0.14);
+  --glass-border-sm: rgba(0, 0, 0, 0.1);
+  --glass-border-strong: rgba(124, 58, 237, 0.4);
+  --glass-border-float: rgba(0, 0, 0, 0.14);
+
+  /* Tight elevation shadow — the previous 32px / 80px-blur value rendered a
+     visible rectangular boundary on the pure-white page where the gradient
+     hit zero, reading as a "sharp outline" behind cards. */
+  --glass-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04), 0 4px 12px 0 rgba(0, 0, 0, 0.05);
+  --glass-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 2px 6px 0 rgba(0, 0, 0, 0.04);
+  --glass-shadow-strong: 0 4px 16px 0 rgba(0, 0, 0, 0.08), 0 12px 32px 0 rgba(0, 0, 0, 0.06);
+  --glass-shadow-header: 0 4px 20px 0 rgba(0, 0, 0, 0.06);
+  --glass-shadow-footer: 0 -4px 20px 0 rgba(0, 0, 0, 0.06);
+  --glass-shadow-float: 0 4px 20px 0 rgba(0, 0, 0, 0.1);
+
+  --peja-btn-outline: #ffffff;
+  /* Light-mode Peja center button: white default + white when pressed */
+  --peja-btn-bg: #ffffff;
+  --peja-btn-pressed-bg: #ffffff;
+
+  /* Light-mode soft surface: gentle grey so chips/players are visible on white. */
+  --soft-surface: rgba(0, 0, 0, 0.05);
+  --soft-surface-strong: rgba(0, 0, 0, 0.08);
+
+  /* Invert the neutral scale so existing text-dark-* / bg-dark-* utilities flip */
+  --color-dark-50: #0c0a14;
+  --color-dark-100: #1a1530;
+  --color-dark-200: #3f3a52;
+  --color-dark-300: #52525b;
+  --color-dark-400: #71717a;
+  --color-dark-500: #a1a1aa;
+  --color-dark-600: #d4d4d8;
+  --color-dark-700: #e4e4e7;
+  --color-dark-800: #ececec;
+  --color-dark-900: #fafaf7;
+  --color-dark-950: #ffffff;
+}
+
+html {
+  background-color: var(--page-bg);
+  transition: background-color 0.3s ease;
 }
 
 body {
-  background: linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e1033 100%);
+  background: var(--body-bg);
   min-height: 100vh;
-  color: #f8fafc;
+  color: var(--fg-default);
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
 /* Allow text selection in input fields and textareas */
@@ -52,89 +150,113 @@ textarea,
 
 /* Enhanced Glass Effects - Works on all browsers */
 .glass {
-  background: rgba(30, 16, 51, 0.85);
+  background: var(--glass-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(139, 92, 246, 0.2);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
 }
 
 .glass-sm {
-  background: rgba(30, 16, 51, 0.75);
+  background: var(--glass-sm-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(139, 92, 246, 0.15);
-  box-shadow: 0 4px 16px 0 rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--glass-border-sm);
+  box-shadow: var(--glass-shadow-sm);
 }
 
 .glass-card {
-  background: rgba(30, 16, 51, 1);
+  background: var(--glass-card-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(139, 92, 246, 0.2);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
   border-radius: 1rem;
   padding: 1.5rem;
 }
 
+/* Feed-card variant: edge-to-edge on mobile (Instagram-style), boxed on tablet+.
+   No internal padding — child wrappers in PostCard control horizontal padding so
+   the video can sit edge-to-edge while text content stays inset. */
+.glass-card-feed {
+  background: var(--glass-card-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: 1rem;
+  padding: 0;
+}
+@media (max-width: 639px) {
+  .glass-card-feed {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+    box-shadow: none;
+  }
+}
+
 /* Strong glass for menus, dropdowns, modals */
 .glass-strong {
-  background: rgba(30, 16, 51, 0.95);
+  background: var(--glass-strong-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(60px);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--glass-border-strong);
+  box-shadow: var(--glass-shadow-strong);
 }
 
 /* Header specific */
 .glass-header {
-  background: rgba(20, 10, 40, 0.9);
+  background: var(--glass-header-bg);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(139, 92, 246, 0.2);
-  box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-header);
+  /* Push content below the system status bar / notch on every device. */
+  padding-top: var(--app-top-inset, env(safe-area-inset-top, 0px));
 }
 
 /* Footer/BottomNav specific */
 .glass-footer {
-  background: rgba(20, 10, 40, 0.95);
+  background: var(--glass-footer-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-top: 1px solid rgba(139, 92, 246, 0.2);
-  box-shadow: 0 -4px 20px 0 rgba(0, 0, 0, 0.4);
+  border-top: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-footer);
 }
 
 /* Map legend and floating elements */
 .glass-float {
-  background: rgba(30, 16, 51, 0.92);
+  background: var(--glass-float-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(139, 92, 246, 0.25);
-  box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--glass-border-float);
+  box-shadow: var(--glass-shadow-float);
 }
 
 .glass-input {
-  background: rgba(30, 16, 51, 0.6);
+  background: var(--glass-input-bg);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  border: 1px solid var(--glass-border);
   border-radius: 0.75rem;
   padding-top: 0.75rem;
   padding-bottom: 0.75rem;
   width: 100%;
   outline: none;
   transition: all 0.2s;
-  color: #f8fafc;
+  color: var(--fg-default);
 }
 
 .glass-input:focus {
   border-color: rgba(139, 92, 246, 0.5);
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
-  background: rgba(30, 16, 51, 0.8);
+  /* Keep the input surface from flipping to dark on focus — use the same
+     glass-input background as the unfocused state so it stays light in
+     light mode and dark in dark mode. */
+  background: var(--glass-input-bg);
 }
 
 .glass-input::placeholder {
-  color: #94a3b8;
+  color: var(--color-dark-400);
 }
 
 /* Fix for date inputs */
@@ -174,10 +296,10 @@ textarea,
 }
 
 .btn-secondary {
-  background: rgba(30, 16, 51, 0.8);
+  background: var(--glass-input-bg);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(139, 92, 246, 0.2);
-  color: #e2e8f0;
+  border: 1px solid var(--glass-border);
+  color: var(--fg-default);
   font-weight: 500;
   border-radius: 0.75rem;
   padding: 0.75rem 1rem;
@@ -1078,12 +1200,37 @@ body.modal-open {
   background: rgba(18, 10, 30, 0.95);
   border: 1px solid rgba(34, 197, 94, 0.4);
   border-radius: 1.5rem;
-  box-shadow: 
+  box-shadow:
     0 0 60px rgba(34, 197, 94, 0.25),
     0 20px 60px rgba(0, 0, 0, 0.5);
   min-width: 300px;
   z-index: 10;
 }
+
+/* Light-theme overrides for the SOS loading/notified card — they're rendered
+   over a dark scrim, so they should still look like a contained card surface,
+   just light instead of black so the contents remain readable. */
+:root[data-theme="light"] .sos-loading-card {
+  background: #ffffff;
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  box-shadow:
+    0 0 60px rgba(124, 58, 237, 0.18),
+    0 20px 60px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+:root[data-theme="light"] .sos-notified-card {
+  background: #ffffff;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  box-shadow:
+    0 0 60px rgba(34, 197, 94, 0.18),
+    0 20px 60px rgba(0, 0, 0, 0.12);
+}
+/* Progress-dot pending state was a near-transparent white that vanished on white. */
+:root[data-theme="light"] .progress-dot-pending,
+:root[data-theme="light"] .sos-progress-dot.pending {
+  background: rgba(15, 10, 26, 0.18);
+}
+
 /* Icon Container */
 .sos-icon-container {
   position: relative;
@@ -1560,6 +1707,20 @@ body.modal-open {
   color: #f8fafc !important;
 }
 
+/* PostCard distance pill -> map preview popup. Theme-aware glass surface so
+   it doesn't get the default dark-purple maplibre treatment. */
+.peja-post-preview-popup .maplibregl-popup-content {
+  background: var(--glass-strong-bg) !important;
+  color: var(--fg-default) !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25) !important;
+  border-radius: 14px !important;
+  padding: 12px !important;
+}
+.peja-post-preview-popup .maplibregl-popup-tip {
+  border-top-color: var(--glass-strong-bg) !important;
+}
+
 @keyframes slide-down {
   from {
     opacity: 0;
@@ -1692,6 +1853,19 @@ html.capacitor-native .cap-status-pad {
     0 0 12px rgba(139, 92, 246, 0.3),
     0 0 24px rgba(139, 92, 246, 0.15);
   animation: vip-glow 3s ease-in-out infinite;
+}
+
+/* Light mode: solid purple so the VIP badge stands out on white surfaces. */
+:root[data-theme="light"] .vip-badge {
+  background: linear-gradient(135deg, #8b5cf6, #a855f7);
+  border-color: #7c3aed;
+  color: #ffffff;
+  box-shadow:
+    0 0 12px rgba(139, 92, 246, 0.45),
+    0 0 24px rgba(139, 92, 246, 0.18);
+}
+:root[data-theme="light"] .vip-badge svg {
+  color: #ffffff !important;
 }
 
 .vip-badge::before {
@@ -2060,6 +2234,30 @@ input, textarea, [contenteditable] {
   --cap-status-bar-height: env(safe-area-inset-top, 0px);
   --cap-bottom-inset: env(safe-area-inset-bottom, 0px);
   --keyboard-height: 0px;
+
+  /* Single source of truth for the top inset that floating headers must clear.
+     iOS Safari/PWA: env(safe-area-inset-top) returns the notch height.
+     Capacitor (iOS + Android): CapacitorInit.tsx overrides --cap-status-bar-height
+     with the real value from @capacitor/status-bar.
+     Web on regular Android Chrome: both fall back to 0 (system bar isn't ours to cover). */
+  --app-top-inset: max(env(safe-area-inset-top, 0px), var(--cap-status-bar-height, 0px));
+}
+
+/* In native, status bar height varies wildly by OEM (24-48dp on Android,
+   notch / Dynamic Island on iOS). If StatusBar.getInfo() returned 0 for any
+   reason we still want to clear ~24dp of system chrome. */
+html.capacitor-native {
+  --app-top-inset: max(env(safe-area-inset-top, 0px), var(--cap-status-bar-height, 0px), 24px);
+}
+
+/* Use on the page-level <main> to clear the fixed Header pill on any device.
+   Replaces brittle `pt-14`/`pt-16`/`pt-20` Tailwind classes that don't respect
+   the system status bar.
+   Formula: status-bar inset + 56px (h-14, the tallest header inner row) + 8px
+   breathing room. No artificial 16px web floor — on web the safe-area inset
+   is 0 and we want the page content to sit close under the header. */
+.pt-app-header {
+  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 64px);
 }
 
 /* Android-specific overrides */

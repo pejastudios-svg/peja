@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function GlobalError({
   error,
@@ -9,17 +9,30 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // Read the saved theme directly — global-error.tsx mounts outside ThemeProvider
+  // so we can't use the context, and no globals.css is loaded here.
+  const [isLight, setIsLight] = useState(false);
+  useEffect(() => {
+    try {
+      setIsLight(localStorage.getItem("peja-theme") === "light");
+    } catch {}
+  }, []);
+
   useEffect(() => {
     console.error("[Peja] Global error:", error);
   }, [error]);
+
+  const palette = isLight
+    ? { bg: "#ffffff", fg: "#0c0a14", sub: "#52525b", border: "rgba(0,0,0,0.1)" }
+    : { bg: "#0c0818", fg: "#ffffff", sub: "#94a3b8", border: "rgba(255,255,255,0.1)" };
 
   return (
     <html>
       <body
         style={{
           margin: 0,
-          background: "#0c0818",
-          color: "white",
+          background: palette.bg,
+          color: palette.fg,
           fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
           display: "flex",
           alignItems: "center",
@@ -51,7 +64,7 @@ export default function GlobalError({
           <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
             Something went wrong
           </h2>
-          <p style={{ fontSize: 14, color: "#94a3b8", marginBottom: 24, lineHeight: 1.5 }}>
+          <p style={{ fontSize: 14, color: palette.sub, marginBottom: 24, lineHeight: 1.5 }}>
             We hit an unexpected issue. This is usually temporary.
           </p>
           <button
@@ -77,9 +90,9 @@ export default function GlobalError({
               width: "100%",
               padding: "12px 24px",
               borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.1)",
+              border: `1px solid ${palette.border}`,
               background: "transparent",
-              color: "#94a3b8",
+              color: palette.sub,
               fontSize: 14,
               fontWeight: 500,
               cursor: "pointer",

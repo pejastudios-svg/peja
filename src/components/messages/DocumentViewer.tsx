@@ -91,11 +91,11 @@ export function DocumentViewer({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[99999] flex flex-col bg-[#0a0812] animate-in fade-in duration-200"
+      className="fixed inset-0 z-[99999] flex flex-col bg-[var(--page-bg)] animate-in fade-in duration-200"
     >
       {/* Header */}
       <header
-        className="flex items-center justify-between px-4 shrink-0 border-b border-white/5 bg-[#0d0a14]"
+        className="flex items-center justify-between px-4 shrink-0 border-b border-white/5 bg-[var(--page-bg)]"
         style={{
           height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
           paddingTop: "env(safe-area-inset-top, 0px)",

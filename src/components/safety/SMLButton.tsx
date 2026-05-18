@@ -420,7 +420,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
         {hasSharedWithMe && (
           <div
             className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white z-20"
-            style={{ background: "#22c55e", border: "2px solid #0c0818" }}
+            style={{ background: "#22c55e" }}
           >
             {sharedWithMe.length}
           </div>
@@ -444,7 +444,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
             style={{
               width: 340,
               maxWidth: "100%",
-              background: "rgba(18, 12, 36, 0.98)",
+              background: "var(--glass-strong-bg)",
               border: "1px solid rgba(255,255,255,0.1)",
               boxShadow: "0 -10px 40px rgba(0,0,0,0.6), 0 0 20px rgba(124,58,237,0.1)",
             }}
@@ -489,7 +489,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                         )}
                       </div>
                       <div className="flex-1 text-left min-w-0">
-                        <p className="text-xs font-medium text-white truncate">{s.full_name}</p>
+                        <p className="text-xs font-medium text-dark-100 truncate">{s.full_name}</p>
                         <p className={`text-[10px] ${overdue ? "text-red-400" : "text-green-400"}`}>
                           {overdue ? "Check-in overdue" : "Sharing location"}
                         </p>
@@ -535,7 +535,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                   <MapPin className="w-4 h-4 text-primary-400" />
                 </div>
                 <div className="text-left">
-                  <p className="text-xs font-medium text-white">Share My Location</p>
+                  <p className="text-xs font-medium text-dark-100">Share My Location</p>
                   <p className="text-[10px] text-dark-500">Alert emergency contacts</p>
                 </div>
               </button>
@@ -553,7 +553,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
             <div
               className={`w-full max-w-sm rounded-t-3xl sm:rounded-2xl p-5 pointer-events-auto ${activeClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
               style={{
-                background: "rgba(18, 12, 36, 0.98)",
+                background: "var(--glass-strong-bg)",
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 -10px 40px rgba(0,0,0,0.5)",
               }}
@@ -607,10 +607,10 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
           <div className="fixed inset-0 z-[10001] flex items-center justify-center p-4">
             <div
               className={`w-full max-w-sm rounded-2xl p-6 ${cancelClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
-              style={{ background: "rgba(18, 12, 36, 0.98)", border: "1px solid rgba(255,255,255,0.1)" }}
+              style={{ background: "var(--glass-strong-bg)", border: "1px solid rgba(255,255,255,0.1)" }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-bold text-white mb-2">Stop Sharing?</h3>
+              <h3 className="text-lg font-bold text-dark-100 mb-2">Stop Sharing?</h3>
               <p className="text-sm text-dark-400 mb-4">Your contacts will be notified that you stopped sharing.</p>
               <div className="flex gap-3">
                 <button onClick={() => { closeCancelConfirm(); setShowActiveModal(true); }} className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-white/5 text-dark-200 border border-white/10">Keep Sharing</button>
@@ -629,7 +629,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
             <div
               className={`w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl pointer-events-auto ${shareClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
               style={{
-                background: "rgba(18, 12, 36, 0.98)",
+                background: "var(--glass-strong-bg)",
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 -10px 40px rgba(0,0,0,0.5)",
               }}
@@ -641,7 +641,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
               <div className="p-5">
                 <div className="flex items-center justify-between mb-5">
                   <div>
-                    <h2 className="text-lg font-bold text-white">Share My Location</h2>
+                    <h2 className="text-lg font-bold text-dark-100">Share My Location</h2>
                     <p className="text-sm text-dark-400">Alert your emergency contacts</p>
                   </div>
                   <button onClick={() => closeShareModal()} className="p-1.5 rounded-lg hover:bg-white/10">
@@ -665,7 +665,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                       {selectedContacts.length === contacts.length ? "Deselect All" : "Select All"}
                     </button>
                   </div>
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
                     {contacts.length === 0 ? (
                       <p className="text-sm text-dark-500 text-center py-4">No accepted contacts. Add emergency contacts first.</p>
                     ) : contacts.map(c => {
@@ -674,13 +674,13 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                         <button
                           key={c.contact_user_id}
                           onClick={() => setSelectedContacts(prev => sel ? prev.filter(id => id !== c.contact_user_id) : [...prev, c.contact_user_id])}
-                          className={`w-full flex items-center gap-2.5 p-2.5 rounded-xl text-left transition-colors ${sel ? "bg-primary-600/15 border border-primary-500/30" : "bg-white/5 border border-white/5"}`}
+                          className={`w-full flex items-center gap-3 p-3 rounded-xl text-left transition-colors ${sel ? "bg-primary-600/15 border border-primary-500/30" : "bg-[var(--glass-input-bg)] border border-[var(--glass-border)] hover:bg-[var(--glass-bg)]"}`}
                         >
                           <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${sel ? "bg-primary-600" : "border border-dark-500"}`}>
                             {sel && <CheckCircle className="w-3.5 h-3.5 text-white" />}
                           </div>
-                          <div className="w-7 h-7 rounded-full bg-primary-600/20 overflow-hidden shrink-0">
-                            {c.avatar_url ? <img src={c.avatar_url} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-primary-400">{c.full_name[0]}</div>}
+                          <div className="w-8 h-8 rounded-full bg-primary-600/20 overflow-hidden shrink-0 flex items-center justify-center">
+                            {c.avatar_url ? <img src={c.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-primary-400">{c.full_name[0]}</span>}
                           </div>
                           <span className="text-sm text-dark-100">{c.full_name}</span>
                         </button>
@@ -699,7 +699,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                       <button
                         key={opt.value}
                         onClick={() => setInterval_(opt.value)}
-                        className={`py-2 rounded-xl text-xs font-medium transition-colors ${interval === opt.value ? "bg-primary-600 text-white" : "bg-white/5 text-dark-300"}`}
+                        className={`py-2.5 rounded-xl text-xs font-medium transition-colors ${interval === opt.value ? "bg-primary-600 text-white" : "bg-[var(--glass-input-bg)] border border-[var(--glass-border)] text-dark-200 hover:bg-[var(--glass-bg)]"}`}
                       >
                         {opt.label}
                       </button>
@@ -719,9 +719,8 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                 <button
                   onClick={handleStart}
                   disabled={starting || selectedContacts.length === 0}
-                  className="w-full py-3.5 rounded-xl font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                  className="w-full py-3.5 rounded-xl font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
                   style={{
-                    background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
                     boxShadow: "0 4px 20px rgba(124, 58, 237, 0.3)",
                   }}
                 >

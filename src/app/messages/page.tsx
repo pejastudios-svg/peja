@@ -244,7 +244,7 @@ return (
         </div>
       </header>
 
-      <main className="pt-14">
+      <main className="pt-app-header">
         {conversations.length > 0 && (
           <div className="px-4 pt-3 pb-1">
             <div className="relative">
@@ -288,7 +288,7 @@ return (
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
             <input value={vipSearch} onChange={(e) => handleVipSearch(e.target.value)}
               placeholder="Search by name or email..."
-              className="w-full h-11 pl-10 pr-4 bg-[#1E1B24] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-all"
+              className="w-full h-11 pl-10 pr-4 bg-[var(--glass-input-bg)] border border-[var(--glass-border)] rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-all"
               autoFocus />
           </div>
           <div className="max-h-[400px] overflow-y-auto space-y-1 scrollbar-thin scrollbar-thumb-white/10">
@@ -350,7 +350,7 @@ function ConversationRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className={`text-sm font-semibold truncate ${conv.unread_count > 0 ? "text-white" : "text-dark-100"}`}>
+            <span className={`text-sm font-semibold truncate ${conv.unread_count > 0 ? "text-dark-50" : "text-dark-100"}`}>
               {conv.other_user.full_name || "Unknown"}
             </span>
             {conv.other_user.is_admin && <Crown className="w-3.5 h-3.5 text-yellow-400 shrink-0" />}

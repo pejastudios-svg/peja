@@ -128,35 +128,28 @@ export function SlowConnectionBanner() {
       <div
         className="mx-4 mt-2 flex items-center gap-3 px-4 py-3 rounded-2xl max-w-md w-full"
         style={{
-          background: isSlow
-            ? "rgba(234, 179, 8, 0.15)"
-            : "rgba(34, 197, 94, 0.15)",
-          border: `1px solid ${isSlow ? "rgba(234, 179, 8, 0.25)" : "rgba(34, 197, 94, 0.25)"}`,
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
+          background: isSlow ? "#eab308" : "#22c55e",
+          boxShadow: isSlow
+            ? "0 6px 24px rgba(234, 179, 8, 0.35)"
+            : "0 6px 24px rgba(34, 197, 94, 0.35)",
           animation: "slideDown 0.3s ease-out",
         }}
       >
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-          style={{
-            background: isSlow
-              ? "rgba(234, 179, 8, 0.2)"
-              : "rgba(34, 197, 94, 0.2)",
-          }}
+          style={{ background: "rgba(255, 255, 255, 0.22)" }}
         >
           {isSlow ? (
-            <WifiOff className="w-4 h-4 text-yellow-400" />
+            <WifiOff className="w-4 h-4 text-white" />
           ) : (
-            <Wifi className="w-4 h-4 text-green-400" />
+            <Wifi className="w-4 h-4 text-white" />
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium ${isSlow ? "text-yellow-300" : "text-green-300"}`}>
+          <p className="text-sm font-semibold text-white">
             {isSlow ? "Slow Connection" : "Connection Restored"}
           </p>
-          <p className="text-[11px] text-dark-400">
+          <p className="text-[11px] text-white/85">
             {isSlow
               ? "Content may take longer to load"
               : "You're back online with good speed"}
@@ -165,9 +158,10 @@ export function SlowConnectionBanner() {
         {isSlow && (
           <button
             onClick={handleDismiss}
-            className="p-1.5 rounded-lg hover:bg-white/10 shrink-0"
+            className="p-1.5 rounded-lg hover:bg-white/15 shrink-0"
+            aria-label="Dismiss"
           >
-            <X className="w-4 h-4 text-dark-400" />
+            <X className="w-4 h-4 text-white" />
           </button>
         )}
       </div>

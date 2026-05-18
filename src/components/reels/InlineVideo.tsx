@@ -515,7 +515,7 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
   const controlsBar = (
     <div
       className={`absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 z-[3] ${showControls || !isPlaying ? "opacity-100" : "opacity-0"}`}
-      style={isExpanded ? { padding: "2.5rem 1.5rem", paddingBottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px))" } : { padding: "0.75rem" }}
+      style={isExpanded ? { padding: "2.5rem 1.5rem", paddingBottom: "calc(3.5rem + env(safe-area-inset-bottom, 0px))" } : { padding: "0.75rem 1.25rem" }}
       onClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
     >

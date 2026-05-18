@@ -146,7 +146,7 @@ function WelcomeScreen({ onStart, onSkip }: { onStart: () => void; onSkip: () =>
       <div
         className="relative w-full max-w-sm rounded-3xl overflow-hidden"
         style={{
-          background: "rgba(18, 12, 36, 0.98)",
+          background: "var(--glass-strong-bg)",
           border: "1px solid rgba(139, 92, 246, 0.2)",
           boxShadow: "0 0 80px rgba(139, 92, 246, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
         }}
@@ -188,7 +188,7 @@ function WelcomeScreen({ onStart, onSkip }: { onStart: () => void; onSkip: () =>
 
         {/* Content */}
         <div className="p-6 text-center">
-          <h2 className="text-xl font-bold text-white mb-2">Welcome to Peja</h2>
+          <h2 className="text-xl font-bold text-dark-100 mb-2">Welcome to Peja</h2>
           <p className="text-sm text-dark-400 leading-relaxed mb-6">
             Your community safety platform. Let us show you around so you can make the most of every feature.
           </p>
@@ -383,7 +383,7 @@ function SpotlightOverlay({
         <div
           className="rounded-2xl p-5 relative overflow-hidden"
           style={{
-            background: "rgba(18, 12, 36, 0.97)",
+            background: "var(--glass-strong-bg)",
             border: "1px solid rgba(139, 92, 246, 0.2)",
             boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 30px rgba(139, 92, 246, 0.05)",
           }}
@@ -410,7 +410,7 @@ function SpotlightOverlay({
           </div>
 
           {/* Content */}
-          <h3 className="text-base font-bold text-white mb-1.5">{step.title}</h3>
+          <h3 className="text-base font-bold text-dark-100 mb-1.5">{step.title}</h3>
           <p className="text-sm text-dark-400 leading-relaxed mb-4">{step.description}</p>
 
           {/* Progress + Next */}

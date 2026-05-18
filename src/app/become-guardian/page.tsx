@@ -19,6 +19,8 @@ import {
   Award,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { ProfileCompletionGate } from "@/components/profile/ProfileCompletionGate";
+import { profileCompletion } from "@/lib/profileComplete";
 
 export default function BecomeGuardianPage() {
   const toastApi = useToast();
@@ -97,6 +99,11 @@ export default function BecomeGuardianPage() {
       router.push("/login");
       return;
     }
+    if (!profileCompletion(user as any).complete) {
+      toastApi.warning("Complete your profile before applying as a Guardian.");
+      router.push("/profile/edit");
+      return;
+    }
 
     if (!motivation.trim()) {
       setError("Please tell us why you want to be a Guardian");
@@ -156,7 +163,7 @@ export default function BecomeGuardianPage() {
           </div>
         </header>
 
-        <main className="pt-14 max-w-2xl mx-auto px-4 py-6 space-y-4">
+        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6 space-y-4">
           <Skeleton className="h-40 w-full rounded-2xl" />
           <Skeleton className="h-32 w-full rounded-2xl" />
           <Skeleton className="h-32 w-full rounded-2xl" />
@@ -184,7 +191,7 @@ export default function BecomeGuardianPage() {
           </div>
         </header>
 
-        <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
+        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6">
           <div className="glass-card text-center py-12">
             {existingApplication.status === "pending" ? (
               <>
@@ -258,7 +265,7 @@ export default function BecomeGuardianPage() {
           </div>
         </header>
 
-        <main className="pt-14 max-w-2xl mx-auto px-4 py-6">
+        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6">
           <div className="glass-card text-center py-12">
             <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-dark-100 mb-2">Application Submitted!</h2>
@@ -290,7 +297,13 @@ export default function BecomeGuardianPage() {
         </div>
       </header>
 
-      <main className="pt-14 max-w-2xl mx-auto px-4 py-6 pb-20">
+      <main className="pt-app-header max-w-2xl mx-auto px-4 py-6 pb-20">
+        {/* Profile must be complete before applying. Renders nothing when the
+            profile is already complete. */}
+        <div className="mb-4">
+          <ProfileCompletionGate featureLabel="apply as a Guardian" />
+        </div>
+
         <div className="glass-card mb-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-3 rounded-xl bg-primary-600/20">

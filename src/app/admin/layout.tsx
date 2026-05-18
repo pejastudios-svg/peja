@@ -16,6 +16,7 @@ const navItems: { href: string; label: string; badge?: boolean }[] = [
   { href: "/admin/users", label: "Users" },
   { href: "/admin/posts", label: "Posts" },
   { href: "/admin/sos", label: "SOS Alerts" },
+  { href: "/admin/support", label: "Support" },
   { href: "/admin/flagged", label: "Flagged" },
   { href: "/admin/guardians", label: "Guardians" },
   { href: "/admin/vips", label: "VIPs" },
@@ -34,6 +35,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [unreadCount, setUnreadCount] = useState(0);
 
   const channelRef = useRef<any>(null);
+
+  // Admin pages are always dark — isolate from user's theme preference.
+  useEffect(() => {
+    const prev = document.documentElement.getAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", "dark");
+    return () => {
+      if (prev && prev !== "dark") {
+        document.documentElement.setAttribute("data-theme", prev);
+      }
+    };
+  }, []);
 
   const fetchUnreadCount = useCallback(async () => {
     if (!user?.id) return;

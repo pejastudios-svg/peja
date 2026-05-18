@@ -409,7 +409,7 @@ export default function EmergencyContactsPage() {
             <Skeleton className="h-9 w-9 rounded-lg" />
           </div>
         </header>
-        <main className="pt-20 max-w-2xl mx-auto px-4 py-6 space-y-3">
+        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6 space-y-3">
           <Skeleton className="h-16 w-full rounded-2xl" />
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="glass-card flex items-center gap-4">
@@ -432,7 +432,7 @@ export default function EmergencyContactsPage() {
         </div>
       </header>
 
-      <main className="pt-20 max-w-2xl mx-auto px-4 py-6">
+      <main className="pt-app-header max-w-2xl mx-auto px-4 py-6">
         {/* Safety Check-In */}
         <SafetyCheckIn contacts={contacts} />
 

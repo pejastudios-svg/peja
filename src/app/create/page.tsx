@@ -36,6 +36,7 @@ import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import { VideoRecorder } from "@/components/media/VideoRecorder";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
+import { useProfileGate } from "@/components/profile/ProfileCompletionGate";
 
 // Category icon mapping
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -120,6 +121,7 @@ export default function CreatePostPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const feedCache = useFeedCache();
+  const profileGate = useProfileGate("post incidents");
   const isMounted = useRef(true);
   const [submitted, setSubmitted] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
@@ -212,7 +214,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
             <Skeleton className="h-9 w-9 rounded-lg" />
           </div>
         </div>
-        <main className="pt-20 px-4 max-w-2xl mx-auto space-y-4">
+        <main className="pt-app-header px-4 max-w-2xl mx-auto space-y-4">
           <Skeleton className="h-40 w-full rounded-2xl" />
           <Skeleton className="h-20 w-full rounded-2xl" />
           <Skeleton className="h-40 w-full rounded-2xl" />
@@ -1007,7 +1009,7 @@ setToast("Processing video...");
         </div>
       </header>
 
-      <main className="pt-20 px-4 max-w-2xl mx-auto">
+      <main className="pt-app-header px-4 max-w-2xl mx-auto">
         {/* Error */}
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2">
@@ -1016,7 +1018,14 @@ setToast("Processing video...");
           </div>
         )}
 
+        {/* Profile-completion gate. Posting is blocked until the user fills
+            in everything required (avatar, name, phone, occupation, DOB,
+            home address). SOS and other safety features stay accessible. */}
+        {profileGate.blocked && (
+          <div className="mb-4">{profileGate.element}</div>
+        )}
 
+        {!profileGate.blocked && <>
 
         {/* Media Upload */}
         <div className="glass-card mb-4">
@@ -1189,8 +1198,8 @@ setToast("Processing video...");
                   onClick={() => setCategory(cat.id)}
                   className="relative p-3 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
                   style={{
-                    background: isSelected ? colors.bg : "rgba(255,255,255,0.02)",
-                    border: `1px solid ${isSelected ? colors.border : "rgba(255,255,255,0.06)"}`,
+                    background: isSelected ? colors.bg : "var(--glass-input-bg)",
+                    border: `1px solid ${isSelected ? colors.border : "var(--glass-border)"}`,
                     boxShadow: isSelected ? colors.glow : "none",
                   }}
                 >
@@ -1198,15 +1207,15 @@ setToast("Processing video...");
                     <div
                       className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
                       style={{
-                        background: isSelected ? colors.bg : "rgba(255,255,255,0.04)",
-                        color: isSelected ? colors.text : "#94a3b8",
+                        background: isSelected ? colors.bg : "var(--glass-bg)",
+                        color: isSelected ? colors.text : "var(--color-dark-300)",
                       }}
                     >
                       {icon}
                     </div>
                     <span
                       className="text-sm font-medium transition-colors"
-                      style={{ color: isSelected ? colors.text : "#e2e8f0" }}
+                      style={{ color: isSelected ? colors.text : "var(--color-dark-100)" }}
                     >
                       {cat.name}
                     </span>
@@ -1290,8 +1299,8 @@ setToast("Processing video...");
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all"
               style={{
-                background: isSensitive ? "rgba(249, 115, 22, 0.15)" : "rgba(255,255,255,0.04)",
-                border: `1px solid ${isSensitive ? "rgba(249, 115, 22, 0.3)" : "rgba(255,255,255,0.08)"}`,
+                background: isSensitive ? "rgba(249, 115, 22, 0.15)" : "var(--glass-input-bg)",
+                border: `1px solid ${isSensitive ? "rgba(249, 115, 22, 0.3)" : "var(--glass-border)"}`,
               }}
             >
               {isSensitive ? (
@@ -1301,7 +1310,7 @@ setToast("Processing video...");
               )}
             </div>
             <div className="flex-1 text-left">
-              <p className="text-sm font-medium" style={{ color: isSensitive ? "#fb923c" : "#e2e8f0" }}>
+              <p className="text-sm font-medium" style={{ color: isSensitive ? "#fb923c" : "var(--color-dark-100)" }}>
                 {isSensitive ? "Sensitive Content" : "Safe Content"}
               </p>
               <p className="text-xs text-dark-500">
@@ -1311,7 +1320,7 @@ setToast("Processing video...");
             <div
               className="w-11 h-6 rounded-full relative transition-all shrink-0"
               style={{
-                background: isSensitive ? "rgba(249, 115, 22, 0.5)" : "rgba(255,255,255,0.1)",
+                background: isSensitive ? "rgba(249, 115, 22, 0.5)" : "var(--glass-border)",
               }}
             >
               <div
@@ -1362,8 +1371,8 @@ setToast("Processing video...");
               <div
                 className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl"
                 style={{
-                  background: "rgba(18, 12, 36, 0.98)",
-                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "var(--glass-strong-bg)",
+                  border: "1px solid var(--glass-border)",
                   boxShadow: "0 -10px 40px rgba(0,0,0,0.5)",
                 }}
                 onClick={(e) => e.stopPropagation()}
@@ -1374,7 +1383,7 @@ setToast("Processing video...");
                 </div>
 
                 <div className="p-5">
-                  <h3 className="text-lg font-bold text-white mb-4">Preview Your Post</h3>
+                  <h3 className="text-lg font-bold text-dark-100 mb-4">Preview Your Post</h3>
 
                   {/* Media preview */}
                   {mediaPreviews.length > 0 && (
@@ -1479,8 +1488,8 @@ setToast("Processing video...");
                       onClick={() => { setShowPreview(false); if (previewVideoUrl) { URL.revokeObjectURL(previewVideoUrl); setPreviewVideoUrl(null); } }}
                       className="flex-1 py-3 rounded-xl text-sm font-medium text-dark-300 hover:bg-white/5 transition-colors"
                       style={{
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.08)",
+                        background: "var(--glass-input-bg)",
+                        border: "1px solid var(--glass-border)",
                       }}
                     >
                       Edit
@@ -1517,6 +1526,7 @@ setToast("Processing video...");
           uploadProgress={uploadProgress}
           toast={toast}
         />
+        </>}
       </main>
     </div>
   );

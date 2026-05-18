@@ -483,7 +483,7 @@ export default function SettingsPage() {
             <Skeleton className="h-9 w-20 rounded-lg" />
           </div>
         </header>
-        <main className="pt-14 max-w-2xl mx-auto px-4 py-6 space-y-4">
+        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6 space-y-4">
           <Skeleton className="h-16 w-full rounded-2xl" />
           <Skeleton className="h-56 w-full rounded-2xl" />
           <Skeleton className="h-56 w-full rounded-2xl" />
@@ -529,7 +529,7 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <main className="pt-14 max-w-2xl mx-auto px-4">
+      <main className="pt-app-header max-w-2xl mx-auto px-4">
         {saveError && (
           <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-400 text-center">{saveError}</p>
@@ -1139,7 +1139,7 @@ export default function SettingsPage() {
                 <AlertTriangle className="w-6 h-6 text-red-500" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">Delete Account</h3>
+                <h3 className="text-lg font-bold text-dark-100">Delete Account</h3>
                 <p className="text-sm text-dark-400">This action cannot be undone</p>
               </div>
             </div>
