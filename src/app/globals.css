@@ -2251,13 +2251,13 @@ html.capacitor-native {
 }
 
 /* Use on the page-level <main> to clear the fixed Header pill on any device.
-   Replaces brittle `pt-14`/`pt-16`/`pt-20` Tailwind classes that don't respect
-   the system status bar.
-   Formula: status-bar inset + 56px (h-14, the tallest header inner row) + 8px
-   breathing room. No artificial 16px web floor — on web the safe-area inset
-   is 0 and we want the page content to sit close under the header. */
+   On a regular browser (no notch / no status bar overlay) this resolves to
+   exactly 56px — same as the legacy `pt-14`. On a notched / Capacitor-native
+   device it adds the actual status-bar inset on top so the header doesn't
+   tuck under system chrome. No extra breathing-room constant — the header's
+   own border-bottom is the visual separator. */
 .pt-app-header {
-  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 64px);
+  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 56px);
 }
 
 /* Android-specific overrides */

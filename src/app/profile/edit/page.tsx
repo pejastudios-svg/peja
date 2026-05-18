@@ -65,6 +65,22 @@ export default function EditProfilePage() {
     }
   }, [user, authLoading, router]);
 
+  // Prefill from the in-memory auth user as soon as it's available so the
+  // form fields show what's already saved on the very first render. The DB
+  // fetch below then overlays anything that wasn't on the cached user object
+  // (e.g. fields the AuthContext doesn't track yet).
+  useEffect(() => {
+    if (!user) return;
+    setFormData((prev) => ({
+      full_name: (user as any).full_name || prev.full_name,
+      phone: (user as any).phone || prev.phone,
+      occupation: (user as any).occupation || prev.occupation,
+      date_of_birth: (user as any).date_of_birth || prev.date_of_birth,
+      avatar_url: (user as any).avatar_url || prev.avatar_url,
+      home_address: (user as any).home_address || prev.home_address,
+    }));
+  }, [user]);
+
   useEffect(() => {
     if (user) {
       fetchFullProfile();
@@ -74,7 +90,7 @@ export default function EditProfilePage() {
   const fetchFullProfile = async () => {
     if (!user) return;
 
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("users")
       .select("*")
       .eq("id", user.id)
@@ -188,10 +204,10 @@ export default function EditProfilePage() {
 
   if (authLoading) {
     return (
-      <div 
+      <div
         ref={containerRef}
-        className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
-        style={{ touchAction: 'pan-y' }}
+        className="fixed inset-0 z-50 overflow-y-auto overscroll-none"
+        style={{ touchAction: "pan-y", background: "var(--page-bg)" }}
       >
         <header className="fixed top-0 left-0 right-0 z-40 glass-header">
           <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
@@ -221,10 +237,10 @@ export default function EditProfilePage() {
   }
 
   return (
-    <div 
+    <div
       ref={containerRef}
-      className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
-      style={{ touchAction: 'pan-y' }}
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-none"
+      style={{ touchAction: "pan-y", background: "var(--page-bg)" }}
     >
       <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">

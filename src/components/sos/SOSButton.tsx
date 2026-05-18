@@ -833,20 +833,21 @@ const closeOptions = () => {
 
               {/* Don't show again */}
               <label
-                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors hover:bg-white/[0.02]"
+                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors hover:bg-white/5"
                 style={{
-                  border: "1px solid rgba(255,255,255,0.06)",
+                  background: "var(--glass-input-bg)",
+                  border: "1px solid var(--glass-border)",
                 }}
               >
                 <div
                   className="w-5 h-5 rounded flex items-center justify-center shrink-0 transition-all"
                   style={{
                     background: dontShowAgain
-                      ? "rgba(139, 92, 246, 0.8)"
-                      : "rgba(255,255,255,0.06)",
+                      ? "#7c3aed"
+                      : "transparent",
                     border: dontShowAgain
-                      ? "1px solid rgba(139, 92, 246, 0.9)"
-                      : "1px solid rgba(255,255,255,0.15)",
+                      ? "1px solid #7c3aed"
+                      : "1.5px solid var(--color-dark-400)",
                   }}
                 >
                   {dontShowAgain && (
@@ -859,17 +860,17 @@ const closeOptions = () => {
                   onChange={(e) => setDontShowAgain(e.target.checked)}
                   className="sr-only"
                 />
-                <span className="text-sm text-dark-300">Don&apos;t show this again</span>
+                <span className="text-sm font-medium text-dark-100">Don&apos;t show this again</span>
               </label>
 
               {/* Buttons */}
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={closeDisclosure}
-                  className="flex-1 py-3 rounded-xl font-medium text-dark-400 transition-all hover:bg-white/5 active:scale-[0.98]"
+                  className="flex-1 py-3 rounded-xl font-semibold text-dark-100 transition-all hover:bg-white/5 active:scale-[0.98]"
                   style={{
-                    background: "rgba(255,255,255,0.02)",
-                    border: "1px solid rgba(255,255,255,0.06)",
+                    background: "var(--glass-input-bg)",
+                    border: "1px solid var(--glass-border)",
                   }}
                 >
                   Cancel

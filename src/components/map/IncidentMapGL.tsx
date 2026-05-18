@@ -440,16 +440,19 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
       duration: 600,
     });
   }, [followUser, userLocation]);
-  // Center on coords when requested
+  // Center on coords when requested. Re-fires when the map finishes loading
+  // so a coord set before mapLoaded=true doesn't silently no-op (this is what
+  // breaks the PostCard distance pill: MapClient sets the center as soon as
+  // the post is fetched, often before the WebGL map is ready).
   useEffect(() => {
-    if (centerOnCoords && mapRef.current) {
+    if (centerOnCoords && mapRef.current && mapLoaded) {
       mapRef.current.flyTo({
         center: [centerOnCoords.lng, centerOnCoords.lat],
         zoom: 16,
         duration: 1000,
       });
     }
-  }, [centerOnCoords]);
+  }, [centerOnCoords, mapLoaded]);
   // Smooth animation loop for compass
   useEffect(() => {
     if (!compassEnabled) {
