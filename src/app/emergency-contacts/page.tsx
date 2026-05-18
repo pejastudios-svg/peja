@@ -8,7 +8,6 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/context/ToastContext";
 import { SafetyCheckIn } from "@/components/safety/SafetyCheckIn";
 import {
-  ArrowLeft,
   Plus,
   Trash2,
   Search,
@@ -26,6 +25,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { Header } from "@/components/layout/Header";
 
 interface EmergencyContact {
   id: string;
@@ -402,14 +402,8 @@ export default function EmergencyContactsPage() {
   if (authLoading || loading) {
     return (
       <div className="min-h-screen pb-20">
-        <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-          <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-            <Skeleton className="h-9 w-9 rounded-lg" />
-            <Skeleton className="h-4 w-44" />
-            <Skeleton className="h-9 w-9 rounded-lg" />
-          </div>
-        </header>
-        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6 space-y-3">
+        <Header variant="back" title="Emergency Contacts" onBack={() => router.back()} />
+        <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6 space-y-3">
           <Skeleton className="h-16 w-full rounded-2xl" />
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="glass-card flex items-center gap-4">
@@ -424,15 +418,9 @@ export default function EmergencyContactsPage() {
 
   return (
     <div className="min-h-screen pb-20">
-      <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg"><ArrowLeft className="w-5 h-5 text-dark-200" /></button>
-          <h1 className="text-lg font-semibold text-dark-100">Emergency Contacts</h1>
-          <div className="w-9" />
-        </div>
-      </header>
+      <Header variant="back" title="Emergency Contacts" onBack={() => router.back()} />
 
-      <main className="pt-app-header max-w-2xl mx-auto px-4 py-6">
+      <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6">
         {/* Safety Check-In */}
         <SafetyCheckIn contacts={contacts} />
 

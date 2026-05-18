@@ -464,7 +464,7 @@ export default function NotificationsPage() {
   return (
     <PullToRefresh onRefresh={async () => { await fetchNotifications(); }}>
       <div className="min-h-screen pb-20 lg:pb-0">
-        <Header variant="back" title="Notifications" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
+        <Header variant="back" title="Notifications" onBack={() => router.back()} onCreateClick={() => router.push("/create")} showDefaultActions />
 
         <main className="pt-app-header-pill lg:pl-64">
           <div className="max-w-2xl mx-auto px-4 py-4">

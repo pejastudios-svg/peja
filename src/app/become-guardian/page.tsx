@@ -8,7 +8,6 @@ import { NIGERIAN_STATES } from "@/lib/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/context/ToastContext";
 import {
-  ArrowLeft,
   Shield,
   CheckCircle,
   AlertTriangle,
@@ -21,6 +20,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { ProfileCompletionGate } from "@/components/profile/ProfileCompletionGate";
 import { profileCompletion } from "@/lib/profileComplete";
+import { Header } from "@/components/layout/Header";
 
 export default function BecomeGuardianPage() {
   const toastApi = useToast();
@@ -155,15 +155,9 @@ export default function BecomeGuardianPage() {
         className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
         style={{ touchAction: 'pan-y' }}
       >
-        <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-          <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-            <Skeleton className="h-9 w-9 rounded-lg" />
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-9 w-9 rounded-lg" />
-          </div>
-        </header>
+        <Header variant="back" title="Guardian Application" onBack={() => router.back()} />
 
-        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6 space-y-4">
+        <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6 space-y-4">
           <Skeleton className="h-40 w-full rounded-2xl" />
           <Skeleton className="h-32 w-full rounded-2xl" />
           <Skeleton className="h-32 w-full rounded-2xl" />
@@ -181,17 +175,9 @@ export default function BecomeGuardianPage() {
         className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
         style={{ touchAction: 'pan-y' }}
       >
-        <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-          <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-            <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg">
-              <ArrowLeft className="w-5 h-5 text-dark-200" />
-            </button>
-            <h1 className="text-lg font-semibold text-dark-100">Guardian Application</h1>
-            <div className="w-9" />
-          </div>
-        </header>
+        <Header variant="back" title="Guardian Application" onBack={() => router.back()} />
 
-        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6">
+        <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6">
           <div className="glass-card text-center py-12">
             {existingApplication.status === "pending" ? (
               <>
@@ -255,17 +241,9 @@ export default function BecomeGuardianPage() {
         className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
         style={{ touchAction: 'pan-y' }}
       >
-        <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-          <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-            <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg">
-              <ArrowLeft className="w-5 h-5 text-dark-200" />
-            </button>
-            <h1 className="text-lg font-semibold text-dark-100">Application Submitted</h1>
-            <div className="w-9" />
-          </div>
-        </header>
+        <Header variant="back" title="Application Submitted" onBack={() => router.back()} />
 
-        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6">
+        <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6">
           <div className="glass-card text-center py-12">
             <CheckCircle className="w-16 h-16 text-green-400 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-dark-100 mb-2">Application Submitted!</h2>
@@ -287,23 +265,17 @@ export default function BecomeGuardianPage() {
       className="fixed inset-0 z-50 bg-dark-950 overflow-y-auto overscroll-none"
       style={{ touchAction: 'pan-y' }}
     >
-      <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg">
-            <ArrowLeft className="w-5 h-5 text-dark-200" />
-          </button>
-          <h1 className="text-lg font-semibold text-dark-100">Become a Guardian</h1>
-          <div className="w-9" />
-        </div>
-      </header>
+      <Header variant="back" title="Become a Guardian" onBack={() => router.back()} />
 
-      <main className="pt-app-header max-w-2xl mx-auto px-4 py-6 pb-20">
-        {/* Profile must be complete before applying. Renders nothing when the
-            profile is already complete. */}
-        <div className="mb-4">
+      <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6 pb-20">
+        {/* Profile must be complete before the application form is even shown.
+            Incomplete users see only the gate card; everything below the gate
+            (Community Guardians explainer + form) is hidden so they can't see
+            or interact with the application until they finish their profile. */}
+        {!profileCompletion(user as any).complete ? (
           <ProfileCompletionGate featureLabel="apply as a Guardian" />
-        </div>
-
+        ) : (
+        <>
         <div className="glass-card mb-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-3 rounded-xl bg-primary-600/20">
@@ -427,6 +399,8 @@ export default function BecomeGuardianPage() {
             Submit Application
           </Button>
         </div>
+        </>
+        )}
       </main>
     </div>
   );

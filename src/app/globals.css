@@ -40,7 +40,9 @@
   --glass-sm-bg: rgba(15, 10, 26, 0.75);
   --glass-card-bg: #0a0612;
   --glass-strong-bg: #000000;
-  --glass-header-bg: rgba(0, 0, 0, 0.85);
+  /* Header bg uses a low alpha so the .glass-header backdrop-filter blur is
+     visible when content scrolls underneath. */
+  --glass-header-bg: rgba(10, 6, 18, 0.55);
   --glass-footer-bg: rgba(0, 0, 0, 0.9);
   --glass-float-bg: rgba(10, 6, 18, 0.92);
   --glass-input-bg: rgba(15, 10, 26, 0.6);
@@ -82,7 +84,7 @@
   --glass-sm-bg: rgba(255, 255, 255, 0.75);
   --glass-card-bg: #ffffff;
   --glass-strong-bg: #ffffff;
-  --glass-header-bg: rgba(255, 255, 255, 0.9);
+  --glass-header-bg: rgba(255, 255, 255, 0.55);
   --glass-footer-bg: rgba(255, 255, 255, 0.95);
   --glass-float-bg: rgba(255, 255, 255, 0.92);
   --glass-input-bg: rgba(255, 255, 255, 0.7);
@@ -206,8 +208,11 @@ textarea,
 /* Header specific */
 .glass-header {
   background: var(--glass-header-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* Stronger blur + saturation gives the proper frosted-glass effect when
+     content scrolls past underneath. Header bg alpha is intentionally low
+     (~0.55) so the blurred page is actually visible behind it. */
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border-bottom: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow-header);
   /* Push content below the system status bar / notch on every device. */
@@ -2256,16 +2261,18 @@ html.capacitor-native {
    device it adds the actual status-bar inset on top so the header doesn't
    tuck under system chrome. No extra breathing-room constant — the header's
    own border-bottom is the visual separator.
-   Use this on pages that have an inline `<header className="glass-header">`. */
+   Use this on pages that have an inline `<header className="glass-header">`.
+   48px = h-12 inner row. */
 .pt-app-header {
-  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 56px);
+  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 48px);
 }
 
 /* For pages using the shared <Header /> component (the *floating* pill).
-   That header's actual bottom edge is max(inset, 16) + 8 (outer) + 8 (pt-2)
-   + 44 (h-11) = max(inset, 16) + 60. This utility matches that exactly. */
+   The pill's actual bottom edge is max(inset, 16) + 8 (outer) + 8 (pt-2)
+   + 44 (h-11) = max(inset, 16) + 60. The extra 12px is a breathing-room gap
+   so page content doesn't sit flush against the pill. */
 .pt-app-header-pill {
-  padding-top: calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 60px);
+  padding-top: calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 72px);
 }
 
 /* Android-specific overrides */

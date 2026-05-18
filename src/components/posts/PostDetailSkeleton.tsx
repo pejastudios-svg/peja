@@ -1,20 +1,14 @@
 "use client";
 
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Header } from "@/components/layout/Header";
 
 export function PostDetailSkeleton() {
   return (
     <div className="min-h-screen pb-32">
-      {/* fixed header placeholder */}
-      <div className="fixed top-0 left-0 right-0 z-50 glass-header">
-        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <Skeleton className="h-9 w-9 rounded-lg" />
-          <Skeleton className="h-4 w-36" />
-          <Skeleton className="h-9 w-9 rounded-lg" />
-        </div>
-      </div>
+      <Header variant="back" title="Incident Details" />
 
-      <main className="pt-14 max-w-2xl mx-auto">
+      <main className="pt-app-header-pill max-w-2xl mx-auto">
         {/* media */}
         <Skeleton className="h-[240px] w-full rounded-none" />
 

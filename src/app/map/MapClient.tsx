@@ -562,7 +562,7 @@ export default function MapClient() {
 
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
-      <Header variant="back" title="Map" onBack={() => router.back()} onCreateClick={() => router.push("/create")} />
+      <Header variant="back" title="Map" onBack={() => router.back()} onCreateClick={() => router.push("/create")} showDefaultActions />
 
       <main className="pt-app-header-pill h-screen">
         <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">

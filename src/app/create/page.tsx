@@ -9,7 +9,6 @@ import {
   X,
   Loader2,
   Hash,
-  ChevronLeft,
   AlertTriangle,
   Play,
   Shield,
@@ -34,6 +33,7 @@ import { notifyUsersAboutIncident } from "@/lib/notifications";
 import { PostLoadingAnimation } from "@/components/posts/PostLoadingAnimation";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { Header } from "@/components/layout/Header";
 import { VideoRecorder } from "@/components/media/VideoRecorder";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
 import { useProfileGate } from "@/components/profile/ProfileCompletionGate";
@@ -207,14 +207,8 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   if (authLoading) {
     return (
       <div className="min-h-screen pb-8">
-        <div className="fixed top-0 left-0 right-0 z-40 glass-header">
-          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-            <Skeleton className="h-9 w-9 rounded-lg" />
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-9 w-9 rounded-lg" />
-          </div>
-        </div>
-        <main className="pt-app-header px-4 max-w-2xl mx-auto space-y-4">
+        <Header variant="back" title="Report Incident" onBack={() => router.back()} />
+        <main className="pt-app-header-pill px-4 max-w-2xl mx-auto space-y-4">
           <Skeleton className="h-40 w-full rounded-2xl" />
           <Skeleton className="h-20 w-full rounded-2xl" />
           <Skeleton className="h-40 w-full rounded-2xl" />
@@ -995,21 +989,9 @@ setToast("Processing video...");
 
   return (
     <div className="min-h-screen pb-8">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-40 glass-header">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/5 rounded-lg">
-            <ChevronLeft className="w-5 h-5 text-dark-200" />
-          </button>
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-primary-400" />
-            <h1 className="font-semibold text-dark-50 text-sm">Report Incident</h1>
-          </div>
-          <div className="w-9" />
-        </div>
-      </header>
+      <Header variant="back" title="Report Incident" onBack={() => router.back()} />
 
-      <main className="pt-app-header px-4 max-w-2xl mx-auto">
+      <main className="pt-app-header-pill px-4 max-w-2xl mx-auto">
         {/* Error */}
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2">

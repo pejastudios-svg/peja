@@ -29,9 +29,9 @@ import { shareUrl } from "@/lib/share";
 import { buildLoginHref } from "@/lib/safeNext";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { profileCompletion } from "@/lib/profileComplete";
+import { Header } from "@/components/layout/Header";
 
 import {
-  ArrowLeft,
   MapPin,
   Clock,
   Eye,
@@ -1298,29 +1298,27 @@ if (error || !post) {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[var(--page-bg)]">
-       {/* Header - Absolute Top */}
-      <header className="absolute top-0 inset-x-0 z-50 glass-header">
-        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto w-full">
-                    <button
-            onClick={() => {
-              if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
-                window.dispatchEvent(new Event("peja-close-post"));
-                return;
-              }
-              // If there's no real history (direct link / shared link), go home
-              if (typeof window !== "undefined" && window.history.length <= 2) {
-                router.replace("/");
-              } else {
-                router.back();
-              }
-            }}
-            className="p-2 -ml-2 hover:bg-white/10 rounded-lg"
-          >
-            <ArrowLeft className="w-5 h-5 text-dark-200" />
-          </button>
-          <h1 className="text-lg font-semibold text-dark-100">Incident Details</h1>
+      <Header
+        variant="back"
+        title="Incident Details"
+        onBack={() => {
+          if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
+            window.dispatchEvent(new Event("peja-close-post"));
+            return;
+          }
+          // If there's no real history (direct link / shared link), go home
+          if (typeof window !== "undefined" && window.history.length <= 2) {
+            router.replace("/");
+          } else {
+            router.back();
+          }
+        }}
+        actions={
           <div className="relative">
-            <button onClick={() => setShowOptions(!showOptions)} className="p-2 -mr-2 hover:bg-white/10 rounded-lg">
+            <button
+              onClick={() => setShowOptions(!showOptions)}
+              className="p-2 rounded-xl active:bg-white/10 transition-colors"
+            >
               <MoreVertical className="w-5 h-5 text-dark-200" />
             </button>
             {showOptions && (
@@ -1331,7 +1329,7 @@ if (error || !post) {
                     <Share2 className="w-4 h-4" /> Share
                   </button>
                   {!isOwner && (
-                    <button onClick={() => { setShowReportModal(true); closeOptions(); }}className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-orange-400 text-sm">
+                    <button onClick={() => { setShowReportModal(true); closeOptions(); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-orange-400 text-sm">
                       <Flag className="w-4 h-4" /> Report
                     </button>
                   )}
@@ -1344,12 +1342,12 @@ if (error || !post) {
               </>
             )}
           </div>
-        </div>
-      </header>
+        }
+      />
 
       {/* Main Content - Scrollable Area */}
       <main
-        className="flex-1 overflow-y-auto w-full overscroll-contain post-detail-messages pt-app-header"
+        className="flex-1 overflow-y-auto w-full overscroll-contain post-detail-messages pt-app-header-pill"
       >
         <div className="max-w-2xl mx-auto">
          {/* Media Carousel */}
@@ -1588,14 +1586,17 @@ if (error || !post) {
               <button
                 type="button"
                 onClick={() => {
-                  // The post detail is rendered inside an intercepting parallel
-                  // route (@modal/(.)post/[id]). A plain client-side navigation
-                  // doesn't close that modal — the new route would mount under
-                  // it. Dispatch the modal-close event first, then route.
-                  if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
+                  // When opened via the @modal intercept, the slot doesn't
+                  // auto-fall-back to default on a sibling-slot push — the
+                  // post modal stays painted on top. Dismiss it first
+                  // (close event triggers exit animation + router.back at
+                  // 300ms), then push after so the back doesn't pop us off.
+                  if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen === true) {
                     window.dispatchEvent(new Event("peja-close-post"));
+                    window.setTimeout(() => router.push("/profile/edit"), 350);
+                  } else {
+                    router.push("/profile/edit");
                   }
-                  setTimeout(() => router.push("/profile/edit"), 50);
                 }}
                 className="shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
               >

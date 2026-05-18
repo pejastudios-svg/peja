@@ -52,7 +52,12 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  viewportFit: "cover",
+  // Intentionally NOT "cover". On Android Chrome some OEM/Chromium variants
+  // let the page draw under the status bar with viewport-fit=cover but never
+  // expose a non-zero env(safe-area-inset-top), so headers slid under the
+  // time/battery. Without "cover", the browser reserves the status-bar area
+  // itself — no CSS padding needed, no overlap. Capacitor-native still
+  // handles its own insets via --cap-status-bar-height.
 };
 
 export default function RootLayout({

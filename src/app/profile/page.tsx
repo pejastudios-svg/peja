@@ -14,7 +14,6 @@ import {
   Briefcase,
   Shield,
   Settings,
-  ChevronLeft,
   ChevronRight,
   Camera,
   Loader2,
@@ -22,6 +21,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { Header } from "@/components/layout/Header";
 import { Post } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
 import { realtimeManager } from "@/lib/realtime";
@@ -309,8 +309,8 @@ export default function ProfilePage() {
     // AuthLoading=true: show skeleton briefly while session is being checked
     // AuthLoading=false: the useEffect above will redirect to /login
     return (
-      <div className="min-h-screen pb-20 pt-app-header">
-        <div className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5 h-14" />
+      <div className="min-h-screen pb-20 pt-app-header-pill">
+        <Header variant="back" title="Profile" onBack={() => router.back()} />
         <div className="glass border-b border-white/5 px-4 py-6">
           <div className="max-w-2xl mx-auto flex items-center gap-4">
             <div className="w-20 h-20 rounded-full bg-white/5 animate-pulse" />
@@ -336,17 +336,9 @@ export default function ProfilePage() {
   return (
     <PullToRefresh onRefresh={async () => { await fetchUserPosts(); }}>
     <div className="min-h-screen pb-20">
-      <header className="fixed top-0 left-0 right-0 z-40 glass border-b border-white/5">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors">
-            <ChevronLeft className="w-5 h-5 text-dark-200" />
-          </button>
-          <h1 className="font-semibold text-dark-50">Profile</h1>
-         <div className="w-9" />
-        </div>
-      </header>
+      <Header variant="back" title="Profile" onBack={() => router.back()} />
 
-      <main className="pt-app-header">
+      <main className="pt-app-header-pill">
         <div className="glass border-b border-white/5 px-4 py-6">
           <div className="max-w-2xl mx-auto">
             <div className="flex items-center gap-4">

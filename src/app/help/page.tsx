@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   ChevronDown,
   ChevronUp,
   Mail,
@@ -21,6 +20,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { Header } from "@/components/layout/Header";
 
 interface FAQItem {
   question: string;
@@ -126,20 +126,9 @@ export default function HelpPage() {
   return (
     <div className="min-h-screen pb-20">
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
-        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <button
-            onClick={() => router.back()}
-            className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-dark-200" />
-          </button>
-          <h1 className="text-lg font-semibold text-dark-100">Help & Support</h1>
-          <div className="w-9" />
-        </div>
-      </header>
+      <Header variant="back" title="Help & Support" onBack={() => router.back()} />
 
-      <main className="pt-app-header max-w-2xl mx-auto px-4 py-6">
+      <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6">
         {/* Quick Contact — Email Support is a collapsible form. Sends a ticket
             into the support pipeline + emails the team. */}
         <section className="mb-8" id="support-contact">

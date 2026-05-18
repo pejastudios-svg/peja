@@ -743,14 +743,19 @@ const nearbyBg = swipeProgress < 0.5
       >
         {user && !profileCompletion(user as any).complete && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
-            <div className="glass-card p-4 flex items-center justify-between">
-              <div>
+            <div className="glass-card p-4 flex items-center gap-3">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-dark-200">Complete your profile</p>
                 <p className="text-xs text-dark-400">
                   Unlock posting, commenting, and the Guardian application. Safety features stay on either way.
                 </p>
               </div>
-              <Button variant="primary" size="sm" onClick={() => router.push("/profile/edit")}>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => router.push("/profile/edit")}
+                className="shrink-0"
+              >
                 Complete
               </Button>
             </div>

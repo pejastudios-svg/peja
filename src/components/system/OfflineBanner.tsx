@@ -64,7 +64,7 @@ export function OfflineBanner() {
         {offline ? (
           <>
             <WifiOff className="w-3.5 h-3.5 text-red-400 shrink-0" />
-            <span className="text-xs font-medium text-red-300">No internet — using cached data</span>
+            <span className="text-xs font-medium text-red-300">No internet</span>
           </>
         ) : (
           <>

@@ -14,7 +14,6 @@ import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStre
 import { resetTutorial } from "@/components/tutorial/TutorialOverlay";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
-  ArrowLeft,
   Bell,
   Shield,
   HelpCircle,
@@ -36,6 +35,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { Header } from "@/components/layout/Header";
 
 export default function SettingsPage() {
   useScrollRestore("settings");
@@ -476,14 +476,8 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="min-h-screen pb-20">
-        <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-          <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-            <Skeleton className="h-9 w-9 rounded-lg" />
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-9 w-20 rounded-lg" />
-          </div>
-        </header>
-        <main className="pt-app-header max-w-2xl mx-auto px-4 py-6 space-y-4">
+        <Header variant="back" title="Settings" onBack={() => router.back()} />
+        <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6 space-y-4">
           <Skeleton className="h-16 w-full rounded-2xl" />
           <Skeleton className="h-56 w-full rounded-2xl" />
           <Skeleton className="h-56 w-full rounded-2xl" />
@@ -495,16 +489,11 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen pb-20">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass-header">
-        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <button
-            onClick={() => router.back()}
-            className="p-2 -ml-2 hover:bg-white/10 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-dark-200" />
-          </button>
-          <h1 className="text-lg font-semibold text-dark-100">Settings</h1>
+      <Header
+        variant="back"
+        title="Settings"
+        onBack={() => router.back()}
+        actions={
           <button
             onClick={saveSettings}
             disabled={saving}
@@ -526,10 +515,10 @@ export default function SettingsPage() {
               <span>Save</span>
             )}
           </button>
-        </div>
-      </header>
+        }
+      />
 
-      <main className="pt-app-header max-w-2xl mx-auto px-4">
+      <main className="pt-app-header-pill max-w-2xl mx-auto px-4">
         {saveError && (
           <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-400 text-center">{saveError}</p>

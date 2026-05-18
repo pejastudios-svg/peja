@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Bell, ArrowLeft, User, MessageCircle, Sun, Moon } from "lucide-react";
@@ -15,6 +15,13 @@ interface HeaderProps {
   variant?: "default" | "back";
   title?: string;
   onBack?: () => void;
+  // Back variant only. Renders a second pill with custom right-side content.
+  // If unset and `showDefaultActions` is false, no right-side pill is rendered
+  // (the back pill stretches to fill).
+  actions?: ReactNode;
+  // Back variant only. Renders the default bell + theme-toggle pill. Used by
+  // Map / Notifications which want to expose those even on back-style pages.
+  showDefaultActions?: boolean;
 }
 
 // Theme-aware liquid glass via CSS variables.
@@ -33,6 +40,8 @@ export function Header({
   variant = "default",
   title,
   onBack,
+  actions,
+  showDefaultActions = false,
 }: HeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -91,7 +100,7 @@ export function Header({
     };
   };
 
-  // Back variant — single bar with back + actions
+  // Back variant — back pill + optional actions pill
   if (variant === "back") {
     return (
       <header
@@ -111,38 +120,44 @@ export function Header({
             </button>
           </div>
 
-          <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
-              aria-label="Toggle theme"
-            >
-              {theme === "dark" ? (
-                <Sun className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
-              ) : (
-                <Moon className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
-              )}
-            </button>
-            <Link
-              href="/notifications"
-              className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
-            >
-              <Bell className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
-              {unreadCount > 0 && (
-                <span
-                  className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1"
-                  style={{
-                    background: "#ef4444",
-                    color: "white",
-                    boxShadow: "0 0 6px rgba(239,68,68,0.5)",
-                  }}
-                >
-                  {unreadCount > 99 ? "99+" : unreadCount}
-                </span>
-              )}
-            </Link>
-          </div>
+          {actions ? (
+            <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
+              {actions}
+            </div>
+          ) : showDefaultActions ? (
+            <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
+                aria-label="Toggle theme"
+              >
+                {theme === "dark" ? (
+                  <Sun className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
+                ) : (
+                  <Moon className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
+                )}
+              </button>
+              <Link
+                href="/notifications"
+                className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
+              >
+                <Bell className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
+                {unreadCount > 0 && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1"
+                    style={{
+                      background: "#ef4444",
+                      color: "white",
+                      boxShadow: "0 0 6px rgba(239,68,68,0.5)",
+                    }}
+                  >
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
+              </Link>
+            </div>
+          ) : null}
         </div>
       </header>
     );

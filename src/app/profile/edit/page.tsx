@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Briefcase, Calendar, User, Phone, Mail, Camera, Loader2, Home, CheckCircle2, Circle } from "lucide-react";
+import { Briefcase, Calendar, User, Phone, Mail, Camera, Loader2, Home, CheckCircle2, Circle } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Header } from "@/components/layout/Header";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { REQUIRED_PROFILE_FIELDS } from "@/lib/profileComplete";
 
@@ -71,9 +72,39 @@ export default function EditProfilePage() {
     }
   }, [user, authLoading, router]);
 
-  // If user wasn't ready at first mount (initialiser ran with null), this
-  // keeps the form in sync once AuthContext finishes hydrating. Only fills
-  // empty fields so we don't clobber what the admin is actively typing.
+  // Cold-start hydration. The previous approach waited for AuthContext's
+  // `user` to populate, but on first-ever open of /profile/edit that hadn't
+  // happened yet — leaving everything except Email blank until the user
+  // bounced out and back in. Fetch the profile directly from Supabase using
+  // the session, independent of AuthContext. Only fills fields the user
+  // hasn't actively edited so it never clobbers in-progress input.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (cancelled || !authUser) return;
+        const { data } = await supabase
+          .from("users")
+          .select("full_name, phone, occupation, date_of_birth, avatar_url, home_address")
+          .eq("id", authUser.id)
+          .single();
+        if (cancelled || !data) return;
+        setFormData((prev) => ({
+          full_name: prev.full_name || data.full_name || "",
+          phone: prev.phone || data.phone || "",
+          occupation: prev.occupation || data.occupation || "",
+          date_of_birth: prev.date_of_birth || data.date_of_birth || "",
+          avatar_url: prev.avatar_url || data.avatar_url || "",
+          home_address: prev.home_address || data.home_address || "",
+        }));
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Also keep in sync when AuthContext eventually populates `user` — covers
+  // the case where AuthContext is faster than the direct fetch above.
   useEffect(() => {
     if (!user) return;
     setFormData((prev) => ({
@@ -85,33 +116,6 @@ export default function EditProfilePage() {
       home_address: prev.home_address || (user as any).home_address || "",
     }));
   }, [user]);
-
-  useEffect(() => {
-    if (user) {
-      fetchFullProfile();
-    }
-  }, [user]);
-
-  const fetchFullProfile = async () => {
-    if (!user) return;
-
-    const { data } = await supabase
-      .from("users")
-      .select("*")
-      .eq("id", user.id)
-      .single();
-
-    if (data) {
-      setFormData({
-        full_name: data.full_name || "",
-        phone: data.phone || "",
-        occupation: data.occupation || "",
-        date_of_birth: data.date_of_birth || "",
-        avatar_url: data.avatar_url || "",
-        home_address: data.home_address || "",
-      });
-    }
-  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData({
@@ -214,15 +218,9 @@ export default function EditProfilePage() {
         className="fixed inset-0 z-50 overflow-y-auto overscroll-none"
         style={{ touchAction: "pan-y", background: "var(--page-bg)" }}
       >
-        <header className="fixed top-0 left-0 right-0 z-40 glass-header">
-          <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-            <Skeleton className="h-9 w-9 rounded-lg" />
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-9 w-9 rounded-lg" />
-          </div>
-        </header>
+        <Header variant="back" title="Edit Profile" onBack={() => router.back()} />
 
-        <main className="pt-app-header px-4 max-w-2xl mx-auto space-y-4">
+        <main className="pt-app-header-pill px-4 max-w-2xl mx-auto space-y-4">
           <div className="flex justify-center">
             <Skeleton className="h-24 w-24 rounded-full" />
           </div>
@@ -247,20 +245,9 @@ export default function EditProfilePage() {
       className="fixed inset-0 z-50 overflow-y-auto overscroll-none"
       style={{ touchAction: "pan-y", background: "var(--page-bg)" }}
     >
-      <header className="fixed top-0 left-0 right-0 z-40 glass-header">
-        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-          <button
-            onClick={() => router.back()}
-            className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
-          >
-            <ChevronLeft className="w-5 h-5 text-dark-200" />
-          </button>
-          <h1 className="font-semibold text-dark-50">Edit Profile</h1>
-          <div className="w-9" />
-        </div>
-      </header>
+      <Header variant="back" title="Edit Profile" onBack={() => router.back()} />
 
-            <main className="pt-app-header px-4 max-w-2xl mx-auto pb-20">
+      <main className="pt-app-header-pill px-4 max-w-2xl mx-auto pb-20">
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-400">{error}</p>

@@ -1,28 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { Header } from "@/components/layout/Header";
 
 export default function TermsPage() {
   const router = useRouter();
 
   return (
     <div className="min-h-screen pb-20">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
-        <div className="flex items-center justify-between px-4 h-14 max-w-2xl mx-auto">
-          <button
-            onClick={() => router.back()}
-            className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-dark-200" />
-          </button>
-          <h1 className="text-lg font-semibold text-dark-100">Terms of Service</h1>
-          <div className="w-9" />
-        </div>
-      </header>
+      <Header variant="back" title="Terms of Service" onBack={() => router.back()} />
 
-      <main className="pt-app-header max-w-2xl mx-auto px-4 py-6">
+      <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6">
         <div className="prose prose-invert max-w-none">
           <p className="text-dark-400 text-sm mb-6">Last updated: December 2025</p>
 

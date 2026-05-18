@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/Button";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import {
-  ArrowLeft,
   Search,
   MessageCircle,
   Plus,
@@ -25,6 +24,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import type { VIPUser } from "@/lib/types";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { Header } from "@/components/layout/Header";
 
 // =====================================================
 // MAIN PAGE
@@ -227,24 +227,21 @@ const handleConversationTap = useCallback((convId: string) => {
 return (
     <PullToRefresh onRefresh={async () => { await fetchConversations(); }}>
     <div className="min-h-screen pb-20">
-      {/* HEADER */}
-      <header className="fixed top-0 left-0 right-0 z-40 glass-header">
-<div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
-            <button onClick={() => router.push("/", { scroll: false })} className="p-2 -ml-2 hover:bg-white/5 rounded-lg transition-colors">
-              <ArrowLeft className="w-5 h-5 text-dark-200" />
-            </button>
-            <h1 className="font-semibold text-dark-50 flex items-center gap-2">
-              <MessageCircle className="w-5 h-5 text-primary-400" />
-              Messages
-            </h1>
-            <button onClick={() => { setNewChatOpen(true); setVipSearch(""); setVipResults([]); }}
-              className="p-2 -mr-2 hover:bg-white/5 rounded-lg transition-colors">
-              <Plus className="w-5 h-5 text-primary-400" />
-            </button>
-        </div>
-      </header>
+      <Header
+        variant="back"
+        title="Messages"
+        onBack={() => router.push("/", { scroll: false })}
+        actions={
+          <button
+            onClick={() => { setNewChatOpen(true); setVipSearch(""); setVipResults([]); }}
+            className="p-2 rounded-xl active:bg-white/10 transition-colors"
+          >
+            <Plus className="w-5 h-5 text-primary-400" />
+          </button>
+        }
+      />
 
-      <main className="pt-app-header">
+      <main className="pt-app-header-pill">
         {conversations.length > 0 && (
           <div className="px-4 pt-3 pb-1">
             <div className="relative">
