@@ -609,7 +609,15 @@ export default function MapClient() {
             </div>
           )}
 
-          <div className="absolute top-16 left-4 right-4 z-1000">
+          <div
+            className="absolute left-4 right-4 z-1000"
+            style={{
+              // Sits below the floating-pill Header bottom edge so the "All"
+              // chip doesn't cover the back arrow on notched / status-bar
+              // devices.
+              top: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 68px)",
+            }}
+          >
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               <button
                 onClick={() => setSelectedCategory(null)}

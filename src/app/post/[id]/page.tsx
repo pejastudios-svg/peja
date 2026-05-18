@@ -1585,12 +1585,22 @@ if (error || !post) {
               <p className="text-xs text-dark-300 leading-snug min-w-0 flex-1">
                 Complete your profile to comment.
               </p>
-              <Link
-                href="/profile/edit"
+              <button
+                type="button"
+                onClick={() => {
+                  // The post detail is rendered inside an intercepting parallel
+                  // route (@modal/(.)post/[id]). A plain client-side navigation
+                  // doesn't close that modal — the new route would mount under
+                  // it. Dispatch the modal-close event first, then route.
+                  if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
+                    window.dispatchEvent(new Event("peja-close-post"));
+                  }
+                  setTimeout(() => router.push("/profile/edit"), 50);
+                }}
                 className="shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors"
               >
                 Complete profile
-              </Link>
+              </button>
             </div>
           ) : (
             <>

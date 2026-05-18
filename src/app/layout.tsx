@@ -73,6 +73,48 @@ export default function RootLayout({
             __html: `(function(){try{var t=localStorage.getItem("peja-theme");document.documentElement.setAttribute("data-theme",(t==="light"||t==="dark")?t:"dark");}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`,
           }}
         />
+        {/* Status-bar height fallback for PWAs / mobile browsers where
+            env(safe-area-inset-top) reports 0 despite the WebView extending
+            under the system status bar. CapacitorInit handles native; this
+            covers regular Android Chrome / installed PWAs. Sets
+            --cap-status-bar-height which --app-top-inset already reads. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{
+              if (typeof window === "undefined") return;
+              var compute = function(){
+                var root = document.documentElement;
+                // If Capacitor already set this, don't override.
+                if (root.classList.contains("capacitor-native")) return;
+                // Trust env() when it reports a real value.
+                var probe = document.createElement("div");
+                probe.style.cssText = "position:fixed;top:0;height:env(safe-area-inset-top,0px);width:0;visibility:hidden;";
+                document.body.appendChild(probe);
+                var envInset = probe.getBoundingClientRect().height;
+                document.body.removeChild(probe);
+                if (envInset > 0) return; // env works, nothing to do.
+                // Heuristic for PWAs / Android Chrome that don't expose the inset.
+                // standalone display mode (PWA) is the only case where the WebView
+                // typically extends under the status bar without env() reporting it.
+                var isStandalone = window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+                if (!isStandalone) return;
+                var screenH = window.screen && window.screen.height;
+                var innerH = window.innerHeight;
+                if (!screenH || !innerH || screenH <= innerH) return;
+                // Estimate: difference, capped 24–48dp. iOS PWAs are usually
+                // handled by env(); this is mostly for Android PWAs.
+                var diff = screenH - innerH;
+                var estimated = Math.max(24, Math.min(48, diff));
+                root.style.setProperty("--cap-status-bar-height", estimated + "px");
+              };
+              if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", compute);
+              } else {
+                compute();
+              }
+            }catch(e){}})();`,
+          }}
+        />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />

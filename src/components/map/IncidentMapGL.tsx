@@ -444,14 +444,25 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
   // so a coord set before mapLoaded=true doesn't silently no-op (this is what
   // breaks the PostCard distance pill: MapClient sets the center as soon as
   // the post is fetched, often before the WebGL map is ready).
+  //
+  // On low-FPS Android, flyTo's 1s animation can stutter and the camera
+  // settles between origin and destination. Two-step: snap with jumpTo
+  // first to guarantee the user is on the target, then a short easeTo for
+  // a subtle zoom-in cue.
   useEffect(() => {
-    if (centerOnCoords && mapRef.current && mapLoaded) {
-      mapRef.current.flyTo({
-        center: [centerOnCoords.lng, centerOnCoords.lat],
-        zoom: 16,
-        duration: 1000,
-      });
-    }
+    if (!centerOnCoords || !mapRef.current || !mapLoaded) return;
+    const map = mapRef.current;
+    const target: [number, number] = [centerOnCoords.lng, centerOnCoords.lat];
+
+    map.jumpTo({ center: target, zoom: 15 });
+    // requestAnimationFrame ensures the jumpTo is applied before the easeTo
+    // kicks in, so the animation runs from the new position.
+    const id = window.requestAnimationFrame(() => {
+      try {
+        map.easeTo({ center: target, zoom: 16, duration: 350 });
+      } catch {}
+    });
+    return () => window.cancelAnimationFrame(id);
   }, [centerOnCoords, mapLoaded]);
   // Smooth animation loop for compass
   useEffect(() => {
