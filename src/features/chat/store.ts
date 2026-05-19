@@ -49,6 +49,15 @@ interface ChatStoreState {
   // already saw the message, so the badge stays at 0.
   activeConversationId: string | null;
 
+  // Timestamp (ms) of the most recent local `clearUnread` for each
+  // conversation. The server-side `markConversationRead` UPDATE takes
+  // ~100-500ms to propagate; in that window, any refetch of the
+  // conversation list returns stale `unread_count > 0` for the conv we
+  // just cleared. setConversations honors this grace window and refuses
+  // to bump our local 0 back up if the clear was recent. Treats it as
+  // "we know better than the DB right now."
+  recentlyClearedAt: Record<string, number>;
+
   // === Identity actions ===
   setCurrentUserId: (userId: string | null) => void;
   setLastConnected: () => void;
@@ -121,6 +130,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   threadsByConversation: {},
   lastConnectedAt: null,
   activeConversationId: null,
+  recentlyClearedAt: {},
 
   // ---- Identity ----
   setCurrentUserId: (userId) => set({ currentUserId: userId }),
@@ -130,8 +140,30 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
 
   // ---- Conversation list ----
   setConversations: (conversations) => {
+    const {
+      conversationsById: existingById,
+      activeConversationId,
+      recentlyClearedAt,
+    } = get();
+    const CLEAR_GRACE_MS = 15_000; // Generous: server propagation + retry margin.
+    const now = Date.now();
     const byId: Record<string, ChatConversationSummary> = {};
-    for (const c of conversations) byId[c.id] = c;
+    for (const c of conversations) {
+      const existing = existingById[c.id];
+      const clearedAt = recentlyClearedAt[c.id];
+      const isActive = activeConversationId === c.id;
+      const wasRecentlyCleared = clearedAt && now - clearedAt < CLEAR_GRACE_MS;
+      // Honor the local clear over a stale DB count if either:
+      //   (a) the user is *actively* viewing the conversation right now, or
+      //   (b) the user cleared it within the last ~15s (gives the
+      //       server-side markConversationRead time to propagate and stop
+      //       returning stale unread_count from the next fetch).
+      if (existing && (isActive || wasRecentlyCleared)) {
+        byId[c.id] = { ...c, unread_count: existing.unread_count };
+      } else {
+        byId[c.id] = c;
+      }
+    }
     const order = sortIds(byId, conversations.map((c) => c.id));
     set({
       conversationsById: byId,
@@ -212,14 +244,22 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   },
 
   clearUnread: (conversationId) => {
-    const { conversationsById } = get();
+    const { conversationsById, recentlyClearedAt } = get();
     const existing = conversationsById[conversationId];
-    if (!existing || existing.unread_count === 0) return;
+    const nextClearedAt = { ...recentlyClearedAt, [conversationId]: Date.now() };
+    if (!existing || existing.unread_count === 0) {
+      // Even if the count was already 0, record the moment — a refetch
+      // that comes through with stale DB data should still see this and
+      // refuse to bump us back up.
+      set({ recentlyClearedAt: nextClearedAt });
+      return;
+    }
     set({
       conversationsById: {
         ...conversationsById,
         [conversationId]: { ...existing, unread_count: 0 },
       },
+      recentlyClearedAt: nextClearedAt,
     });
   },
 
@@ -239,16 +279,37 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   setThread: (conversationId, messages) => {
     const { threadsByConversation } = get();
     const existing = threadsByConversation[conversationId] || emptyThread(conversationId);
-    // Preserve any in-flight `pending` messages that haven't been confirmed
-    // yet — server fetch shouldn't drop them. Match by id (UUIDs are
-    // client-generated and stable through pending → sent).
+
+    // Merge — don't blindly replace. Two kinds of messages from the
+    // existing array can be legitimately "missing" from the incoming
+    // fetch result and must be preserved:
+    //
+    //   1. Optimistic sends still on the wire (delivery_status: "pending").
+    //   2. Messages that arrived via realtime *during* the fetch — the
+    //      DB query happened before the row was inserted, so the response
+    //      doesn't see it, but realtime delivered the row directly into
+    //      the store while we waited. Without preserving these, every
+    //      navigation back into a chat would briefly "lose" any message
+    //      that arrived in the ~500ms it takes for the fetch to complete.
+    //
+    // Rule for (2): keep any existing message whose created_at is newer
+    // than the latest message in the incoming set. That horizon is
+    // exactly the cutoff between "fetch saw this" and "fetch couldn't
+    // have seen this."
     const incomingIds = new Set(messages.map((m) => m.id));
-    const keptPending = existing.messages.filter(
-      (m) => m.delivery_status === "pending" && !incomingIds.has(m.id)
-    );
-    const combined = keptPending.length === 0
+    const latestIncomingTime = messages.length
+      ? new Date(messages[messages.length - 1].created_at).getTime()
+      : -1;
+
+    const keptExtra = existing.messages.filter((m) => {
+      if (incomingIds.has(m.id)) return false;
+      if (m.delivery_status === "pending") return true;
+      return new Date(m.created_at).getTime() > latestIncomingTime;
+    });
+
+    const combined = keptExtra.length === 0
       ? messages
-      : [...messages, ...keptPending].sort(
+      : [...messages, ...keptExtra].sort(
           (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
     set({
@@ -378,5 +439,6 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       threadsByConversation: {},
       lastConnectedAt: null,
       activeConversationId: null,
+      recentlyClearedAt: {},
     }),
 }));
