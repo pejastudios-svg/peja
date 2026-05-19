@@ -2715,8 +2715,12 @@ const handleTouchEnd = () => {
       // user navigates away, the cache-save effect filters out `temp-`
       // messages, and on return the DB doesn't have it either.
       const hasText = !!(markdownContent && markdownContent.trim());
-      const hasMediaSent = mediaItems.length > 0;
-      if (hasText && !hasMediaSent) {
+      // Use `mediaToSend` (the user's attempted attachments) — `mediaItems`
+      // is scoped to the try block above and isn't reachable here. We only
+      // want to enqueue text-only sends; media re-sends aren't supported by
+      // the queue drain path.
+      const wasMediaAttempt = mediaToSend.length > 0;
+      if (hasText && !wasMediaAttempt) {
         try {
           enqueueAction(`messages-${conversationId}`, {
             _tempId: tempId,
