@@ -1502,7 +1502,7 @@ if (error || !post) {
                 }`}
               >
                 <ConfirmConfetti trigger={confettiTrigger} />
-                <CheckCircle className={`w-4 h-4 ${isConfirmed ? "fill-current" : ""}`} />
+                <CheckCircle className="w-4 h-4" strokeWidth={2.2} />
                 {isConfirmed ? "Confirmed" : "Confirm"} ({confirmCount})
               </button>
               <button onClick={handleShare} className="p-2.5 rounded-xl glass-sm text-dark-300 hover:bg-white/10">

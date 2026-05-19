@@ -42,7 +42,7 @@ const faqs: FAQItem[] = [
   },
   {
     question: "What is Share My Location (SML)?",
-    answer: "Share My Location lets trusted emergency contacts watch over you during a journey or activity. Pick a check-in interval (15 minutes to 4 hours) and tap 'I'm OK' before time runs out to confirm you're safe. If you miss the check-in, your contacts are automatically notified and continue to see your live location. Cancel anytime when you reach your destination. On Android, your location keeps updating every 15 seconds even while the app is in the background — a small notification will stay in your tray to let you know it's active.",
+    answer: "Share My Location lets trusted emergency contacts watch over you during a journey or activity. Pick a check-in interval (15 minutes to 4 hours) and tap 'I'm OK' before time runs out to confirm you're safe. If you miss the check-in, your contacts are automatically notified and continue to see your live location. Cancel anytime when you reach your destination.",
     icon: Users,
   },
   {
