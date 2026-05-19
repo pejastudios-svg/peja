@@ -215,19 +215,38 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const toast = useToast();
-const { 
-  setRecordingConversationId, 
-  clearUnread, 
-  markConversationRead, 
+const {
+  setRecordingConversationId,
+  clearUnread,
+  markConversationRead,
   updateLastMessage,
   fetchConversations,
-  subscribeToChat, 
-  setActiveConversation 
+  subscribeToChat,
+  setActiveConversation,
+  chatStates,
+  loadChatMessages,
+  setChatMessages: setStoreMessages,
 } = useMessageCache();
   const MSG_CACHE_KEY = `peja-chat-cache-${conversationId}`;
 
   // ------ Core State ------
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Messages live in the MessageCacheProvider's per-chat store. The local
+  // `messages` binding is a read-only slice; writes go through `setMessages`
+  // below, which forwards to the store. Moving messages out of useState
+  // means an in-flight optimistic send doesn't vanish when the user
+  // navigates away mid-insert and comes back — the store keeps the temp
+  // message alive, and when the DB insert eventually resolves the same
+  // store entry is patched to the real id.
+  const messages = useMemo<Message[]>(
+    () => chatStates.get(conversationId)?.messages || [],
+    [chatStates, conversationId]
+  );
+  const setMessages = useCallback(
+    (updater: Message[] | ((prev: Message[]) => Message[])) => {
+      setStoreMessages(conversationId, updater);
+    },
+    [conversationId, setStoreMessages]
+  );
   const [initialFetchComplete, setInitialFetchComplete] = useState(false);
   const [otherUser, setOtherUser] = useState<VIPUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -435,25 +454,14 @@ useEffect(() => {
   if (!user?.id || !conversationId) return;
 
   const fetchData = async () => {
-    // STEP 1: Restore cached messages IMMEDIATELY for instant display
-    let hasCachedMessages = false;
-    try {
-      const cached = localStorage.getItem(MSG_CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(parsed);
-          hasCachedMessages = true;
-          // Don't set loading to false yet - we still need other user data
-        }
-      }
-    } catch (e) {
-    }
-
-    // If we have cached messages AND cached user, check if cache is recent.
-    // If opened within the last 30 seconds, skip the full refetch to save egress.
-    const cacheAge = Date.now() - (Number(localStorage.getItem(`peja-chat-ts-${conversationId}`)) || 0);
-    const skipFullFetch = hasCachedMessages && cacheAge < 30000;
+    // STEP 1: The store keeps messages across navigation, so if we're
+    // re-entering a chat we just left, `messages` (from the useMemo above)
+    // is already populated — render shows them immediately. We no longer
+    // restore from the localStorage cache here because that was the source
+    // of the "preview shows it but thread doesn't" bug: the cache could
+    // miss in-flight sends, and the 30s skip-fetch heuristic prevented the
+    // refetch that would have repaired it. Now we always refetch below.
+    const hasStoreMessages = (chatStates.get(conversationId)?.messages.length || 0) > 0;
 
     // STEP 2: Try to restore cached other user data
     try {
@@ -463,9 +471,7 @@ useEffect(() => {
         if (parsed?.id) {
           setOtherUser(parsed);
           setOtherUserOnline(presenceManager.isOnline(parsed.id));
-          
-          // If we have both cached messages and cached user, show content immediately
-          if (hasCachedMessages) {
+          if (hasStoreMessages) {
             setLoading(false);
           }
         }
@@ -473,11 +479,6 @@ useEffect(() => {
     } catch (e) {
     }
 
-// STEP 3: Fetch fresh data in background (skip if cache is very fresh)
-    if (skipFullFetch) {
-      setLoading(false);
-      return;
-    }
     try {
       // Run participant data and deletions in parallel
       const [participantsResult, deletionsResult] = await Promise.all([
@@ -536,7 +537,11 @@ useEffect(() => {
 
       try { sessionStorage.setItem("peja-last-chat-id", conversationId); } catch {}
     } catch (e: any) {
-      if (!hasCachedMessages) {
+      // If we have no messages in the store at all, the fetch failed cold
+      // and there's nothing to render. Bounce back. If the store had a
+      // previous snapshot, leave the user on it — better than yanking
+      // them away just because a refetch failed.
+      if (!hasStoreMessages) {
         router.replace("/messages");
       }
     } finally {

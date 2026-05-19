@@ -64,12 +64,17 @@ interface MessageCacheContextValue {
   setActiveConversation: (conversationId: string | null) => void;
   activeConversationId: string | null;
 
-  // Per-chat message store. Step 1: foundation only — these are the
-  // primitives the chat page will migrate onto. The map lives here so
-  // navigation doesn't tear down a chat's local state mid-send.
+  // Per-chat message store. The map lives here so navigation doesn't
+  // tear down a chat's local state mid-send. setChatMessages mirrors
+  // React's useState API (value or updater) so the chat page's existing
+  // setMessages call sites work unchanged when migrated onto it.
   chatStates: Map<string, ChatState>;
   getChatMessages: (conversationId: string) => Message[];
   loadChatMessages: (conversationId: string) => Promise<void>;
+  setChatMessages: (
+    conversationId: string,
+    updater: Message[] | ((prev: Message[]) => Message[])
+  ) => void;
 
   // UI state shared across pages
   recordingConversationId: string | null;
@@ -380,6 +385,22 @@ const setActiveConversation = useCallback((id: string | null) => {
   const getChatMessages = useCallback((conversationId: string): Message[] => {
     return chatStatesRef.current.get(conversationId)?.messages || [];
   }, []);
+
+  // Public writer. Mirrors React's setState API so the page's existing
+  // `setMessages((prev) => prev.map(...))` and `setMessages([m1, m2])`
+  // call sites work without rewriting each one.
+  const setChatMessages = useCallback(
+    (
+      conversationId: string,
+      updater: Message[] | ((prev: Message[]) => Message[])
+    ) => {
+      setChatStateFor(conversationId, (prev) => {
+        const next = typeof updater === "function" ? updater(prev.messages) : updater;
+        return { ...prev, messages: next };
+      });
+    },
+    [setChatStateFor]
+  );
 
   // Idempotent load. Re-entrant calls for the same conversation while a
   // load is in flight await the existing promise. Hydrates the store from
@@ -1121,6 +1142,7 @@ const markConversationRead = useCallback(async (conversationId: string) => {
     chatStates,
     getChatMessages,
     loadChatMessages,
+    setChatMessages,
   }), [
     conversations,
     conversationsLoading,
@@ -1135,6 +1157,7 @@ const markConversationRead = useCallback(async (conversationId: string) => {
     chatStates,
     getChatMessages,
     loadChatMessages,
+    setChatMessages,
   ]);
 
   return (
