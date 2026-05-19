@@ -35,8 +35,16 @@ interface ChatStoreState {
   // Per-conversation threads.
   threadsByConversation: Record<string, ChatThread>;
 
+  // Bumped to Date.now() every time the realtime channel transitions to
+  // SUBSCRIBED. Components that need to catch up after a disconnect watch
+  // this in their deps and refetch when it changes. Supabase Realtime
+  // doesn't replay events that fired while disconnected, so on flaky
+  // networks every drop = a gap unless we explicitly refetch on reconnect.
+  lastConnectedAt: number | null;
+
   // === Identity actions ===
   setCurrentUserId: (userId: string | null) => void;
+  setLastConnected: () => void;
 
   // === Conversation list actions ===
   setConversations: (conversations: ChatConversationSummary[]) => void;
@@ -103,9 +111,11 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   conversationsById: {},
   conversationOrder: [],
   threadsByConversation: {},
+  lastConnectedAt: null,
 
   // ---- Identity ----
   setCurrentUserId: (userId) => set({ currentUserId: userId }),
+  setLastConnected: () => set({ lastConnectedAt: Date.now() }),
 
   // ---- Conversation list ----
   setConversations: (conversations) => {
@@ -328,5 +338,6 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       conversationsById: {},
       conversationOrder: [],
       threadsByConversation: {},
+      lastConnectedAt: null,
     }),
 }));

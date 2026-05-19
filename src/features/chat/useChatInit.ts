@@ -4,17 +4,12 @@
 // call this at the top — it's safe to call multiple times because the
 // underlying realtime layer dedups by user id.
 //
-// Responsibilities:
-//   - Sync the auth'd user id into the chat store.
-//   - Kick off the realtime subscription (idempotent).
-//   - Fetch the conversation list on first call (idempotent — checks
-//     conversationsHydrated before re-fetching).
-//   - Tear everything down when the user signs out.
-//
-// Once we mount this in the root layout (Phase 6 polish), all of this
-// happens at app boot regardless of which page you're on. For Phase 1
-// it's only active while a v2 page is mounted, which is fine because v2
-// is gated behind the /messages-v2/* URL.
+// Conversation list is refetched on every realtime SUBSCRIBED event,
+// including reconnects after a dropped websocket. Supabase Realtime
+// doesn't replay events that fired while we were disconnected, so on
+// flaky networks every drop creates a permanent gap unless we refetch
+// when the channel comes back. The store's `lastConnectedAt` is bumped
+// in realtime.ts and watched here as the trigger.
 
 import { useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
@@ -25,6 +20,7 @@ import { fetchConversationList } from "./api";
 export function useChatInit() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
+  const lastConnectedAt = useChatStore((s) => s.lastConnectedAt);
 
   useEffect(() => {
     const store = useChatStore.getState();
@@ -36,17 +32,24 @@ export function useChatInit() {
       return;
     }
 
-    console.log("[chat-v2] init for user", userId, "hydrated:", store.conversationsHydrated);
+    console.log("[chat-v2] init for user", userId);
     store.setCurrentUserId(userId);
     startChatRealtime(userId).catch((e) => console.error("[chat-v2] startChatRealtime failed", e));
-
-    if (!store.conversationsHydrated) {
-      fetchConversationList(userId)
-        .then((list) => {
-          console.log("[chat-v2] fetched conversation list:", list.length, "conversations");
-          useChatStore.getState().setConversations(list);
-        })
-        .catch((e) => console.error("[chat-v2] fetchConversationList failed", e));
-    }
   }, [userId]);
+
+  // Conversation list (re)fetch effect. Fires on:
+  //   • First channel SUBSCRIBED (initial load)
+  //   • Every subsequent SUBSCRIBED — i.e. reconnect after a drop
+  // Both paths want the same thing (fresh DB state), so they share an effect.
+  useEffect(() => {
+    if (!userId) return;
+    if (lastConnectedAt === null) return;
+    console.log("[chat-v2] refetching conversation list after (re)connect", lastConnectedAt);
+    fetchConversationList(userId)
+      .then((list) => {
+        console.log("[chat-v2] fetched conversation list:", list.length);
+        useChatStore.getState().setConversations(list);
+      })
+      .catch((e) => console.error("[chat-v2] fetchConversationList failed", e));
+  }, [userId, lastConnectedAt]);
 }

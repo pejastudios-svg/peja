@@ -122,14 +122,16 @@ export async function startChatRealtime(userId: string): Promise<void> {
       }
     )
     .subscribe((status, err) => {
-      // Diagnostic — this is the single most useful log when debugging
-      // "nothing is real-time". Expected sequence:
-      //   "SUBSCRIBED" → channel is alive, events should flow
-      //   "CHANNEL_ERROR" or "TIMED_OUT" → Supabase Realtime is not
-      //     delivering events to this client. Typical cause: the
-      //     `messages` / `conversations` tables aren't in the
-      //     `supabase_realtime` publication, or RLS is denying.
       console.log("[chat-v2] subscribe status:", status, err || "");
+      // Every transition to SUBSCRIBED — including reconnects after a
+      // dropped websocket — bumps lastConnectedAt. Pages watch that value
+      // in their deps and refetch on change, which catches up any events
+      // that fired during the disconnect window. Supabase doesn't replay
+      // those events, so without this on flaky networks every drop leaves
+      // a permanent gap until the next manual refresh.
+      if (status === "SUBSCRIBED") {
+        useChatStore.getState().setLastConnected();
+      }
     });
 
   activeChannel = channel;

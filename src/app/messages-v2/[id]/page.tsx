@@ -29,15 +29,22 @@ export default function ThreadV2Page() {
   const conv = useChatStore((s) => s.conversationsById[conversationId]);
   const setThread = useChatStore((s) => s.setThread);
   const clearUnread = useChatStore((s) => s.clearUnread);
+  // Reconnect signal — bumps every time the realtime channel transitions
+  // to SUBSCRIBED, including after a drop. Used as a refetch trigger below.
+  const lastConnectedAt = useChatStore((s) => s.lastConnectedAt);
 
   const send = useSendMessage();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Initial fetch + mark-as-read on mount. The store already has whatever
-  // realtime has been receiving since the user signed in, so the messages
-  // render instantly from cached state — this fetch just refreshes.
+  // Thread refetch effect. Fires on:
+  //   • Conversation switch (conversationId changes)
+  //   • Initial realtime connect (lastConnectedAt: null → number)
+  //   • Realtime reconnect (lastConnectedAt: number → newer number)
+  // The reconnect case is what catches up any messages that arrived during
+  // a dropped websocket — Supabase doesn't replay those events, and on
+  // flaky networks they'd otherwise be invisible until the next refresh.
   useEffect(() => {
     if (!user?.id || !conversationId) return;
     fetchThread(conversationId, user.id)
@@ -45,7 +52,7 @@ export default function ThreadV2Page() {
       .catch(() => {});
     markConversationRead(conversationId, user.id).catch(() => {});
     clearUnread(conversationId);
-  }, [user?.id, conversationId, setThread, clearUnread]);
+  }, [user?.id, conversationId, setThread, clearUnread, lastConnectedAt]);
 
   const messages = useMemo(() => thread?.messages || [], [thread?.messages]);
 
