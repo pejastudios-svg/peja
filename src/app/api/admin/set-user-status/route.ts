@@ -6,11 +6,25 @@ export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdminSession(req);
+    const { user: adminUser } = await requireAdminSession(req);
 
-    const { userId, status, reason } = await req.json();
+    const { userId, status, reason, suspendedUntil } = await req.json();
     if (!userId || !["active", "suspended", "banned"].includes(status)) {
       return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 });
+    }
+
+    // Validate suspendedUntil (optional ISO timestamp, only meaningful for
+    // "suspended"). NULL or omitted = indefinite — admin lifts manually.
+    let suspendedUntilTs: string | null = null;
+    if (status === "suspended" && suspendedUntil) {
+      const d = new Date(suspendedUntil);
+      if (isNaN(d.getTime())) {
+        return NextResponse.json({ ok: false, error: "Invalid suspendedUntil" }, { status: 400 });
+      }
+      if (d.getTime() <= Date.now()) {
+        return NextResponse.json({ ok: false, error: "suspendedUntil must be in the future" }, { status: 400 });
+      }
+      suspendedUntilTs = d.toISOString();
     }
 
     const supabaseAdmin = getSupabaseAdmin();
@@ -25,11 +39,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "User not found" }, { status: 404 });
     }
 
+    // Build the patch. Always persist the reason + audit columns alongside
+    // the status flip so the admin UI / user-detail page can show context.
+    // On restoration (→ active) clear the columns for whichever state we're
+    // leaving — keeps the row tidy and makes "active" actually mean active.
+    const now = new Date().toISOString();
+    const patch: Record<string, any> = { status };
+    if (status === "suspended") {
+      patch.suspension_reason = reason || null;
+      patch.suspended_at = now;
+      patch.suspended_until = suspendedUntilTs;
+      patch.suspended_by = adminUser.id;
+    } else if (status === "banned") {
+      patch.ban_reason = reason || null;
+      patch.banned_at = now;
+      patch.banned_by = adminUser.id;
+    } else if (status === "active") {
+      if (before.status === "suspended") {
+        patch.suspension_reason = null;
+        patch.suspended_at = null;
+        patch.suspended_until = null;
+        patch.suspended_by = null;
+      } else if (before.status === "banned") {
+        patch.ban_reason = null;
+        patch.banned_at = null;
+        patch.banned_by = null;
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from("users")
-      .update({ status })
+      .update(patch)
       .eq("id", userId)
-      .select("id,status,email,full_name")
+      .select("id,status,email,full_name,suspension_reason,suspended_until,ban_reason")
       .single();
 
     if (error) {

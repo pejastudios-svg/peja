@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const { userId } = await req.json();
+    const { userId, reason } = await req.json();
     if (!userId) {
       return NextResponse.json({ error: "Missing userId" }, { status: 400 });
     }
@@ -26,6 +26,34 @@ export async function POST(req: NextRequest) {
     if (userId === user.id) {
       return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
     }
+
+    // Snapshot the user's email + name BEFORE deletion so we can keep them
+    // in the audit log even after the users row is gone. Best-effort —
+    // if this fails (RLS, race), the deletion still proceeds.
+    let snapshotEmail: string | null = null;
+    let snapshotName: string | null = null;
+    try {
+      const { data: target } = await supabaseAdmin
+        .from("users")
+        .select("email, full_name")
+        .eq("id", userId)
+        .single();
+      snapshotEmail = target?.email ?? null;
+      snapshotName = target?.full_name ?? null;
+    } catch {}
+
+    // Write the audit log first. Doing it before the cascade-delete means
+    // we still have the record even if a downstream delete throws.
+    try {
+      await supabaseAdmin.from("user_deletion_log").insert({
+        user_id: userId,
+        user_email: snapshotEmail,
+        user_full_name: snapshotName,
+        deleted_by: user.id,
+        deletion_reason: reason || null,
+        initiated_by: "admin",
+      });
+    } catch {}
 
     // Helper: silently ignore errors from missing tables/columns
     const safeDelete = async (table: string, column: string, value: string) => {

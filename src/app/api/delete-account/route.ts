@@ -18,6 +18,42 @@ export async function DELETE(req: NextRequest) {
 
     const userId = user.id;
 
+    // Optional self-deletion reason (e.g. "Too many notifications"). Used
+    // by the audit log only — doesn't gate the deletion itself.
+    let deletionReason: string | null = null;
+    try {
+      const body = await req.json();
+      if (body?.reason && typeof body.reason === "string") {
+        deletionReason = body.reason.trim() || null;
+      }
+    } catch {}
+
+    // Snapshot identifying fields before the cascade tears the row down.
+    let snapshotEmail: string | null = null;
+    let snapshotName: string | null = null;
+    try {
+      const { data: self } = await supabaseAdmin
+        .from("users")
+        .select("email, full_name")
+        .eq("id", userId)
+        .single();
+      snapshotEmail = self?.email ?? null;
+      snapshotName = self?.full_name ?? null;
+    } catch {}
+
+    // Audit log written first so the record survives even if a downstream
+    // delete throws partway through.
+    try {
+      await supabaseAdmin.from("user_deletion_log").insert({
+        user_id: userId,
+        user_email: snapshotEmail,
+        user_full_name: snapshotName,
+        deleted_by: userId,
+        deletion_reason: deletionReason,
+        initiated_by: "user",
+      });
+    } catch {}
+
     // Helper: silently ignore errors from missing tables/columns
     const safeDelete = async (table: string, column: string, value: string) => {
       try {

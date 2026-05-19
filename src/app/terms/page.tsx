@@ -73,7 +73,7 @@ export default function TermsPage() {
             <p className="text-dark-300 leading-relaxed">
               While you may post anonymously, your identity is always visible 
               to Peja administrators for safety and accountability purposes. We may 
-              disclose your information to law enforcement if required.
+              disclose your information to law enforcement and/or other services if required.
             </p>
           </section>
 

@@ -90,9 +90,6 @@ export default function PrivacyPage() {
                 <li><strong>Emergency Services:</strong> During SOS alerts</li>
                 <li><strong>Service Providers:</strong> Who help us operate our service</li>
               </ul>
-              <p className="mt-4">
-                <strong className="text-green-400">We DO NOT sell your personal data to advertisers or third parties.</strong>
-              </p>
             </div>
           </section>
 

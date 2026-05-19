@@ -961,7 +961,14 @@ useEffect(() => {
     };
   }, [MSG_CACHE_KEY]);
 
-  // Drain queued messages when connectivity is restored
+  // Drain queued messages. Fires on:
+  //   • component mount — catches messages that failed to send in a previous
+  //     session (transient network blips, in-flight inserts that didn't
+  //     complete before the user navigated away). Without this on-mount
+  //     drain, queued messages would only retry after the next `online`
+  //     event, which won't fire if the user was already online when the
+  //     failure happened.
+  //   • the next `online` event — original offline-recovery behavior.
   useEffect(() => {
     if (!user?.id || !conversationId) return;
     const drainQueue = async () => {
@@ -995,6 +1002,7 @@ useEffect(() => {
         }
       }
     };
+    drainQueue();
     window.addEventListener("online", drainQueue);
     return () => window.removeEventListener("online", drainQueue);
   }, [user?.id, conversationId]);
@@ -2700,14 +2708,46 @@ const handleTouchEnd = () => {
         );
       }
     } catch (e: any) {
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === tempId
-            ? { ...msg, delivery_status: "failed" as any }
-            : msg
-        )
-      );
+      // For text-only sends, persist to the offline queue so the message
+      // survives navigation. The drain effect retries on mount and on the
+      // next `online` event. Without this, a transient network blip would
+      // silently lose the message: the catch marks it failed in state, the
+      // user navigates away, the cache-save effect filters out `temp-`
+      // messages, and on return the DB doesn't have it either.
+      const hasText = !!(markdownContent && markdownContent.trim());
+      const hasMediaSent = mediaItems.length > 0;
+      if (hasText && !hasMediaSent) {
+        try {
+          enqueueAction(`messages-${conversationId}`, {
+            _tempId: tempId,
+            conversation_id: conversationId,
+            content: markdownContent,
+            reply_to_id: currentReplyingTo?.id || null,
+          });
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === tempId ? { ...msg, delivery_status: "queued" as any } : msg
+            )
+          );
+        } catch {
+          // If enqueue itself failed (localStorage full / unavailable), fall
+          // back to the old visible-failed marker so at least the user sees
+          // an error indicator.
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === tempId ? { ...msg, delivery_status: "failed" as any } : msg
+            )
+          );
+        }
+      } else {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === tempId
+              ? { ...msg, delivery_status: "failed" as any }
+              : msg
+          )
+        );
+      }
 
       setUploadingMsgIds((prev) => {
         const next = new Map(prev);
