@@ -29,9 +29,20 @@ export default function ThreadV2Page() {
   const conv = useChatStore((s) => s.conversationsById[conversationId]);
   const setThread = useChatStore((s) => s.setThread);
   const clearUnread = useChatStore((s) => s.clearUnread);
+  const setActiveConversationId = useChatStore((s) => s.setActiveConversationId);
   // Reconnect signal — bumps every time the realtime channel transitions
   // to SUBSCRIBED, including after a drop. Used as a refetch trigger below.
   const lastConnectedAt = useChatStore((s) => s.lastConnectedAt);
+
+  // Tell the realtime layer that this conversation is the one currently
+  // being viewed. While this is set, incoming messages skip the unread
+  // badge increment and auto-mark-as-read on the server. Cleared on
+  // unmount + on conversation switch.
+  useEffect(() => {
+    if (!conversationId) return;
+    setActiveConversationId(conversationId);
+    return () => setActiveConversationId(null);
+  }, [conversationId, setActiveConversationId]);
 
   const send = useSendMessage();
   const [draft, setDraft] = useState("");

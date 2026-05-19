@@ -11,7 +11,7 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { useChatStore } from "./store";
-import { fetchConversationList } from "./api";
+import { fetchConversationList, markConversationRead } from "./api";
 import type { ChatMessage } from "./types";
 
 // We keep a single active channel reference here so successive start()
@@ -190,15 +190,26 @@ async function handleMessageInsert(row: any, currentUserId: string) {
       last_message_at: message.created_at,
       last_message_sender_id: message.sender_id,
     });
-    // Unread bump — but only if the message is from the other user AND
-    // we're not currently viewing this conversation. "Currently viewing"
-    // is signalled by the conversation having `unread_count: 0` plus the
-    // page actively calling clearUnread on mount/event; for now we'll
-    // just bump and let the page clear it when it gains focus.
+
+    // Unread + read-receipt handling. Two cases when the message is from
+    // the other user:
+    //
+    //   (a) User is actively viewing this conversation → they've already
+    //       seen the message before the badge could appear. We skip the
+    //       increment AND advance the server-side last_read_at so the
+    //       other person's "seen" indicator updates in real time
+    //       (matches WhatsApp behavior).
+    //
+    //   (b) User is elsewhere (list, another conv, another page) → bump
+    //       the badge. clearUnread + markConversationRead get called the
+    //       moment they open this conversation.
     if (message.sender_id !== currentUserId) {
-      // Skip the increment if the thread is the one the user is on; the
-      // chat page calls clearUnread on every incoming message it renders.
-      state.incrementUnread(conversationId);
+      const isActive = state.activeConversationId === conversationId;
+      if (isActive) {
+        markConversationRead(conversationId, currentUserId).catch(() => {});
+      } else {
+        state.incrementUnread(conversationId);
+      }
     }
   } else {
     // First time we're hearing of this conversation — fetch the full

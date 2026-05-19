@@ -27,9 +27,23 @@ export function useSendMessage() {
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()
           : fallbackUuid();
-      const now = new Date().toISOString();
 
       const store = useChatStore.getState();
+
+      // Optimistic timestamp = max(device clock, last-known-message + 1ms).
+      // The +1ms guarantee places the optimistic at the END of the array
+      // even when the device clock is skewed relative to the Supabase
+      // server clock. Without this, a phone whose clock is a few seconds
+      // behind would optimistically position its own send *before* the
+      // last message it just received via realtime — looking like the
+      // outgoing message arrived before incoming ones. After the server
+      // confirms the insert we patch the timestamp to the authoritative
+      // value, and the store resorts.
+      const existingMessages = store.threadsByConversation[conversationId]?.messages || [];
+      const lastTime = existingMessages.length
+        ? new Date(existingMessages[existingMessages.length - 1].created_at).getTime()
+        : 0;
+      const optimisticTime = new Date(Math.max(Date.now(), lastTime + 1)).toISOString();
 
       // 1. Optimistic add — the message appears immediately with
       //    "pending" status. The bubble shows a clock or single check,
@@ -40,7 +54,7 @@ export function useSendMessage() {
         sender_id: user.id,
         content: trimmed,
         content_type: "text",
-        created_at: now,
+        created_at: optimisticTime,
         edited_at: null,
         is_deleted: false,
         reply_to_id: null,
@@ -53,7 +67,7 @@ export function useSendMessage() {
       // overriding this with the authoritative server value.
       store.bumpConversation(conversationId, {
         last_message_text: trimmed.slice(0, 100),
-        last_message_at: now,
+        last_message_at: optimisticTime,
         last_message_sender_id: user.id,
       });
 

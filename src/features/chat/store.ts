@@ -42,9 +42,17 @@ interface ChatStoreState {
   // networks every drop = a gap unless we explicitly refetch on reconnect.
   lastConnectedAt: number | null;
 
+  // The conversation the user is *currently looking at*. The chat thread
+  // page sets it on mount and clears it on unmount. The realtime layer
+  // reads this to decide whether an incoming message should bump the
+  // unread badge — if the user is actively viewing the thread, they
+  // already saw the message, so the badge stays at 0.
+  activeConversationId: string | null;
+
   // === Identity actions ===
   setCurrentUserId: (userId: string | null) => void;
   setLastConnected: () => void;
+  setActiveConversationId: (conversationId: string | null) => void;
 
   // === Conversation list actions ===
   setConversations: (conversations: ChatConversationSummary[]) => void;
@@ -112,10 +120,13 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   conversationOrder: [],
   threadsByConversation: {},
   lastConnectedAt: null,
+  activeConversationId: null,
 
   // ---- Identity ----
   setCurrentUserId: (userId) => set({ currentUserId: userId }),
   setLastConnected: () => set({ lastConnectedAt: Date.now() }),
+  setActiveConversationId: (conversationId) =>
+    set({ activeConversationId: conversationId }),
 
   // ---- Conversation list ----
   setConversations: (conversations) => {
@@ -273,8 +284,22 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       // Existing message — merge fields. Preserve client-side fields
       // (e.g. delivery_status if it's "pending" and the upsert from
       // realtime doesn't include a better status).
+      //
+      // If the merge changes created_at (typical case: realtime INSERT
+      // for our own optimistic message brings in the authoritative
+      // server timestamp, which can differ from the device clock used
+      // for the optimistic add), resort. Otherwise device clock skew
+      // leaves messages stuck in their pre-confirm position even though
+      // the real ordering is now different.
       nextMessages = [...existing.messages];
-      nextMessages[idx] = { ...nextMessages[idx], ...message };
+      const merged = { ...nextMessages[idx], ...message };
+      const timeChanged = nextMessages[idx].created_at !== merged.created_at;
+      nextMessages[idx] = merged;
+      if (timeChanged) {
+        nextMessages = nextMessages.sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+      }
     }
     set({
       threadsByConversation: {
@@ -290,8 +315,21 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     if (!existing) return;
     const idx = existing.messages.findIndex((m) => m.id === messageId);
     if (idx === -1) return;
-    const nextMessages = [...existing.messages];
-    nextMessages[idx] = { ...nextMessages[idx], ...patch };
+    const oldMsg = existing.messages[idx];
+    const merged = { ...oldMsg, ...patch };
+    // Same reason as upsertMessage's merge branch: if created_at moved
+    // (which happens when useSendMessage patches the optimistic message
+    // with the server-confirmed timestamp), the message may now belong
+    // in a different position in the chronological order. Resort so the
+    // UI doesn't show stale ordering after the patch lands.
+    const timeChanged = oldMsg.created_at !== merged.created_at;
+    let nextMessages = [...existing.messages];
+    nextMessages[idx] = merged;
+    if (timeChanged) {
+      nextMessages = nextMessages.sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+    }
     set({
       threadsByConversation: {
         ...threadsByConversation,
@@ -339,5 +377,6 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       conversationOrder: [],
       threadsByConversation: {},
       lastConnectedAt: null,
+      activeConversationId: null,
     }),
 }));
