@@ -126,42 +126,30 @@ export function SlowConnectionBanner() {
       }}
     >
       <div
-        className="mx-4 mt-2 flex items-center gap-3 px-4 py-3 rounded-2xl max-w-md w-full"
+        className="mx-4 mt-2 flex items-center gap-2 px-3 py-1.5 rounded-full max-w-md w-fit"
         style={{
           background: isSlow ? "#eab308" : "#22c55e",
           boxShadow: isSlow
-            ? "0 6px 24px rgba(234, 179, 8, 0.35)"
-            : "0 6px 24px rgba(34, 197, 94, 0.35)",
+            ? "0 4px 16px rgba(234, 179, 8, 0.3)"
+            : "0 4px 16px rgba(34, 197, 94, 0.3)",
           animation: "slideDown 0.3s ease-out",
         }}
       >
-        <div
-          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: "rgba(255, 255, 255, 0.22)" }}
-        >
-          {isSlow ? (
-            <WifiOff className="w-4 h-4 text-white" />
-          ) : (
-            <Wifi className="w-4 h-4 text-white" />
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-white">
-            {isSlow ? "Slow Connection" : "Connection Restored"}
-          </p>
-          <p className="text-[11px] text-white/85">
-            {isSlow
-              ? "Content may take longer to load"
-              : "You're back online with good speed"}
-          </p>
-        </div>
+        {isSlow ? (
+          <WifiOff className="w-3.5 h-3.5 text-white shrink-0" />
+        ) : (
+          <Wifi className="w-3.5 h-3.5 text-white shrink-0" />
+        )}
+        <p className="text-xs font-semibold text-white whitespace-nowrap">
+          {isSlow ? "Slow connection" : "Back online"}
+        </p>
         {isSlow && (
           <button
             onClick={handleDismiss}
-            className="p-1.5 rounded-lg hover:bg-white/15 shrink-0"
+            className="ml-0.5 -mr-1 p-1 rounded-full hover:bg-white/15 shrink-0"
             aria-label="Dismiss"
           >
-            <X className="w-4 h-4 text-white" />
+            <X className="w-3 h-3 text-white" />
           </button>
         )}
       </div>

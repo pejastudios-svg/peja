@@ -461,8 +461,6 @@ export default function ProfilePage() {
                   <PostCard
                     key={post.id}
                     post={post}
-                    onConfirm={() => {}}
-                    onShare={() => {}}
                     sourceKey={showingConfirmed ? "profile:confirmed" : "profile:posts"}
                   />
                 ))}

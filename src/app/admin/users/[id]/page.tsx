@@ -444,7 +444,7 @@ useEffect(() => {
           {posts.map((p) => (
             <div key={p.id} className="glass-card p-4 h-full flex flex-col justify-between">
               {/* Use existing PostCard UI */}
-              <PostCard post={p} onConfirm={() => {}} onShare={() => {}} sourceKey={`admin:user:${userId}`} />
+              <PostCard post={p} sourceKey={`admin:user:${userId}`} />
 
               <div className="mt-3 pt-3 border-t border-white/10 flex gap-2">
                 <Button

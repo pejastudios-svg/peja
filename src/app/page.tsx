@@ -835,8 +835,6 @@ const nearbyBg = swipeProgress < 0.5
                         key={`nearby-${post.id}`}
                         post={post}
                         sourceKey="home:nearby"
-                        onConfirm={() => {}}
-                        onShare={() => {}}
                       />
                     ))}
                   </div>
@@ -865,8 +863,6 @@ const nearbyBg = swipeProgress < 0.5
                         key={`trend-${post.id}`}
                         post={post}
                         sourceKey="home:trending"
-                        onConfirm={() => {}}
-                        onShare={() => {}}
                       />
                     ))}
                   </div>

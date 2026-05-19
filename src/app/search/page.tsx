@@ -300,7 +300,9 @@ useEffect(() => {
 
   const hasActiveFilters = selectedCategory || dateRange !== "all";
 
-  const handleSharePost = async (post: Post) => {
+  // useCallback so the prop reference is stable across renders — otherwise
+  // PostCard's React.memo can't skip re-renders of the search results list.
+  const handleSharePost = useCallback(async (post: Post) => {
     const shareUrl = `https://peja.life/post/${post.id}`;
     if (navigator.share) {
       try {
@@ -310,7 +312,7 @@ useEffect(() => {
       await navigator.clipboard.writeText(shareUrl);
       alert("Link copied!");
     }
-  };
+  }, []);
 
   return (
     <PullToRefresh onRefresh={async () => { await performSearch(); }}>
@@ -488,7 +490,6 @@ useEffect(() => {
                 <PostCard
                   key={post.id}
                   post={post}
-                  onConfirm={() => {}}
                   onShare={handleSharePost}
                   sourceKey={feedKey}
                 />
