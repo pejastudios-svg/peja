@@ -90,6 +90,13 @@ export function InlineVideo({
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  // Smart preload: "none" while far from viewport, "metadata" within ~1
+  // viewport of visible. Previously hardcoded to "metadata" which fired a
+  // ranged HTTP request for every video on mount — a 50-post feed meant
+  // ~50 parallel requests on initial render and was a major lag source on
+  // slower Android devices. Instant playback is preserved because the next
+  // video to scroll into view is always already "near" and pre-loaded.
+  const [preloadLevel, setPreloadLevel] = useState<"none" | "metadata">("none");
 
   // Self-expansion state (used when onExpand prop is not provided)
   const [expandPhase, setExpandPhase] = useState<"idle" | "enter" | "open" | "exit">("idle");
@@ -384,6 +391,24 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
     return () => window.removeEventListener(PLAYING_EVENT, handler);
   }, [instanceId]);
 
+  // Near-viewport observer for smart preload. Independent of `autoPlay` —
+  // even videos with autoPlay=false benefit from metadata being ready when
+  // the user taps Play. rootMargin "100% 0%" treats anything within 1
+  // viewport above or below as "near". Leaving the near zone drops preload
+  // back to "none" so memory doesn't grow unbounded as the user scrolls.
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const near = new IntersectionObserver(
+      (entries) => {
+        setPreloadLevel(entries[0].isIntersecting ? "metadata" : "none");
+      },
+      { rootMargin: "100% 0%" }
+    );
+    near.observe(el);
+    return () => near.disconnect();
+  }, []);
+
   useEffect(() => {
     if (!autoPlay) return;
 
@@ -471,7 +496,7 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
         ? `max-w-full max-h-full object-contain pointer-events-none transition-opacity duration-100 ${!videoReady ? "opacity-0" : "opacity-100"}`
         : `${className} ${!videoReady ? "opacity-0" : "opacity-100"}`}
       playsInline
-      preload="metadata"
+      preload={preloadLevel}
       muted
       loop
       onTimeUpdate={handleTimeUpdate}

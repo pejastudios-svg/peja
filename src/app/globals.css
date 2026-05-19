@@ -196,11 +196,14 @@ textarea,
   }
 }
 
-/* Strong glass for menus, dropdowns, modals */
+/* Strong glass for menus, dropdowns, modals.
+   Both filter values match — earlier the webkit fork was 60px which was
+   a major GPU cost on Android WebView (Chromium-based, hits the webkit
+   prefix too) and contributed to compositor glitches. */
 .glass-strong {
   background: var(--glass-strong-bg);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(60px);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--glass-border-strong);
   box-shadow: var(--glass-shadow-strong);
 }
@@ -2680,8 +2683,8 @@ body.keyboard-open .post-detail-messages {
 /* Liquid glass nav bar */
 .liquid-nav {
   background: rgba(18, 10, 35, 0.55);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4),
     inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
@@ -2690,8 +2693,8 @@ body.keyboard-open .post-detail-messages {
 /* Liquid glass header */
 .liquid-header {
   background: rgba(18, 10, 35, 0.55);
-  backdrop-filter: blur(40px) saturate(180%);
-  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3),
     inset 0 0.5px 0 rgba(255, 255, 255, 0.06);

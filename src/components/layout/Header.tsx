@@ -24,11 +24,14 @@ interface HeaderProps {
   showDefaultActions?: boolean;
 }
 
-// Theme-aware liquid glass via CSS variables.
+// Theme-aware liquid glass via CSS variables. blur(20px) is the sweet spot —
+// visually nearly identical to the old blur(50px) but a fraction of the GPU
+// cost, which was triggering Android WebView compositor glitches (black
+// rectangles around text-selection popups and stacked glass surfaces).
 const GLASS: React.CSSProperties = {
   background: "var(--glass-header-bg)",
-  backdropFilter: "blur(50px) saturate(180%)",
-  WebkitBackdropFilter: "blur(50px) saturate(180%)",
+  backdropFilter: "blur(20px) saturate(180%)",
+  WebkitBackdropFilter: "blur(20px) saturate(180%)",
   border: "1px solid var(--glass-border)",
   boxShadow: "var(--glass-shadow-header)",
   borderRadius: "16px",
