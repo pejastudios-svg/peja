@@ -11,7 +11,7 @@ import {
 } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "./AuthContext";
-import type { Conversation, VIPUser, Message } from "@/lib/types";
+import type { Conversation, VIPUser, Message, MessageMediaItem } from "@/lib/types";
 
 // =====================================================
 // TYPES
@@ -31,6 +31,23 @@ type ChatListener = {
   onParticipantUpdate: (data: any) => void;
 };
 
+// Per-conversation state held in the provider. Replaces the per-page
+// useState<Message[]> in messages/[id]/page.tsx — moving it here means
+// the array survives navigation and an in-flight optimistic send isn't
+// dropped if the user leaves the chat before the insert resolves.
+//
+// messages: chronological order. May contain optimistic `temp-*` ids.
+// loadedFromDB: true once the first fresh DB fetch completes (vs. just
+//   the IndexedDB cache restore). Consumers can use this to decide whether
+//   to show a spinner or a skeleton vs. the cached list.
+// loadedAt: ms timestamp of the last fresh DB fetch. Used for staleness
+//   checks (e.g., refresh in background if older than N seconds).
+type ChatState = {
+  messages: Message[];
+  loadedFromDB: boolean;
+  loadedAt: number | null;
+};
+
 interface MessageCacheContextValue {
   conversations: ConversationWithUser[];
   conversationsLoading: boolean;
@@ -46,6 +63,13 @@ interface MessageCacheContextValue {
   subscribeToChat: (conversationId: string, listener: ChatListener) => () => void;
   setActiveConversation: (conversationId: string | null) => void;
   activeConversationId: string | null;
+
+  // Per-chat message store. Step 1: foundation only — these are the
+  // primitives the chat page will migrate onto. The map lives here so
+  // navigation doesn't tear down a chat's local state mid-send.
+  chatStates: Map<string, ChatState>;
+  getChatMessages: (conversationId: string) => Message[];
+  loadChatMessages: (conversationId: string) => Promise<void>;
 
   // UI state shared across pages
   recordingConversationId: string | null;
@@ -112,6 +136,68 @@ async function idbLoad(): Promise<ConversationWithUser[]> {
 }
 
 // =====================================================
+// INDEXEDDB — per-chat message cache. Separate DB from the conversation
+// list cache so its schema can evolve independently. Keyed by
+// conversation_id so a single lookup returns the full thread snapshot.
+// =====================================================
+const CHAT_DB_NAME = "peja-chat-msgs-v1";
+const CHAT_DB_VERSION = 1;
+const CHAT_STORE = "chat_msgs";
+
+function chatDbOpen(): Promise<IDBDatabase | null> {
+  if (typeof window === "undefined" || !window.indexedDB) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(CHAT_DB_NAME, CHAT_DB_VERSION);
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => resolve(req.result);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(CHAT_STORE)) {
+          db.createObjectStore(CHAT_STORE, { keyPath: "conversationId" });
+        }
+      };
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function chatDbLoad(conversationId: string): Promise<Message[] | null> {
+  const db = await chatDbOpen();
+  if (!db) return null;
+  try {
+    const tx = db.transaction(CHAT_STORE, "readonly");
+    const store = tx.objectStore(CHAT_STORE);
+    return new Promise((resolve) => {
+      const req = store.get(conversationId);
+      req.onsuccess = () => {
+        const row = req.result as { conversationId: string; messages: Message[] } | undefined;
+        resolve(row?.messages || null);
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
+}
+
+async function chatDbSave(conversationId: string, messages: Message[]): Promise<void> {
+  const db = await chatDbOpen();
+  if (!db) return;
+  try {
+    const tx = db.transaction(CHAT_STORE, "readwrite");
+    const store = tx.objectStore(CHAT_STORE);
+    // Cap at 200 most-recent so we don't grow unboundedly per chat.
+    store.put({ conversationId, messages: messages.slice(-200) });
+  } catch {} finally {
+    db.close();
+  }
+}
+
+// =====================================================
 // HELPERS
 // =====================================================
 function sortByLastMessage(convs: ConversationWithUser[]): ConversationWithUser[] {
@@ -133,6 +219,12 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
   const [activeConversationId, setActiveIdState] = useState<string | null>(null);
   const [recordingConversationId, setRecordingConversationId] = useState<string | null>(null);
 
+  // Per-conversation message store. Held as a Map state so React notifies
+  // consumers on any change, but we shallow-clone on every write (see
+  // setChatStateFor) so reference equality still works for memo'd children
+  // that only care about a single conversation.
+  const [chatStates, setChatStates] = useState<Map<string, ChatState>>(new Map());
+
   // Refs
   const activeConvRef = useRef<string | null>(null);
   const channelRef = useRef<any>(null);
@@ -141,9 +233,20 @@ export function MessageCacheProvider({ children }: { children: React.ReactNode }
   const userIdRef = useRef<string | null>(null);
   const hasFetchedRef = useRef(false);
 
+  // Latest chatStates exposed via ref so non-reactive callers (e.g. an
+  // event handler reading "current" messages without re-rendering) can grab
+  // them synchronously. Always kept in sync with the React state below.
+  const chatStatesRef = useRef<Map<string, ChatState>>(chatStates);
+
+  // Dedup concurrent loadChatMessages calls for the same conversation —
+  // if a load is already in flight, subsequent callers await the same
+  // promise instead of firing duplicate Supabase round-trips.
+  const loadingChatsRef = useRef<Map<string, Promise<void>>>(new Map());
+
   // Keep refs in sync
   useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
   useEffect(() => { userIdRef.current = user?.id || null; }, [user?.id]);
+  useEffect(() => { chatStatesRef.current = chatStates; }, [chatStates]);
 
   // =====================================================
   // SET ACTIVE CONVERSATION
@@ -247,6 +350,166 @@ const setActiveConversation = useCallback((id: string | null) => {
     if (!listeners) return;
     listeners.forEach((l) => { try { action(l); } catch {} });
   }, []);
+
+  // =====================================================
+  // PER-CHAT MESSAGE STORE (Step 1 of the B-lite migration)
+  //
+  // Plumbing only — no callers yet. The chat page will move onto these in
+  // Step 2. Once it does, the messages array survives navigation, an
+  // optimistic send doesn't get dropped when the user leaves mid-insert,
+  // and the realtime channel writes go through a single source of truth
+  // instead of being dispatched into ad-hoc page listeners.
+  // =====================================================
+
+  // Internal helper. Always shallow-clones the outer Map so React sees a
+  // new reference; the per-conversation ChatState is rebuilt by `updater`
+  // so consumers can use reference equality to detect changes.
+  const setChatStateFor = useCallback(
+    (conversationId: string, updater: (prev: ChatState) => ChatState) => {
+      setChatStates((prev) => {
+        const next = new Map(prev);
+        const current =
+          next.get(conversationId) || { messages: [], loadedFromDB: false, loadedAt: null };
+        next.set(conversationId, updater(current));
+        return next;
+      });
+    },
+    []
+  );
+
+  const getChatMessages = useCallback((conversationId: string): Message[] => {
+    return chatStatesRef.current.get(conversationId)?.messages || [];
+  }, []);
+
+  // Idempotent load. Re-entrant calls for the same conversation while a
+  // load is in flight await the existing promise. Hydrates the store from
+  // IndexedDB first (instant first paint), then refreshes from Supabase
+  // and merges, preserving any optimistic temp- messages already in the
+  // store (so a send that started before the load doesn't get clobbered).
+  const loadChatMessages = useCallback(
+    async (conversationId: string): Promise<void> => {
+      if (!conversationId) return;
+
+      const existing = loadingChatsRef.current.get(conversationId);
+      if (existing) return existing;
+
+      const loadPromise = (async () => {
+        try {
+          // STEP 1 — IDB cache for instant render. Don't overwrite if the
+          // store already has messages (e.g. from a previous load or a
+          // pending optimistic send).
+          const cached = await chatDbLoad(conversationId);
+          if (cached && cached.length > 0) {
+            const existingMsgs = chatStatesRef.current.get(conversationId)?.messages;
+            if (!existingMsgs || existingMsgs.length === 0) {
+              setChatStateFor(conversationId, (prev) => ({ ...prev, messages: cached }));
+            }
+          }
+
+          // STEP 2 — Fresh fetch from DB.
+          const { data, error } = await supabase
+            .from("messages")
+            .select("*")
+            .eq("conversation_id", conversationId)
+            .order("created_at", { ascending: false })
+            .limit(50);
+
+          if (error) throw error;
+
+          const chrono = ((data || []) as Message[]).reverse();
+
+          if (chrono.length === 0) {
+            setChatStateFor(conversationId, () => ({
+              messages: [],
+              loadedFromDB: true,
+              loadedAt: Date.now(),
+            }));
+            return;
+          }
+
+          const allIds = chrono.map((m) => m.id);
+          const mediaIds = chrono
+            .filter((m) => m.content_type === "media" || m.content_type === "document")
+            .map((m) => m.id);
+          const replyIds = chrono
+            .filter((m) => m.reply_to_id)
+            .map((m) => m.reply_to_id!);
+
+          // Joined data in parallel — mirrors what the page used to do.
+          const [mediaRes, reactionsRes, repliesRes] = await Promise.all([
+            mediaIds.length > 0
+              ? supabase.from("message_media").select("*").in("message_id", mediaIds)
+              : Promise.resolve({ data: [] as any[] }),
+            allIds.length > 0
+              ? supabase.from("message_reactions").select("*").in("message_id", allIds)
+              : Promise.resolve({ data: [] as any[] }),
+            replyIds.length > 0
+              ? supabase.from("messages").select("*").in("id", replyIds)
+              : Promise.resolve({ data: [] as any[] }),
+          ]);
+
+          const mediaMap: Record<string, MessageMediaItem[]> = {};
+          (mediaRes.data || []).forEach((m: any) => {
+            if (!mediaMap[m.message_id]) mediaMap[m.message_id] = [];
+            mediaMap[m.message_id].push(m);
+          });
+
+          const reactionsMap: Record<string, any[]> = {};
+          (reactionsRes.data || []).forEach((r: any) => {
+            if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
+            reactionsMap[r.message_id].push(r);
+          });
+
+          const replyMap: Record<string, Message> = {};
+          (repliesRes.data || []).forEach((r: any) => {
+            replyMap[r.id] = r as Message;
+          });
+
+          const enriched: Message[] = chrono.map((m) => ({
+            ...m,
+            media: mediaMap[m.id] || [],
+            reactions: reactionsMap[m.id] || [],
+            reply_to: m.reply_to_id ? replyMap[m.reply_to_id] || null : null,
+          }));
+
+          // Merge with anything currently in the store. Preserve in-flight
+          // temp- optimistic messages so a send that started before the
+          // fetch resolved doesn't disappear from the UI.
+          setChatStateFor(conversationId, (prev) => {
+            const freshIds = new Set(enriched.map((m) => m.id));
+            const keptTemp = prev.messages.filter(
+              (m) => m.id.startsWith("temp-") && !freshIds.has(m.id)
+            );
+            const combined =
+              keptTemp.length === 0
+                ? enriched
+                : [...enriched, ...keptTemp].sort(
+                    (a, b) =>
+                      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                  );
+            return {
+              messages: combined,
+              loadedFromDB: true,
+              loadedAt: Date.now(),
+            };
+          });
+
+          // Persist the real (non-temp) messages to IDB for next cold start.
+          chatDbSave(conversationId, enriched).catch(() => {});
+        } catch {
+          // Swallow — store keeps whatever it had (cache or empty). The
+          // caller decides whether to retry by calling loadChatMessages
+          // again.
+        } finally {
+          loadingChatsRef.current.delete(conversationId);
+        }
+      })();
+
+      loadingChatsRef.current.set(conversationId, loadPromise);
+      return loadPromise;
+    },
+    [setChatStateFor]
+  );
 
   // =====================================================
   // LOAD CACHED CONVERSATIONS (instant display)
@@ -855,6 +1118,9 @@ const markConversationRead = useCallback(async (conversationId: string) => {
     activeConversationId,
     recordingConversationId,
     setRecordingConversationId,
+    chatStates,
+    getChatMessages,
+    loadChatMessages,
   }), [
     conversations,
     conversationsLoading,
@@ -866,6 +1132,9 @@ const markConversationRead = useCallback(async (conversationId: string) => {
     setActiveConversation,
     activeConversationId,
     recordingConversationId,
+    chatStates,
+    getChatMessages,
+    loadChatMessages,
   ]);
 
   return (
