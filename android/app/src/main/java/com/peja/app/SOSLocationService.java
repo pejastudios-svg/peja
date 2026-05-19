@@ -129,12 +129,17 @@ public class SOSLocationService extends Service {
     }
 
     private void startLocationUpdates() {
+        // Strict 15s cadence regardless of movement. Previously this was
+        // 10s preferred / 20m distance filter, which meant a stationary
+        // user got no updates at all. SOS requires continuous tracking even
+        // when motionless — pinning interval == minInterval == maxDelay
+        // forces an update every ~15s as long as a fresh fix is available.
         LocationRequest locationRequest = new LocationRequest.Builder(
                 Priority.PRIORITY_HIGH_ACCURACY,
-                10_000L
+                15_000L
         )
-                .setMinUpdateDistanceMeters(20f)
-                .setMinUpdateIntervalMillis(5_000L)
+                .setMinUpdateDistanceMeters(0f)
+                .setMinUpdateIntervalMillis(15_000L)
                 .setMaxUpdateDelayMillis(15_000L)
                 .build();
 

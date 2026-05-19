@@ -97,6 +97,14 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- SML (Share My Location) Foreground Service — drives safety check-in
+             tracking. Mirrors SOS but writes to safety_checkins. -->
+        <service
+            android:name=".SMLLocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
         <!-- Boot receiver to restart SOS tracking after reboot -->
         <receiver
             android:name=".SOSBootReceiver"

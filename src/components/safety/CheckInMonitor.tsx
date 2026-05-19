@@ -99,7 +99,6 @@ useEffect(() => {
   // Background location tracking when check-in is active
   const locationWatchRef = useRef<number | null>(null);
   const locationPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const bgWatcherRef = useRef<string | null>(null);
   const activeRef = useRef(false);
 
   useEffect(() => {
@@ -116,35 +115,33 @@ useEffect(() => {
       }).catch(() => {});
     };
 
-    const startTracking = async () => {
+    const startTracking = async (checkinId: string) => {
       if (activeRef.current) return;
       activeRef.current = true;
 
-      // Try native background geolocation first
+      // Native Android foreground service first. Mirrors the SOS pattern:
+      // SMLLocationService runs a FusedLocationProviderClient at strict 15s
+      // cadence, no distance filter, PATCHing safety_checkins directly. The
+      // ongoing notification ("Location Sharing Active") is mandatory under
+      // Android 10+ foreground-service rules.
       try {
-        const { registerPlugin } = await import("@capacitor/core");
-        const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
-        bgWatcherRef.current = await BackgroundGeolocation.addWatcher(
-          {
-            backgroundMessage: "Peja is tracking your location for safety",
-            backgroundTitle: "Location Sharing Active",
-            requestPermissions: true,
-            stale: false,
-            distanceFilter: 10, // meters
-          },
-          (location: any, error: any) => {
-            if (error) return;
-            if (location) {
-              sendLocation(location.latitude, location.longitude);
-            }
-          }
-        );
-        return; // Native tracking started, no need for web fallback
+        const isCapacitor = typeof (window as any).Capacitor !== "undefined";
+        if (isCapacitor) {
+          const { default: SMLLocation } = await import("@/lib/smlLocation");
+          await SMLLocation.startTracking({
+            checkinId,
+            supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+            supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+            accessToken: session.access_token,
+          });
+          return;
+        }
       } catch {
-        // Not on native platform, use web fallback
+        // Plugin not available or failed — drop through to web fallback.
       }
 
-      // Web fallback: watchPosition + polling
+      // Web fallback: watchPosition + polling. Only fires while the WebView
+      // is in the foreground — browsers don't support real background tracking.
       if (!navigator.geolocation) return;
 
       navigator.geolocation.getCurrentPosition(
@@ -171,15 +168,14 @@ useEffect(() => {
     const stopTracking = async () => {
       activeRef.current = false;
 
-      // Stop native background tracking
-      if (bgWatcherRef.current) {
-        try {
-          const { registerPlugin } = await import("@capacitor/core");
-          const BackgroundGeolocation = registerPlugin<any>("BackgroundGeolocation");
-          await BackgroundGeolocation.removeWatcher({ id: bgWatcherRef.current });
-          bgWatcherRef.current = null;
-        } catch {}
-      }
+      // Stop native foreground service
+      try {
+        const isCapacitor = typeof (window as any).Capacitor !== "undefined";
+        if (isCapacitor) {
+          const { default: SMLLocation } = await import("@/lib/smlLocation");
+          await SMLLocation.stopTracking();
+        }
+      } catch {}
 
       // Stop web fallback
       if (locationWatchRef.current !== null) {
@@ -199,7 +195,7 @@ useEffect(() => {
         });
         const data = await res.json();
         if (data.active && data.checkin) {
-          if (!activeRef.current) startTracking();
+          if (!activeRef.current) startTracking(data.checkin.id);
         } else {
           if (activeRef.current) stopTracking();
         }
