@@ -30,23 +30,23 @@ export function useChatInit() {
     const store = useChatStore.getState();
 
     if (!userId) {
-      // No user — wipe the store + cancel realtime. Doing it in this
-      // order means downstream subscribers see an empty store before the
-      // channel goes silent, which is the correct order.
+      console.log("[chat-v2] no user — resetting store + stopping realtime");
       store.reset();
       stopChatRealtime().catch(() => {});
       return;
     }
 
+    console.log("[chat-v2] init for user", userId, "hydrated:", store.conversationsHydrated);
     store.setCurrentUserId(userId);
-    startChatRealtime(userId).catch(() => {});
+    startChatRealtime(userId).catch((e) => console.error("[chat-v2] startChatRealtime failed", e));
 
-    // First-time fetch of the conversation list for this session. Skipped
-    // if we've already hydrated — realtime keeps it fresh after that.
     if (!store.conversationsHydrated) {
       fetchConversationList(userId)
-        .then((list) => useChatStore.getState().setConversations(list))
-        .catch(() => {});
+        .then((list) => {
+          console.log("[chat-v2] fetched conversation list:", list.length, "conversations");
+          useChatStore.getState().setConversations(list);
+        })
+        .catch((e) => console.error("[chat-v2] fetchConversationList failed", e));
     }
   }, [userId]);
 }

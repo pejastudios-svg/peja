@@ -35,6 +35,8 @@ export async function startChatRealtime(userId: string): Promise<void> {
     activeUserId = null;
   }
 
+  console.log("[chat-v2] starting realtime for user", userId);
+
   const channel = supabase
     .channel(`chat-v2-${userId}`)
     // ---- New message inserted (any conversation, RLS scopes to ours) ----
@@ -42,6 +44,7 @@ export async function startChatRealtime(userId: string): Promise<void> {
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "messages" },
       async (payload) => {
+        console.log("[chat-v2] INSERT messages event", payload.new);
         const row = payload.new as any;
         if (!row?.id || !row?.conversation_id) return;
         await handleMessageInsert(row, userId);
@@ -52,6 +55,7 @@ export async function startChatRealtime(userId: string): Promise<void> {
       "postgres_changes",
       { event: "UPDATE", schema: "public", table: "messages" },
       (payload) => {
+        console.log("[chat-v2] UPDATE messages event", payload.new);
         const row = payload.new as any;
         if (!row?.id || !row?.conversation_id) return;
         useChatStore.getState().patchMessage(row.conversation_id, row.id, {
@@ -67,6 +71,7 @@ export async function startChatRealtime(userId: string): Promise<void> {
       "postgres_changes",
       { event: "UPDATE", schema: "public", table: "conversations" },
       (payload) => {
+        console.log("[chat-v2] UPDATE conversations event", payload.new);
         const row = payload.new as any;
         if (!row?.id) return;
         useChatStore.getState().patchConversation(row.id, {
@@ -81,6 +86,7 @@ export async function startChatRealtime(userId: string): Promise<void> {
       "postgres_changes",
       { event: "UPDATE", schema: "public", table: "conversation_participants" },
       (payload) => {
+        console.log("[chat-v2] UPDATE conversation_participants event", payload.new);
         const row = payload.new as any;
         if (!row?.conversation_id || !row?.user_id) return;
         if (row.user_id === userId) return; // our own read state is local
@@ -115,7 +121,16 @@ export async function startChatRealtime(userId: string): Promise<void> {
         }
       }
     )
-    .subscribe();
+    .subscribe((status, err) => {
+      // Diagnostic — this is the single most useful log when debugging
+      // "nothing is real-time". Expected sequence:
+      //   "SUBSCRIBED" → channel is alive, events should flow
+      //   "CHANNEL_ERROR" or "TIMED_OUT" → Supabase Realtime is not
+      //     delivering events to this client. Typical cause: the
+      //     `messages` / `conversations` tables aren't in the
+      //     `supabase_realtime` publication, or RLS is denying.
+      console.log("[chat-v2] subscribe status:", status, err || "");
+    });
 
   activeChannel = channel;
   activeUserId = userId;

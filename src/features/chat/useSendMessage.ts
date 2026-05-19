@@ -61,6 +61,7 @@ export function useSendMessage() {
       //    realtime INSERT will also fire for this row and upsertMessage
       //    will merge — but our local entry is already authoritative
       //    via the UUID.
+      console.log("[chat-v2] sending message", { id, conversationId, content: trimmed });
       try {
         const confirmed = await sendTextMessage({
           id,
@@ -68,14 +69,13 @@ export function useSendMessage() {
           sender_id: user.id,
           content: trimmed,
         });
+        console.log("[chat-v2] send confirmed", { id, created_at: confirmed.created_at });
         store.patchMessage(conversationId, id, {
           delivery_status: "sent",
           created_at: confirmed.created_at,
         });
       } catch (err) {
-        // Mark failed so UI can show a retry affordance. We keep the
-        // message in the store so the user can see it and act on it,
-        // rather than silently dropping.
+        console.error("[chat-v2] send failed", err);
         store.patchMessage(conversationId, id, {
           delivery_status: "failed",
         });
