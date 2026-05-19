@@ -199,7 +199,8 @@ async function shouldNotifyUser(
   category: string,
   postLatitude: number | null,
   postLongitude: number | null,
-  postAddress: string | null
+  postAddress: string | null,
+  postState: string | null
 ): Promise<boolean> {
   const settings = user.settings;
   const catType = getCategoryType(category);
@@ -263,21 +264,24 @@ async function shouldNotifyUser(
   } else if (alertZoneType === "states") {
     // ✅ Selected States
     const selectedStates = settings.selected_states || [];
-    
+
     if (selectedStates.length === 0) {
       return true;
     }
-    
-    const postState = extractStateFromAddress(postAddress);
-    
-    if (!postState) {
+
+    // Prefer the explicit state column set at post-creation time. Falls
+    // back to substring-matching the address string for older posts that
+    // were created before the state column existed (backfill is imperfect).
+    const resolvedState = postState ?? extractStateFromAddress(postAddress);
+
+    if (!resolvedState) {
       return false;
     }
-    
+
     const isInSelectedState = selectedStates.some(
-      s => s.trim().toLowerCase() === postState.trim().toLowerCase()
+      s => s.trim().toLowerCase() === resolvedState.trim().toLowerCase()
     );
-    
+
     return isInSelectedState;
   } else if (alertZoneType === "radius") {
     // ✅ Custom Radius
@@ -315,7 +319,8 @@ export async function notifyUsersAboutIncident(
   category: string,
   address: string | null,
   latitude?: number,
-  longitude?: number
+  longitude?: number,
+  state?: string | null
 ): Promise<number> {
 
   try {
@@ -383,7 +388,8 @@ export async function notifyUsersAboutIncident(
         category,
         latitude || null,
         longitude || null,
-        address
+        address,
+        state ?? null
       );
 
       if (shouldNotify) {

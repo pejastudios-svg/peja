@@ -136,7 +136,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const [isSensitive, setIsSensitive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
-  const [location, setLocation] = useState<{ latitude: number; longitude: number; address?: string } | null>(null);
+  const [location, setLocation] = useState<{ latitude: number; longitude: number; address?: string; state?: string | null } | null>(null);
   const [error, setError] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -221,7 +221,13 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
 
   if (!user) return null;
 
-  const getAddressFromCoords = async (lat: number, lng: number): Promise<string> => {
+  // Returns both the display address string AND the structured state name
+  // from Nominatim. State is stored on the post row so the notification
+  // fan-out can filter by state without re-parsing the address text.
+  // "Federal Capital Territory" is normalized to "FCT" to match how the
+  // settings page exposes states in its picker.
+  const getAddressFromCoords = async (lat: number, lng: number): Promise<{ address: string; state: string | null }> => {
+    const fallback = `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
@@ -235,11 +241,17 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
         if (addr.neighbourhood) parts.push(addr.neighbourhood);
         if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
         if (addr.state) parts.push(addr.state);
-        return parts.length > 0 ? parts.join(", ") : `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
+        const rawState: string | undefined = addr.state;
+        let state: string | null = rawState ? rawState.trim() : null;
+        if (state && /federal capital territory/i.test(state)) state = "FCT";
+        return {
+          address: parts.length > 0 ? parts.join(", ") : fallback,
+          state,
+        };
       }
-      return `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
+      return { address: fallback, state: null };
     } catch {
-      return `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
+      return { address: fallback, state: null };
     }
   };
 
@@ -435,9 +447,9 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       async (position) => {
         if (!isMounted.current) return;
         const { latitude, longitude } = position.coords;
-        const address = await getAddressFromCoords(latitude, longitude);
+        const { address, state } = await getAddressFromCoords(latitude, longitude);
         if (isMounted.current) {
-          setLocation({ latitude, longitude, address });
+          setLocation({ latitude, longitude, address, state });
           setLocationLoading(false);
         }
       },
@@ -854,6 +866,7 @@ setToast("Processing video...");
         latitude: location.latitude,
         longitude: location.longitude,
         address: location.address || null,
+        state: location.state || null,
         is_anonymous: false,
         is_sensitive: isSensitive,
         status: "live",
@@ -911,7 +924,8 @@ setToast("Processing video...");
       category,
       location.address || null,
       location.latitude,
-      location.longitude
+      location.longitude,
+      location.state || null
     ).then(count => {
     }).catch(err => {
     });

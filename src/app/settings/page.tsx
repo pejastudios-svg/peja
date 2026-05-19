@@ -174,8 +174,19 @@ export default function SettingsPage() {
   const saveSettings = async () => {
     if (!user) return;
 
+    // Block saves where "Specific states" is selected but no states are picked.
+    // The notification layer treats an empty list as "all states allowed",
+    // which would silently broadcast every alert — the opposite of what the
+    // user just asked for.
+    if (alertZoneType === "states" && selectedStates.length === 0) {
+      setSaveError("Pick at least one state to receive alerts from, or switch to All of Nigeria.");
+      setTimeout(() => setSaveError(""), 4000);
+      return;
+    }
+
     setSaving(true);
     setSaveSuccess(false);
+    setSaveError("");
 
     const settingsData = {
       user_id: user.id,
@@ -820,7 +831,7 @@ export default function SettingsPage() {
           />
         </section>
 
-        <p className="text-center text-sm text-dark-500 py-4">Peja v1.4.0</p>
+        <p className="text-center text-sm text-dark-500 py-4">Peja v1.5.0</p>
       </main>
 
       {/* ─── Change Password Modal ─── */}

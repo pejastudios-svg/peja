@@ -522,6 +522,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Foreground location refresh. The general LocationTracker only runs
+  // continuously when the user is on `radius` alert mode or has an active
+  // SOS — everyone else's last_latitude/last_longitude would otherwise be
+  // a one-shot value captured at last sign-in. Whenever the app becomes
+  // visible (and on mount), grab a fresh fix if our last one is >5 min old.
+  // Keeps the radius-based notification filter honest without violating
+  // the "no always-on background tracking" policy.
+  const lastForegroundRefreshRef = useRef(0);
+  useEffect(() => {
+    if (!user) return;
+
+    const REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
+
+    const refresh = () => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) return;
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastForegroundRefreshRef.current < REFRESH_THRESHOLD_MS) return;
+      lastForegroundRefreshRef.current = now;
+
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            await supabase
+              .from("users")
+              .update({
+                last_latitude: pos.coords.latitude,
+                last_longitude: pos.coords.longitude,
+                last_location_updated_at: new Date().toISOString(),
+              })
+              .eq("id", user.id);
+          } catch {}
+        },
+        () => {
+          // Permission denied / timeout — silently skip. We don't want to
+          // block app usage on this background-ish refresh.
+        },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
+      );
+    };
+
+    refresh();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [user]);
+
   async function checkAndStartLocationTracking(userId: string) {
     try {
       const [{ data: settings }, { data: sos }] = await Promise.all([

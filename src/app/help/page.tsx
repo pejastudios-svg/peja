@@ -15,6 +15,7 @@ import {
   Send,
   CheckCircle2,
   Copy,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -31,13 +32,18 @@ interface FAQItem {
 const faqs: FAQItem[] = [
   {
     question: "How do I report an incident?",
-    answer: "Tap the + button at the top of the screen, take a photo or video of the incident, select a category, add a description if needed, and post. Your location is automatically captured.",
+    answer: "Tap the + button at the bottom of the screen, take a photo or video of the incident, select a category, add a description if needed, and post. Your location is automatically captured.",
     icon: Camera,
   },
   {
     question: "What is the SOS feature?",
     answer: "The SOS feature is for personal emergencies. Press and hold the SOS button for 3 seconds to alert your emergency contacts and nearby users. Your live location will be shared for 5 hours. Misuse of this feature will result in a permanent ban.",
     icon: AlertTriangle,
+  },
+  {
+    question: "What is Share My Location (SML)?",
+    answer: "Share My Location lets trusted emergency contacts watch over you during a journey or activity. Pick a check-in interval (15 minutes to 4 hours) and tap 'I'm OK' before time runs out to confirm you're safe. If you miss the check-in, your contacts are automatically notified and continue to see your live location. Cancel anytime when you reach your destination. On Android, your location keeps updating every 15 seconds even while the app is in the background — a small notification will stay in your tray to let you know it's active.",
+    icon: Users,
   },
   {
     question: "How do I become a Guardian?",

@@ -83,20 +83,10 @@ export interface UserSettings {
   caution_alerts: boolean;
   awareness_alerts: boolean;
   info_alerts: boolean;
-  alert_zone_type: "all_nigeria" | "states" | "radius" | "saved_locations";
+  alert_zone_type: "all_nigeria" | "states" | "radius";
   selected_states: string[];
   alert_radius_km: number;
   social_notifications_silenced: boolean;
-}
-
-export interface SavedLocation {
-  id: string;
-  user_id: string;
-  name: string;
-  address?: string;
-  latitude: number;
-  longitude: number;
-  radius_km: number;
 }
 
 export interface EmergencyContact {
