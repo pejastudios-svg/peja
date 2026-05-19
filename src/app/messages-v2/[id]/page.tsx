@@ -106,20 +106,57 @@ export default function ThreadV2Page() {
           <p className="text-sm text-dark-400 py-12 text-center">Sign in to view this chat.</p>
         )}
 
-        {user && thread && !thread.hydrated && messages.length === 0 && (
-          <div className="space-y-3 py-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div
-                key={i}
-                className={`flex ${i % 2 === 0 ? "justify-start" : "justify-end"}`}
-              >
-                <div className="h-10 w-40 bg-white/5 rounded-2xl animate-pulse" />
+        {/* Pre-hydration: show a skeleton for old messages we're loading,
+            plus any pending optimistic sends the user just typed. We
+            deliberately DON'T render realtime-delivered messages here —
+            those would be a partial subset of the real thread and cause
+            the "briefly one message, then everything pops in" artifact.
+            User's own pending sends are different: they're not partial
+            data, they're the user's immediate input and must show
+            instantly to feel responsive. */}
+        {user && (!thread || !thread.hydrated) && (
+          <>
+            <div className="space-y-3 py-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className={`flex ${i % 2 === 0 ? "justify-start" : "justify-end"}`}
+                >
+                  <div className="h-10 w-40 bg-white/5 rounded-2xl animate-pulse" />
+                </div>
+              ))}
+            </div>
+            {/* User's own in-flight sends — render them so the user sees
+                immediate feedback even while history is still loading. */}
+            {messages.filter((m) => m.delivery_status === "pending").length > 0 && (
+              <div className="space-y-2 py-3">
+                {messages
+                  .filter((m) => m.delivery_status === "pending")
+                  .map((m) => (
+                    <div key={m.id} className="flex justify-end">
+                      <div className="max-w-[78%] rounded-2xl px-3.5 py-2 bg-primary-600 text-white">
+                        <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
+                        <div className="flex items-center justify-end gap-1 mt-0.5">
+                          <span className="text-[10px] text-white/70">
+                            {format(new Date(m.created_at), "HH:mm")}
+                          </span>
+                          <span className="text-[10px] text-white/70">...</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
 
-        {user && messages.length > 0 && (
+        {user && thread?.hydrated && messages.length === 0 && (
+          <p className="text-sm text-dark-400 py-12 text-center">
+            No messages yet. Say hi 👋
+          </p>
+        )}
+
+        {user && thread?.hydrated && messages.length > 0 && (
           <div className="space-y-2 py-3">
             {messages.map((m) => {
               const isMine = m.sender_id === user.id;
