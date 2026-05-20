@@ -2,10 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 
 // Periodic cleanup for chat media in Supabase Storage that has no
-// matching `message_media` row. Runs through the Storage API (NOT raw
-// SQL) because the `storage.objects` table has a `protect_delete()`
-// trigger that blocks direct DELETEs to avoid corrupting the bucket's
-// internal accounting.
+// matching `message_media` row.
 //
 // Auth pattern matches the other cron routes here:
 //   • Authorization: Bearer <CRON_SECRET>     (preferred)
@@ -13,18 +10,19 @@ import { getSupabaseAdmin } from "../../_supabaseAdmin";
 //                                              services whose free
 //                                              tier strips headers)
 //
-// Triggers it's expected to handle:
-//   • User cancelled an in-flight Supabase Storage upload. Client
-//     state was torn down but bytes finished uploading (JS client
-//     doesn't honour AbortSignal for storage uploads yet). Result is
-//     an orphan.
-//   • A `messages` insert failed (e.g. RLS) after the storage upload
-//     succeeded.
-//   • Anything else that left a file behind without a matching media
-//     row.
+// Two-step pattern:
+//   1. Call peja_list_orphan_chat_media() (SECURITY DEFINER) — it
+//      returns the list of orphan paths. We can't query
+//      storage.objects directly via PostgREST because Supabase
+//      doesn't expose the storage schema there.
+//   2. Pass those paths to supabase.storage.from(BUCKET).remove(...)
+//      which goes through the Storage API. Storage API is the path
+//      that respects Supabase's protect_delete trigger AND maintains
+//      bucket size accounting — raw SQL DELETE on storage.objects
+//      would error out.
 //
 // Safety rails:
-//   • One-hour grace window — never deletes objects newer than this
+//   • One-hour grace window — never touches objects newer than this
 //     so a slow upload still in flight can't be deleted out from
 //     under itself.
 //   • Strict bucket scope — only `message-media`.
@@ -33,7 +31,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const BUCKET = "message-media";
-const GRACE_MS = 60 * 60 * 1000; // 1 hour
+const GRACE_MINUTES = 60;
 
 export async function GET(req: NextRequest) {
   return handle(req);
@@ -64,61 +62,42 @@ async function handle(req: NextRequest) {
   try {
     const supabase = getSupabaseAdmin();
 
-    // 1. Pull every storage row in the bucket older than the grace
-    //    window. Service-role can SELECT storage.objects freely; only
-    //    DELETE is gated by protect_delete.
-    const cutoffIso = new Date(Date.now() - GRACE_MS).toISOString();
-    const { data: candidates, error: queryErr } = await supabase
-      .schema("storage")
-      .from("objects")
-      .select("id, name, created_at")
-      .eq("bucket_id", BUCKET)
-      .lt("created_at", cutoffIso)
-      .limit(5000);
-    if (queryErr) throw queryErr;
-
-    const candidateNames = (candidates || []).map((c) => c.name as string);
-    if (candidateNames.length === 0) {
-      return NextResponse.json({ ok: true, scanned: 0, deleted: 0 });
+    // 1. List orphans via the SECURITY DEFINER function.
+    const { data: orphans, error: listErr } = await supabase.rpc(
+      "peja_list_orphan_chat_media",
+      { grace_minutes: GRACE_MINUTES }
+    );
+    if (listErr) {
+      // Surface the actual Supabase error rather than letting it
+      // serialize as "[object Object]" — that's what bit the previous
+      // version.
+      return NextResponse.json(
+        {
+          ok: false,
+          stage: "list",
+          error: listErr.message || "rpc failed",
+          details: listErr.details,
+          hint: listErr.hint,
+          code: listErr.code,
+        },
+        { status: 500 }
+      );
     }
 
-    // 2. Find every message_media URL once, set-diff in memory.
-    //    Individual `LIKE %name%` queries per candidate would thrash
-    //    the DB at scale.
-    const { data: aliveRows, error: mediaErr } = await supabase
-      .from("message_media")
-      .select("url");
-    if (mediaErr) throw mediaErr;
+    const paths = ((orphans || []) as Array<{ name: string }>)
+      .map((o) => o.name)
+      .filter(Boolean);
 
-    // Build a set of "alive" path tails. A media URL looks like:
-    //   https://<project>.supabase.co/storage/v1/object/public/message-media/<path>
-    // and storage.objects.name is `<path>`. The path is the trailing
-    // segment after `message-media/`.
-    const aliveNames = new Set<string>();
-    for (const row of (aliveRows || []) as Array<{ url: string }>) {
-      const idx = row.url.indexOf(`/${BUCKET}/`);
-      if (idx === -1) continue;
-      aliveNames.add(row.url.slice(idx + BUCKET.length + 2));
+    if (paths.length === 0) {
+      return NextResponse.json({ ok: true, orphans_found: 0, deleted: 0 });
     }
 
-    const orphans = candidateNames.filter((n) => !aliveNames.has(n));
-
-    if (orphans.length === 0) {
-      return NextResponse.json({
-        ok: true,
-        scanned: candidateNames.length,
-        deleted: 0,
-      });
-    }
-
-    // 3. Delete via the Storage API (NOT raw SQL — protect_delete).
-    //    Storage API removes the file from its backend AND removes
-    //    the `storage.objects` row via its privileged service path.
-    //    Batches of 100 to stay under request payload limits.
+    // 2. Delete via the Storage API. Batches of 100 to stay under
+    //    request payload limits.
     let deleted = 0;
     const errors: string[] = [];
-    for (let i = 0; i < orphans.length; i += 100) {
-      const batch = orphans.slice(i, i + 100);
+    for (let i = 0; i < paths.length; i += 100) {
+      const batch = paths.slice(i, i + 100);
       const { error: removeErr } = await supabase.storage
         .from(BUCKET)
         .remove(batch);
@@ -131,14 +110,27 @@ async function handle(req: NextRequest) {
 
     return NextResponse.json({
       ok: errors.length === 0,
-      scanned: candidateNames.length,
-      orphans_found: orphans.length,
+      orphans_found: paths.length,
       deleted,
       errors: errors.length > 0 ? errors : undefined,
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error("[cron/cleanup-orphan-chat-media]", msg);
+    // Catch-all: stringify in a way that exposes more than
+    // `[object Object]`. Supabase often throws plain objects with
+    // useful fields, so JSON.stringify those.
+    let msg = "unknown error";
+    if (e instanceof Error) {
+      msg = e.message;
+    } else if (e && typeof e === "object") {
+      try {
+        msg = JSON.stringify(e);
+      } catch {
+        msg = "(unserialisable error)";
+      }
+    } else {
+      msg = String(e);
+    }
+    console.error("[cron/cleanup-orphan-chat-media]", msg, e);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
