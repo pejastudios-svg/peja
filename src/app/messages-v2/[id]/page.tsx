@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
-import { Send } from "lucide-react";
+import { Send, MessageSquare } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { useAuth } from "@/context/AuthContext";
 import { useChatStore } from "@/features/chat/store";
@@ -91,14 +91,15 @@ export default function ThreadV2Page() {
 
   const messages = useMemo(() => thread?.messages || [], [thread?.messages]);
 
-  // Auto-scroll on new message. Cheap heuristic — always scroll to the
-  // bottom when message count changes. Will refine in Phase 7 to handle
-  // user scroll position properly.
+  // Auto-scroll on new message or when the typing bubble appears. Cheap
+  // heuristic — always scroll to the bottom when message count changes or
+  // the other user starts typing. Phase 7 will refine to honor the user's
+  // scroll position if they've scrolled up to read history.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+  }, [messages.length, isOtherTyping]);
 
   const handleSend = useCallback(async () => {
     const content = draft.trim();
@@ -272,6 +273,23 @@ export default function ThreadV2Page() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* In-thread typing indicator. Renders as a small left-aligned
+            bubble where an incoming message would appear, with a pulsing
+            chat-bubble icon. The "typing…" text in the header stays put;
+            this is the visual companion. When voice notes ship in Phase 3
+            this same slot will host a pulsing mic icon for recording. */}
+        {user && isOtherTyping && (
+          <div className="flex justify-start pb-3 pt-1">
+            <div className="rounded-2xl bg-white/10 text-dark-100 px-3 py-2 inline-flex items-center">
+              <MessageSquare
+                className="w-4 h-4 text-primary-300 animate-pulse"
+                strokeWidth={2.25}
+                aria-label="Typing"
+              />
+            </div>
           </div>
         )}
       </main>
