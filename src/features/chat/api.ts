@@ -31,6 +31,7 @@ interface UserRow {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
+  last_seen_at: string | null;
 }
 
 /**
@@ -84,7 +85,7 @@ export async function fetchConversationList(
   if (otherUserIds.length > 0) {
     const { data: users } = await supabase
       .from("users")
-      .select("id, full_name, avatar_url")
+      .select("id, full_name, avatar_url, last_seen_at")
       .in("id", otherUserIds);
     for (const u of (users || []) as UserRow[]) usersById[u.id] = u;
   }
@@ -132,6 +133,7 @@ export async function fetchConversationList(
       other_user_id: other.user_id,
       other_user_name: otherUser?.full_name ?? null,
       other_user_avatar_url: otherUser?.avatar_url ?? null,
+      other_user_last_seen_at: otherUser?.last_seen_at ?? null,
       last_message_text: conv.last_message_text,
       last_message_at: conv.last_message_at,
       last_message_sender_id: conv.last_message_sender_id,

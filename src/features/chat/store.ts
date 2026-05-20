@@ -224,10 +224,17 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       conversationsById: existingById,
       activeConversationId,
       recentlyClearedAt,
+      lastSeenByUserId: existingLastSeen,
     } = get();
     const CLEAR_GRACE_MS = 15_000; // Generous: server propagation + retry margin.
     const now = Date.now();
     const byId: Record<string, ChatConversationSummary> = {};
+    // Seed last-seen from the DB values returned with the conversation
+    // list. Live presence "leave" events overwrite these later — they're
+    // more authoritative because they fire the instant the other user
+    // disconnects. The DB value is just the fallback for "we never saw
+    // them leave because we weren't online when they did."
+    const nextLastSeen: Record<string, string> = { ...existingLastSeen };
     for (const c of conversations) {
       const existing = existingById[c.id];
       const clearedAt = recentlyClearedAt[c.id];
@@ -243,12 +250,23 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       } else {
         byId[c.id] = c;
       }
+      // Seed last-seen, but never DOWNGRADE — only adopt the DB value if
+      // it's newer than whatever the store already has. Live presence
+      // events fire with NOW() timestamps; the DB row is sometimes a
+      // heartbeat behind. Picking the max keeps the displayed time fresh.
+      if (c.other_user_id && c.other_user_last_seen_at) {
+        const prev = nextLastSeen[c.other_user_id];
+        if (!prev || new Date(c.other_user_last_seen_at) > new Date(prev)) {
+          nextLastSeen[c.other_user_id] = c.other_user_last_seen_at;
+        }
+      }
     }
     const order = sortIds(byId, conversations.map((c) => c.id));
     set({
       conversationsById: byId,
       conversationOrder: order,
       conversationsHydrated: true,
+      lastSeenByUserId: nextLastSeen,
     });
   },
 

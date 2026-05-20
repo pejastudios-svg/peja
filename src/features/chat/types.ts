@@ -31,6 +31,11 @@ export interface ChatConversationSummary {
   other_user_id: string;
   other_user_name: string | null;
   other_user_avatar_url: string | null;
+  // Persisted "last seen" from users.last_seen_at — populated server-side
+  // by the v2 heartbeat. Used to render "last seen X ago" when the other
+  // user is offline and we never observed them go offline this session
+  // (so the live presence lastSeenByUserId is empty for them).
+  other_user_last_seen_at: string | null;
   // Mirror of conversations.last_message_text / _at — these are updated by
   // the new Postgres trigger when a message is inserted, so they're
   // authoritative server-side. v2 never patches them client-side.

@@ -23,6 +23,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useChatStore } from "./store";
 import { startChatRealtime, stopChatRealtime } from "./realtime";
 import { startPresence, stopPresence } from "./presence";
+import { startHeartbeat, stopHeartbeat } from "./heartbeat";
 import { fetchConversationList } from "./api";
 import { readOutbox } from "./outbox";
 import { useOutboxDrain } from "./useOutboxDrain";
@@ -40,6 +41,7 @@ export function useChatInit() {
       store.reset();
       stopChatRealtime().catch(() => {});
       stopPresence().catch(() => {});
+      stopHeartbeat();
       return;
     }
 
@@ -70,6 +72,7 @@ export function useChatInit() {
 
     startChatRealtime(userId).catch((e) => console.error("[chat-v2] startChatRealtime failed", e));
     startPresence(userId).catch((e) => console.error("[chat-v2] startPresence failed", e));
+    startHeartbeat(userId);
   }, [userId]);
 
   // Conversation list (re)fetch effect. Fires on:
