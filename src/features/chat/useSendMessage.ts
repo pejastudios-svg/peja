@@ -5,11 +5,18 @@
 // then awaits Supabase confirm. The same UUID is the row's primary key
 // in the DB, so when the realtime INSERT event fires it merges into the
 // already-present store entry by id — no temp→real swap dance.
+//
+// Phase 2: every send is also written to a persistent outbox in
+// localStorage *before* the network call. If the browser is offline, or
+// the call fails, the item stays in the outbox and gets retried on the
+// next online / foreground / SUBSCRIBED event (see useOutboxDrain).
+// Reload-safe: even a hard refresh mid-send won't lose the message.
 
 import { useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useChatStore } from "./store";
 import { sendTextMessage } from "./api";
+import { addToOutbox, patchOutboxItem, removeFromOutbox } from "./outbox";
 
 export function useSendMessage() {
   const { user } = useAuth();
@@ -71,10 +78,33 @@ export function useSendMessage() {
         last_message_sender_id: user.id,
       });
 
-      // 2. Wait for the server. On success, transition to "sent". The
-      //    realtime INSERT will also fire for this row and upsertMessage
-      //    will merge — but our local entry is already authoritative
-      //    via the UUID.
+      // 2. Persist to the outbox BEFORE the network call. If we lose
+      //    connectivity or the tab crashes between here and the await
+      //    below, this is what saves the message — useOutboxDrain will
+      //    pick it up on the next online / foreground / reconnect event.
+      addToOutbox(user.id, {
+        id,
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: trimmed,
+        created_at: optimisticTime,
+        attempts: 0,
+        last_error: null,
+      });
+
+      // If the browser knows it's offline, don't even attempt the send.
+      // The outbox holds the message; drain will replay it when 'online'
+      // fires. Status stays "pending" so the UI shows the clock indicator
+      // (we'll add a queue-specific indicator in a UI polish pass).
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        console.log("[chat-v2] offline — message queued", { id, conversationId });
+        return;
+      }
+
+      // 3. Attempt the send. On success, transition to "sent" and drop
+      //    the outbox item. On failure (network or server), keep the
+      //    outbox item and flip the message to "failed" so the user
+      //    sees the retry affordance.
       console.log("[chat-v2] sending message", { id, conversationId, content: trimmed });
       try {
         const confirmed = await sendTextMessage({
@@ -88,8 +118,14 @@ export function useSendMessage() {
           delivery_status: "sent",
           created_at: confirmed.created_at,
         });
+        removeFromOutbox(user.id, id);
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
         console.error("[chat-v2] send failed", err);
+        patchOutboxItem(user.id, id, {
+          attempts: 1,
+          last_error: errMsg,
+        });
         store.patchMessage(conversationId, id, {
           delivery_status: "failed",
         });

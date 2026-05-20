@@ -25,6 +25,8 @@ export default function MessagesV2Page() {
   const conversationOrder = useChatStore((s) => s.conversationOrder);
   const conversationsById = useChatStore((s) => s.conversationsById);
   const hydrated = useChatStore((s) => s.conversationsHydrated);
+  const draftsByConversation = useChatStore((s) => s.draftsByConversation);
+  const onlineUserIds = useChatStore((s) => s.onlineUserIds);
 
   const conversations = useMemo(
     () => conversationOrder.map((id) => conversationsById[id]).filter(Boolean),
@@ -66,21 +68,33 @@ export default function MessagesV2Page() {
           <div>
             {conversations.map((conv) => {
               const isFromMe = conv.last_message_sender_id === user.id;
+              const draft = draftsByConversation[conv.id]?.trim();
+              const otherOnline = Boolean(
+                conv.other_user_id && onlineUserIds[conv.other_user_id]
+              );
               return (
                 <button
                   key={conv.id}
                   onClick={() => router.push(`/messages-v2/${conv.id}`)}
                   className="w-full flex items-center gap-3 py-3 px-1 text-left hover:bg-white/5 rounded-xl transition-colors"
                 >
-                  <div className="w-12 h-12 rounded-full overflow-hidden bg-primary-600/20 border border-white/10 flex items-center justify-center shrink-0">
-                    {conv.other_user_avatar_url ? (
-                      <img
-                        src={conv.other_user_avatar_url}
-                        alt=""
-                        className="w-full h-full object-cover"
+                  <div className="relative shrink-0">
+                    <div className="w-12 h-12 rounded-full overflow-hidden bg-primary-600/20 border border-white/10 flex items-center justify-center">
+                      {conv.other_user_avatar_url ? (
+                        <img
+                          src={conv.other_user_avatar_url}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <User className="w-5 h-5 text-primary-300" />
+                      )}
+                    </div>
+                    {otherOnline && (
+                      <span
+                        className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-purple-500 border-2 border-[var(--page-bg)]"
+                        aria-label="Online"
                       />
-                    ) : (
-                      <User className="w-5 h-5 text-primary-300" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -95,8 +109,17 @@ export default function MessagesV2Page() {
                       )}
                     </div>
                     <p className="text-sm text-dark-400 truncate">
-                      {isFromMe && conv.last_message_text ? "You: " : ""}
-                      {conv.last_message_text || "No messages yet"}
+                      {draft ? (
+                        <>
+                          <span className="text-red-400">Draft: </span>
+                          {draft}
+                        </>
+                      ) : (
+                        <>
+                          {isFromMe && conv.last_message_text ? "You: " : ""}
+                          {conv.last_message_text || "No messages yet"}
+                        </>
+                      )}
                     </p>
                   </div>
                   {conv.unread_count > 0 && (

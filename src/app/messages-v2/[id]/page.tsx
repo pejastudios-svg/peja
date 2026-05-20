@@ -5,7 +5,7 @@
 // Realtime updates flow in via the global channel (started by useChatInit
 // on the list page or on this page if entered directly).
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { Send } from "lucide-react";
@@ -15,7 +15,10 @@ import { useChatStore } from "@/features/chat/store";
 import { useChatInit } from "@/features/chat/useChatInit";
 import { fetchThread, markConversationRead } from "@/features/chat/api";
 import { useSendMessage } from "@/features/chat/useSendMessage";
+import { retryOutboxItem } from "@/features/chat/useOutboxDrain";
+import { useTypingChannel } from "@/features/chat/useTypingChannel";
 import { useToast } from "@/context/ToastContext";
+import { formatDistanceToNow } from "date-fns";
 
 export default function ThreadV2Page() {
   const params = useParams();
@@ -30,9 +33,31 @@ export default function ThreadV2Page() {
   const setThread = useChatStore((s) => s.setThread);
   const clearUnread = useChatStore((s) => s.clearUnread);
   const setActiveConversationId = useChatStore((s) => s.setActiveConversationId);
+  // Draft for THIS conversation. Persisted in localStorage by the store —
+  // typing, leaving, and coming back restores the in-progress message.
+  const draft = useChatStore((s) => s.draftsByConversation[conversationId] || "");
+  const setDraft = useChatStore((s) => s.setDraft);
+  const clearDraft = useChatStore((s) => s.clearDraft);
   // Reconnect signal — bumps every time the realtime channel transitions
   // to SUBSCRIBED, including after a drop. Used as a refetch trigger below.
   const lastConnectedAt = useChatStore((s) => s.lastConnectedAt);
+  // Presence + typing for the OTHER participant of this conversation.
+  const otherUserId = conv?.other_user_id || null;
+  const otherOnline = useChatStore((s) =>
+    otherUserId ? Boolean(s.onlineUserIds[otherUserId]) : false
+  );
+  const otherLastSeen = useChatStore((s) =>
+    otherUserId ? s.lastSeenByUserId[otherUserId] : undefined
+  );
+  const typing = useChatStore((s) => s.typingByConversation[conversationId]);
+  // Typing channel — opens on mount, closes on unmount. The returned
+  // function broadcasts our own "typing" event (throttled internally).
+  const sendTyping = useTypingChannel(conversationId, user?.id ?? null);
+  // Show "X is typing…" only if the typing event is from the OTHER user
+  // (we never want to render our own typing back at us).
+  const isOtherTyping = Boolean(
+    typing && otherUserId && typing.userId === otherUserId
+  );
 
   // Tell the realtime layer that this conversation is the one currently
   // being viewed. While this is set, incoming messages skip the unread
@@ -45,8 +70,7 @@ export default function ThreadV2Page() {
   }, [conversationId, setActiveConversationId]);
 
   const send = useSendMessage();
-  const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Thread refetch effect. Fires on:
@@ -78,23 +102,55 @@ export default function ThreadV2Page() {
 
   const handleSend = useCallback(async () => {
     const content = draft.trim();
-    if (!content || !conversationId || sending) return;
-    setDraft("");
-    setSending(true);
+    if (!content || !conversationId) return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    // Clear the draft immediately for snappy UX; the message is now in the
+    // outbox + store, so even a crash here won't lose it.
+    clearDraft(conversationId);
     try {
       await send(conversationId, content);
     } catch {
       toast.danger("Failed to send. Tap the message to retry.");
     } finally {
-      setSending(false);
+      sendingRef.current = false;
     }
-  }, [draft, conversationId, send, sending, toast]);
+  }, [draft, conversationId, send, toast, clearDraft]);
+
+  // Tap a failed bubble to retry. Pulls the message back out of the
+  // persistent outbox and replays the same code path the auto-drain uses.
+  const handleRetry = useCallback(
+    async (messageId: string) => {
+      if (!user?.id) return;
+      try {
+        await retryOutboxItem(user.id, messageId);
+      } catch {
+        toast.danger("Still failing. Check your connection and try again.");
+      }
+    },
+    [user?.id, toast]
+  );
+
+  // Compute the header subtitle: typing > online > last seen > nothing.
+  // The ordering matches what users expect from WhatsApp/Telegram —
+  // "typing…" wins because it's the most actionable signal.
+  let headerSubtitle: string | null = null;
+  if (isOtherTyping) {
+    headerSubtitle = "typing…";
+  } else if (otherOnline) {
+    headerSubtitle = "online";
+  } else if (otherLastSeen) {
+    headerSubtitle = `last seen ${formatDistanceToNow(new Date(otherLastSeen), {
+      addSuffix: true,
+    })}`;
+  }
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[var(--page-bg)]">
       <Header
         variant="back"
         title={conv?.other_user_name || "Chat"}
+        subtitle={headerSubtitle}
         onBack={() => router.push("/messages-v2")}
       />
 
@@ -160,39 +216,59 @@ export default function ThreadV2Page() {
           <div className="space-y-2 py-3">
             {messages.map((m) => {
               const isMine = m.sender_id === user.id;
+              const isFailed = m.delivery_status === "failed";
+              const bubbleClass = `max-w-[78%] rounded-2xl px-3.5 py-2 ${
+                isMine ? "bg-primary-600 text-white" : "bg-white/10 text-dark-100"
+              } ${isFailed ? "opacity-70 border border-red-500/60 cursor-pointer" : ""}`;
               return (
                 <div
                   key={m.id}
                   className={`flex ${isMine ? "justify-end" : "justify-start"}`}
                 >
-                  <div
-                    className={`max-w-[78%] rounded-2xl px-3.5 py-2 ${
-                      isMine
-                        ? "bg-primary-600 text-white"
-                        : "bg-white/10 text-dark-100"
-                    } ${m.delivery_status === "failed" ? "opacity-60 border border-red-500/60" : ""}`}
-                  >
-                    {m.is_deleted ? (
-                      <p className="text-sm italic opacity-70">Message deleted</p>
-                    ) : (
-                      <p className="text-sm whitespace-pre-wrap break-words">
-                        {m.content}
-                      </p>
-                    )}
-                    <div className="flex items-center justify-end gap-1 mt-0.5">
-                      <span className={`text-[10px] ${isMine ? "text-white/70" : "text-dark-500"}`}>
-                        {format(new Date(m.created_at), "HH:mm")}
-                      </span>
-                      {isMine && (
-                        <span className={`text-[10px] ${isMine ? "text-white/70" : "text-dark-500"}`}>
-                          {m.delivery_status === "pending" && "..."}
-                          {m.delivery_status === "sent" && "✓"}
-                          {m.delivery_status === "seen" && "✓✓"}
-                          {m.delivery_status === "failed" && "!"}
-                        </span>
+                  {isFailed && isMine ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRetry(m.id)}
+                      className={`${bubbleClass} text-left`}
+                      aria-label="Retry sending this message"
+                    >
+                      {m.is_deleted ? (
+                        <p className="text-sm italic opacity-70">Message deleted</p>
+                      ) : (
+                        <p className="text-sm whitespace-pre-wrap break-words">
+                          {m.content}
+                        </p>
                       )}
+                      <div className="flex items-center justify-end gap-1 mt-0.5">
+                        <span className="text-[10px] text-white/80">
+                          Tap to retry
+                        </span>
+                        <span className="text-[10px] text-red-300">!</span>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className={bubbleClass}>
+                      {m.is_deleted ? (
+                        <p className="text-sm italic opacity-70">Message deleted</p>
+                      ) : (
+                        <p className="text-sm whitespace-pre-wrap break-words">
+                          {m.content}
+                        </p>
+                      )}
+                      <div className="flex items-center justify-end gap-1 mt-0.5">
+                        <span className={`text-[10px] ${isMine ? "text-white/70" : "text-dark-500"}`}>
+                          {format(new Date(m.created_at), "HH:mm")}
+                        </span>
+                        {isMine && (
+                          <span className="text-[10px] text-white/70">
+                            {m.delivery_status === "pending" && "..."}
+                            {m.delivery_status === "sent" && "✓"}
+                            {m.delivery_status === "seen" && "✓✓"}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -207,7 +283,11 @@ export default function ThreadV2Page() {
         <div className="flex items-end gap-2 max-w-2xl mx-auto">
           <textarea
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(conversationId, e.target.value);
+              // Throttled inside the hook to ~1 broadcast per 1.5s.
+              if (e.target.value.length > 0) sendTyping();
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -221,7 +301,7 @@ export default function ThreadV2Page() {
           <button
             type="button"
             onClick={handleSend}
-            disabled={!draft.trim() || sending}
+            disabled={!draft.trim()}
             className="shrink-0 w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Send"
           >

@@ -15,6 +15,10 @@ interface HeaderProps {
   variant?: "default" | "back";
   title?: string;
   onBack?: () => void;
+  // Back variant only. A small status line rendered under the title — used
+  // by the chat thread to show "online" / "typing…" / "last seen 3m ago".
+  // Renders nothing when undefined.
+  subtitle?: ReactNode;
   // Back variant only. Renders a second pill with custom right-side content.
   // If unset and `showDefaultActions` is false, no right-side pill is rendered
   // (the back pill stretches to fill).
@@ -43,6 +47,7 @@ export function Header({
   variant = "default",
   title,
   onBack,
+  subtitle,
   actions,
   showDefaultActions = false,
 }: HeaderProps) {
@@ -111,14 +116,21 @@ export function Header({
         style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 8px)" }}
       >
         <div className="flex items-center gap-2 px-3 pt-2">
-          <div className="flex items-center h-11 px-3 flex-1" style={GLASS}>
+          <div className="flex items-center h-11 px-3 flex-1 min-w-0" style={GLASS}>
             <button
               onClick={onBack || (() => router.back())}
-              className="flex items-center gap-1.5 p-0.5 rounded-lg active:opacity-70 transition-opacity"
+              className="flex items-center gap-1.5 p-0.5 rounded-lg active:opacity-70 transition-opacity min-w-0 flex-1"
             >
-              <ArrowLeft className="w-5 h-5 text-dark-200" strokeWidth={2.5} />
-              <span className="text-[15px] font-semibold text-dark-100">
-                {title || "Back"}
+              <ArrowLeft className="w-5 h-5 text-dark-200 shrink-0" strokeWidth={2.5} />
+              <span className="flex flex-col min-w-0 items-start leading-tight">
+                <span className="text-[15px] font-semibold text-dark-100 truncate max-w-full">
+                  {title || "Back"}
+                </span>
+                {subtitle && (
+                  <span className="text-[11px] text-dark-400 truncate max-w-full">
+                    {subtitle}
+                  </span>
+                )}
               </span>
             </button>
           </div>

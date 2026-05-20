@@ -57,3 +57,21 @@ export interface ChatThread {
   // the background on resume.
   fetchedAt: number | null;
 }
+
+// A message waiting in the persistent outbox (localStorage). The same UUID
+// also exists in the store as a "pending" or "failed" message. Outbox is
+// the durable copy that survives reloads; the store is the live view.
+export interface OutboxItem {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  // Optimistic timestamp written when the user first tapped send. Server
+  // assigns the real value when the row finally inserts — until then this
+  // drives sort order in the UI.
+  created_at: string;
+  // Bump on every drain attempt so we can show "retrying…" / cap retries.
+  attempts: number;
+  // Last error message, if the most recent attempt failed.
+  last_error?: string | null;
+}

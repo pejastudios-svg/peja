@@ -58,6 +58,29 @@ interface ChatStoreState {
   // "we know better than the DB right now."
   recentlyClearedAt: Record<string, number>;
 
+  // Persisted drafts per conversation. The thread page reads + writes
+  // this so that typing a message, navigating away, then coming back
+  // restores the draft as-is. Stored to localStorage on every change.
+  draftsByConversation: Record<string, string>;
+
+  // Set of user ids currently online (from Supabase Realtime Presence).
+  // Powers the purple dot next to avatars. Stored as a plain record so
+  // selectors can compare-by-reference and bail out cleanly.
+  onlineUserIds: Record<string, true>;
+
+  // Last-seen timestamp per user — populated client-side when a user
+  // *transitions* from online to offline while we're watching. Cross-
+  // session "last seen yesterday" requires server storage (deferred to a
+  // small migration), so this only covers offline events observed this
+  // session.
+  lastSeenByUserId: Record<string, string>;
+
+  // Who is currently typing, per conversation. We store the *typing
+  // user's id* + the timestamp it last fired. Receivers expire entries
+  // after ~3s of no event (handled by a setTimeout scheduled when the
+  // entry is written).
+  typingByConversation: Record<string, { userId: string; at: number } | undefined>;
+
   // === Identity actions ===
   setCurrentUserId: (userId: string | null) => void;
   setLastConnected: () => void;
@@ -95,6 +118,21 @@ interface ChatStoreState {
   ) => void;
   markThreadHydrated: (conversationId: string) => void;
 
+  // === Drafts ===
+  setDraft: (conversationId: string, text: string) => void;
+  clearDraft: (conversationId: string) => void;
+
+  // === Presence ===
+  setOnlinePresence: (onlineUserIds: Record<string, true>) => void;
+  markUserOffline: (userId: string, at: string) => void;
+
+  // === Typing ===
+  // Receiver-side: a "typing" broadcast came in for the given user.
+  // Replaces any existing entry — only one typer per conversation
+  // shown at a time (rare to have more in a 1:1 chat anyway).
+  setTyping: (conversationId: string, userId: string) => void;
+  clearTyping: (conversationId: string) => void;
+
   // === Maintenance ===
   // Clears everything. Called on signOut. Realtime channels are torn
   // down by the realtime layer separately.
@@ -122,6 +160,44 @@ function emptyThread(conversationId: string): ChatThread {
   return { conversationId, messages: [], hydrated: false, fetchedAt: null };
 }
 
+// === Drafts persistence ===
+// Single shared localStorage key. Drafts are small (one short string per
+// conversation), so we read once at boot and write the full map on each
+// change. Synchronous API keeps the store action simple.
+const DRAFTS_KEY = "peja:chat:drafts:v1";
+
+function loadDrafts(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(DRAFTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === "string" && v.length > 0) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function persistDrafts(drafts: Record<string, string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts));
+  } catch {}
+}
+
+// === Typing-indicator timers ===
+// Map of "conversationId|userId" → timeout handle. When a typing event
+// fires, we (re)set a 3s timer that wipes the entry. Kept outside the
+// store so timers don't leak through serialization or get caught by
+// React's strict double-render.
+const typingTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+const TYPING_TTL_MS = 3_000;
+
 export const useChatStore = create<ChatStoreState>((set, get) => ({
   currentUserId: null,
   conversationsHydrated: false,
@@ -131,6 +207,10 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   lastConnectedAt: null,
   activeConversationId: null,
   recentlyClearedAt: {},
+  draftsByConversation: loadDrafts(),
+  onlineUserIds: {},
+  lastSeenByUserId: {},
+  typingByConversation: {},
 
   // ---- Identity ----
   setCurrentUserId: (userId) => set({ currentUserId: userId }),
@@ -429,8 +509,102 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     });
   },
 
+  // ---- Drafts ----
+  // Persist on every keystroke. The DOM event rate is fine (<200/sec even
+  // when typing fast); localStorage writes at that pace are still cheap
+  // compared to the React re-render they trigger.
+  setDraft: (conversationId, text) => {
+    const { draftsByConversation } = get();
+    const next = { ...draftsByConversation };
+    if (text.length > 0) {
+      next[conversationId] = text;
+    } else {
+      delete next[conversationId];
+    }
+    set({ draftsByConversation: next });
+    persistDrafts(next);
+  },
+
+  clearDraft: (conversationId) => {
+    const { draftsByConversation } = get();
+    if (!(conversationId in draftsByConversation)) return;
+    const next = { ...draftsByConversation };
+    delete next[conversationId];
+    set({ draftsByConversation: next });
+    persistDrafts(next);
+  },
+
+  // ---- Presence ----
+  // Replace the whole online set in one shot. Supabase presence "sync"
+  // events give us the full state every time, so partial diffing here
+  // would just complicate things without benefit.
+  setOnlinePresence: (onlineUserIds) => {
+    const { onlineUserIds: prev } = get();
+    // Bail if nothing changed — avoids re-rendering every subscriber on
+    // every heartbeat tick (Supabase fires sync periodically even when
+    // nothing changed).
+    const prevKeys = Object.keys(prev);
+    const nextKeys = Object.keys(onlineUserIds);
+    if (
+      prevKeys.length === nextKeys.length &&
+      prevKeys.every((k) => onlineUserIds[k])
+    ) {
+      return;
+    }
+    set({ onlineUserIds });
+  },
+
+  markUserOffline: (userId, at) => {
+    const { onlineUserIds, lastSeenByUserId } = get();
+    if (!onlineUserIds[userId] && lastSeenByUserId[userId] === at) return;
+    const nextOnline = { ...onlineUserIds };
+    delete nextOnline[userId];
+    set({
+      onlineUserIds: nextOnline,
+      lastSeenByUserId: { ...lastSeenByUserId, [userId]: at },
+    });
+  },
+
+  // ---- Typing ----
+  setTyping: (conversationId, userId) => {
+    const key = `${conversationId}|${userId}`;
+    if (typingTimers[key]) clearTimeout(typingTimers[key]);
+    const { typingByConversation } = get();
+    set({
+      typingByConversation: {
+        ...typingByConversation,
+        [conversationId]: { userId, at: Date.now() },
+      },
+    });
+    typingTimers[key] = setTimeout(() => {
+      const current = get().typingByConversation[conversationId];
+      if (!current || current.userId !== userId) return;
+      const next = { ...get().typingByConversation };
+      delete next[conversationId];
+      set({ typingByConversation: next });
+      delete typingTimers[key];
+    }, TYPING_TTL_MS);
+  },
+
+  clearTyping: (conversationId) => {
+    const { typingByConversation } = get();
+    if (!typingByConversation[conversationId]) return;
+    const next = { ...typingByConversation };
+    delete next[conversationId];
+    set({ typingByConversation: next });
+  },
+
   // ---- Maintenance ----
-  reset: () =>
+  // Wipe drafts too — different account, different state. The outbox is
+  // cleared by the realtime/init layer (it's user-scoped in storage).
+  reset: () => {
+    persistDrafts({});
+    // Flush any pending typing timers so they don't fire into the next
+    // session's state.
+    for (const k of Object.keys(typingTimers)) {
+      clearTimeout(typingTimers[k]);
+      delete typingTimers[k];
+    }
     set({
       currentUserId: null,
       conversationsHydrated: false,
@@ -440,5 +614,10 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       lastConnectedAt: null,
       activeConversationId: null,
       recentlyClearedAt: {},
-    }),
+      draftsByConversation: {},
+      onlineUserIds: {},
+      lastSeenByUserId: {},
+      typingByConversation: {},
+    });
+  },
 }));
