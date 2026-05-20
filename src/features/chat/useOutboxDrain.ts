@@ -23,6 +23,8 @@ import {
   patchOutboxItem,
 } from "./outbox";
 import { sendTextMessage } from "./api";
+import { uploadAndSendMedia } from "./useSendMessage";
+import { getBlob, removeBlobsForMessage } from "./mediaBlobs";
 import type { OutboxItem } from "./types";
 
 // Cap retries per item. After this we leave it in the outbox but stop
@@ -90,16 +92,48 @@ async function attemptSend(userId: string, item: OutboxItem): Promise<void> {
   });
 
   try {
-    const confirmed = await sendTextMessage({
-      id: item.id,
-      conversation_id: item.conversation_id,
-      sender_id: item.sender_id,
-      content: item.content,
-    });
+    let createdAt: string;
+    let mediaForStore;
+    if (item.media && item.media.length > 0) {
+      // Media item — pull blobs back out of IDB and replay the same
+      // uploadAndSendMedia path the live send uses. If a blob is missing
+      // (older outbox + IDB cleared, or a different device), we have no
+      // choice but to drop the item.
+      const files: File[] = [];
+      for (const att of item.media) {
+        const blob = await getBlob(item.id, att.attachment_id);
+        if (!blob) {
+          throw new Error("attachment blob missing in IDB — can't replay");
+        }
+        files.push(new File([blob], att.file_name, { type: att.mime_type }));
+      }
+      const confirmed = await uploadAndSendMedia({
+        id: item.id,
+        conversationId: item.conversation_id,
+        senderId: item.sender_id,
+        caption: item.content,
+        files,
+        outboxMedia: item.media,
+        outboxUserId: userId,
+      });
+      createdAt = confirmed.created_at;
+      mediaForStore = confirmed.media;
+      // Clean up the IDB blobs now that they're up.
+      removeBlobsForMessage(item.id).catch(() => {});
+    } else {
+      const confirmed = await sendTextMessage({
+        id: item.id,
+        conversation_id: item.conversation_id,
+        sender_id: item.sender_id,
+        content: item.content,
+      });
+      createdAt = confirmed.created_at;
+    }
     console.log("[chat-v2] outbox drain: sent", item.id);
     store.patchMessage(item.conversation_id, item.id, {
       delivery_status: "sent",
-      created_at: confirmed.created_at,
+      created_at: createdAt,
+      ...(mediaForStore ? { media: mediaForStore } : {}),
     });
     removeFromOutbox(userId, item.id);
   } catch (err) {

@@ -26,7 +26,9 @@ import { startPresence, stopPresence } from "./presence";
 import { startHeartbeat, stopHeartbeat } from "./heartbeat";
 import { fetchConversationList } from "./api";
 import { readOutbox } from "./outbox";
+import { getBlob } from "./mediaBlobs";
 import { useOutboxDrain } from "./useOutboxDrain";
+import type { ChatMessageMedia } from "./types";
 
 export function useChatInit() {
   const { user } = useAuth();
@@ -56,18 +58,25 @@ export function useChatInit() {
     // until drain attempts run.
     const queued = readOutbox(userId);
     for (const item of queued) {
+      const hasMedia = item.media && item.media.length > 0;
       store.upsertMessage(item.conversation_id, {
         id: item.id,
         conversation_id: item.conversation_id,
         sender_id: item.sender_id,
-        content: item.content,
-        content_type: "text",
+        content: item.content || null,
+        content_type: hasMedia ? "media" : "text",
         created_at: item.created_at,
         edited_at: null,
         is_deleted: false,
         reply_to_id: null,
         delivery_status: "failed",
       });
+      // For media items, asynchronously rebuild blob URLs from IDB so
+      // the bubble can render the preview instead of a broken icon. We
+      // fire-and-forget — the drain attempts upload regardless.
+      if (hasMedia) {
+        void hydrateOutboxMedia(item.id, item.conversation_id, item.media!);
+      }
     }
 
     startChatRealtime(userId).catch((e) => console.error("[chat-v2] startChatRealtime failed", e));
@@ -94,4 +103,38 @@ export function useChatInit() {
   // Outbox drain — listens for online + visibility + reconnect events
   // and replays anything still queued. Self-contained, idempotent.
   useOutboxDrain(userId);
+}
+
+// Build blob: URLs for a queued media message and patch them onto the
+// store entry so the bubble shows the image rather than a broken icon.
+// Each attachment's blob lives in IDB keyed by (message id, attachment id).
+async function hydrateOutboxMedia(
+  messageId: string,
+  conversationId: string,
+  attachments: NonNullable<ReturnType<typeof readOutbox>[number]["media"]>
+): Promise<void> {
+  const media: ChatMessageMedia[] = [];
+  for (const att of attachments) {
+    try {
+      const blob = await getBlob(messageId, att.attachment_id);
+      if (!blob) continue;
+      const url = att.uploaded_url || URL.createObjectURL(blob);
+      media.push({
+        id: att.attachment_id,
+        message_id: messageId,
+        url,
+        media_type: att.media_type,
+        file_name: att.file_name,
+        file_size: att.size,
+        mime_type: att.mime_type,
+        thumbnail_url: null,
+        created_at: new Date().toISOString(),
+        optimistic: !att.uploaded_url,
+      });
+    } catch (e) {
+      console.warn("[chat-v2] hydrateOutboxMedia failed for", att.attachment_id, e);
+    }
+  }
+  if (media.length === 0) return;
+  useChatStore.getState().patchMessage(conversationId, messageId, { media });
 }

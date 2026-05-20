@@ -11,7 +11,11 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 import { useChatStore } from "./store";
-import { fetchConversationList, markConversationRead } from "./api";
+import {
+  fetchConversationList,
+  fetchMediaForMessages,
+  markConversationRead,
+} from "./api";
 import type { ChatMessage } from "./types";
 
 // We keep a single active channel reference here so successive start()
@@ -159,17 +163,40 @@ async function handleMessageInsert(row: any, currentUserId: string) {
   const state = useChatStore.getState();
   const conversationId = row.conversation_id;
 
+  // For media messages, the row alone isn't enough — the URLs live in
+  // message_media. Fetch them now so the bubble can render the image as
+  // soon as it lands. (Our own optimistic message already has media
+  // populated client-side; upsertMessage's merge below preserves that.)
+  const contentType = row.content_type ?? "text";
+  let media: ChatMessage["media"];
+  if (contentType !== "text") {
+    try {
+      const map = await fetchMediaForMessages([row.id]);
+      media = map[row.id];
+      console.log("[chat-v2] INSERT media fetch", {
+        id: row.id,
+        fetched_count: media?.length ?? 0,
+      });
+    } catch (e) {
+      console.warn("[chat-v2] fetchMediaForMessages on INSERT failed", e);
+    }
+  }
+
   const message: ChatMessage = {
     id: row.id,
     conversation_id: row.conversation_id,
     sender_id: row.sender_id,
     content: row.content ?? null,
-    content_type: row.content_type ?? "text",
+    content_type: contentType,
     created_at: row.created_at,
     edited_at: row.edited_at ?? null,
     is_deleted: row.is_deleted ?? false,
     reply_to_id: row.reply_to_id ?? null,
     delivery_status: "sent",
+    // Empty arrays are truthy in JS, so the previous `media ? ...` check
+    // would pass an empty array through and wipe good media in the store.
+    // Only include the field when it actually has rows.
+    ...(media && media.length > 0 ? { media } : {}),
   };
 
   // 1. Patch the thread. upsertMessage handles dedup against an optimistic

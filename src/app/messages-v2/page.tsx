@@ -117,7 +117,14 @@ export default function MessagesV2Page() {
                       ) : (
                         <>
                           {isFromMe && conv.last_message_text ? "You: " : ""}
-                          {conv.last_message_text || "No messages yet"}
+                          {/* The DB trigger now writes media-type-aware
+                              previews ("📷 Photo", "🎥 Video", "🎙 Voice
+                              note", "📎 File"). Keep the legacy fallback
+                              so older rows / pre-migration deployments
+                              still get a sensible icon. */}
+                          {conv.last_message_text === "Sent an attachment"
+                            ? "📷 Photo"
+                            : conv.last_message_text || "No messages yet"}
                         </>
                       )}
                     </p>

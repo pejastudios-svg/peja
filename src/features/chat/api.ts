@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import type {
   ChatConversationSummary,
   ChatMessage,
+  ChatMessageMedia,
   DeliveryStatus,
 } from "./types";
 
@@ -163,8 +164,12 @@ interface MessageRow {
 /**
  * Loads the most recent N messages for a conversation, plus the other
  * participant's last_read_at so we can compute delivery_status for each
- * of the current user's messages. Returns messages chronologically
- * (oldest first), which is the order the thread UI renders.
+ * of the current user's messages. Also hydrates `message_media` for any
+ * message whose content_type is not "text" — so image / video bubbles
+ * have their URLs ready on first render.
+ *
+ * Returns messages chronologically (oldest first), which is the order
+ * the thread UI renders.
  */
 export async function fetchThread(
   conversationId: string,
@@ -191,6 +196,14 @@ export async function fetchThread(
   const rows = ((msgsRes.data || []) as MessageRow[]).reverse(); // chronological
   const otherLastRead = partsRes.data?.[0]?.last_read_at || null;
 
+  // Fetch media in one round-trip for any non-text rows. Reduces the open
+  // chat to two parallel queries even when the thread is a mix of text
+  // and images.
+  const mediaCarriers = rows.filter((r) => r.content_type !== "text").map((r) => r.id);
+  const mediaByMessage = mediaCarriers.length
+    ? await fetchMediaForMessages(mediaCarriers)
+    : {};
+
   return rows.map((row) => ({
     id: row.id,
     conversation_id: row.conversation_id,
@@ -202,7 +215,32 @@ export async function fetchThread(
     is_deleted: row.is_deleted,
     reply_to_id: row.reply_to_id,
     delivery_status: computeDeliveryStatus(row, currentUserId, otherLastRead),
+    media: mediaByMessage[row.id],
   }));
+}
+
+/**
+ * Bulk-fetch media rows grouped by message id. Used by fetchThread for the
+ * initial hydrate and by the realtime layer when a single new media row
+ * arrives.
+ */
+export async function fetchMediaForMessages(
+  messageIds: string[]
+): Promise<Record<string, ChatMessageMedia[]>> {
+  if (messageIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from("message_media")
+    .select(
+      "id, message_id, url, media_type, file_name, file_size, mime_type, thumbnail_url, created_at"
+    )
+    .in("message_id", messageIds);
+  if (error) throw error;
+  const grouped: Record<string, ChatMessageMedia[]> = {};
+  for (const row of (data || []) as ChatMessageMedia[]) {
+    if (!grouped[row.message_id]) grouped[row.message_id] = [];
+    grouped[row.message_id].push(row);
+  }
+  return grouped;
 }
 
 function computeDeliveryStatus(
@@ -264,6 +302,155 @@ export async function sendTextMessage(input: SendMessageInput): Promise<ChatMess
     is_deleted: row.is_deleted,
     reply_to_id: row.reply_to_id,
     delivery_status: "sent",
+  };
+}
+
+// =====================================================
+// Media uploads
+// =====================================================
+//
+// Two-step server write for a media message:
+//   1. Upload the file to the `message-media` storage bucket → public URL
+//   2. Insert the `messages` row + `message_media` row(s) atomically
+//      (we wrap in a tiny try/cleanup so a failed media insert deletes
+//      the orphaned messages row).
+//
+// Storage bucket and path layout match v1 so existing public URLs and
+// access policies keep working: `messages/{conversation_id}/{ts}_{name}`.
+
+const MEDIA_BUCKET = "message-media";
+
+export async function uploadMediaToStorage(args: {
+  conversationId: string;
+  blob: Blob;
+  fileName: string;
+  mimeType: string;
+}): Promise<string> {
+  const safeName = args.fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 64);
+  const path = `messages/${args.conversationId}/${Date.now()}_${safeName}`;
+  const { error: uploadErr } = await supabase.storage
+    .from(MEDIA_BUCKET)
+    .upload(path, args.blob, {
+      contentType: args.mimeType || "application/octet-stream",
+      cacheControl: "3600",
+      upsert: false,
+    });
+  if (uploadErr) throw uploadErr;
+  const { data: urlData } = supabase.storage.from(MEDIA_BUCKET).getPublicUrl(path);
+  if (!urlData?.publicUrl) {
+    throw new Error("storage public URL missing after upload");
+  }
+  return urlData.publicUrl;
+}
+
+interface SendMediaMessageInput {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  caption?: string | null;
+  reply_to_id?: string | null;
+  // Already-uploaded attachments: url + metadata. We pre-generate each
+  // attachment's `id` client-side (matches the optimistic ids in the
+  // store) and pass it in here, so we don't depend on the INSERT's
+  // RETURNING / `.select()` to know what was just written. Some RLS
+  // configurations allow INSERT but not SELECT against a row right
+  // after writing it — that was emptying out `confirmed.media` and
+  // wiping the bubble after a successful upload.
+  attachments: Array<{
+    id: string;
+    url: string;
+    media_type: "image" | "video" | "audio" | "document";
+    file_name: string;
+    file_size: number;
+    mime_type: string;
+    thumbnail_url?: string | null;
+  }>;
+}
+
+/**
+ * Insert a media message + its message_media rows. If the media insert
+ * fails, the orphaned messages row is deleted so we don't leave a row
+ * with content_type=media and no media attached.
+ *
+ * Returns a fully-populated `media` array built from the input — we
+ * deliberately do NOT trust the INSERT's `.select()` because RLS may
+ * block the implicit RETURNING even when the write itself succeeds.
+ */
+export async function sendMediaMessage(
+  input: SendMediaMessageInput
+): Promise<ChatMessage> {
+  const caption = input.caption?.trim() || null;
+  const { data: msgRow, error: msgErr } = await supabase
+    .from("messages")
+    .insert({
+      id: input.id,
+      conversation_id: input.conversation_id,
+      sender_id: input.sender_id,
+      content: caption,
+      content_type: "media",
+      reply_to_id: input.reply_to_id ?? null,
+      metadata: {},
+    })
+    .select(
+      "id, conversation_id, sender_id, content, content_type, created_at, edited_at, is_deleted, reply_to_id"
+    )
+    .single();
+  if (msgErr) throw msgErr;
+
+  const nowIso = new Date().toISOString();
+  const mediaRows = input.attachments.map((a) => ({
+    id: a.id,
+    message_id: input.id,
+    url: a.url,
+    media_type: a.media_type,
+    file_name: a.file_name,
+    file_size: a.file_size,
+    mime_type: a.mime_type,
+    thumbnail_url: a.thumbnail_url ?? null,
+  }));
+  const { error: mediaErr } = await supabase
+    .from("message_media")
+    .insert(mediaRows);
+  if (mediaErr) {
+    // Roll back the message row so we don't leave an empty media bubble.
+    await supabase.from("messages").delete().eq("id", input.id);
+    throw mediaErr;
+  }
+
+  // Build media array from input (the canonical values we just wrote).
+  // The realtime INSERT handler will later re-fetch from the DB for the
+  // other participant; that path uses the same `message_media` row, so
+  // both sides converge on the same data with the same ids.
+  const media: ChatMessageMedia[] = input.attachments.map((a) => ({
+    id: a.id,
+    message_id: input.id,
+    url: a.url,
+    media_type: a.media_type,
+    file_name: a.file_name,
+    file_size: a.file_size,
+    mime_type: a.mime_type,
+    thumbnail_url: a.thumbnail_url ?? null,
+    created_at: nowIso,
+  }));
+  console.log("[chat-v2] sendMediaMessage built media", {
+    id: input.id,
+    count: media.length,
+    first_url: media[0]?.url,
+  });
+
+  const row = msgRow as MessageRow;
+  return {
+    id: row.id,
+    conversation_id: row.conversation_id,
+    sender_id: row.sender_id,
+    content: row.content,
+    content_type: row.content_type,
+    created_at: row.created_at,
+    edited_at: row.edited_at,
+    is_deleted: row.is_deleted,
+    reply_to_id: row.reply_to_id,
+    delivery_status: "sent",
+    media,
   };
 }
 

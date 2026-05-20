@@ -81,6 +81,13 @@ interface ChatStoreState {
   // entry is written).
   typingByConversation: Record<string, { userId: string; at: number } | undefined>;
 
+  // Live upload progress for in-flight media sends, keyed by message
+  // id. Value is { fraction: 0..1, label: "Compressing photo…" | "…" }.
+  // The bubble's circular progress ring reads this; useSendMessage
+  // writes it as compression + upload tick. Cleared once the send
+  // finalises (sent OR failed).
+  uploadProgressById: Record<string, { fraction: number; label?: string } | undefined>;
+
   // === Identity actions ===
   setCurrentUserId: (userId: string | null) => void;
   setLastConnected: () => void;
@@ -132,6 +139,13 @@ interface ChatStoreState {
   // shown at a time (rare to have more in a 1:1 chat anyway).
   setTyping: (conversationId: string, userId: string) => void;
   clearTyping: (conversationId: string) => void;
+
+  // === Upload progress ===
+  setUploadProgress: (
+    messageId: string,
+    progress: { fraction: number; label?: string }
+  ) => void;
+  clearUploadProgress: (messageId: string) => void;
 
   // === Maintenance ===
   // Clears everything. Called on signOut. Realtime channels are torn
@@ -211,6 +225,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   onlineUserIds: {},
   lastSeenByUserId: {},
   typingByConversation: {},
+  uploadProgressById: {},
 
   // ---- Identity ----
   setCurrentUserId: (userId) => set({ currentUserId: userId }),
@@ -405,9 +420,29 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       return new Date(m.created_at).getTime() > latestIncomingTime;
     });
 
+    // Same media-preservation rule as upsertMessage's merge branch: if
+    // the fetch returned a message we already have, but the fetched copy
+    // has no media while the existing copy did, keep the existing media.
+    // This catches the case where fetchMediaForMessages comes back empty
+    // for a media-typed row because the SELECT raced the INSERT or RLS
+    // blocked the read — without this, every refetch / reconnect would
+    // blank out images that were rendering fine a moment ago.
+    const existingById: Record<string, ChatMessage> = {};
+    for (const m of existing.messages) existingById[m.id] = m;
+    const reconciled = messages.map((m) => {
+      const prev = existingById[m.id];
+      if (
+        prev && prev.media && prev.media.length > 0 &&
+        (!m.media || m.media.length === 0)
+      ) {
+        return { ...m, media: prev.media };
+      }
+      return m;
+    });
+
     const combined = keptExtra.length === 0
-      ? messages
-      : [...messages, ...keptExtra].sort(
+      ? reconciled
+      : [...reconciled, ...keptExtra].sort(
           (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
     set({
@@ -451,8 +486,21 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       // leaves messages stuck in their pre-confirm position even though
       // the real ordering is now different.
       nextMessages = [...existing.messages];
-      const merged = { ...nextMessages[idx], ...message };
-      const timeChanged = nextMessages[idx].created_at !== merged.created_at;
+      const oldMsg = nextMessages[idx];
+      const merged = { ...oldMsg, ...message };
+      // Never let a merge wipe a media array we already had. The realtime
+      // INSERT echo of our own send fetches message_media right after the
+      // INSERT — if RLS allows INSERT but blocks SELECT on the same row,
+      // or if the read just races the write, the fetch returns empty and
+      // the spread above would zero out a media array that was correct.
+      // Prefer existing media if the incoming version is missing/empty.
+      if (
+        oldMsg.media && oldMsg.media.length > 0 &&
+        (!merged.media || merged.media.length === 0)
+      ) {
+        merged.media = oldMsg.media;
+      }
+      const timeChanged = oldMsg.created_at !== merged.created_at;
       nextMessages[idx] = merged;
       if (timeChanged) {
         nextMessages = nextMessages.sort(
@@ -612,6 +660,22 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     set({ typingByConversation: next });
   },
 
+  // ---- Upload progress ----
+  setUploadProgress: (messageId, progress) => {
+    const { uploadProgressById } = get();
+    set({
+      uploadProgressById: { ...uploadProgressById, [messageId]: progress },
+    });
+  },
+
+  clearUploadProgress: (messageId) => {
+    const { uploadProgressById } = get();
+    if (!uploadProgressById[messageId]) return;
+    const next = { ...uploadProgressById };
+    delete next[messageId];
+    set({ uploadProgressById: next });
+  },
+
   // ---- Maintenance ----
   // Wipe drafts too — different account, different state. The outbox is
   // cleared by the realtime/init layer (it's user-scoped in storage).
@@ -636,6 +700,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       onlineUserIds: {},
       lastSeenByUserId: {},
       typingByConversation: {},
+      uploadProgressById: {},
     });
   },
 }));

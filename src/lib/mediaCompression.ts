@@ -50,7 +50,8 @@ export async function compressImage(
 // =====================================================
 export async function compressVideo(
   file: File,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  abortSignal?: AbortSignal
 ): Promise<{ url: string; size: number; duration?: number }> {
   try {
     const originalSizeMB = file.size / 1024 / 1024;
@@ -79,6 +80,11 @@ export async function compressVideo(
     const formData = new FormData();
     formData.append("file", file);
     formData.append("upload_preset", CONFIG.video.cloudinaryUploadPreset);
+
+    // Bail before opening the socket if the caller already cancelled.
+    if (abortSignal?.aborted) {
+      throw new Error("Upload cancelled");
+    }
 
     const xhr = new XMLHttpRequest();
 
@@ -128,6 +134,19 @@ export async function compressVideo(
         xhr.addEventListener("abort", () => {
           reject(new Error("Upload cancelled"));
         });
+
+        // Wire the caller's AbortSignal to xhr.abort(). Detached on
+        // completion so the listener doesn't leak after the upload
+        // resolves successfully.
+        const onAbort = () => {
+          try { xhr.abort(); } catch {}
+        };
+        if (abortSignal) {
+          abortSignal.addEventListener("abort", onAbort, { once: true });
+          xhr.addEventListener("loadend", () => {
+            abortSignal.removeEventListener("abort", onAbort);
+          });
+        }
 
         const uploadUrl = `https://api.cloudinary.com/v1_1/${CONFIG.video.cloudinaryCloudName}/video/upload`;
 
