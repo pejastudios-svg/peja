@@ -146,7 +146,7 @@ export default function OnboardingPage() {
                   leftIcon={<Home className="w-4 h-4" />}
                 />
                 <p className="mt-1.5 text-[11px] text-dark-500">
-                  Only visible to you and Peja admins — helps support reach you in an emergency.
+                  Only visible to you and Peja admins. Helps support reach you in an emergency.
                 </p>
               </div>
 

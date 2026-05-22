@@ -27,10 +27,14 @@ import {
   sendTextMessage,
   sendMediaMessage,
   uploadMediaToStorage,
+  fetchGroupParticipantsForNotify,
 } from "./api";
 import { addToOutbox, patchOutboxItem, removeFromOutbox } from "./outbox";
 import { putBlob, removeBlobsForMessage } from "./mediaBlobs";
 import { processAttachment, type ProcessedAttachment } from "./chatMedia";
+import { notifyDMMessage } from "@/lib/notifications";
+import { isUserViewingConversation } from "./presence";
+import { formatChatPreview } from "@/components/messages-v2/IncidentLinkPreview";
 import type {
   ChatMessage,
   ChatMessageMedia,
@@ -52,7 +56,12 @@ export function useSendMessage() {
     async (
       conversationId: string,
       content: string,
-      attachments?: File[]
+      attachments?: File[],
+      // Stage-2 reply support: pass the parent message we're replying
+      // to (already in the store) so the optimistic bubble can render
+      // the quoted-reference block immediately, and so the insert
+      // carries reply_to_id.
+      replyTo?: ChatMessage["reply_to"] | null
     ) => {
       const trimmed = content.trim();
       const files = (attachments ?? []).filter((f) => f.size > 0);
@@ -132,7 +141,8 @@ export function useSendMessage() {
         created_at: optimisticTime,
         edited_at: null,
         is_deleted: false,
-        reply_to_id: null,
+        reply_to_id: replyTo?.id ?? null,
+        reply_to: replyTo ?? null,
         delivery_status: "pending",
         media: isMedia ? optimisticMedia : undefined,
       };
@@ -147,13 +157,18 @@ export function useSendMessage() {
         });
       }
 
-      // Local-only preview bump for the conversation list. The DB
-      // trigger will overwrite with the authoritative server value
-      // shortly via realtime.
+      // Local-only preview bump for the conversation list. We pick
+      // the same type-specific string the DB trigger writes
+      // (peja_message_preview) so the list shows the correct icon
+      // INSTANTLY rather than flashing "📷 Photo" for a voice note
+      // before the realtime echo lands a fraction of a second later.
+      // Fallback to a generic string if we somehow have no prepared
+      // attachments.
+      const optimisticPreview = isMedia
+        ? previewForOptimisticMedia(prepared[0]?.type)
+        : trimmed.slice(0, 100);
       store.bumpConversation(conversationId, {
-        last_message_text: isMedia
-          ? "Sent an attachment"
-          : trimmed.slice(0, 100),
+        last_message_text: optimisticPreview,
         last_message_at: optimisticTime,
         last_message_sender_id: user.id,
       });
@@ -206,6 +221,7 @@ export function useSendMessage() {
             onProgress: (frac, label) =>
               store.setUploadProgress(messageId, { fraction: frac, label }),
             abortSignal: controller.signal,
+            replyToId: replyTo?.id ?? null,
           });
         } else {
           confirmed = await sendTextMessage({
@@ -213,6 +229,7 @@ export function useSendMessage() {
             conversation_id: conversationId,
             sender_id: user.id,
             content: trimmed,
+            reply_to_id: replyTo?.id ?? null,
           });
         }
         console.log("[chat-v2] send confirmed", {
@@ -228,6 +245,101 @@ export function useSendMessage() {
             ? { media: confirmed.media }
             : {}),
         });
+        // Fire-and-forget push notifications. For DMs we ping the one
+        // other participant; for groups we fan out to every member.
+        // Per-recipient gates:
+        //   - skip if the recipient is currently presence-viewing
+        //     this conversation (their app is open on the chat — the
+        //     realtime echo will surface the message anyway)
+        //   - skip if their notification_mode is 'muted'
+        //   - if 'mentions', deliver only when the body actually
+        //     @-tags them (or @everyone). Mention matching is
+        //     client-side and best-effort; mismatches fail open.
+        const convSummary = store.conversationsById[conversationId];
+        const preview = previewForNotification(trimmed, confirmed);
+        const senderName = user.full_name || "Someone";
+        // High-signal log so we can confirm the notify decision when
+        // a recipient says "I didn't get a ping". Logs the routing
+        // path (group vs DM), the convSummary's is_group flag, and
+        // the resolved other_user_id (DM) — enough to tell from the
+        // sender's console why the fan-out went the way it did.
+        console.log("[chat-v2] notify routing", {
+          conversationId,
+          is_group: !!convSummary?.is_group,
+          has_summary: !!convSummary,
+          other_user_id: convSummary?.other_user_id || null,
+          preview,
+        });
+        if (convSummary?.is_group) {
+          // Fan-out: pull the group's participant ids (minus self),
+          // then dispatch notifyDMMessage per recipient that passes
+          // the per-mode gate. Import is static (top-of-file) so the
+          // first call doesn't pay a module-fetch tax. Each notify
+          // fires in parallel so a slow recipient doesn't block the
+          // others.
+          (async () => {
+            try {
+              const recipients = await fetchGroupParticipantsForNotify(
+                conversationId,
+                user.id
+              );
+              console.log(
+                "[chat-v2] group push fan-out",
+                conversationId,
+                "recipients:",
+                recipients.length
+              );
+              const targets = recipients.filter((r) => {
+                if (isUserViewingConversation(r.user_id, conversationId)) return false;
+                if (r.notification_mode === "muted") return false;
+                if (r.notification_mode === "mentions") {
+                  return doesMessageMentionRecipient(trimmed, r);
+                }
+                return true;
+              });
+              await Promise.all(
+                targets.map((r) =>
+                  notifyDMMessage(
+                    r.user_id,
+                    senderName,
+                    preview,
+                    conversationId
+                  )
+                    .then((ok) => {
+                      console.log(
+                        "[chat-v2] notify",
+                        r.user_id,
+                        "ok=",
+                        ok
+                      );
+                    })
+                    .catch((err) => {
+                      console.warn(
+                        "[chat-v2] notifyDMMessage failed for",
+                        r.user_id,
+                        err
+                      );
+                    })
+                )
+              );
+            } catch (err) {
+              console.warn("[chat-v2] group push fan-out failed", err);
+            }
+          })();
+        } else {
+          const recipientId = convSummary?.other_user_id;
+          if (
+            recipientId &&
+            !isUserViewingConversation(recipientId, conversationId)
+          ) {
+            notifyDMMessage(
+              recipientId,
+              senderName,
+              preview,
+              conversationId
+            ).catch(() => {});
+          }
+        }
         if (optimisticMessage.media) {
           for (const m of optimisticMessage.media) {
             try { URL.revokeObjectURL(m.url); } catch {}
@@ -271,6 +383,79 @@ export function useSendMessage() {
 // =====================================================
 // Helpers
 // =====================================================
+
+// Optimistic conversation-list preview for media messages. Mirrors
+// the strings the DB-side peja_message_preview() function writes
+// after the trigger fires, so the local list update + the realtime
+// echo show the same icon and don't flicker between values.
+function previewForOptimisticMedia(
+  type: "image" | "video" | "audio" | "document" | undefined
+): string {
+  switch (type) {
+    case "image":
+      return "📷 Photo";
+    case "video":
+      return "🎥 Video";
+    case "audio":
+      return "🎙 Voice note";
+    case "document":
+      return "📎 File";
+    default:
+      return "Sent an attachment";
+  }
+}
+
+// Short notification preview for the v2 sender path. Mirrors v1's
+// emoji-prefixed previews so the receiver's push notification reads
+// naturally: "Alice: 📷 Photo", "Alice: 🎙 Voice note", etc.
+function previewForNotification(
+  trimmed: string,
+  confirmed: ChatMessage
+): string {
+  if (confirmed.media && confirmed.media.length > 0) {
+    const first = confirmed.media[0];
+    switch (first.media_type) {
+      case "image":
+        return trimmed ? `📷 ${trimmed}` : "📷 Photo";
+      case "video":
+        return trimmed ? `🎥 ${trimmed}` : "🎥 Video";
+      case "audio":
+        return "🎙 Voice note";
+      case "document":
+        return `📎 ${first.file_name || "File"}`;
+    }
+  }
+  // Substitute a friendly label when the body is just an incident
+  // URL — otherwise the push notification reads as a raw link.
+  const summarised = formatChatPreview(trimmed) || trimmed;
+  return summarised.slice(0, 120) || "New message";
+}
+
+// Lightweight "is recipient mentioned in this body?" check. Used by
+// the group push fan-out when the recipient's mode is 'mentions' so
+// we only nudge them when they're actually @-tagged. Matches the
+// composer's handle-insertion rules (first-name, alphanumeric +
+// _ ' -) and treats "@everyone" / "@all" as a group-wide ping.
+function doesMessageMentionRecipient(
+  body: string,
+  recipient: { full_name: string | null }
+): boolean {
+  if (!body) return false;
+  const lower = body.toLowerCase();
+  if (/@everyone\b|@all\b/i.test(body)) return true;
+  const name = (recipient.full_name || "").trim();
+  if (!name) return false;
+  const first = name.split(/\s+/)[0] || "";
+  const handle = first.replace(/[^A-Za-z0-9_'-]/g, "");
+  if (!handle) return false;
+  const needle = `@${handle.toLowerCase()}`;
+  // Word-boundary-ish: ensure a non-word char (or string end) follows
+  // so "@John" doesn't match inside "@Johnny".
+  const idx = lower.indexOf(needle);
+  if (idx === -1) return false;
+  const after = lower[idx + needle.length];
+  return after === undefined || !/[a-z0-9_'-]/i.test(after);
+}
 
 function newUuid(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -409,6 +594,7 @@ export async function uploadAndSendMedia(args: {
   outboxUserId: string;
   onProgress?: (fraction: number, label?: string) => void;
   abortSignal?: AbortSignal;
+  replyToId?: string | null;
 }): Promise<ChatMessage> {
   const uploaded: Array<{
     id: string;
@@ -502,9 +688,28 @@ export async function uploadAndSendMedia(args: {
     });
 
     localToOverall(1, "Ready");
+
+    // After each per-file upload, check the abort signal. Storage
+    // uploads don't honour the signal mid-flight (the Supabase JS SDK
+    // doesn't expose one), so a cancel tapped during the upload only
+    // lands here, AFTER the upload completes. Without this check the
+    // pipeline would barrel on into sendMediaMessage and the message
+    // would ship to the server anyway — the exact "I tapped X and it
+    // still sent" bug for short clips (voice notes, small docs).
+    if (args.abortSignal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
   }
 
   args.onProgress?.(1, "Finalising…");
+
+  // Last-chance abort check before we commit the message + media row(s).
+  // sendMediaMessage isn't cancellable once it starts, so this is the
+  // last point where we can still bail without surfacing the message
+  // server-side.
+  if (args.abortSignal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
+  }
 
   return sendMediaMessage({
     id: args.id,
@@ -512,5 +717,6 @@ export async function uploadAndSendMedia(args: {
     sender_id: args.senderId,
     caption: args.caption || null,
     attachments: uploaded,
+    reply_to_id: args.replyToId ?? null,
   });
 }

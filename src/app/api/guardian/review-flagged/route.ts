@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
           type: `escalated_${contentType}`,
           title: `🚨 Escalated ${contentType}`,
           body: preview
-            ? `"${preview}${preview.length >= 60 ? "..." : ""}" — Reason: ${flagged.reason}`
+            ? `"${preview}${preview.length >= 60 ? "..." : ""}". Reason: ${flagged.reason}`
             : `Reason: ${flagged.reason}`,
           data: {
             flagged_id: flagged.id,

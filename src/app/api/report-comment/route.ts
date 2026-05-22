@@ -202,7 +202,7 @@ async function sendModeratorNotifications(
     const basePayload = {
       type: "flagged_comment",
       title: "🚩 Comment Reported",
-      body: `"${preview}" — Reason: ${reason}`,
+      body: `"${preview}". Reason: ${reason}`,
       data: {
         flagged_id: flaggedId,
         comment_id: commentId,

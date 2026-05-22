@@ -75,6 +75,11 @@ export async function startPresence(userId: string): Promise<void> {
           await channel.track({
             user_id: userId,
             online_at: new Date().toISOString(),
+            // Replay whatever the chat page set on us before
+            // presence finished subscribing — keeps the "they're
+            // viewing this chat → skip the notification" gate
+            // accurate on a cold start.
+            viewing_conversation_id: viewingConversationId,
           });
         } catch (e) {
           console.warn("[chat-v2] presence track failed", e);
@@ -96,4 +101,53 @@ export async function stopPresence(): Promise<void> {
   } catch {}
   presenceChannel = null;
   presenceUserId = null;
+}
+
+// ----------------------------------------------------------------
+// Per-conversation viewing state
+// ----------------------------------------------------------------
+// We piggyback on the existing global presence channel: every track
+// payload carries the conversation id the user is currently looking
+// at (or null when they're on the list / a non-chat page). Sender-
+// side notification code reads this to suppress push notifications
+// when the recipient is already viewing the chat — no point pinging
+// them about a message they're literally watching land.
+
+let viewingConversationId: string | null = null;
+
+export async function setViewingConversation(
+  conversationId: string | null
+): Promise<void> {
+  viewingConversationId = conversationId;
+  if (!presenceChannel || !presenceUserId) return;
+  try {
+    await presenceChannel.track({
+      user_id: presenceUserId,
+      online_at: new Date().toISOString(),
+      viewing_conversation_id: conversationId,
+    });
+  } catch (e) {
+    console.warn("[chat-v2] presence viewing update failed", e);
+  }
+}
+
+/**
+ * Read-only check: is the given user currently viewing the given
+ * conversation? Returns false if presence isn't subscribed yet, or
+ * if we don't have any record of that user — defaulting to "not
+ * viewing" is the safe answer (we'll fire a notification, the
+ * worst-case is a redundant ping).
+ */
+export function isUserViewingConversation(
+  userId: string,
+  conversationId: string
+): boolean {
+  if (!presenceChannel) return false;
+  const state = presenceChannel.presenceState() as Record<
+    string,
+    Array<{ viewing_conversation_id?: string | null }>
+  >;
+  const metas = state[userId];
+  if (!metas || metas.length === 0) return false;
+  return metas.some((m) => m.viewing_conversation_id === conversationId);
 }

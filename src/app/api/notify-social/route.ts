@@ -76,8 +76,17 @@ function truncate(s: string, max: number) {
 }
 
 export async function POST(req: NextRequest) {
+  // Diagnostic timing — breadcrumbs at each step so we can see where
+  // the route spends its time. The receiver's realtime toast fires
+  // when the notifications INSERT commits, so T_insert is the
+  // meaningful "toast should appear" marker; everything between it
+  // and T_done is post-toast work (FCM, etc).
+  const t0 = Date.now();
+  const lap = (label: string) =>
+    console.log(`[notify-social] ${label} +${Date.now() - t0}ms`);
   try {
     const { user } = await requireUser(req);
+    lap("T_auth");
     if (!user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
@@ -103,22 +112,36 @@ export async function POST(req: NextRequest) {
         .select("social_notifications_silenced")
         .eq("user_id", recipientId)
         .maybeSingle();
+      lap("T_settings");
       if (settings?.social_notifications_silenced === true) {
         return NextResponse.json({ ok: true, skipped: "silenced" });
       }
     }
 
     if (kind === "dm_message") {
-      return await handleDM(admin, body);
+      const res = await handleDM(admin, body, lap);
+      lap("T_done");
+      return res;
     }
 
-    return await handleSocial(admin, body);
-  } catch {
-    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
+    const res = await handleSocial(admin, body, lap);
+    lap("T_done");
+    return res;
+  } catch (err) {
+    // Surface the real failure to terminal/server logs. The outer
+    // catch used to silently swallow everything and return a generic
+    // 500, which made notification regressions undebuggable.
+    console.error("[notify-social] route failed", err);
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
 
-async function handleSocial(admin: ReturnType<typeof getSupabaseAdmin>, body: Body) {
+async function handleSocial(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  body: Body,
+  lap: (label: string) => void
+) {
   const { kind, recipientId, actorName, postId, preview } = body;
 
   if (!postId) {
@@ -148,32 +171,47 @@ async function handleSocial(admin: ReturnType<typeof getSupabaseAdmin>, body: Bo
       .filter("data->>post_id", "eq", postId)
       .maybeSingle(),
   ]);
+  lap("T_lookup");
 
   const individualCount = count || 0;
 
   if (digestRow || individualCount >= SOCIAL_DIGEST_THRESHOLD) {
     const total = ((digestRow?.data as any)?.total ?? individualCount) + 1;
     const digestBody = cfg.digestBody(total);
+    // Delete-then-insert (instead of UPDATE) so the receiver's
+    // postgres_changes INSERT listener actually fires. The toast
+    // channel doesn't subscribe to UPDATEs, and the digest path
+    // was previously swallowing every subsequent notification for
+    // any recipient who already had an unread digest row.
     if (digestRow) {
-      await admin
+      const { error: delErr } = await admin
         .from("notifications")
-        .update({
-          title: cfg.digestTitle,
-          body: digestBody,
-          data: { post_id: postId, total },
-          is_read: false,
-        })
+        .delete()
         .eq("id", digestRow.id);
-    } else {
-      await admin.from("notifications").insert({
-        user_id: recipientId,
-        type: cfg.digestType,
-        title: cfg.digestTitle,
-        body: digestBody,
-        data: { post_id: postId, total },
-        is_read: false,
-      });
+      if (delErr) {
+        console.error("[notify-social] social digest delete failed", delErr);
+        return NextResponse.json(
+          { ok: false, error: `digest delete: ${delErr.message}` },
+          { status: 500 }
+        );
+      }
     }
+    const { error: insErr } = await admin.from("notifications").insert({
+      user_id: recipientId,
+      type: cfg.digestType,
+      title: cfg.digestTitle,
+      body: digestBody,
+      data: { post_id: postId, total },
+      is_read: false,
+    });
+    if (insErr) {
+      console.error("[notify-social] social digest insert failed", insErr);
+      return NextResponse.json(
+        { ok: false, error: `digest insert: ${insErr.message}` },
+        { status: 500 }
+      );
+    }
+    lap("T_insert");
     return NextResponse.json({ ok: true, mode: "digest", total });
   }
 
@@ -181,7 +219,7 @@ async function handleSocial(admin: ReturnType<typeof getSupabaseAdmin>, body: Bo
   const title = cfg.indivTitle;
   const indBody = cfg.indivBody(actorName, preview);
 
-  await admin.from("notifications").insert({
+  const { error: indInsErr } = await admin.from("notifications").insert({
     user_id: recipientId,
     type: cfg.baseType,
     title,
@@ -189,6 +227,14 @@ async function handleSocial(admin: ReturnType<typeof getSupabaseAdmin>, body: Bo
     data: { post_id: postId },
     is_read: false,
   });
+  if (indInsErr) {
+    console.error("[notify-social] social insert failed", indInsErr);
+    return NextResponse.json(
+      { ok: false, error: `insert: ${indInsErr.message}` },
+      { status: 500 }
+    );
+  }
+  lap("T_insert");
 
   const shouldPush = individualCount < SOCIAL_PUSH_THRESHOLD;
   if (shouldPush) {
@@ -198,95 +244,92 @@ async function handleSocial(admin: ReturnType<typeof getSupabaseAdmin>, body: Bo
       body: indBody,
       data: { post_id: postId, type: cfg.baseType },
     }).catch(() => {});
+    lap("T_fcm");
   }
 
   return NextResponse.json({ ok: true, mode: "individual", pushed: shouldPush });
 }
 
-async function handleDM(admin: ReturnType<typeof getSupabaseAdmin>, body: Body) {
+async function handleDM(
+  admin: ReturnType<typeof getSupabaseAdmin>,
+  body: Body,
+  lap: (label: string) => void
+) {
   const { recipientId, actorName, conversationId, preview } = body;
 
   if (!conversationId) {
     return NextResponse.json({ ok: false, error: "Missing conversationId" }, { status: 400 });
   }
 
-  // Respect conversation mute
-  const { data: participant } = await admin
-    .from("conversation_participants")
-    .select("is_muted")
-    .eq("conversation_id", conversationId)
-    .eq("user_id", recipientId)
-    .maybeSingle();
-  if (participant?.is_muted) {
+  // Single round-trip: mute check + digest decision + delete-old +
+  // insert-new all happen inside peja_notify_dm (migration 20260610).
+  // The previous implementation made four sequential REST calls,
+  // each costing one network round-trip; on slow client links that
+  // dominated the toast-fires latency. The function returns a row
+  // describing what it actually did so we know whether to fire FCM
+  // and what to report back to the caller.
+  const rpcRes = await admin.rpc("peja_notify_dm", {
+    p_conversation_id: conversationId,
+    p_recipient_id: recipientId,
+    p_actor_name: actorName,
+    p_preview: preview ?? "",
+    p_digest_threshold: DM_DIGEST_THRESHOLD,
+  });
+  lap("T_insert");
+
+  if (rpcRes.error) {
+    console.error("[notify-social] peja_notify_dm failed", rpcRes.error);
+    return NextResponse.json(
+      { ok: false, error: `peja_notify_dm: ${rpcRes.error.message}` },
+      { status: 500 }
+    );
+  }
+
+  const rows = (rpcRes.data ?? []) as Array<{
+    notification_id: string | null;
+    delivery_mode: "muted" | "individual" | "digest";
+    total: number;
+  }>;
+  const result = rows[0];
+  if (!result) {
+    console.error("[notify-social] peja_notify_dm returned no row", rpcRes.data);
+    return NextResponse.json(
+      { ok: false, error: "peja_notify_dm: empty result" },
+      { status: 500 }
+    );
+  }
+
+  console.log("[notify-social] DM decision", {
+    conversationId,
+    recipientId,
+    delivery_mode: result.delivery_mode,
+    total: result.total,
+  });
+
+  if (result.delivery_mode === "muted") {
     return NextResponse.json({ ok: true, skipped: "muted" });
   }
 
-  const [{ count }, { data: digestRow }] = await Promise.all([
-    admin
-      .from("notifications")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", recipientId)
-      .eq("type", "dm_message")
-      .filter("data->>conversation_id", "eq", conversationId)
-      .eq("is_read", false),
-    admin
-      .from("notifications")
-      .select("id, data")
-      .eq("user_id", recipientId)
-      .eq("type", "dm_message_digest")
-      .filter("data->>conversation_id", "eq", conversationId)
-      .eq("is_read", false)
-      .maybeSingle(),
-  ]);
-
-  const unreadCount = count || 0;
-
-  if (digestRow || unreadCount >= DM_DIGEST_THRESHOLD) {
-    const total = ((digestRow?.data as any)?.total ?? unreadCount) + 1;
-    const title = `📩 ${actorName}`;
-    const digestBody = `You have ${total} unread messages`;
-
-    if (digestRow) {
-      await admin
-        .from("notifications")
-        .update({
-          title,
-          body: digestBody,
-          data: { conversation_id: conversationId, sender_name: actorName, total },
-          is_read: false,
-        })
-        .eq("id", digestRow.id);
-    } else {
-      await admin.from("notifications").insert({
-        user_id: recipientId,
-        type: "dm_message_digest",
-        title,
-        body: digestBody,
-        data: { conversation_id: conversationId, sender_name: actorName, total },
-        is_read: false,
-      });
-    }
-    return NextResponse.json({ ok: true, mode: "digest", total });
+  if (result.delivery_mode === "digest") {
+    return NextResponse.json({ ok: true, mode: "digest", total: result.total });
   }
 
+  // Individual mode: still fire the FCM push so the recipient gets a
+  // system notification when the app isn't foregrounded. The toast on
+  // the receiver's side already fired (via the realtime INSERT broadcast
+  // from inside peja_notify_dm), so this only affects out-of-app
+  // delivery and doesn't extend the perceived toast latency.
   const title = `📩 ${actorName}`;
   const indBody = preview ? truncate(preview, 60) : "Sent you a message";
-
-  await admin.from("notifications").insert({
-    user_id: recipientId,
-    type: "dm_message",
-    title,
-    body: indBody,
-    data: { conversation_id: conversationId, sender_name: actorName },
-    is_read: false,
-  });
-
   await sendPushToUser({
     userId: recipientId,
     title,
     body: indBody,
     data: { conversation_id: conversationId, type: "dm_message" },
-  }).catch(() => {});
+  }).catch((e) => {
+    console.warn("[notify-social] sendPushToUser failed (non-fatal)", e);
+  });
+  lap("T_fcm");
 
   return NextResponse.json({ ok: true, mode: "individual" });
 }

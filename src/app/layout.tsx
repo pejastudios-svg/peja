@@ -22,7 +22,7 @@ import { CapacitorBackButton } from "@/components/navigation/CapacitorBackButton
 import { CapacitorPushNotifications } from "@/components/notifications/CapacitorPushNotifications";
 import { ScrollRestorer } from "@/components/navigation/ScrollRestorer";
 import { CapacitorKeyboardHandler } from "@/components/navigation/CapacitorKeyboardHandler";
-import { MessageCacheProvider } from "@/context/MessageCacheContext";
+import { ChatBootstrap } from "@/components/chat/ChatBootstrap";
 import { ServiceWorkerRegistrar } from "@/components/navigation/ServiceWorkerRegistrar";
 import { TutorialProvider } from "@/components/tutorial/TutorialOverlay";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
@@ -170,7 +170,7 @@ export default function RootLayout({
                 <VideoHandoffProvider>
                   <PageCacheProvider>
                     <FeedProvider>
-                      <MessageCacheProvider>
+                        <ChatBootstrap />
                         <AnalyticsTracker />
                         <RoutePrefetcher />
                         <GlobalScrollManager />
@@ -200,7 +200,6 @@ export default function RootLayout({
                         {overlay}
                         {modal}
                         </TutorialProvider>
-                      </MessageCacheProvider>
                     </FeedProvider>
                   </PageCacheProvider>
                 </VideoHandoffProvider>

@@ -15,6 +15,7 @@ import type {
   ChatMessage,
   ChatThread,
   DeliveryStatus,
+  MessageReaction,
 } from "./types";
 
 interface ChatStoreState {
@@ -75,11 +76,17 @@ interface ChatStoreState {
   // session.
   lastSeenByUserId: Record<string, string>;
 
-  // Who is currently typing, per conversation. We store the *typing
-  // user's id* + the timestamp it last fired. Receivers expire entries
-  // after ~3s of no event (handled by a setTimeout scheduled when the
-  // entry is written).
-  typingByConversation: Record<string, { userId: string; at: number } | undefined>;
+  // Who is currently typing or recording, per conversation. We store
+  // the user's id, the activity kind, and the timestamp the event last
+  // fired. Receivers expire entries after ~3s of no event (handled by
+  // a setTimeout scheduled when the entry is written). Voice notes use
+  // the same channel as typing because the receiver-side UI (header
+  // subtitle + in-thread pulsing icon) is the same surface — only the
+  // icon swaps.
+  typingByConversation: Record<
+    string,
+    { userId: string; kind: "typing" | "recording"; at: number } | undefined
+  >;
 
   // Live upload progress for in-flight media sends, keyed by message
   // id. Value is { fraction: 0..1, label: "Compressing photo…" | "…" }.
@@ -105,12 +112,25 @@ interface ChatStoreState {
     last_message_at: string;
     last_message_sender_id: string;
   }) => void;
+  // Drop a conversation from the list + tear down its thread. Used by
+  // the "Delete chat" action — the conversation row stays in the DB
+  // but the current user's view hides it. handleMessageInsert undoes
+  // the hide the moment a new message arrives from the other side.
+  removeConversation: (conversationId: string) => void;
   incrementUnread: (conversationId: string) => void;
   clearUnread: (conversationId: string) => void;
   markPreviewSeen: (conversationId: string) => void;
 
   // === Thread actions ===
   setThread: (conversationId: string, messages: ChatMessage[]) => void;
+  // Prepend a page of OLDER messages to a thread. Used by the
+  // "load older on scroll up" pagination. Deduped on id, sorted on
+  // insert. Does NOT touch the `hydrated` / `fetchedAt` flags — the
+  // thread is still hydrated, we're just extending into history.
+  prependOlderMessages: (
+    conversationId: string,
+    older: ChatMessage[]
+  ) => void;
   upsertMessage: (conversationId: string, message: ChatMessage) => void;
   patchMessage: (
     conversationId: string,
@@ -124,6 +144,32 @@ interface ChatStoreState {
     status: DeliveryStatus
   ) => void;
   markThreadHydrated: (conversationId: string) => void;
+  // === Reactions ===
+  // Adds a single MessageReaction to the target message's reactions
+  // array, deduped on id (idempotent against realtime echoes of our
+  // own optimistic insert).
+  addReaction: (
+    conversationId: string,
+    messageId: string,
+    reaction: MessageReaction
+  ) => void;
+  // Removes a reaction. Pass `reactionId` for the precise row; pass
+  // `match` (predicate) when we only know the optimistic temp id.
+  removeReaction: (
+    conversationId: string,
+    messageId: string,
+    matcher: { id?: string; userId?: string; emoji?: string }
+  ) => void;
+  // Atomic swap — remove every reaction belonging to `userId` AND
+  // add `replacement` in a single setState. Used so that switching
+  // emojis doesn't render two intermediate states (old gone → empty
+  // gap → new appears) which made the badge flicker visibly.
+  replaceMyReaction: (
+    conversationId: string,
+    messageId: string,
+    userId: string,
+    replacement: MessageReaction
+  ) => void;
 
   // === Drafts ===
   setDraft: (conversationId: string, text: string) => void;
@@ -133,11 +179,17 @@ interface ChatStoreState {
   setOnlinePresence: (onlineUserIds: Record<string, true>) => void;
   markUserOffline: (userId: string, at: string) => void;
 
-  // === Typing ===
-  // Receiver-side: a "typing" broadcast came in for the given user.
-  // Replaces any existing entry — only one typer per conversation
-  // shown at a time (rare to have more in a 1:1 chat anyway).
-  setTyping: (conversationId: string, userId: string) => void;
+  // === Typing / recording ===
+  // Receiver-side: a typing OR recording broadcast came in for the
+  // given user. Replaces any existing entry — only one activity per
+  // conversation shown at a time. The `kind` field drives whether
+  // the in-thread bubble shows a chat-bubble icon (typing) or a mic
+  // icon (recording), and likewise the header subtitle text.
+  setTyping: (
+    conversationId: string,
+    userId: string,
+    kind?: "typing" | "recording"
+  ) => void;
   clearTyping: (conversationId: string) => void;
 
   // === Upload progress ===
@@ -160,12 +212,22 @@ function sortIds(
   ids: string[]
 ): string[] {
   return [...ids].sort((aId, bId) => {
-    const at = byId[aId]?.last_message_at
-      ? new Date(byId[aId].last_message_at!).getTime()
-      : 0;
-    const bt = byId[bId]?.last_message_at
-      ? new Date(byId[bId].last_message_at!).getTime()
-      : 0;
+    const a = byId[aId];
+    const b = byId[bId];
+    const aPinned = !!a?.is_pinned;
+    const bPinned = !!b?.is_pinned;
+    // Pinned rows always sort to the top. Within pinned, the most
+    // recently pinned wins; within unpinned, the most recent last
+    // message wins.
+    if (aPinned && !bPinned) return -1;
+    if (!aPinned && bPinned) return 1;
+    if (aPinned && bPinned) {
+      const ap = a?.pinned_at ? new Date(a.pinned_at).getTime() : 0;
+      const bp = b?.pinned_at ? new Date(b.pinned_at).getTime() : 0;
+      if (ap !== bp) return bp - ap;
+    }
+    const at = a?.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+    const bt = b?.last_message_at ? new Date(b.last_message_at).getTime() : 0;
     return bt - at;
   });
 }
@@ -303,8 +365,13 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     if (!existing) return;
     const nextConv = { ...existing, ...patch };
     const nextById = { ...conversationsById, [conversationId]: nextConv };
-    // Resort only if last_message_at changed — typical case for previews.
-    const needsResort = patch.last_message_at !== undefined;
+    // Re-sort whenever something that affects ordering changes:
+    // last_message_at moves rows by recency, is_pinned/pinned_at moves
+    // them to (or out of) the pinned section.
+    const needsResort =
+      patch.last_message_at !== undefined ||
+      patch.is_pinned !== undefined ||
+      patch.pinned_at !== undefined;
     set({
       conversationsById: nextById,
       conversationOrder: needsResort
@@ -338,6 +405,26 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     set({
       conversationsById: nextById,
       conversationOrder: sortIds(nextById, conversationOrder),
+    });
+  },
+
+  removeConversation: (conversationId) => {
+    const {
+      conversationsById,
+      conversationOrder,
+      threadsByConversation,
+    } = get();
+    if (!conversationsById[conversationId]) return;
+    const nextById = { ...conversationsById };
+    delete nextById[conversationId];
+    const nextThreads = { ...threadsByConversation };
+    delete nextThreads[conversationId];
+    set({
+      conversationsById: nextById,
+      conversationOrder: conversationOrder.filter(
+        (id) => id !== conversationId
+      ),
+      threadsByConversation: nextThreads,
     });
   },
 
@@ -454,6 +541,29 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
           hydrated: true,
           fetchedAt: Date.now(),
         },
+      },
+    });
+  },
+
+  prependOlderMessages: (conversationId, older) => {
+    if (older.length === 0) return;
+    const { threadsByConversation } = get();
+    const existing = threadsByConversation[conversationId];
+    if (!existing) return;
+    const existingIds = new Set(existing.messages.map((m) => m.id));
+    const fresh = older.filter((m) => !existingIds.has(m.id));
+    if (fresh.length === 0) return;
+    // Combine + chronological sort. fresh comes in already
+    // chronological from the API, but a merge-sort with the existing
+    // tail is the safe move.
+    const combined = [...fresh, ...existing.messages].sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+    set({
+      threadsByConversation: {
+        ...threadsByConversation,
+        [conversationId]: { ...existing, messages: combined },
       },
     });
   },
@@ -575,6 +685,83 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     });
   },
 
+  // ---- Reactions ----
+  // Both addReaction and removeReaction patch the target message's
+  // `reactions` array in-place. Realtime + the optimistic UI both
+  // route through here; the dedupe-on-id rule in addReaction means a
+  // realtime echo of an insert we just optimistically applied is a
+  // no-op (the temp id is replaced when the real row's id matches
+  // already-present temp ids' replaceTempWith logic in the page).
+  addReaction: (conversationId, messageId, reaction) => {
+    const { threadsByConversation } = get();
+    const existing = threadsByConversation[conversationId];
+    if (!existing) return;
+    const idx = existing.messages.findIndex((m) => m.id === messageId);
+    if (idx === -1) return;
+    const msg = existing.messages[idx];
+    const current = msg.reactions || [];
+    // Idempotent: same id already present → no-op.
+    if (current.some((r) => r.id === reaction.id)) return;
+    const nextMessages = [...existing.messages];
+    nextMessages[idx] = { ...msg, reactions: [...current, reaction] };
+    set({
+      threadsByConversation: {
+        ...threadsByConversation,
+        [conversationId]: { ...existing, messages: nextMessages },
+      },
+    });
+  },
+
+  removeReaction: (conversationId, messageId, matcher) => {
+    const { threadsByConversation } = get();
+    const existing = threadsByConversation[conversationId];
+    if (!existing) return;
+    const idx = existing.messages.findIndex((m) => m.id === messageId);
+    if (idx === -1) return;
+    const msg = existing.messages[idx];
+    const current = msg.reactions || [];
+    if (current.length === 0) return;
+    const next = current.filter((r) => {
+      if (matcher.id !== undefined) return r.id !== matcher.id;
+      if (matcher.userId !== undefined && matcher.emoji !== undefined) {
+        return !(r.user_id === matcher.userId && r.emoji === matcher.emoji);
+      }
+      return true;
+    });
+    if (next.length === current.length) return;
+    const nextMessages = [...existing.messages];
+    nextMessages[idx] = { ...msg, reactions: next };
+    set({
+      threadsByConversation: {
+        ...threadsByConversation,
+        [conversationId]: { ...existing, messages: nextMessages },
+      },
+    });
+  },
+
+  replaceMyReaction: (conversationId, messageId, userId, replacement) => {
+    const { threadsByConversation } = get();
+    const existing = threadsByConversation[conversationId];
+    if (!existing) return;
+    const idx = existing.messages.findIndex((m) => m.id === messageId);
+    if (idx === -1) return;
+    const msg = existing.messages[idx];
+    const current = msg.reactions || [];
+    // Drop every reaction by this user (in practice ≤ 1 with our
+    // "one reaction per user per message" rule) AND add the new
+    // one — all in a single state transition.
+    const without = current.filter((r) => r.user_id !== userId);
+    const nextReactions = [...without, replacement];
+    const nextMessages = [...existing.messages];
+    nextMessages[idx] = { ...msg, reactions: nextReactions };
+    set({
+      threadsByConversation: {
+        ...threadsByConversation,
+        [conversationId]: { ...existing, messages: nextMessages },
+      },
+    });
+  },
+
   // ---- Drafts ----
   // Persist on every keystroke. The DOM event rate is fine (<200/sec even
   // when typing fast); localStorage writes at that pace are still cheap
@@ -631,15 +818,15 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     });
   },
 
-  // ---- Typing ----
-  setTyping: (conversationId, userId) => {
+  // ---- Typing / recording ----
+  setTyping: (conversationId, userId, kind = "typing") => {
     const key = `${conversationId}|${userId}`;
     if (typingTimers[key]) clearTimeout(typingTimers[key]);
     const { typingByConversation } = get();
     set({
       typingByConversation: {
         ...typingByConversation,
-        [conversationId]: { userId, at: Date.now() },
+        [conversationId]: { userId, kind, at: Date.now() },
       },
     });
     typingTimers[key] = setTimeout(() => {

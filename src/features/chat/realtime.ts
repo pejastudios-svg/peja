@@ -14,7 +14,9 @@ import { useChatStore } from "./store";
 import {
   fetchConversationList,
   fetchMediaForMessages,
+  fetchReplyTargets,
   markConversationRead,
+  unhideConversation,
 } from "./api";
 import type { ChatMessage } from "./types";
 
@@ -85,7 +87,8 @@ export async function startChatRealtime(userId: string): Promise<void> {
         });
       }
     )
-    // ---- Other participant's last_read_at advanced (drives "seen" badge) ----
+    // ---- Other participant's row changed (last_read_at for seen
+    //      badge, is_blocked for the "you've been blocked" banner) ----
     .on(
       "postgres_changes",
       { event: "UPDATE", schema: "public", table: "conversation_participants" },
@@ -93,11 +96,27 @@ export async function startChatRealtime(userId: string): Promise<void> {
         console.log("[chat-v2] UPDATE conversation_participants event", payload.new);
         const row = payload.new as any;
         if (!row?.conversation_id || !row?.user_id) return;
-        if (row.user_id === userId) return; // our own read state is local
-        if (!row.last_read_at) return;
+        if (row.user_id === userId) return; // our own row → handled locally
 
         const state = useChatStore.getState();
         const conv = state.conversationsById[row.conversation_id];
+
+        // 1. Block-state flip — patch first because is_blocked may
+        //    change WITHOUT last_read_at changing (the only field the
+        //    handler used to look at). Drives the in-thread blocked
+        //    banner that replaces the composer.
+        if (
+          conv &&
+          typeof row.is_blocked === "boolean" &&
+          conv.blocked_by_other !== row.is_blocked
+        ) {
+          state.patchConversation(row.conversation_id, {
+            blocked_by_other: row.is_blocked,
+          });
+        }
+
+        // 2. Read-receipt advance — only runs if last_read_at is set.
+        if (!row.last_read_at) return;
         if (
           conv &&
           conv.last_message_sender_id === userId &&
@@ -120,6 +139,55 @@ export async function startChatRealtime(userId: string): Promise<void> {
               state.patchMessage(row.conversation_id, msg.id, {
                 delivery_status: "seen",
               });
+            }
+          }
+        }
+      }
+    )
+    // ---- Reactions on any message inside our threads ----
+    //   • INSERT carries the full new row → we can route by message_id
+    //     directly. The store dedupes if our optimistic add already
+    //     inserted a row with the same id.
+    //   • DELETE on most Supabase tables only ships the primary key
+    //     (REPLICA IDENTITY DEFAULT), so we don't have message_id.
+    //     We walk every open thread and remove any reaction with the
+    //     deleted id. Cheap because threads are small and reactions
+    //     even smaller.
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "message_reactions" },
+      (payload) => {
+        const row = payload.new as {
+          id: string;
+          message_id: string;
+          user_id: string;
+          emoji: string;
+          created_at: string;
+        };
+        if (!row?.id || !row?.message_id) return;
+        const state = useChatStore.getState();
+        for (const [cid, thread] of Object.entries(state.threadsByConversation)) {
+          if (!thread) continue;
+          if (thread.messages.some((m) => m.id === row.message_id)) {
+            state.addReaction(cid, row.message_id, row);
+            return;
+          }
+        }
+      }
+    )
+    .on(
+      "postgres_changes",
+      { event: "DELETE", schema: "public", table: "message_reactions" },
+      (payload) => {
+        const row = payload.old as { id?: string };
+        if (!row?.id) return;
+        const state = useChatStore.getState();
+        for (const [cid, thread] of Object.entries(state.threadsByConversation)) {
+          if (!thread) continue;
+          for (const msg of thread.messages) {
+            if (msg.reactions?.some((r) => r.id === row.id)) {
+              state.removeReaction(cid, msg.id, { id: row.id });
+              return;
             }
           }
         }
@@ -171,14 +239,48 @@ async function handleMessageInsert(row: any, currentUserId: string) {
   let media: ChatMessage["media"];
   if (contentType !== "text") {
     try {
-      const map = await fetchMediaForMessages([row.id]);
-      media = map[row.id];
-      console.log("[chat-v2] INSERT media fetch", {
-        id: row.id,
-        fetched_count: media?.length ?? 0,
-      });
+      let map = await fetchMediaForMessages([row.id]);
+      let rows = map[row.id];
+      // sendMediaMessage performs two separate inserts: first `messages`,
+      // then `message_media`. Postgres realtime emits the `messages`
+      // INSERT before the second statement has committed, so the very
+      // first fetch can race in and return 0 rows even though the media
+      // is being written right now. Retry once after a short delay — by
+      // then the second insert has landed in every observed case. (If
+      // it's still empty after the retry, it really is a non-media row
+      // or an RLS-blocked SELECT, and we'd just be re-failing the
+      // fetch.)
+      if (!rows || rows.length === 0) {
+        await new Promise((r) => setTimeout(r, 600));
+        map = await fetchMediaForMessages([row.id]);
+        rows = map[row.id];
+        console.log("[chat-v2] INSERT media fetch (retry)", {
+          id: row.id,
+          fetched_count: rows?.length ?? 0,
+        });
+      } else {
+        console.log("[chat-v2] INSERT media fetch", {
+          id: row.id,
+          fetched_count: rows.length,
+        });
+      }
+      media = rows;
     } catch (e) {
       console.warn("[chat-v2] fetchMediaForMessages on INSERT failed", e);
+    }
+  }
+
+  // Resolve the parent message snapshot if this is a reply, so the
+  // quoted-reference block renders the moment the bubble appears.
+  // Skip on our own optimistic echo — the optimistic message already
+  // has reply_to populated, and upsertMessage's merge preserves it.
+  let replyTo: ChatMessage["reply_to"];
+  if (row.reply_to_id && row.sender_id !== currentUserId) {
+    try {
+      const targets = await fetchReplyTargets([row.reply_to_id]);
+      replyTo = targets[row.reply_to_id] ?? null;
+    } catch (e) {
+      console.warn("[chat-v2] fetchReplyTargets on INSERT failed", e);
     }
   }
 
@@ -197,6 +299,7 @@ async function handleMessageInsert(row: any, currentUserId: string) {
     // would pass an empty array through and wipe good media in the store.
     // Only include the field when it actually has rows.
     ...(media && media.length > 0 ? { media } : {}),
+    ...(replyTo !== undefined ? { reply_to: replyTo } : {}),
   };
 
   // 1. Patch the thread. upsertMessage handles dedup against an optimistic
@@ -241,7 +344,20 @@ async function handleMessageInsert(row: any, currentUserId: string) {
   } else {
     // First time we're hearing of this conversation — fetch the full
     // list so the new conversation appears with its other-user info.
+    //
+    // Also clears any leftover hidden_at on our participant row: a
+    // conversation we previously "deleted" should come back into the
+    // list as soon as the other side sends something new (this update
+    // is what the chat-info "Delete chat" action relies on for sane
+    // re-discovery semantics).
     try {
+      if (message.sender_id !== currentUserId) {
+        // await so the subsequent fetchConversationList sees the row
+        // with hidden_at cleared. If we fired-and-forgot, the refetch
+        // would race the UPDATE and the "deleted" conversation would
+        // stay invisible even though a new message just arrived.
+        await unhideConversation(conversationId, currentUserId).catch(() => {});
+      }
       const list = await fetchConversationList(currentUserId);
       state.setConversations(list);
     } catch {}

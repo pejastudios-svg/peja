@@ -201,7 +201,7 @@ async function sendModeratorNotifications(
     const basePayload = {
       type: "flagged_post",
       title: "🚩 Post Reported",
-      body: preview ? `"${preview}" — Reason: ${reason}` : `Reason: ${reason}`,
+      body: preview ? `"${preview}". Reason: ${reason}` : `Reason: ${reason}`,
       data: {
         flagged_id: flaggedId,
         post_id: postId,

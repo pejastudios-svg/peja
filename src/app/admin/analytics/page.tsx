@@ -2483,7 +2483,7 @@ const res = await fetch("/api/sos-helpers", {
                 <p className="text-2xl font-bold text-white leading-none mb-1">
                   {stats.totalPosts > 0
                     ? `${Math.round((stats.confirmedPosts / stats.totalPosts) * 100)}%`
-                    : "—"}
+                    : "-"}
                 </p>
                 <p className="text-[10px] text-dark-500 uppercase tracking-wider font-bold">Confirmed Rate</p>
                 <p className="text-[10px] text-dark-600 mt-0.5">
@@ -2505,7 +2505,7 @@ const res = await fetch("/api/sos-helpers", {
                 <p className="text-2xl font-bold text-white leading-none mb-1">
                   {stats.totalUsers > 0
                     ? `${Math.round((stats.totalGuardians / stats.totalUsers) * 100)}%`
-                    : "—"}
+                    : "-"}
                 </p>
                 <p className="text-[10px] text-dark-500 uppercase tracking-wider font-bold">Guardian Coverage</p>
                 <p className="text-[10px] text-dark-600 mt-0.5">
@@ -2518,7 +2518,7 @@ const res = await fetch("/api/sos-helpers", {
                 <p className="text-2xl font-bold text-white leading-none mb-1">
                   {stats.totalPosts > 0
                     ? `${Math.round((stats.livePosts / stats.totalPosts) * 100)}%`
-                    : "—"}
+                    : "-"}
                 </p>
                 <p className="text-[10px] text-dark-500 uppercase tracking-wider font-bold">Live Posts</p>
                 <p className="text-[10px] text-dark-600 mt-0.5">

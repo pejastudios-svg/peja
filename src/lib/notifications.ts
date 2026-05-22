@@ -558,6 +558,29 @@ export async function notifyDMMessage(
 }
 
 // ============================================
+// DM REACTION NOTIFICATION
+// ============================================
+// Used by v2 chat when a user reacts to a message. Notifies the
+// recipient (the other side of the DM) with a short "<name> reacted
+// <emoji> to your message" line. We deliberately don't notify when
+// the reactor IS the recipient (self-reaction is a no-op) — call
+// sites guard this themselves.
+export async function notifyDMReaction(
+  recipientId: string,
+  reactorName: string,
+  emoji: string,
+  conversationId: string
+): Promise<boolean> {
+  return postSocial({
+    kind: "dm_message",
+    recipientId,
+    actorName: reactorName,
+    conversationId,
+    preview: `${emoji} reacted to your message`,
+  });
+}
+
+// ============================================
 // DM BLOCK NOTIFICATION
 // ============================================
 export async function notifyDMBlocked(

@@ -13,6 +13,7 @@ import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk } from "@
 import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
 import { shareUrl } from "@/lib/share";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
+import { IncidentForwardSheet } from "@/components/messages-v2/IncidentForwardSheet";
 
 import {
   MapPin,
@@ -21,6 +22,7 @@ import {
   MessageCircle,
   Eye,
   Share2,
+  Send,
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
@@ -97,6 +99,13 @@ const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   const { user } = useAuth();
   const confirm = useConfirm();
+
+  // Only VIPs / MVPs / admins can DM, so only they should see the
+  // "Send to chat" button — regular users can't open any chat from
+  // here anyway (gate is also enforced server-side by peja_can_dm).
+  const canForwardToChat =
+    user?.is_vip === true || user?.is_mvp === true || user?.is_admin === true;
+  const [forwardSheetOpen, setForwardSheetOpen] = useState(false);
 
   // Use optimistic state if available, otherwise use context
 const isConfirmed = optimisticConfirmed ?? confirm.isConfirmed(post.id);
@@ -513,6 +522,19 @@ const handleShareClick = async (e: React.MouseEvent) => {
           <span>Comment</span>
         </button>
 
+        {canForwardToChat && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setForwardSheetOpen(true);
+            }}
+            className="p-2 rounded-xl glass-sm text-dark-200 hover:bg-white/10 active:scale-90 transition-transform duration-150"
+            aria-label="Send to chat"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        )}
+
         <button
           onClick={handleShareClick}
           className="p-2 rounded-xl glass-sm text-dark-200 hover:bg-white/10"
@@ -544,6 +566,22 @@ const handleShareClick = async (e: React.MouseEvent) => {
         postId={post.id}
         posterUrl={videoThumbnail}
       />
+
+      {forwardSheetOpen && user && (
+        <IncidentForwardSheet
+          currentUserId={user.id}
+          messageBody={`https://peja.life/post/${post.id}`}
+          onClose={() => setForwardSheetOpen(false)}
+          onSent={(count) => {
+            toast.success(
+              count === 1 ? "Sent to 1 chat" : `Sent to ${count} chats`
+            );
+          }}
+          onError={() => {
+            toast.danger("Couldn't send. Try again.");
+          }}
+        />
+      )}
 
     </article>
   );

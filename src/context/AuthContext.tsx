@@ -27,6 +27,7 @@ interface User {
   is_guardian?: boolean;
   is_admin?: boolean;
   is_vip?: boolean;
+  is_mvp?: boolean;
 
   email_verified: boolean;
   phone_verified: boolean;
@@ -705,6 +706,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         is_guardian: data.is_guardian || false,
         is_admin: data.is_admin || false,
         is_vip: data.is_vip || false,
+        is_mvp: data.is_mvp || false,
       } : {
         id: userId,
         email: supabaseUser?.email || "",
@@ -781,7 +783,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               status: next.status,
               is_guardian: next.is_guardian ?? prev.is_guardian,
               is_admin: next.is_admin ?? prev.is_admin,
-              is_vip: next.is_vip ?? prev.is_vip, 
+              is_vip: next.is_vip ?? prev.is_vip,
+              is_mvp: next.is_mvp ?? prev.is_mvp,
             };
           });
 

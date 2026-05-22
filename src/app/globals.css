@@ -68,6 +68,18 @@
      page background (not on a colored bubble). Slightly visible in both themes. */
   --soft-surface: rgba(255, 255, 255, 0.05);
   --soft-surface-strong: rgba(255, 255, 255, 0.1);
+
+  /* v2 chat surfaces. The receiver ("theirs") bubble, the composer
+     text area, and small in-chat controls all need to read against
+     the page background in BOTH themes — `bg-white/10` style classes
+     vanish on the white light-mode bg, so these vars provide
+     explicit per-theme values instead. */
+  --chat-other-bg: rgba(255, 255, 255, 0.10);
+  --chat-control-other-bg: rgba(255, 255, 255, 0.15);
+  --chat-control-other-track: rgba(255, 255, 255, 0.25);
+  --chat-input-bg: rgba(255, 255, 255, 0.05);
+  --chat-input-border: rgba(255, 255, 255, 0.10);
+  --chat-input-hover: rgba(255, 255, 255, 0.10);
 }
 
 /* ── Light mode overrides ──
@@ -113,6 +125,18 @@
   --soft-surface: rgba(0, 0, 0, 0.05);
   --soft-surface-strong: rgba(0, 0, 0, 0.08);
 
+  /* Light-mode chat surfaces — solid slate-100 family so bubbles + the
+     composer area visually separate from the white page background.
+     Picked light slate rather than translucent black because pure
+     `rgba(0,0,0,0.05)` reads as a dirty smudge under text and makes
+     status ticks (✓✓) hard to read. */
+  --chat-other-bg: #d6dae1;
+  --chat-control-other-bg: rgba(0, 0, 0, 0.12);
+  --chat-control-other-track: rgba(0, 0, 0, 0.18);
+  --chat-input-bg: #dde1e7;
+  --chat-input-border: rgba(0, 0, 0, 0.14);
+  --chat-input-hover: #cdd3dc;
+
   /* Invert the neutral scale so existing text-dark-* / bg-dark-* utilities flip */
   --color-dark-50: #0c0a14;
   --color-dark-100: #1a1530;
@@ -148,6 +172,125 @@ textarea,
 [contenteditable="true"] {
   -webkit-user-select: text !important;
   user-select: text !important;
+}
+
+/* === v2 chat — role badges ===
+   Theme-aware pills. Dark mode keeps the subtle 15% tint with
+   bright text the user is used to; light mode bumps the tint and
+   swaps in a darker text colour so the pill stays readable on the
+   near-white page background. */
+.peja-badge-mvp {
+  background: rgba(245, 158, 11, 0.15);
+  color: rgb(252, 211, 77);
+}
+.peja-badge-vip {
+  background: rgba(139, 92, 246, 0.15);
+  color: rgb(196, 181, 253);
+}
+.peja-badge-owner {
+  background: rgba(139, 92, 246, 0.20);
+  color: rgb(221, 214, 254);
+}
+:root[data-theme="light"] .peja-badge-mvp {
+  background: rgba(245, 158, 11, 0.28);
+  color: rgb(146, 64, 14);
+}
+:root[data-theme="light"] .peja-badge-vip {
+  background: rgba(139, 92, 246, 0.22);
+  color: rgb(76, 29, 149);
+}
+:root[data-theme="light"] .peja-badge-owner {
+  background: rgba(139, 92, 246, 0.30);
+  color: rgb(67, 20, 137);
+}
+
+/* @mention pill colour. Default (dark mode) keeps the violet/300
+   we've been using; light mode swaps in a deeper violet so the
+   mention stays readable on the near-white composer background.
+   Used by both the rendered message bubble and the composer's
+   mirror overlay. */
+.peja-mention {
+  color: rgb(196, 181, 253);
+  font-weight: 600;
+}
+:root[data-theme="light"] .peja-mention {
+  color: rgb(91, 33, 182);
+}
+
+/* === v2 chat — interaction animations ===
+   • fade-in-scale: action menu + kebab dropdown open
+   • highlight-flash: bubble we just scrolled to (tap-reply-preview)
+   • pop-in: reactions when they appear on a bubble (Stage 3)
+   All deliberately short (≤ 300ms) so they read as snappy on mobile. */
+@keyframes peja-fade-in-scale {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+.peja-fade-in-scale {
+  animation: peja-fade-in-scale 150ms ease-out;
+  transform-origin: top left;
+}
+
+@keyframes peja-highlight-flash {
+  0% { box-shadow: 0 0 0 0 rgba(167, 139, 250, 0); background-color: rgba(167, 139, 250, 0); }
+  20% { box-shadow: 0 0 0 6px rgba(167, 139, 250, 0.35); background-color: rgba(167, 139, 250, 0.18); }
+  100% { box-shadow: 0 0 0 0 rgba(167, 139, 250, 0); background-color: rgba(167, 139, 250, 0); }
+}
+.peja-highlight-flash {
+  animation: peja-highlight-flash 1.4s ease-out;
+}
+
+@keyframes peja-pop-in {
+  0% { opacity: 0; transform: scale(0.4); }
+  60% { transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.peja-pop-in {
+  animation: peja-pop-in 260ms ease-out;
+}
+
+/* Page slide-in for the chat thread route. iOS-style: the new screen
+   enters from the right edge as if pushed in from "deeper" in the
+   navigation stack. The list page stays where it is — Next.js
+   doesn't ship exit animations and we don't need one. */
+@keyframes peja-slide-in-from-right {
+  from { transform: translateX(8%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.peja-slide-in-from-right {
+  animation: peja-slide-in-from-right 220ms ease-out;
+}
+
+/* Mirror animation for sheets that need to slide back out — used by
+   ChatInfoSheet so it doesn't unmount-and-vanish on close. The
+   `forwards` fill mode keeps the sheet in its translated-off state
+   for the brief window before the parent unmounts it. */
+@keyframes peja-slide-out-to-right {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
+}
+.peja-slide-out-to-right {
+  animation: peja-slide-out-to-right 220ms ease-in forwards;
+}
+
+/* Voice-note recording bar entrance. Pulls out from the mic
+   position on the right edge of the composer, expanding into the
+   full row. Used by VoiceRecorderBar when it transitions into
+   hold or locked mode. */
+@keyframes peja-bar-expand-from-right {
+  from {
+    transform: scaleX(0.05);
+    transform-origin: right center;
+    opacity: 0.5;
+  }
+  to {
+    transform: scaleX(1);
+    transform-origin: right center;
+    opacity: 1;
+  }
+}
+.peja-bar-expand-from-right {
+  animation: peja-bar-expand-from-right 220ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Enhanced Glass Effects - Works on all browsers */

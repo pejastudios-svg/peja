@@ -560,7 +560,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       return;
     }
     if (file.size > 100 * 1024 * 1024) {
-      setError(`Recorded video is ${(file.size / (1024 * 1024)).toFixed(1)}MB — exceeds 100MB cap.`);
+      setError(`Recorded video is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Exceeds 100MB cap.`);
       return;
     }
 

@@ -14,40 +14,78 @@
 import { useCallback, useState } from "react";
 import { ExternalLinkWarningModal } from "./ExternalLinkWarningModal";
 
-// Lightweight URL detection. Catches the common cases users actually
-// type: http(s)://, bare www.foo.com, and bare foo.com/path. Not a
-// full URL parser — we don't need every RFC edge case, just enough to
-// turn the obvious links into clickable affordances.
-const URL_REGEX =
-  /(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s<>"]*)?)/gi;
+// Lightweight URL + mention detection. Catches:
+//   • URLs: http(s)://, bare www.foo.com, bare foo.com/path
+//   • Mentions: @everyone (case-insensitive) — and @<word> tokens
+//     which we style as a mention pill. We don't try to resolve to a
+//     specific user here; the styling alone is enough to make a
+//     mention visually salient. The composer enforces that picks
+//     produce single-token names so this regex matches what it
+//     inserted.
+const URL_PATTERN =
+  /https?:\/\/[^\s<>"]+|www\.[^\s<>"]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s<>"]*)?/gi;
+const MENTION_PATTERN = /(^|\s)(@everyone|@[A-Za-z][A-Za-z0-9_'-]*)/g;
 
 interface MessageTextProps {
   text: string;
   // Tailwind class for the link colour — sender bubbles use white/yellow,
   // receiver bubbles use primary. Caller picks.
   linkClass?: string;
+  // Tailwind class for mention pills. Default falls back to a generic
+  // primary-tinted pill; sender bubbles can override.
+  mentionClass?: string;
 }
 
 interface Segment {
-  type: "text" | "link";
+  type: "text" | "link" | "mention";
   value: string;
 }
 
 function tokenize(text: string): Segment[] {
-  const out: Segment[] = [];
+  // Two-pass tokenizer: first pull out URLs (longest match wins),
+  // then scan the remaining "text" segments for mentions. URL-first
+  // keeps "@" inside URLs from being mis-tagged.
+  const urlSegs: Segment[] = [];
   let lastEnd = 0;
-  // Reset regex state between renders.
-  const re = new RegExp(URL_REGEX.source, URL_REGEX.flags);
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > lastEnd) {
-      out.push({ type: "text", value: text.slice(lastEnd, match.index) });
+  const urlRe = new RegExp(URL_PATTERN.source, URL_PATTERN.flags);
+  let m: RegExpExecArray | null;
+  while ((m = urlRe.exec(text)) !== null) {
+    if (m.index > lastEnd) {
+      urlSegs.push({ type: "text", value: text.slice(lastEnd, m.index) });
     }
-    out.push({ type: "link", value: match[0] });
-    lastEnd = match.index + match[0].length;
+    urlSegs.push({ type: "link", value: m[0] });
+    lastEnd = m.index + m[0].length;
   }
   if (lastEnd < text.length) {
-    out.push({ type: "text", value: text.slice(lastEnd) });
+    urlSegs.push({ type: "text", value: text.slice(lastEnd) });
+  }
+
+  const out: Segment[] = [];
+  for (const seg of urlSegs) {
+    if (seg.type !== "text") {
+      out.push(seg);
+      continue;
+    }
+    const sub = seg.value;
+    let subLast = 0;
+    const mentionRe = new RegExp(MENTION_PATTERN.source, MENTION_PATTERN.flags);
+    let mm: RegExpExecArray | null;
+    while ((mm = mentionRe.exec(sub)) !== null) {
+      // mm[1] is the leading whitespace (or empty at string start);
+      // mm[2] is the actual mention token. Emit the prefix + token
+      // separately so the styling lands on the @… only.
+      const prefix = mm[1];
+      const mention = mm[2];
+      const fullStart = mm.index + prefix.length;
+      if (fullStart > subLast) {
+        out.push({ type: "text", value: sub.slice(subLast, fullStart) });
+      }
+      out.push({ type: "mention", value: mention });
+      subLast = fullStart + mention.length;
+    }
+    if (subLast < sub.length) {
+      out.push({ type: "text", value: sub.slice(subLast) });
+    }
   }
   return out;
 }
@@ -77,7 +115,7 @@ function getTrustedDomains(): Set<string> {
   return w.__pejaTrustedDomains;
 }
 
-export function MessageText({ text, linkClass }: MessageTextProps) {
+export function MessageText({ text, linkClass, mentionClass }: MessageTextProps) {
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
 
   const segments = tokenize(text);
@@ -125,6 +163,16 @@ export function MessageText({ text, linkClass }: MessageTextProps) {
           // React's text node preserves whitespace + newlines because
           // the parent <p> has `whitespace-pre-wrap`.
           return <span key={i}>{seg.value}</span>;
+        }
+        if (seg.type === "mention") {
+          return (
+            <span
+              key={i}
+              className={mentionClass || "peja-mention"}
+            >
+              {seg.value}
+            </span>
+          );
         }
         return (
           <button

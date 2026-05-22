@@ -177,7 +177,7 @@ export function VideoRecorder({
     const chunks = chunksRef.current;
     const totalBytes = chunks.reduce((sum, c) => sum + c.size, 0);
     if (chunks.length === 0 || totalBytes === 0) {
-      setError("Recording was empty — try again");
+      setError("Recording was empty. Try again");
       return;
     }
     const blob = new Blob(chunks, { type });

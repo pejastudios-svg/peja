@@ -1,4399 +1,3270 @@
 "use client";
 
+// Chat thread. Reads everything from the chat store. Writes go through
+// useSendMessage which handles UUID-based optimistic + DB confirm + retry.
+// Realtime updates flow in via the global channel — useChatInit is
+// mounted at the root by <ChatBootstrap />, so this page just reads.
+
 import {
+  Fragment,
+  useCallback,
   useEffect,
   useLayoutEffect,
-  useState,
-  useRef,
-  useCallback,
   useMemo,
-  KeyboardEvent as ReactKeyboardEvent,
+  useRef,
+  useState,
 } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { createPortal } from "react-dom";
-import { supabase } from "@/lib/supabase";
-import { useAuth } from "@/context/AuthContext";
-import { useToast } from "@/context/ToastContext";
-import { presenceManager } from "@/lib/presence";
-import { notifyDMMessage } from "@/lib/notifications";
-import { Skeleton } from "@/components/ui/Skeleton";
-import { ImageLightbox } from "@/components/ui/ImageLightbox";
-import { VideoLightbox } from "@/components/ui/VideoLightbox";
-import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
-import { VoiceNoteRecorder } from "@/components/messages/VoiceNoteRecorder";
-import { useMessageCache } from "@/context/MessageCacheContext";
-import { DocumentViewer } from "@/components/messages/DocumentViewer";
-import { SignedImage, SignedVideo } from "@/components/messages/SignedMedia";
-import { signMessageUrl } from "@/hooks/useSignedMessageUrl";
-import { CATEGORIES } from "@/lib/types";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { format } from "date-fns";
 import {
-  ArrowLeft,
   Send,
-  Plus,
-  Image as ImageIcon,
-  FileText,
-  Smile,
+  MessageSquare,
+  Paperclip,
   X,
-  Crown,
-  User,
-  Loader2,
-  Check,
-  CheckCheck,
-  Bold,
-  Italic,
-  List,
-  ListOrdered,
-  MoreVertical,
-  Ban,
-  VolumeX,
-  Volume2,
-  Trash2,
-  File as FileIcon,
-  Download,
-  Copy,
-  Pencil,
   Mic,
-  Square,
-  Info,
-  ChevronRight,
-  Clock,
-  Reply,
-  AlertTriangle,
+  FileText,
+  Ban,
+  ChevronDown,
+  Copy as CopyIcon,
+  Trash2,
+  Reply as ReplyIcon,
+  Pencil,
+  Check,
+  Forward as ForwardIcon,
+  Flag as FlagIcon,
+  Pin as PinIcon,
+  PinOff,
+  User,
 } from "lucide-react";
-import { formatDistanceToNow, format, isToday, isYesterday } from "date-fns";
-import type { Message, VIPUser, MessageMediaItem } from "@/lib/types";
-import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
-import { PejaSpinner } from "@/components/ui/PejaSpinner";
-import { isOffline, enqueueAction, getQueue, dequeueAction } from "@/lib/offlineStorage";
-
-// =====================================================
-// EMOJI DATA
-// =====================================================
-const EMOJI_TABS = [
-  { key: "smileys", label: "😀", emojis: ["😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😊","😇","🥰","😍","🤩","😘","😗","😚","😙","🥲","😋","😛","😜","🤪","😝","🤑","🤗","🤭","🫢","🤫","🤔","🫡","🤐","🤨","😐","😑","😶","🫥","😏","😒","🙄","😬","🤥","🫠","😌","😔","😪","🤤","😴","😷","🤒","🤕","🤢","🤮","🥵","🥶","🥴","😵","🤯","🤠","🥳","🥸","😎","🤓","🧐","😕","🫤","😟","🙁","😮","😯","😲","😳","🥺","🥹","😦","😧","😨","😰","😥","😢","😭","😱","😖","😣","😞","😓","😩","😫","🥱","😤","😡","😠","🤬","😈","👿","💀","💩","🤡","👹","👺","👻","👽","👾","🤖"] },
-  { key: "gestures", label: "👋", emojis: ["👋","🤚","🖐️","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","🖕","👇","👍","👎","✊","👊","🤛","🤜","👏","🙌","🫶","👐","🤲","🤝","🙏","💪","🦾","🫂","💅","👂","👃","👣","👁️","👀","🧠","🦷","👅","👄"] },
-  { key: "hearts", label: "❤️", emojis: ["❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","🩷","🩵","💔","❤️‍🔥","❤️‍🩹","❣️","💕","💞","💓","💗","💖","💘","💝","💟","💋","💌","💐","🌹","🥀","💍","💒"] },
-  { key: "animals", label: "🐶", emojis: ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈","🙉","🙊","🐔","🐧","🐦","🦆","🦅","🦉","🦇","🐺","🐴","🦄","🐝","🦋","🐌","🐞","🐜","🐢","🐍","🦎","🦖","🐙","🦑","🐬","🐳","🦈","🐊","🐘","🦏","🐪","🦒","🐕","🐈","🐇","🦔","🐾","🐉"] },
-  { key: "food", label: "🍕", emojis: ["🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🍒","🍑","🥭","🍍","🥥","🥝","🍅","🥑","🥦","🌽","🥕","🥐","🍞","🧀","🥚","🍳","🥞","🥓","🥩","🍗","🌭","🍔","🍟","🍕","🥪","🌮","🌯","🥘","🍲","🍣","🍤","🍦","🍩","🎂","🍰","🍫","🍬","🍭","☕","🍵","🥤","🍺","🍷","🍸","🍹"] },
-  { key: "activities", label: "⚽", emojis: ["⚽","🏀","🏈","⚾","🎾","🏐","🎱","🏓","🏸","🥊","🎽","🛹","⛸️","🎿","🏂","🏋️","🤸","🏄","🏊","🚴","🎪","🎭","🎨","🎬","🎤","🎧","🎼","🎹","🎷","🎸","🎻","🎲","🎯","🎳","🎮","🕹️","🧩","🎰","🎁","🏆","🥇","🥈","🥉","🎃","🎊","🎉"] },
-  { key: "travel", label: "🚗", emojis: ["🚗","🚕","🚙","🚌","🏎️","🚓","🚑","🚒","🚐","🚚","🚜","🏍️","🛵","🚲","🚁","✈️","🛩️","🚀","🛸","⛵","🚤","🛳️","🚢","🚂","🚄","🚅","🚇","🗼","🗽","🏛️","🏰","🏟️","🎡","🎢","⛲","🏖️","🏜️","🌋","🏔️","🏕️","🏠","🏢","🏥","⛪","🕌"] },
-  { key: "symbols", label: "⭐", emojis: ["⭐","🌟","💫","✨","🔥","💯","✅","❌","⚠️","🚀","💎","🎉","🏆","🎯","💡","🔔","🔒","🔑","💰","📍","⚡","🌍","📱","💻","📸","🎵","📧","📎","✏️","📝","📊","🛡️","♻️","☮️","♾️","⬆️","➡️","⬇️","⬅️","↩️","🔄","❗","❓","💤"] },
-  { key: "kaomoji", label: "ツ", emojis: ["ʕ•ᴥ•ʔ","(╯°□°)╯︵ ┻━┻","┬─┬ノ( º _ ºノ)","(☞ﾟヮﾟ)☞","( ͡° ͜ʖ ͡°)","ಠ_ಠ","ಠ‿ಠ","(ง'̀-'́)ง","(づ｡◕‿‿◕｡)づ","¯\\_(ツ)_/¯","(⌐■_■)","༼ つ ◕_◕ ༽つ","(◕‿◕✿)","ヽ(´▽`)/","(*≧ω≦)","(╥_╥)","(✿◠‿◠)","٩(◕‿◕｡)۶","( ˘ ³˘)♥","OwO","UwU",">_<","^_^","T_T","-_-","O_O","=^.^=","★彡","♪♫♬","→_→","←_←","◉_◉","꒰ᐢ. ̫ .ᐢ꒱","₍ᐢ..ᐢ₎","𓃠","𓆏","𓃰"] },
-];
-
-// =====================================================
-// REACTION EMOJIS (quick reactions like WhatsApp)
-// =====================================================
-const QUICK_REACTIONS = ["❤️", "😂", "😮", "😢", "🙏", "👍"];
-
-const MAX_MESSAGE_LENGTH = 5000;
-
-// =====================================================
-// DOCUMENT ICON HELPER
-// =====================================================
-function getDocIcon(fileName: string | null): string {
-  if (!fileName) return "📄";
-  const ext = fileName.split(".").pop()?.toLowerCase() || "";
-  const map: Record<string, string> = {
-    pdf: "📕", doc: "📘", docx: "📘", txt: "📝", xlsx: "📊",
-    xls: "📊", pptx: "📙", ppt: "📙", zip: "📦", rar: "📦",
-  };
-  return map[ext] || "📄";
-}
-
-// =====================================================
-// POST LINK PREVIEW CARD
-// =====================================================
-function PostLinkPreview({ postId, onTap }: { postId: string; onTap: () => void }) {
-  const [post, setPost] = useState<{
-    category: string;
-    comment: string | null;
-    address: string | null;
-    media_url: string | null;
-    media_type: string | null;
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetch = async () => {
-      try {
-        const { data } = await supabase
-          .from("posts")
-          .select("category, comment, address, post_media(url, media_type, thumbnail_url)")
-          .eq("id", postId)
-          .single();
-
-        if (cancelled || !data) { setLoading(false); return; }
-
-        const firstMedia = (data as any).post_media?.[0];
-        setPost({
-          category: data.category,
-          comment: data.comment,
-          address: data.address,
-          media_url: firstMedia?.thumbnail_url || firstMedia?.url || null,
-          media_type: firstMedia?.media_type || null,
-        });
-      } catch {}
-      setLoading(false);
-    };
-    fetch();
-    return () => { cancelled = true; };
-  }, [postId]);
-
-  if (loading) {
-    return (
-      <div className="w-full p-3 rounded-xl border border-white/10 bg-white/5 animate-pulse">
-        <div className="flex gap-3">
-          <div className="w-14 h-14 rounded-lg bg-white/10 shrink-0" />
-          <div className="flex-1 space-y-2">
-            <div className="h-3 w-20 bg-white/10 rounded" />
-            <div className="h-3 w-full bg-white/10 rounded" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!post) {
-    return (
-      <button
-        onClick={(e) => { e.stopPropagation(); onTap(); }}
-        className="text-primary-400 underline text-sm"
-      >
-        View post
-      </button>
-    );
-  }
-
-  const categoryName = CATEGORIES.find((c) => c.id === post.category)?.name || post.category;
-  const categoryColor = CATEGORIES.find((c) => c.id === post.category)?.color;
-  const borderColor =
-    categoryColor === "danger" ? "border-red-500/25" :
-    categoryColor === "warning" ? "border-orange-500/25" :
-    "border-primary-500/25";
-
-  return (
-    <button
-      onClick={(e) => { e.stopPropagation(); onTap(); }}
-      className={`w-full rounded-xl border ${borderColor} bg-white/5 overflow-hidden text-left active:scale-[0.98] transition-transform`}
-    >
-      <div className="flex gap-3 p-3">
-        {post.media_url && (
-          <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 bg-dark-800">
-            <img src={post.media_url} alt="" className="w-full h-full object-cover" />
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <span
-            className={`text-[10px] font-bold uppercase tracking-wider ${
-              categoryColor === "danger" ? "text-red-400" :
-              categoryColor === "warning" ? "text-orange-400" :
-              "text-primary-400"
-            }`}
-          >
-            {categoryName}
-          </span>
-          {post.comment && (
-            <p className="text-sm text-dark-200 line-clamp-2 mt-0.5">{post.comment}</p>
-          )}
-          {post.address && (
-            <p className="text-[11px] text-dark-500 mt-1 truncate">📍 {post.address}</p>
-          )}
-        </div>
-      </div>
-    </button>
-  );
-}
-
-// =====================================================
-// MAIN COMPONENT
-// =====================================================
-export default function ChatPage() {
-  const params = useParams();
-  const conversationId = params.id as string;
-  const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
-  const toast = useToast();
-const {
-  setRecordingConversationId,
-  clearUnread,
+import { Header } from "@/components/layout/Header";
+import { useAuth } from "@/context/AuthContext";
+import { useChatStore } from "@/features/chat/store";
+import {
+  fetchThread,
   markConversationRead,
-  updateLastMessage,
-  fetchConversations,
-  subscribeToChat,
-  setActiveConversation,
-  chatStates,
-  loadChatMessages,
-  setChatMessages: setStoreMessages,
-} = useMessageCache();
-  const MSG_CACHE_KEY = `peja-chat-cache-${conversationId}`;
+  markChatNotificationsRead,
+} from "@/features/chat/api";
+import {
+  getCachedThread,
+  saveCachedThread,
+  deleteCachedThread,
+} from "@/features/chat/threadCache";
+import {
+  useSendMessage,
+  cancelInflightSend,
+} from "@/features/chat/useSendMessage";
+import { retryOutboxItem } from "@/features/chat/useOutboxDrain";
+import { useTypingChannel } from "@/features/chat/useTypingChannel";
+import { useToast } from "@/context/ToastContext";
+import { validateMediaFile, getVideoDuration } from "@/lib/mediaCompression";
+import { MessageText } from "@/components/messages-v2/MessageText";
+import {
+  IncidentLinkPreview,
+  extractIncidentPostId,
+} from "@/components/messages-v2/IncidentLinkPreview";
+import { VoiceRecorderBar } from "@/components/messages-v2/VoiceRecorderBar";
+import { AudioBubble } from "@/components/messages-v2/AudioBubble";
+import { DocumentBubble } from "@/components/messages-v2/DocumentBubble";
+import { UploadRing } from "@/components/messages-v2/UploadRing";
+import { DocumentViewer } from "@/components/messages-v2/DocumentViewer";
+import { MediaGrid, type MediaGridItem } from "@/components/messages-v2/MediaGrid";
+import { MediaCarousel, type CarouselItem } from "@/components/messages-v2/MediaCarousel";
+import { AvatarPreview } from "@/components/messages-v2/AvatarPreview";
+import { ChatInfoSheet } from "@/components/messages-v2/ChatInfoSheet";
+import { AddMemberSheet } from "@/components/messages-v2/AddMemberSheet";
+import { supabase } from "@/lib/supabase";
+import { KebabMenu } from "@/components/messages-v2/KebabMenu";
+import {
+  setBlocked,
+  clearChatForUser,
+  deleteChatForUser,
+  forwardMessage as apiForwardMessage,
+  submitUserReport,
+  fetchGroupParticipants,
+  renameGroup as apiRenameGroup,
+  setGroupAvatar as apiSetGroupAvatar,
+  uploadGroupAvatar as apiUploadGroupAvatar,
+  addGroupMember as apiAddGroupMember,
+  removeGroupMember as apiRemoveGroupMember,
+  leaveGroup as apiLeaveGroup,
+  deleteGroup as apiDeleteGroup,
+  setNotificationMode as apiSetNotificationMode,
+  setMessagePinned as apiSetMessagePinned,
+  type UserReportReason,
+  type NotificationMode,
+} from "@/features/chat/api";
+import type { GroupParticipant } from "@/features/chat/types";
+import { dispatchOrQueue, uuid as actionUuid } from "@/features/chat/actionQueue";
+import { MessageActionMenu, type MenuAction } from "@/components/messages-v2/MessageActionMenu";
+import { ReplyPreview } from "@/components/messages-v2/ReplyPreview";
+import { QuotedReplyBlock } from "@/components/messages-v2/QuotedReplyBlock";
+import { ReactionBadges } from "@/components/messages-v2/ReactionBadges";
+import { ForwardSheet } from "@/components/messages-v2/ForwardSheet";
+import { ReportUserModal } from "@/components/messages-v2/ReportUserModal";
+import { SearchInChatSheet } from "@/components/messages-v2/SearchInChatSheet";
+import {
+  DateDivider,
+  UnreadDivider,
+  dateBucket,
+} from "@/components/messages-v2/ThreadDividers";
+import { notifyDMReaction, notifyDMBlocked } from "@/lib/notifications";
+import {
+  setViewingConversation,
+  isUserViewingConversation,
+} from "@/features/chat/presence";
+import { useLongPress } from "@/features/chat/useLongPress";
+import { useSwipeToReply } from "@/features/chat/useSwipeToReply";
+import type { ChatMessage, MessageReaction, ReplyTarget } from "@/features/chat/types";
 
-  // ------ Core State ------
-  // Messages live in the MessageCacheProvider's per-chat store. The local
-  // `messages` binding is a read-only slice; writes go through `setMessages`
-  // below, which forwards to the store. Moving messages out of useState
-  // means an in-flight optimistic send doesn't vanish when the user
-  // navigates away mid-insert and comes back — the store keeps the temp
-  // message alive, and when the DB insert eventually resolves the same
-  // store entry is patched to the real id.
-  const messages = useMemo<Message[]>(
-    () => chatStates.get(conversationId)?.messages || [],
-    [chatStates, conversationId]
+const REACTION_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+import { formatDistanceToNow } from "date-fns";
+
+export default function ThreadV2Page() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+  // ?focus=<messageId> — set by cross-chat search results.
+  // Cleared after we successfully scroll so a refresh of the
+  // chat doesn't re-fire the focus jump.
+  const focusMessageId = searchParams?.get("focus") ?? null;
+  const conversationId = String(params?.id || "");
+  const router = useRouter();
+  const { user } = useAuth();
+  const toast = useToast();
+
+  const thread = useChatStore((s) => s.threadsByConversation[conversationId]);
+  const conv = useChatStore((s) => s.conversationsById[conversationId]);
+  const setThread = useChatStore((s) => s.setThread);
+  const clearUnread = useChatStore((s) => s.clearUnread);
+  const setActiveConversationId = useChatStore((s) => s.setActiveConversationId);
+  // Draft for THIS conversation. Persisted in localStorage by the store —
+  // typing, leaving, and coming back restores the in-progress message.
+  const draft = useChatStore((s) => s.draftsByConversation[conversationId] || "");
+  const setDraft = useChatStore((s) => s.setDraft);
+  const clearDraft = useChatStore((s) => s.clearDraft);
+  // Reconnect signal — bumps every time the realtime channel transitions
+  // to SUBSCRIBED, including after a drop. Used as a refetch trigger below.
+  const lastConnectedAt = useChatStore((s) => s.lastConnectedAt);
+  // Presence + typing for the OTHER participant of this conversation.
+  const otherUserId = conv?.other_user_id || null;
+  const otherOnline = useChatStore((s) =>
+    otherUserId ? Boolean(s.onlineUserIds[otherUserId]) : false
   );
-  const setMessages = useCallback(
-    (updater: Message[] | ((prev: Message[]) => Message[])) => {
-      setStoreMessages(conversationId, updater);
-    },
-    [conversationId, setStoreMessages]
+  const otherLastSeen = useChatStore((s) =>
+    otherUserId ? s.lastSeenByUserId[otherUserId] : undefined
   );
-  const [initialFetchComplete, setInitialFetchComplete] = useState(false);
-  const [otherUser, setOtherUser] = useState<VIPUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [uploadingMsgIds, setUploadingMsgIds] = useState<Map<string, number>>(new Map());
+  const typing = useChatStore((s) => s.typingByConversation[conversationId]);
+  // Live upload progress per message — keyed by message id, populated
+  // by useSendMessage during compression + upload.
+  const uploadProgressById = useChatStore((s) => s.uploadProgressById);
+  // Typing channel — opens on mount, closes on unmount. Both
+  // sendTyping and sendRecording are throttled to ~1 broadcast / 1.5 s
+  // by the hook.
+  const { sendTyping, sendRecording } = useTypingChannel(
+    conversationId,
+    user?.id ?? null
+  );
+  // What the OTHER user is doing right now (if anything). Drives
+  // the header subtitle + in-thread bubble icon.
+  const otherActivity =
+    typing && otherUserId && typing.userId === otherUserId ? typing.kind : null;
+  const isOtherTyping = otherActivity === "typing";
+  const isOtherRecording = otherActivity === "recording";
 
-  // ------ Input State ------
-  const [showEmoji, setShowEmoji] = useState(false);
-  const [emojiTab, setEmojiTab] = useState("smileys");
-  const [showAttach, setShowAttach] = useState(false);
-  const [showFormatBar, setShowFormatBar] = useState(false);
-  const [showLinkInput, setShowLinkInput] = useState(false);
-  const [charCount, setCharCount] = useState(0);
-  const [linkUrl, setLinkUrl] = useState("");
-  const [linkText, setLinkText] = useState("");
-
-  // ------ UI State ------
-  const [showMenu, setShowMenu] = useState(false);
-  const [showChatInfo, setShowChatInfo] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isBlocked, setIsBlocked] = useState(false);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  const [recordingUsers, setRecordingUsers] = useState<string[]>([]);
-  const [otherUserOnline, setOtherUserOnline] = useState(false);
-  const [otherLastReadAt, setOtherLastReadAt] = useState<string | null>(null);
-  const [pendingMedia, setPendingMedia] = useState<{ file: File; preview: string; type: string }[]>([]);
-
-  // ------ Long Press / Context Menu ------
-  const [contextMenuMsg, setContextMenuMsg] = useState<Message | null>(null);
-  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
-  const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
-  const [reactionPickerTab, setReactionPickerTab] = useState("smileys");
-  const [contextMenuClosing, setContextMenuClosing] = useState(false);
-  const contextMenuClosingRef = useRef(false);
-  const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // ------ Edit Mode ------
-  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-
-  // ------ Reply Mode ------
-  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
-  const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
-
-  // ------ Lightbox ------
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
-  const [lightboxVideo, setLightboxVideo] = useState<string | null>(null);
-  const [lightboxVideoRect, setLightboxVideoRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [docViewer, setDocViewer] = useState<{
-  url: string;
-  fileName: string | null;
-  fileSize: number | null;
-} | null>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [chatInfoPlayingVN, setChatInfoPlayingVN] = useState<{ url: string; duration?: number } | null>(null);
-
-  // ------ Voice Note ------
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0);
-  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
-  const [voiceNoteUploading, setVoiceNoteUploading] = useState(false);
-
-  // ------ Swipe to Reply ------
-  const [swipingMsgId, setSwipingMsgId] = useState<string | null>(null);
-  const [swipeX, setSwipeX] = useState(0);
-  const swipeStartRef = useRef<{ x: number; y: number; locked: boolean } | null>(null);
-
-  // ------ Plus button animation ------
-  const [plusRotated, setPlusRotated] = useState(false);
-
-  // ------ Refs ------
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<HTMLDivElement>(null);
-  const presenceChannelRef = useRef<any>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const docInputRef = useRef<HTMLInputElement>(null);
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const initialScrollDone = useRef(false);
-  const hasRenderedOnce = useRef(false);
-  const messagesLengthRef = useRef(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const myDeletionsRef = useRef<Set<string>>(new Set());
-  const otherUserOnlineRef = useRef(false);
-    const messagesRef = useRef<Message[]>([]);
-    const saveCacheTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const initialFetchDoneRef = useRef(false);
-
-  // Reset scroll flags when conversation changes
+  // Tell the realtime layer that this conversation is the one currently
+  // being viewed. While this is set, incoming messages skip the unread
+  // badge increment and auto-mark-as-read on the server. Cleared on
+  // unmount + on conversation switch.
   useEffect(() => {
-    initialScrollDone.current = false;
-    hasRenderedOnce.current = false;
-    messagesLengthRef.current = 0;
-    initialFetchDoneRef.current = false;
-  }, [conversationId]);
-
-    // =====================================================
-  // KEEP LOCAL CACHE FRESH — saves after every state change (debounced)
-  // This ensures re-opening a chat shows up-to-date messages instantly
-  // =====================================================
-   useEffect(() => {
-    if (!conversationId || messages.length === 0) return;
-    if (!initialFetchDoneRef.current) return;
-
-    if (saveCacheTimeoutRef.current) clearTimeout(saveCacheTimeoutRef.current);
-
-    saveCacheTimeoutRef.current = setTimeout(() => {
-      try {
-        // Cache all real messages. For media messages without resolved URLs,
-        // keep them in cache (they'll be refreshed on next fetch).
-        // Only skip temp/optimistic messages.
-        const cacheData = messages
-          .filter((m) => !m.id.startsWith("temp-"))
-          .slice(-100);
-        if (cacheData.length > 0) {
-          localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
-        }
-      } catch {}
-    }, 2000);
-
+    if (!conversationId) return;
+    setActiveConversationId(conversationId);
+    // Mirror the active-conversation id onto window so the global
+    // InAppNotificationToasts listener can suppress its banner when
+    // a DM or group message arrives for the chat the user is staring
+    // at. Same convention v1 uses (see MessageCacheContext); reading
+    // a single window key keeps the toast layer decoupled from the
+    // store routing of either chat implementation.
+    if (typeof window !== "undefined") {
+      (window as any).__pejaActiveConversationId = conversationId;
+    }
+    // Announce to peers via presence that we're viewing this thread —
+    // their useSendMessage notification gate reads this and skips
+    // the push for messages into the chat we're staring at right now.
+    setViewingConversation(conversationId).catch(() => {});
     return () => {
-      if (saveCacheTimeoutRef.current) clearTimeout(saveCacheTimeoutRef.current);
-    };
-  }, [messages, conversationId]);
-
-  // =====================================================
-  // AUTH GUARD
-  // =====================================================
-  useEffect(() => {
-    if (authLoading) return;
-    if (!user) { router.replace("/login"); return; }
-    if (user.is_vip === false) { router.replace("/"); return; }
-  }, [user, authLoading, router]);
-
- // =====================================================
-  // SET ACTIVE CONVERSATION ON MOUNT
-  // Context handles: clear unread, suppress badge, mark as read
-  // =====================================================
-  useEffect(() => {
-    if (!conversationId || !user?.id) return;
-
-    // Tell context this chat is open — handles badge clearing
-    setActiveConversation(conversationId);
-    
-    // Mark as read in DB (background)
-    markConversationRead(conversationId);
-
-    // Mark DM notifications as read (background, non-blocking)
-    (async () => {
-      try {
-        const { data: unreadNotifs } = await supabase
-          .from("notifications")
-          .select("id, data")
-          .eq("user_id", user.id)
-          .in("type", ["dm_message", "dm_reaction"])
-          .eq("is_read", false);
-
-        if (unreadNotifs && unreadNotifs.length > 0) {
-          const idsToMark = unreadNotifs
-            .filter((n: any) => n.data?.conversation_id === conversationId)
-            .map((n: any) => n.id);
-
-          if (idsToMark.length > 0) {
-            await supabase
-              .from("notifications")
-              .update({ is_read: true })
-              .in("id", idsToMark);
-            window.dispatchEvent(new Event("peja-notifications-changed"));
-          }
-        }
-      } catch (e) {
+      setActiveConversationId(null);
+      if (typeof window !== "undefined") {
+        (window as any).__pejaActiveConversationId = null;
       }
+      setViewingConversation(null).catch(() => {});
+    };
+  }, [conversationId, setActiveConversationId]);
+
+  const send = useSendMessage();
+  const sendingRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Image picker: hidden file input + a local preview row of selected
+  // images. Tapping send fires them through useSendMessage which handles
+  // the optimistic add, the outbox, and the upload.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  // Mirrors pendingFiles into a ref so the file-picker callback can
+  // dedupe against the current set rather than a stale closure value
+  // (the closure was empty after the first pick, which let the second
+  // pick re-add the same file).
+  const pendingFilesRef = useRef<File[]>([]);
+  useEffect(() => {
+    pendingFilesRef.current = pendingFiles;
+  }, [pendingFiles]);
+  // Lightbox state — tapping any image / video tile opens a
+  // fullscreen carousel. We carry the WHOLE bundle (image+video items
+  // from the same message) and the tapped index, so swiping inside
+  // the carousel walks through the rest of the album.
+  const [lightbox, setLightbox] = useState<{
+    items: CarouselItem[];
+    index: number;
+  } | null>(null);
+  // Document viewer state — clicking a non-image/video media bubble
+  // opens the in-app iframe modal instead of leaving the chat.
+  const [docViewer, setDocViewer] = useState<{
+    url: string;
+    fileName: string;
+  } | null>(null);
+  // Chat-info overlay (tap the name) + avatar preview (tap the avatar).
+  // The kebab opens the same chat-info sheet.
+  const [showChatInfo, setShowChatInfo] = useState(false);
+  const [showAvatarPreview, setShowAvatarPreview] = useState(false);
+  // Group participants — populated only when the conversation is a
+  // group. Drives the sender-name labels above each incoming bubble
+  // plus the Members list inside the chat-info sheet.
+  const [groupParticipants, setGroupParticipants] = useState<
+    GroupParticipant[] | null
+  >(null);
+  const groupParticipantsById = useMemo(() => {
+    if (!groupParticipants) return null;
+    const m: Record<string, GroupParticipant> = {};
+    for (const p of groupParticipants) m[p.user_id] = p;
+    return m;
+  }, [groupParticipants]);
+  useEffect(() => {
+    if (!conversationId) return;
+    if (!conv?.is_group) {
+      setGroupParticipants(null);
+      return;
+    }
+    let cancelled = false;
+    const load = () => {
+      fetchGroupParticipants(conversationId)
+        .then((rows) => {
+          if (!cancelled) setGroupParticipants(rows);
+        })
+        .catch((err) => {
+          console.error("[chat-v2] participants fetch failed", err);
+          if (!cancelled) setGroupParticipants([]);
+        });
+    };
+    load();
+    // Live updates on membership change. When peja_group_add_member
+    // or peja_group_remove_member fires (or anyone leaves), the
+    // INSERT / DELETE on conversation_participants flows through
+    // Supabase realtime — we refetch the participants snapshot.
+    // The DB-level system-message trigger separately inserts a
+    // "X joined / X left" row, which the existing message realtime
+    // sub already picks up to add the chip.
+    const channel = supabase
+      .channel(`conv-participants-${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "conversation_participants",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        () => load()
+      )
+      .subscribe();
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
+  }, [conversationId, conv?.is_group, conv?.member_count]);
+  // Track the previous blocked_by_other value so we can fire a one-time
+  // toast the moment the flag flips on. Without this the banner just
+  // appears silently — the user might not notice until they try to
+  // send. We deliberately don't toast on flip-off because unblock
+  // restores normal state (the composer comes back, that's the signal).
+  const prevBlockedByOther = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!conv) return;
+    const now = !!conv.blocked_by_other;
+    if (prevBlockedByOther.current === true && !now) {
+      // unblock — no toast; restored composer is the signal
+    } else if (prevBlockedByOther.current === false && now) {
+      toast.warning(
+        `${conv.other_user_name || "This user"} has blocked you.`
+      );
+    }
+    prevBlockedByOther.current = now;
+  }, [conv, toast]);
+  // Confirmation modal for destructive actions (block, clear chat,
+  // delete chat). We render a small inline confirm rather than reusing
+  // window.confirm so the dialog is consistent with the rest of the
+  // dark/light theme and works inside the Capacitor WebView.
+  const [pendingAction, setPendingAction] = useState<{
+    title: string;
+    body: string;
+    confirmLabel: string;
+    danger: boolean;
+    run: () => Promise<void> | void;
+  } | null>(null);
+  // Per-message action menu (long-press / right-click / hover-chevron
+  // trigger). Holds the target message and the pixel anchor for the
+  // floating menu — MessageActionMenu does its own viewport clamping.
+  const [activeMenu, setActiveMenu] = useState<{
+    message: ChatMessage;
+    anchor: { x: number; y: number };
+  } | null>(null);
+  // Reply context — when set, the composer shows a preview row above
+  // the textarea and the next send call passes reply_to_id.
+  const [replyingTo, setReplyingTo] = useState<ReplyTarget | null>(null);
+  // Edit context — when set, the textarea drives editMessage instead
+  // of send. We snapshot the draft we'd been typing so cancelling
+  // restores it.
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const savedDraftRef = useRef<string>("");
+  // Forward sheet — when set, opens the recipient picker for the
+  // chosen source message.
+  const [forwardSource, setForwardSource] = useState<ChatMessage | null>(null);
+  // Report-user modal — opened from chat info sheet or kebab.
+  const [reportOpen, setReportOpen] = useState(false);
+  // When set, the report modal is reporting THIS specific message
+  // (instead of the conversation's other user). Used in groups
+  // where one member reports another's bubble. The handler reads
+  // this on submit to attach message_id + the sender as
+  // reported_id.
+  const [reportingMessage, setReportingMessage] = useState<ChatMessage | null>(
+    null
+  );
+  // In-chat search overlay.
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Pagination state for "load older on scroll up". hasMoreRef goes
+  // false the first time fetchThread (or the older-page fetch)
+  // returns FEWER than the page size — that's our signal that we've
+  // hit the start of the conversation.
+  const hasMoreOlderRef = useRef(true);
+  const loadingOlderRef = useRef(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  // Captured BEFORE a load-older fetch so we can restore scroll
+  // position after the prepended page expands scrollHeight. Without
+  // this, prepending 50 messages would jolt the viewport upward.
+  const olderScrollAnchorRef = useRef<{
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
+  // Closing animation state. When the user taps Back, we flip this
+  // to true so the page applies `peja-slide-out-to-right` and then
+  // call router.push once the keyframe lands (220ms — matches the
+  // animation duration). Mirrors the ChatInfoSheet close pattern.
+  const [closing, setClosing] = useState(false);
+  const handleBack = useCallback(() => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(() => router.push("/messages"), 220);
+  }, [closing, router]);
+  // Snapshot the unread baseline at mount. The thread page uses this
+  // to decide WHERE to draw the "Unread messages" divider — locked
+  // to the value we had when the user opened the chat so the divider
+  // stays put even as we mark the conversation read in the
+  // background. `null` (no prior read) → divider appears above the
+  // very first incoming message.
+  const initialReadAtRef = useRef<string | null | undefined>(undefined);
+  if (initialReadAtRef.current === undefined && conv) {
+    initialReadAtRef.current = conv.my_last_read_at ?? null;
+  }
+  // Transient highlight target — set briefly when the user taps a
+  // quoted-reply block, we scroll the parent into view and flash a
+  // ring + tint on the bubble. Cleared 1.4s later so re-tapping the
+  // same parent re-fires the animation.
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
+  const scrollToMessage = useCallback((messageId: string) => {
+    const el = scrollRef.current?.querySelector(
+      `[data-message-id="${CSS.escape(messageId)}"]`
+    ) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    setHighlightedMessageId(null);
+    // Re-set on the next frame so the animation always re-fires, even
+    // when tapping the same parent twice in a row.
+    requestAnimationFrame(() => {
+      setHighlightedMessageId(messageId);
+      highlightTimerRef.current = window.setTimeout(() => {
+        setHighlightedMessageId(null);
+      }, 1400);
+    });
+  }, []);
+  // Voice-record mode: when ON, the input bar swaps the textarea +
+  // mic + send for the recording UI. Set by pressing the mic button.
+  const [recording, setRecording] = useState(false);
+
+  // Thread refetch effect. Fires on:
+  //   • Conversation switch (conversationId changes)
+  //   • Initial realtime connect (lastConnectedAt: null → number)
+  //   • Realtime reconnect (lastConnectedAt: number → newer number)
+  // The reconnect case is what catches up any messages that arrived during
+  // a dropped websocket — Supabase doesn't replay those events, and on
+  // flaky networks they'd otherwise be invisible until the next refresh.
+  useEffect(() => {
+    if (!user?.id || !conversationId) return;
+    // Reset pagination cursor for a fresh thread load — switching
+    // conversations means we have a new history to walk.
+    hasMoreOlderRef.current = true;
+
+    // Warm-start: restore the last-known thread snapshot from IDB
+    // BEFORE fetchThread resolves so the user sees content immediately
+    // instead of an empty skeleton. We only restore if the in-memory
+    // thread is empty — switching back to a chat that's still in the
+    // store doesn't need a redundant restore.
+    if (!useChatStore.getState().threadsByConversation[conversationId]?.hydrated) {
+      void getCachedThread(user.id, conversationId).then((cached) => {
+        if (!cached || cached.length === 0) return;
+        // Bail if fetchThread already populated the store while we
+        // were waiting on IDB — fresh data wins over the snapshot.
+        const cur = useChatStore.getState().threadsByConversation[conversationId];
+        if (cur?.hydrated) return;
+        setThread(conversationId, cached);
+      });
+    }
+
+    fetchThread(conversationId, user.id, 50)
+      .then((msgs) => {
+        setThread(conversationId, msgs);
+        // Overwrite the snapshot with the fresh page so the next
+        // open of this chat warms up to the latest state. Fire and
+        // forget — caching is a perf optimisation, not correctness.
+        void saveCachedThread(user.id!, conversationId, msgs);
+        // A short first page means we've already loaded the entire
+        // conversation — no point trying to paginate older.
+        if (msgs.length < 50) hasMoreOlderRef.current = false;
+      })
+      .catch(() => {});
+    markConversationRead(conversationId, user.id)
+      .then((readAt) => {
+        // Keep the local summary in sync so a re-open of THIS chat
+        // computes the unread-divider cutoff against the right
+        // timestamp. Without this patch the store keeps the stale
+        // value from the previous fetchConversationList, which made
+        // every chat look like it had unread messages on re-entry.
+        useChatStore
+          .getState()
+          .patchConversation(conversationId, { my_last_read_at: readAt });
+      })
+      .catch(() => {});
+    // Also mark any chat-related notifications as read so the
+    // notifications page doesn't sit on a stale unread badge after
+    // the user has clearly seen the chat.
+    markChatNotificationsRead(conversationId, user.id).catch(() => {});
+    // Broadcast a refresh so the bell badge in the header updates
+    // without waiting for its 30s poll.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("peja-notifications-changed"));
+    }
+    clearUnread(conversationId);
+  }, [user?.id, conversationId, setThread, clearUnread, lastConnectedAt]);
+
+  const messages = useMemo(() => thread?.messages || [], [thread?.messages]);
+
+  // === Scroll-anchoring logic ===
+  // Rule: only auto-scroll to the latest message when the user is
+  // ALREADY anchored to the bottom of the thread. If they've scrolled
+  // up to read history, a new message or typing pulse must NOT yank
+  // them back down. Instead we surface a floating "new messages"
+  // avatar badge (rendered further down) — tap it to jump down.
+  //
+  // "At bottom" is a fuzzy concept: with kinetic scrolling and
+  // sub-pixel rounding the value rarely lands exactly at the floor,
+  // so we use a 60px tolerance.
+  const AT_BOTTOM_PX = 60;
+  const isAtBottomRef = useRef(true);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const lastSeenMessageCountRef = useRef(messages.length);
+
+  // Fetches the next page of OLDER messages (created_at < oldest
+  // currently in the store) and prepends them. Trips a layout-effect
+  // that re-anchors the viewport so the user's position relative to
+  // their last-visible message doesn't jump.
+  const loadOlderMessages = useCallback(async () => {
+    if (!user?.id || !conversationId) return;
+    if (loadingOlderRef.current || !hasMoreOlderRef.current) return;
+    const oldest = messages[0]?.created_at;
+    if (!oldest) return;
+    const el = scrollRef.current;
+    if (el) {
+      olderScrollAnchorRef.current = {
+        scrollHeight: el.scrollHeight,
+        scrollTop: el.scrollTop,
+      };
+    }
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const older = await fetchThread(conversationId, user.id, 50, oldest);
+      if (older.length === 0) {
+        hasMoreOlderRef.current = false;
+      } else {
+        useChatStore.getState().prependOlderMessages(conversationId, older);
+        // Short page → no more history beyond this one.
+        if (older.length < 50) hasMoreOlderRef.current = false;
+      }
+    } catch {
+      // Swallow — the badge stays in place, user can scroll again
+      // later to retry.
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [user?.id, conversationId, messages]);
+
+  const handleThreadScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = el.scrollHeight - (el.scrollTop + el.clientHeight);
+    const wasAtBottom = isAtBottomRef.current;
+    const nowAtBottom = distance <= AT_BOTTOM_PX;
+    isAtBottomRef.current = nowAtBottom;
+    if (!wasAtBottom && nowAtBottom) {
+      // User scrolled all the way down → catch up the seen counter,
+      // hide the badge.
+      lastSeenMessageCountRef.current = messages.length;
+      setUnseenCount(0);
+    }
+    // Trigger a backwards page when the user gets near the top.
+    // 200 px gives the fetch enough time to land before the user
+    // bumps the actual scroll boundary.
+    if (
+      el.scrollTop < 200 &&
+      hasMoreOlderRef.current &&
+      !loadingOlderRef.current &&
+      messages.length > 0
+    ) {
+      void loadOlderMessages();
+    }
+  }, [messages.length, loadOlderMessages]);
+
+  // ?focus=<id> handler. When the chat opens with a focus target —
+  // typically from cross-chat search — walk pagination backward
+  // until the message is in the rendered window, scroll to it +
+  // highlight-flash, and clear the URL param.
+  //
+  // Hard-cap the backward walk so a malformed id (or a message that
+  // got delete-for-everyone'd between the search and the click)
+  // doesn't recursively page through the entire history. 10 pages =
+  // 500 messages, which is plenty for normal use.
+  const focusAttemptedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusMessageId) return;
+    if (!user?.id || !conversationId) return;
+    if (!thread?.hydrated) return;
+    if (focusAttemptedRef.current === focusMessageId) return;
+    focusAttemptedRef.current = focusMessageId;
+
+    let cancelled = false;
+    (async () => {
+      const MAX_PAGES = 10;
+      for (let i = 0; i < MAX_PAGES; i++) {
+        if (cancelled) return;
+        const inStore = (
+          useChatStore.getState().threadsByConversation[conversationId]
+            ?.messages || []
+        ).some((m) => m.id === focusMessageId);
+        if (inStore) break;
+        if (!hasMoreOlderRef.current) break;
+        await loadOlderMessages();
+      }
+      if (cancelled) return;
+      scrollToMessage(focusMessageId);
+      // Clear the param so refreshing this page doesn't re-fire the
+      // jump on every load. We replace rather than push so the back
+      // button still returns to wherever the user came from.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("focus");
+      router.replace(url.pathname + (url.search || ""));
     })();
 
-    try {
-      sessionStorage.setItem("peja-last-chat-id", conversationId);
-    } catch {}
-
     return () => {
-      // Tell context we left this chat
-      setActiveConversation(null);
+      cancelled = true;
     };
-  }, [conversationId, user?.id, setActiveConversation, markConversationRead]);
-
-    // =====================================================
-  // BROADCAST RECORDING STATE
-  // =====================================================
-  useEffect(() => {
-    if (isRecording) {
-      setRecordingConversationId(conversationId);
-    } else {
-      setRecordingConversationId(null);
-    }
-    
-    return () => {
-      setRecordingConversationId(null);
-    };
-  }, [isRecording, conversationId, setRecordingConversationId]);
-
-  // =====================================================
-  // FETCH CONVERSATION DATA
-  // =====================================================
-useEffect(() => {
-  if (!user?.id || !conversationId) return;
-
-  const fetchData = async () => {
-    // STEP 1: The store keeps messages across navigation, so if we're
-    // re-entering a chat we just left, `messages` (from the useMemo above)
-    // is already populated — render shows them immediately. We no longer
-    // restore from the localStorage cache here because that was the source
-    // of the "preview shows it but thread doesn't" bug: the cache could
-    // miss in-flight sends, and the 30s skip-fetch heuristic prevented the
-    // refetch that would have repaired it. Now we always refetch below.
-    const hasStoreMessages = (chatStates.get(conversationId)?.messages.length || 0) > 0;
-
-    // STEP 2: Try to restore cached other user data
-    try {
-      const cachedUser = localStorage.getItem(`peja-chat-user-${conversationId}`);
-      if (cachedUser) {
-        const parsed = JSON.parse(cachedUser);
-        if (parsed?.id) {
-          setOtherUser(parsed);
-          setOtherUserOnline(presenceManager.isOnline(parsed.id));
-          if (hasStoreMessages) {
-            setLoading(false);
-          }
-        }
-      }
-    } catch (e) {
-    }
-
-    try {
-      // Run participant data and deletions in parallel
-      const [participantsResult, deletionsResult] = await Promise.all([
-        supabase
-          .from("conversation_participants")
-          .select("user_id, is_muted, is_blocked, last_read_at")
-          .eq("conversation_id", conversationId),
-        supabase
-          .from("message_deletions")
-          .select("message_id")
-          .eq("user_id", user.id),
-      ]);
-
-      const { data: participants, error: pErr } = participantsResult;
-      if (pErr) throw pErr;
-
-      const myP = participants?.find((p) => p.user_id === user.id);
-      const otherP = participants?.find((p) => p.user_id !== user.id);
-      if (!otherP) { router.replace("/messages"); return; }
-
-      setIsMuted(myP?.is_muted || false);
-      setIsBlocked(myP?.is_blocked || false);
-
-      const otherReadAt = otherP.last_read_at || null;
-      setOtherLastReadAt(otherReadAt);
-
-      myDeletionsRef.current = new Set((deletionsResult.data || []).map((d: any) => d.message_id));
-
-      // Fetch user data, messages, and mark as read ALL in parallel
-      const [userResult] = await Promise.all([
-        supabase
-          .from("users")
-          .select("id, full_name, email, avatar_url, is_vip, is_admin, is_guardian, last_seen_at, status")
-          .eq("id", otherP.user_id)
-          .single(),
-        fetchMessages(otherReadAt),
-        markAsRead(),
-      ]);
-
-      const { data: otherUserData, error: uErr } = userResult;
-      if (uErr) throw uErr;
-
-      const otherVIP = otherUserData as VIPUser;
-      const globalOnline = (window as any).__pejaOnlineUsers;
-      const isOtherOnline =
-        presenceManager.isOnline(otherVIP.id) ||
-        (globalOnline instanceof Set && globalOnline.has(otherVIP.id));
-      otherVIP.is_online = isOtherOnline;
-      setOtherUser(otherVIP);
-      setOtherUserOnline(isOtherOnline);
-      otherUserOnlineRef.current = isOtherOnline;
-
-      try {
-        localStorage.setItem(`peja-chat-user-${conversationId}`, JSON.stringify(otherVIP));
-      } catch {}
-
-      try { sessionStorage.setItem("peja-last-chat-id", conversationId); } catch {}
-    } catch (e: any) {
-      // If we have no messages in the store at all, the fetch failed cold
-      // and there's nothing to render. Bounce back. If the store had a
-      // previous snapshot, leave the user on it — better than yanking
-      // them away just because a refetch failed.
-      if (!hasStoreMessages) {
-        router.replace("/messages");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  fetchData();
-}, [user?.id, conversationId]);
-
-  // =====================================================
-  // PRESENCE: Watch other user's online status
-  // =====================================================
-  useEffect(() => {
-    if (!otherUser?.id) return;
-
-    const checkOnline = (lastSeen?: string | null) => {
-      if (presenceManager.isOnline(otherUser.id)) return true;
-      const ls = lastSeen ?? otherUser.last_seen_at;
-      if (ls) {
-        const diff = Date.now() - new Date(ls).getTime();
-        if (diff < 2 * 60 * 1000) return true;
-      }
-      return false;
-    };
-
-    const online = checkOnline();
-    setOtherUserOnline(online);
-    otherUserOnlineRef.current = online;
-
-    const unsub = presenceManager.onStatusChange((userId, isOnline) => {
-      if (userId === otherUser.id) {
-        setOtherUserOnline(isOnline);
-        otherUserOnlineRef.current = isOnline;
-      }
-    });
-
-    const pollLastSeen = async () => {
-      const { data } = await supabase
-        .from("users")
-        .select("last_seen_at")
-        .eq("id", otherUser.id)
-        .single();
-
-      if (data?.last_seen_at) {
-        const nowOnline = checkOnline(data.last_seen_at);
-        setOtherUserOnline(nowOnline);
-        otherUserOnlineRef.current = nowOnline;
-      }
-    };
-
-    const initialTimer = setTimeout(pollLastSeen, 1000);
-    const pollInterval = setInterval(pollLastSeen, 30000);
-
-    return () => {
-      unsub();
-      clearTimeout(initialTimer);
-      clearInterval(pollInterval);
-    };
-  }, [otherUser?.id]);
-
-  // =====================================================
-  // FETCH MESSAGES
-  // =====================================================
-   const fetchMessages = useCallback(async (otherReadAt?: string | null) => {
-    if (!user?.id) return;
-
-const { data, error } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (error) { return; }
-
-const msgs = ((data || []) as Message[]).reverse();
-    if (msgs.length === 0) { setMessages([]); return; }
-
-    const deletedForMe = myDeletionsRef.current;
-    const filteredMsgs = msgs.filter((m) => !deletedForMe.has(m.id));
-
-    const allIds = filteredMsgs.map((m) => m.id);
-    const mediaIds = filteredMsgs
-      .filter((m) => m.content_type === "media" || m.content_type === "document")
-      .map((m) => m.id);
-    const ownIds = filteredMsgs.filter((m) => m.sender_id === user.id).map((m) => m.id);
-    const replyIds = filteredMsgs.filter((m) => m.reply_to_id).map((m) => m.reply_to_id!);
-
-    // Run ALL secondary queries in parallel instead of sequential
-    const [mediaResult, readResult, reactionsResult, repliesResult] = await Promise.all([
-      mediaIds.length > 0
-        ? supabase.from("message_media").select("*").in("message_id", mediaIds)
-        : Promise.resolve({ data: [] }),
-      ownIds.length > 0
-        ? supabase.from("message_reads").select("message_id, read_at").in("message_id", ownIds).neq("user_id", user.id)
-        : Promise.resolve({ data: [] }),
-      allIds.length > 0
-        ? supabase.from("message_reactions").select("*").in("message_id", allIds)
-        : Promise.resolve({ data: [] }),
-      replyIds.length > 0
-        ? supabase.from("messages").select("*").in("id", replyIds)
-        : Promise.resolve({ data: [] }),
-    ]);
-
-    const mediaMap: Record<string, MessageMediaItem[]> = {};
-    (mediaResult.data || []).forEach((m: any) => {
-      if (!mediaMap[m.message_id]) mediaMap[m.message_id] = [];
-      mediaMap[m.message_id].push(m);
-    });
-
-    const readMap: Record<string, string | null> = {};
-    (readResult.data || []).forEach((r: any) => {
-      readMap[r.message_id] = r.read_at;
-    });
-
-    const reactionsMap: Record<string, any[]> = {};
-    (reactionsResult.data || []).forEach((r: any) => {
-      if (!reactionsMap[r.message_id]) reactionsMap[r.message_id] = [];
-      reactionsMap[r.message_id].push(r);
-    });
-
-    const replyMap: Record<string, Message> = {};
-    (repliesResult.data || []).forEach((r: any) => {
-      replyMap[r.id] = r;
-    });
-
-    const finalMessages = filteredMsgs.map((m) => {
-      let deliveryStatus: "sent" | "seen" | undefined;
-      if (m.sender_id === user.id) {
-        if (readMap[m.id]) {
-          deliveryStatus = "seen";
-        } else if (otherReadAt && new Date(otherReadAt) >= new Date(m.created_at)) {
-          deliveryStatus = "seen";
-        } else {
-          deliveryStatus = "sent";
-        }
-      }
-      return {
-        ...m,
-        media: mediaMap[m.id] || [],
-        delivery_status: deliveryStatus,
-        read_at: m.sender_id === user.id ? readMap[m.id] || null : null,
-        hidden_for_me: false,
-        reactions: reactionsMap[m.id] || [],
-        reply_to: m.reply_to_id ? replyMap[m.reply_to_id] || null : null,
-      };
-    });
-
-    setMessages((prev) => {
-      const freshMap = new Map(finalMessages.map((m) => [m.id, m]));
-      const freshIds = new Set(finalMessages.map((m) => m.id));
-
-      // Keep any temp/optimistic messages that haven't resolved
-      const keptTemp = prev.filter(
-        (m) => m.id.startsWith("temp-") && !freshIds.has(m.id)
-      );
-
-// First load over empty state: set directly
-      if (prev.length === 0) {
-        initialFetchDoneRef.current = true;
-        setTimeout(() => setInitialFetchComplete(true), 0);
-        if (keptTemp.length === 0) return finalMessages;
-        const result = [...finalMessages, ...keptTemp];
-        result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-        return result;
-      }
-
-      // Subsequent loads: preserve existing object references where nothing changed
-      // This prevents React from re-rendering messages (and flashing media)
-      const prevMap = new Map(prev.map((m) => [m.id, m]));
-
-      let anyStructuralChange = false;
-
-      // Check if the set of message IDs changed
-      const prevRealIds = new Set(prev.filter((m) => !m.id.startsWith("temp-")).map((m) => m.id));
-      if (prevRealIds.size !== freshIds.size || [...freshIds].some((id) => !prevRealIds.has(id))) {
-        anyStructuralChange = true;
-      }
-
-      const merged = finalMessages.map((fresh) => {
-        const existing = prevMap.get(fresh.id);
-        if (!existing) return fresh; // New message
-
-        // Compare meaningful fields — if same, keep old reference (React skips re-render)
-        const mediaChanged =
-          (existing.media?.length || 0) !== (fresh.media?.length || 0) ||
-          (fresh.media?.length || 0) > 0 && existing.media?.some((em, i) => {
-            const fm = fresh.media?.[i];
-            return !fm || em.url !== fm.url;
-          });
-
-        if (
-          existing.delivery_status === fresh.delivery_status &&
-          existing.is_deleted === fresh.is_deleted &&
-          existing.content === fresh.content &&
-          existing.edited_at === fresh.edited_at &&
-          existing.read_at === fresh.read_at &&
-          (existing.reactions?.length || 0) === (fresh.reactions?.length || 0) &&
-          !mediaChanged
-        ) {
-          return existing; // SAME REFERENCE — React will skip re-rendering this message
-        }
-
-        anyStructuralChange = true;
-        // Something changed — create new object but preserve existing media if fresh has none
-        return {
-          ...existing,
-          delivery_status: fresh.delivery_status ?? existing.delivery_status,
-          is_deleted: fresh.is_deleted,
-          content: fresh.content,
-          edited_at: fresh.edited_at,
-          read_at: fresh.read_at ?? existing.read_at,
-          reactions: fresh.reactions ?? existing.reactions,
-          reply_to: fresh.reply_to ?? existing.reply_to,
-          media: fresh.media && fresh.media.length > 0 ? fresh.media : existing.media,
-        };
-      });
-
-initialFetchDoneRef.current = true;
-      setTimeout(() => setInitialFetchComplete(true), 0);
-
-      if (!anyStructuralChange && keptTemp.length === 0) {
-        // Nothing changed at all — return exact same array reference
-        return prev;
-      }
-
-      if (keptTemp.length > 0) {
-        const result = [...merged, ...keptTemp];
-        result.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-        return result;
-      }
-
-      return merged;
-    });
-
-    try {
-      const cacheData = finalMessages.slice(-100);
-      localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
-    localStorage.setItem(`peja-chat-ts-${conversationId}`, String(Date.now()));
-    } catch {}
-  }, [user?.id, conversationId]);
-
-  // =====================================================
-  // MARK AS READ
-  // =====================================================
-  const markAsRead = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      await supabase
-        .from("conversation_participants")
-        .update({ last_read_at: new Date().toISOString() })
-        .eq("conversation_id", conversationId)
-        .eq("user_id", user.id);
-
-      const { data: unread } = await supabase
-        .from("messages")
-        .select("id")
-        .eq("conversation_id", conversationId)
-        .neq("sender_id", user.id)
-        .eq("is_deleted", false);
-
-      if (unread && unread.length > 0) {
-        await supabase.from("message_reads").upsert(
-          unread.map((m) => ({
-            message_id: m.id,
-            user_id: user.id,
-            read_at: new Date().toISOString(),
-          })),
-          { onConflict: "message_id,user_id" }
-        );
-      }
-    } catch {}
-  }, [user?.id, conversationId]);
-
-  // =====================================================
-  // SCROLL HELPERS - Column-reverse means scroll 0 = bottom
-  // =====================================================
-  const scrollToBottom = useCallback((instant = true) => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    
-    // With column-reverse, scrollTop 0 is the BOTTOM
-    if (instant) {
-      container.scrollTop = 0;
-    } else {
-      container.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  }, []);
-
-  const scrollToMessage = useCallback((messageId: string) => {
-  const container = messagesContainerRef.current;
-  if (!container) return;
-
-  const el = container.querySelector(`[data-msg-id="${messageId}"]`) as HTMLElement | null;
-  if (!el) return;
-
-  const containerRect = container.getBoundingClientRect();
-  const elRect = el.getBoundingClientRect();
-
-  // Calculate distance from current view
-  const distanceFromTop = elRect.top - containerRect.top;
-  const distanceFromBottom = containerRect.bottom - elRect.bottom;
-  const isInView = distanceFromTop >= 0 && distanceFromBottom >= 0;
-
-  // If already in view, just highlight
-  if (isInView) {
-    setHighlightedMsgId(messageId);
-    setTimeout(() => setHighlightedMsgId(null), 2000);
-    return;
-  }
-
-  // Calculate absolute distance
-  const absoluteDistance = Math.abs(distanceFromTop);
-
-  // If close (within 2 viewport heights), smooth scroll
-  if (absoluteDistance < containerRect.height * 2) {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    setHighlightedMsgId(messageId);
-    setTimeout(() => setHighlightedMsgId(null), 2000);
-  } else {
-    // If far, jump to near the message first, then smooth scroll
-    // This is the WhatsApp behavior for very old messages
-    
-    // First, instant scroll to roughly where the message is
-    el.scrollIntoView({ behavior: "instant", block: "center" });
-    
-    // Then apply highlight after a tiny delay
-    requestAnimationFrame(() => {
-      setHighlightedMsgId(messageId);
-      setTimeout(() => setHighlightedMsgId(null), 2000);
-    });
-  }
-}, []);
-
-  // =====================================================
-  // AUTO-SCROLL ONLY FOR OWN MESSAGES
-  // With column-reverse, we're always "at bottom" by default
-  // =====================================================
-  // Keep ref in sync for unmount cache save
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  useEffect(() => {
-    if (messages.length === 0) return;
-    
-    const lastMessage = messages[messages.length - 1];
-    const isMyMessage = lastMessage?.sender_id === user?.id;
-    
-    // Only auto-scroll for messages I send
-    if (isMyMessage && messagesLengthRef.current > 0 && messages.length > messagesLengthRef.current) {
-      scrollToBottom(true);
-    }
-    
-    messagesLengthRef.current = messages.length;
-  }, [messages, user?.id, scrollToBottom]);
-
-// =====================================================
-// Keyboard handling - scroll to bottom when keyboard opens
-// =====================================================
-useEffect(() => {
-  const onKeyboardOpen = () => {
-    // With column-reverse, scrollTop 0 = bottom
-    setTimeout(() => {
-      const container = messagesContainerRef.current;
-      if (container) {
-        container.scrollTo({ top: 0, behavior: "smooth" });
-      }
-    }, 150);
-  };
-
-  document.body.addEventListener("keyboard-open", onKeyboardOpen);
-  
-  // Also listen for class changes as a backup
-  const observer = new MutationObserver((mutations) => {
-    mutations.forEach((mutation) => {
-      if (mutation.attributeName === "class") {
-        if (document.body.classList.contains("keyboard-open")) {
-          onKeyboardOpen();
-        }
-      }
-    });
-  });
-  
-  observer.observe(document.body, { attributes: true });
-
-  return () => {
-    document.body.removeEventListener("keyboard-open", onKeyboardOpen);
-    observer.disconnect();
-  };
-}, []);
-
-  // Non-passive touch move for swipe
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    const handler = (e: TouchEvent) => {
-      if (swipingMsgId && swipeX > 5) {
-        e.preventDefault();
-      }
-    };
-
-    container.addEventListener("touchmove", handler, { passive: false });
-    return () => container.removeEventListener("touchmove", handler);
-  }, [swipingMsgId, swipeX]);
-
-    // Save cache when leaving chat
-  useEffect(() => {
-    return () => {
-      if (saveCacheTimeoutRef.current) clearTimeout(saveCacheTimeoutRef.current);
-      try {
-        const current = messagesRef.current;
-        if (current.length > 0) {
-          const cacheData = current
-            .filter((m) => !m.id.startsWith("temp-"))
-            .slice(-100);
-          localStorage.setItem(MSG_CACHE_KEY, JSON.stringify(cacheData));
-        }
-      } catch {}
-    };
-  }, [MSG_CACHE_KEY]);
-
-  // Drain queued messages. Fires on:
-  //   • component mount — catches messages that failed to send in a previous
-  //     session (transient network blips, in-flight inserts that didn't
-  //     complete before the user navigated away). Without this on-mount
-  //     drain, queued messages would only retry after the next `online`
-  //     event, which won't fire if the user was already online when the
-  //     failure happened.
-  //   • the next `online` event — original offline-recovery behavior.
-  useEffect(() => {
-    if (!user?.id || !conversationId) return;
-    const drainQueue = async () => {
-      const queue = getQueue(`messages-${conversationId}`);
-      for (let i = 0; i < queue.length; i++) {
-        const item = queue[0]; // always drain from front
-        try {
-          const { data: newMsg, error } = await supabase
-            .from("messages")
-            .insert({
-              conversation_id: item.conversation_id,
-              sender_id: user.id,
-              content: item.content,
-              content_type: "text",
-              reply_to_id: item.reply_to_id || null,
-              metadata: {},
-            })
-            .select()
-            .single();
-          if (error) break;
-          dequeueAction(`messages-${conversationId}`, 0);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === item._tempId
-                ? { ...m, id: newMsg.id, delivery_status: "sent" as const }
-                : m
-            )
-          );
-        } catch {
-          break;
-        }
-      }
-    };
-    drainQueue();
-    window.addEventListener("online", drainQueue);
-    return () => window.removeEventListener("online", drainQueue);
-  }, [user?.id, conversationId]);
-
-    // =====================================================
-  // REALTIME: Messages + Read receipts + Reactions
-  // =====================================================
-// =====================================================
-  // REALTIME: Subscribe via unified context channel
-  // No duplicate postgres_changes subscription needed.
-  // Context dispatches events to us via subscribeToChat.
-  // =====================================================
-useEffect(() => {
-    if (!user?.id || !conversationId) return;
-    if (!initialFetchComplete) return;     
-
-    const unsubscribe = subscribeToChat(conversationId, {
-      // ---- NEW MESSAGE ----
-      onMessageInsert: async (newMsg: Message) => {
-        if (myDeletionsRef.current.has(newMsg.id)) return;
-
-        // Check if we already have this message (from optimistic send or cache)
-        const alreadyHave = messagesRef.current.find(
-          (m) => m.id === newMsg.id && !m.id.startsWith("temp-")
-        );
-        if (alreadyHave) return;
-
-        // Fetch media if needed (single attempt, no retry loop)
-        let media: MessageMediaItem[] = [];
-        if (newMsg.content_type === "media" || newMsg.content_type === "document") {
-          // Small delay for DB propagation
-          await new Promise((r) => setTimeout(r, 300));
-          const { data } = await supabase
-            .from("message_media")
-            .select("*")
-            .eq("message_id", newMsg.id);
-          if (data && data.length > 0) {
-            media = data as MessageMediaItem[];
-          }
-        }
-
-        // Fetch reply data if needed
-        let replyTo: Message | null = null;
-        if (newMsg.reply_to_id) {
-          const { data: replyData } = await supabase
-            .from("messages")
-            .select("*")
-            .eq("id", newMsg.reply_to_id)
-            .single();
-          if (replyData) replyTo = replyData as Message;
-        }
-
-        setMessages((prev) => {
-          // Check again inside setState (prev might have changed)
-          const existingReal = prev.find(
-            (m) => m.id === newMsg.id && !m.id.startsWith("temp-")
-          );
-          if (existingReal) {
-            // Only update if we have better media data
-            if (media.length > 0 && (!existingReal.media || existingReal.media.length === 0)) {
-              return prev.map((m) =>
-                m.id === newMsg.id ? { ...m, media } : m
-              );
-            }
-            return prev;
-          }
-
-          // Replace temp message if one matches
-          const tempIdx = prev.findIndex(
-            (m) =>
-              m.id.startsWith("temp-") &&
-              m.sender_id === newMsg.sender_id &&
-              Math.abs(
-                new Date(m.created_at).getTime() -
-                  new Date(newMsg.created_at).getTime()
-              ) < 10000
-          );
-
-          if (tempIdx !== -1) {
-            const updated = [...prev];
-            updated[tempIdx] = {
-              ...newMsg,
-              media: media.length > 0 ? media : updated[tempIdx].media,
-              delivery_status:
-                newMsg.sender_id === user.id
-                  ? ("sent" as const)
-                  : undefined,
-              reactions: [],
-              reply_to: replyTo,
-            };
-            return updated;
-          }
-
-          // Genuinely new message — add it
-          return [
-            ...prev,
-            {
-              ...newMsg,
-              media,
-              delivery_status:
-                newMsg.sender_id === user.id
-                  ? ("sent" as const)
-                  : undefined,
-              reactions: [],
-              reply_to: replyTo,
-            },
-          ];
-        });
-
-        // Mark DM notifications as read if from other user
-        if (newMsg.sender_id !== user.id) {
-          supabase
-            .from("notifications")
-            .select("id, data")
-            .eq("user_id", user.id)
-            .eq("type", "dm_message")
-            .eq("is_read", false)
-            .then(({ data: notifs }) => {
-              if (notifs && notifs.length > 0) {
-                const ids = notifs
-                  .filter(
-                    (n: any) =>
-                      n.data?.conversation_id === conversationId
-                  )
-                  .map((n: any) => n.id);
-                if (ids.length > 0) {
-                  supabase
-                    .from("notifications")
-                    .update({ is_read: true })
-                    .in("id", ids)
-                    .then(() => {
-                      window.dispatchEvent(
-                        new Event("peja-notifications-changed")
-                      );
-                    });
-                }
-              }
-            });
-        }
-      },
-
-      // ---- MESSAGE UPDATE (edit, delete) ----
-      onMessageUpdate: (updatedMsg: Message) => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === updatedMsg.id
-              ? {
-                  ...m,
-                  is_deleted: updatedMsg.is_deleted,
-                  content: updatedMsg.content,
-                  edited_at: updatedMsg.edited_at,
-                  content_type: updatedMsg.content_type,
-                }
-              : m
-          )
-        );
-      },
-
-      // ---- REACTION CHANGE ----
-      onReactionChange: (messageId: string, reactions: any[]) => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId ? { ...m, reactions: reactions || [] } : m
-          )
-        );
-      },
-
-      // ---- READ RECEIPT ----
-      onReadReceipt: (data: {
-        message_id: string;
-        user_id: string;
-        read_at: string;
-      }) => {
-        if (data.user_id === user.id) return;
-
-        setMessages((prev) => {
-          const msgExists = prev.some((m) => m.id === data.message_id);
-          if (!msgExists) return prev;
-
-          return prev.map((m) =>
-            m.id === data.message_id && m.sender_id === user.id
-              ? {
-                  ...m,
-                  delivery_status: "seen" as const,
-                  read_at: data.read_at,
-                }
-              : m
-          );
-        });
-      },
-
-      // ---- PARTICIPANT UPDATE (other user's last_read_at) ----
-      onParticipantUpdate: (updated: any) => {
-        if (updated.user_id === user.id) return;
-        if (!updated.last_read_at) return;
-
-        setOtherLastReadAt(updated.last_read_at);
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.sender_id !== user.id) return m;
-            if (m.delivery_status === "seen") return m;
-            if (
-              new Date(updated.last_read_at) >= new Date(m.created_at)
-            ) {
-              return { ...m, delivery_status: "seen" as const };
-            }
-            return m;
-          })
-        );
-      },
-    });
-
-    return () => {
-      unsubscribe();
-    };
-}, [user?.id, conversationId, subscribeToChat, initialFetchComplete]);
-
-
-  // =====================================================
-  // TYPING INDICATOR
-  // =====================================================
-  useEffect(() => {
-    if (!user?.id || !conversationId) return;
-
-    if (presenceChannelRef.current) {
-      supabase.removeChannel(presenceChannelRef.current);
-      presenceChannelRef.current = null;
-    }
-
-    const channel = supabase.channel(`typing-${conversationId}`, {
-      config: { presence: { key: user.id } },
-    });
-
-    channel
-  .on("presence", { event: "sync" }, () => {
-    const state = channel.presenceState();
-    
-    // Detect typing users
-    setTypingUsers(
-      Object.keys(state).filter((id) => {
-        if (id === user.id) return false;
-        return (state[id] as any[]).some((p) => p.typing);
-      })
-    );
-    
-    // Detect recording users
-    setRecordingUsers(
-      Object.keys(state).filter((id) => {
-        if (id === user.id) return false;
-        return (state[id] as any[]).some((p) => p.recording);
-      })
-    );
-  })
-  .subscribe(async (status) => {
-    if (status === "SUBSCRIBED") await channel.track({ typing: false, recording: false });
-  });
-
-    presenceChannelRef.current = channel;
-
-    return () => {
-      if (presenceChannelRef.current) {
-        supabase.removeChannel(presenceChannelRef.current);
-        presenceChannelRef.current = null;
-      }
-    };
-  }, [user?.id, conversationId]);
-
-  const sendTyping = useCallback(() => {
-    if (!presenceChannelRef.current) return;
-    presenceChannelRef.current.track({ typing: true });
-    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = setTimeout(() => {
-      presenceChannelRef.current?.track({ typing: false });
-    }, 2000);
-  }, []);
-
-  const sendRecordingState = useCallback((isRecording: boolean) => {
-  if (!presenceChannelRef.current) return;
-  presenceChannelRef.current.track({ typing: false, recording: isRecording });
-}, []);
-
-  // =====================================================
-  // EDITOR HELPERS
-  // =====================================================
-  const getEditorContent = useCallback((): string => {
-    const el = editorRef.current;
-    if (!el) return "";
-    return el.innerText.trim();
-  }, []);
-
-  const getEditorHTML = useCallback((): string => {
-    const el = editorRef.current;
-    if (!el) return "";
-    return el.innerHTML;
-  }, []);
-
-  const clearEditor = useCallback(() => {
-    const el = editorRef.current;
+  }, [
+    focusMessageId,
+    user?.id,
+    conversationId,
+    thread?.hydrated,
+    loadOlderMessages,
+    scrollToMessage,
+    router,
+  ]);
+
+  // After older messages land in the store, restore the user's scroll
+  // position relative to what they were viewing. The new page expands
+  // scrollHeight by some amount; we offset scrollTop by the same so
+  // the previously-visible message stays under the user's eye.
+  useLayoutEffect(() => {
+    const anchor = olderScrollAnchorRef.current;
+    if (!anchor) return;
+    const el = scrollRef.current;
     if (!el) return;
-    el.innerHTML = "";
-  }, []);
+    const delta = el.scrollHeight - anchor.scrollHeight;
+    if (delta > 0) {
+      el.scrollTop = anchor.scrollTop + delta;
+    }
+    olderScrollAnchorRef.current = null;
+  }, [messages.length]);
 
-  const isEditorEmpty = useCallback((): boolean => {
-    const el = editorRef.current;
-    if (!el) return true;
-    return el.innerText.trim().length === 0;
-  }, []);
-  
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: smooth ? "smooth" : "auto",
+    });
+    isAtBottomRef.current = true;
+    lastSeenMessageCountRef.current = messages.length;
+    setUnseenCount(0);
+  }, [messages.length]);
 
-  // =====================================================
-  // RENDER MESSAGE CONTENT (with clickable links)
-  // =====================================================
- const renderContent = useCallback((content: string | null) => {
-    if (!content) return null;
+  // On first hydration of the thread, snap to the bottom without
+  // animation so the user lands at the latest message.
+  const didInitialScrollRef = useRef(false);
+  useEffect(() => {
+    if (didInitialScrollRef.current) return;
+    if (!thread?.hydrated || messages.length === 0) return;
+    didInitialScrollRef.current = true;
+    const el = scrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      isAtBottomRef.current = true;
+      lastSeenMessageCountRef.current = messages.length;
+    }
+  }, [thread?.hydrated, messages.length]);
 
-    // Check for peja.life post links and extract them
-    const pejaPostRegex = /https?:\/\/(?:www\.)?peja\.life\/post\/([a-zA-Z0-9\-]+)\/?/g;
-    const pejaMapRegex = /https?:\/\/(?:www\.)?peja\.life\/map\?([^\s<)]+)/g;
-    const pejaLinkRegex = /https?:\/\/(?:www\.)?peja\.life(\/[^\s<)]*)?/g;
-
-    // Split content into parts: peja post links become cards, rest is formatted text
-    const parts: { type: "text" | "post-link" | "map-link" | "peja-link"; value: string; id?: string }[] = [];
-    let lastIndex = 0;
-    const allPejaLinks = [...content.matchAll(/https?:\/\/(?:www\.)?peja\.life(\/[^\s<)]*)?/g)];
-
-    if (allPejaLinks.length === 0) {
-      parts.push({ type: "text", value: content });
-    } else {
-      for (const match of allPejaLinks) {
-        const matchStart = match.index!;
-        const matchEnd = matchStart + match[0].length;
-
-        // Add text before this link
-        if (matchStart > lastIndex) {
-          parts.push({ type: "text", value: content.slice(lastIndex, matchStart) });
-        }
-
-        const url = match[0];
-        const postMatch = url.match(/\/post\/([a-zA-Z0-9\-]+)/);
-        const mapMatch = url.match(/\/map\?(.+)/);
-
-        if (postMatch) {
-          parts.push({ type: "post-link", value: url, id: postMatch[1] });
-        } else if (mapMatch) {
-          parts.push({ type: "map-link", value: url });
-        } else {
-          parts.push({ type: "peja-link", value: url });
-        }
-
-        lastIndex = matchEnd;
-      }
-      // Add remaining text
-      if (lastIndex < content.length) {
-        parts.push({ type: "text", value: content.slice(lastIndex) });
+  // React to message-count growth. Two cases:
+  //   • User is at the bottom → auto-scroll (matches the old behaviour
+  //     for the common case).
+  //   • User is scrolled up → DON'T scroll; bump the unseen counter
+  //     by the number of new messages that arrived in THIS tick.
+  // Message DELETIONS (count goes down) never scroll.
+  //
+  // Critical: always advance lastSeenMessageCountRef.current to the
+  // new count at the end. The previous version only advanced it when
+  // the user was at the bottom — so for a user scrolled up, every
+  // subsequent run computed diff = current - original_baseline,
+  // producing triangular numbers (1, 3, 6, 10…) instead of (1, 2,
+  // 3, 4…).
+  useEffect(() => {
+    if (!didInitialScrollRef.current) return;
+    const prev = lastSeenMessageCountRef.current;
+    const next = messages.length;
+    if (next > prev) {
+      const diff = next - prev;
+      if (isAtBottomRef.current) {
+        const el = scrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      } else {
+        setUnseenCount((c) => c + diff);
       }
     }
+    lastSeenMessageCountRef.current = next;
+  }, [messages.length]);
 
-    const formatText = (text: string) => {
-      let html = text
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
-      html = html.replace(
-        /(?<!href=["'])(?<!>)(https?:\/\/[^\s<)]+)/g,
-        '<a href="$1" data-peja-link target="_blank" rel="noopener noreferrer" class="text-primary-400 underline hover:text-primary-300 break-all">$1</a>'
-      );
-      html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-      html = html.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
-      html = html.replace(
-        /`(.*?)`/g,
-        '<code class="px-1 py-0.5 rounded bg-white/10 text-xs font-mono">$1</code>'
-      );
-      html = html.replace(
-        /^[-•]\s+(.+)$/gm,
-        '<div class="flex gap-2 items-start"><span class="text-primary-400 mt-0.5">•</span><span>$1</span></div>'
-      );
-      html = html.replace(
-        /^(\d+)\.\s+(.+)$/gm,
-        '<div class="flex gap-2 items-start"><span class="text-primary-400 font-medium min-w-[1.2em]">$1.</span><span>$2</span></div>'
-      );
-      return html;
-    };
+  const handleSend = useCallback(async () => {
+    const content = draft.trim();
+    const filesToSend = pendingFiles;
+    // Bail if there's nothing to send. A pure media message with no
+    // caption is still valid as long as filesToSend.length > 0.
+    if (!conversationId) return;
+    if (!content && filesToSend.length === 0) return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    // Clear the draft + pending files immediately for snappy UX.
+    clearDraft(conversationId);
+    setPendingFiles([]);
+    // Snapshot the reply target then clear it before any awaits — we
+    // want the next send to carry it but a follow-up send to start
+    // clean. Clearing optimistically also dismisses the preview row
+    // before the network round-trip.
+    const replySnapshot = replyingTo;
+    setReplyingTo(null);
 
-    const handleLinkClick = (e: React.MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const anchor = target.closest("a");
-      if (!anchor) return;
-
-      const href = anchor.getAttribute("href") || "";
-
-      // Intercept peja.life links and navigate in-app
-      const pejaMatch = href.match(/https?:\/\/(?:www\.)?peja\.life(\/[^\s]*)?/);
-      if (pejaMatch) {
-        e.preventDefault();
-        e.stopPropagation();
-        const path = pejaMatch[1] || "/";
-        router.push(path);
+    try {
+      if (filesToSend.length === 0) {
+        // Text-only message.
+        await send(conversationId, content, [], replySnapshot);
         return;
       }
-
-      e.stopPropagation();
-    };
-
-    return (
-      <div className="space-y-1.5">
-        {parts.map((part, i) => {
-          if (part.type === "post-link" && part.id) {
-            return (
-              <PostLinkPreview
-                key={`post-${i}-${part.id}`}
-                postId={part.id}
-                onTap={() => router.push(`/post/${part.id}`)}
-              />
-            );
-          }
-          if (part.type === "map-link") {
-            return (
-              <button
-                key={`map-${i}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const url = new URL(part.value);
-                  router.push(`/map${url.search}`);
-                }}
-                className="w-full p-3 rounded-xl border border-red-500/20 bg-red-500/10 text-left active:scale-[0.98] transition-transform"
-              >
-                <p className="text-xs font-medium text-red-400 mb-1">🚨 SOS Live Location</p>
-                <p className="text-sm text-dark-200">Tap to track on map</p>
-              </button>
-            );
-          }
-          if (part.type === "peja-link") {
-            return (
-              <button
-                key={`link-${i}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  try {
-                    const url = new URL(part.value);
-                    router.push(url.pathname + url.search);
-                  } catch {
-                    router.push("/");
-                  }
-                }}
-                className="text-primary-400 underline text-sm break-all text-left"
-              >
-                {part.value}
-              </button>
-            );
-          }
-          // Regular text
-          const trimmed = part.value.trim();
-          if (!trimmed) return null;
-          return (
-            <div
-              key={`text-${i}`}
-              className="text-sm whitespace-pre-wrap break-words leading-relaxed [&_a]:text-primary-400 [&_a]:underline [&_strong]:font-bold [&_em]:italic"
-              dangerouslySetInnerHTML={{ __html: formatText(part.value) }}
-              onClick={handleLinkClick}
-            />
-          );
-        })}
-      </div>
-    );
-  }, [router]);
-
-  
-
-  // =====================================================
-  // HTML TO MARKDOWN
-  // =====================================================
-  const htmlToMarkdown = useCallback((html: string): string => {
-    const div = document.createElement("div");
-    div.innerHTML = html;
-
-    const walk = (node: Node): string => {
-      if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
-      if (node.nodeType !== Node.ELEMENT_NODE) return "";
-
-      const el = node as HTMLElement;
-      const tag = el.tagName.toLowerCase();
-      const childText = Array.from(el.childNodes).map(walk).join("");
-
-      switch (tag) {
-        case "b": case "strong": return `**${childText}**`;
-        case "i": case "em": return `*${childText}*`;
-        case "a": {
-          const href = el.getAttribute("href");
-          if (href && childText && childText !== href) return `${childText} (${href})`;
-          return href || childText;
+      // Split picked files by routing:
+      //   • Images + videos → bundled into ONE message so they render
+      //     as a WhatsApp-style album (grid + carousel viewer).
+      //   • Documents → one message each, so each gets its own
+      //     progress ring and arrives independently as it finishes
+      //     uploading (the asymmetric-progress UX the user asked for).
+      const visualMedia: File[] = [];
+      const documents: File[] = [];
+      for (const f of filesToSend) {
+        if (f.type.startsWith("image/") || f.type.startsWith("video/")) {
+          visualMedia.push(f);
+        } else {
+          documents.push(f);
         }
-        case "br": return "\n";
-        case "div": case "p": return childText + "\n";
-        case "ul": case "ol": return childText;
-        case "li": {
-          const parent = el.parentElement;
-          if (parent?.tagName.toLowerCase() === "ol") {
-            const idx = Array.from(parent.children).indexOf(el) + 1;
-            return `${idx}. ${childText}\n`;
+      }
+      // Caption attaches to the visual-media bundle if there is one,
+      // otherwise to the first document. Subsequent docs go captionless.
+      // The reply context attaches to the FIRST send only (the message
+      // that carries the caption). Subsequent split sends are plain.
+      let captionConsumed = false;
+      let replyConsumed = false;
+      const useReply = () => {
+        if (replyConsumed) return null;
+        replyConsumed = true;
+        return replySnapshot;
+      };
+      if (visualMedia.length > 0) {
+        void send(conversationId, content, visualMedia, useReply()).catch(
+          () => {
+            toast.danger("Failed to send. Tap the message to retry.");
           }
-          return `- ${childText}\n`;
-        }
-        default: return childText;
-      }
-    };
-
-    return walk(div).replace(/\n{3,}/g, "\n\n").trim();
-  }, []);
-
-    // =====================================================
-  // CLOSE CONTEXT MENU WITH BOUNCE-OUT
-  // =====================================================
-  const closeContextMenu = useCallback(() => {
-    if (contextMenuClosingRef.current) return;
-    contextMenuClosingRef.current = true;
-    setContextMenuClosing(true);
-
-    if (closeTimeoutRef.current) clearTimeout(closeTimeoutRef.current);
-    closeTimeoutRef.current = setTimeout(() => {
-      setContextMenuMsg(null);
-      setContextMenuPos(null);
-      setContextMenuClosing(false);
-      contextMenuClosingRef.current = false;
-      closeTimeoutRef.current = null;
-    }, 200);
-  }, []);
-
-  // =====================================================
-  // REACTIONS — OPTIMISTIC (instant)
-  // =====================================================
-  const toggleReaction = useCallback(async (messageId: string, emoji: string) => {
-    if (!user?.id) return;
-
-    // Check if reaction already exists locally
-    const msg = messages.find((m) => m.id === messageId);
-    const existing = msg?.reactions?.find(
-      (r) => r.user_id === user.id && r.emoji === emoji
-    );
-
-    if (existing) {
-      // Animate out then remove
-      const el = document.querySelector(`[data-reaction="${messageId}-${emoji}"]`);
-      if (el) {
-        el.classList.remove("animate-bounce-in");
-        el.classList.add("animate-bounce-out");
-      }
-      setTimeout(() => {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId
-              ? { ...m, reactions: (m.reactions || []).filter((r) => r.id !== existing.id) }
-              : m
-          )
         );
-      }, 200);
+        captionConsumed = true;
+      }
+      for (let i = 0; i < documents.length; i++) {
+        const caption = !captionConsumed && i === 0 ? content : "";
+        if (!captionConsumed && i === 0) captionConsumed = true;
+        void send(
+          conversationId,
+          caption,
+          [documents[i]],
+          i === 0 ? useReply() : null
+        ).catch(() => {
+          toast.danger("Failed to send. Tap the message to retry.");
+        });
+      }
+    } catch {
+      toast.danger("Failed to send. Tap the message to retry.");
+    } finally {
+      sendingRef.current = false;
+    }
+  }, [
+    draft,
+    pendingFiles,
+    conversationId,
+    send,
+    toast,
+    clearDraft,
+    replyingTo,
+  ]);
 
-      // Background DB call
-      supabase.from("message_reactions").delete().eq("id", existing.id).then(({ error }) => {
-        if (error) {
-          // Revert on failure
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === messageId
-                ? { ...m, reactions: [...(m.reactions || []), existing] }
-                : m
-            )
-          );
+  // Image picker — open the hidden file input. On Capacitor WebView this
+  // surfaces the native file picker, which in turn lets the user choose
+  // Camera or Gallery. (Android default behavior.)
+  const handleAttachClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFilesPicked = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const list = e.target.files;
+      if (!list || list.length === 0) return;
+      // Reset so picking the SAME file again still fires onChange. Do
+      // this before the async work below so a re-pick during the
+      // duration check still triggers a new event.
+      const input = e.target;
+
+      // Chat-specific cap: videos can't be longer than 90 s. We check
+      // this at pick time (not at upload time) so users get immediate
+      // feedback instead of waiting through compression to find out.
+      const MAX_VIDEO_SECONDS = 90;
+
+      // Dedupe against already-pending files — a user re-picking the
+      // same file shouldn't end up with two copies queued. Reading
+      // from the ref (not the captured `pendingFiles`) is critical:
+      // useCallback's closure keeps the original empty list, which
+      // would let dupes through on every subsequent pick.
+      const fileKey = (f: File) => `${f.name}|${f.size}|${f.lastModified}`;
+      const existingKeys = new Set(pendingFilesRef.current.map(fileKey));
+
+      const accepted: File[] = [];
+      const rejected: string[] = [];
+      let dupedCount = 0;
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i];
+        if (existingKeys.has(fileKey(file))) {
+          dupedCount += 1;
+          continue;
         }
+        const v = validateMediaFile(file);
+        if (!v.valid) {
+          rejected.push(v.error || file.name);
+          continue;
+        }
+        if (file.type.startsWith("video/")) {
+          try {
+            const seconds = await getVideoDuration(file);
+            if (seconds > MAX_VIDEO_SECONDS) {
+              rejected.push(
+                `Video too long. Maximum ${MAX_VIDEO_SECONDS} seconds allowed.`
+              );
+              continue;
+            }
+          } catch {
+            // If duration can't be read, fall through and let the
+            // upload attempt — the lib's own duration check is a
+            // backstop.
+          }
+        }
+        existingKeys.add(fileKey(file));
+        accepted.push(file);
+      }
+      if (rejected.length > 0) {
+        toast.danger(
+          rejected.length === 1
+            ? rejected[0]
+            : `${rejected.length} files rejected: ${rejected[0]}`
+        );
+      }
+      if (dupedCount > 0 && accepted.length === 0) {
+        toast.info(
+          dupedCount === 1 ? "Already attached." : `${dupedCount} files already attached.`
+        );
+      }
+      if (accepted.length > 0) {
+        setPendingFiles((prev) => [...prev, ...accepted]);
+      }
+      input.value = "";
+    },
+    [toast]
+  );
+
+  const handleRemovePending = useCallback((index: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // Tap a failed bubble to retry. Pulls the message back out of the
+  // persistent outbox and replays the same code path the auto-drain uses.
+  const handleRetry = useCallback(
+    async (messageId: string) => {
+      if (!user?.id) return;
+      try {
+        await retryOutboxItem(user.id, messageId);
+      } catch {
+        toast.danger("Still failing. Check your connection and try again.");
+      }
+    },
+    [user?.id, toast]
+  );
+
+  // Tap the X next to the progress ring to cancel an in-flight upload.
+  // Aborts the Cloudinary XHR (Supabase Storage uploads keep going in
+  // the background — SDK doesn't expose a signal — but the message
+  // bubble disappears either way).
+  const handleCancel = useCallback(
+    (messageId: string) => {
+      cancelInflightSend(messageId, {
+        userId: user?.id ?? undefined,
+        conversationId,
       });
-    } else {
-      // Optimistically add with temp ID
-      const tempReaction = {
-        id: `temp-${Date.now()}`,
-        message_id: messageId,
+    },
+    [user?.id, conversationId]
+  );
+
+  // === Chat-info / kebab action handlers ===
+  // Each handler patches the store immediately (so the UI reflects the
+  // change without waiting for the network) and persists in the
+  // background. Destructive actions surface a confirm modal first.
+
+  const handleToggleMute = useCallback(async () => {
+    if (!user?.id || !conv) return;
+    // For groups we drive notification_mode (the 3-way 'all' /
+    // 'mentions' / 'muted' choice). Mute and Mentions-only are
+    // siblings, not stacked: tapping Mute when mode is 'mentions'
+    // goes to 'muted', and tapping Mute when already 'muted'
+    // returns to 'all'. The store patch + RPC call is inlined
+    // here so this handler doesn't depend on the later-declared
+    // handleSetNotificationMode.
+    //
+    // Both DM and group paths now go through setNotificationMode.
+    // The legacy setMuted (which only wrote is_muted) doesn't suppress
+    // notifications anymore because peja_notify_dm checks
+    // notification_mode first, and that column defaults to 'all' NOT
+    // NULL — so the legacy fallback `(mode is null and is_muted)` can
+    // never fire on a post-20260606 schema. Toggling is_muted alone
+    // would visually update the UI but leave the server-side check
+    // unmoved, which is the exact symptom that was reported.
+    const current = (conv as { notification_mode?: NotificationMode })
+      .notification_mode || "all";
+    const nextMode: NotificationMode = current === "muted" ? "all" : "muted";
+    const store = useChatStore.getState();
+    store.patchConversation(conv.id, {
+      notification_mode: nextMode,
+      is_muted: nextMode !== "all",
+    });
+    try {
+      await apiSetNotificationMode(conv.id, nextMode);
+      toast.info(
+        nextMode === "muted" ? "Notifications muted" : "Notifications on"
+      );
+    } catch {
+      store.patchConversation(conv.id, {
+        notification_mode: current,
+        is_muted: current !== "all",
+      });
+      toast.danger("Couldn't update notifications");
+    }
+  }, [user?.id, conv, toast]);
+
+  const handleToggleBlock = useCallback(() => {
+    if (!user?.id || !conv) return;
+    const next = !conv.is_blocked;
+    const otherId = conv.other_user_id;
+    if (!next) {
+      // Unblock is immediate — non-destructive.
+      useChatStore
+        .getState()
+        .patchConversation(conv.id, { is_blocked: false });
+      void setBlocked(user.id, otherId, conv.id, false)
+        .then(() => toast.info("User unblocked"))
+        .catch(() => {
+          useChatStore
+            .getState()
+            .patchConversation(conv.id, { is_blocked: true });
+          toast.danger("Couldn't unblock. Try again.");
+        });
+      return;
+    }
+    // Block — confirm first.
+    setPendingAction({
+      title: "Block this user?",
+      body: "They won't be able to send you messages. You can unblock anytime from this menu.",
+      confirmLabel: "Block",
+      danger: true,
+      run: async () => {
+        useChatStore
+          .getState()
+          .patchConversation(conv.id, { is_blocked: true });
+        try {
+          await setBlocked(user.id, otherId, conv.id, true);
+          // Push notification to the blocked user — matches v1
+          // behaviour. Fire-and-forget; failure is non-fatal.
+          notifyDMBlocked(otherId, user.full_name || "Someone").catch(
+            () => {}
+          );
+          toast.warning("User blocked");
+        } catch {
+          useChatStore
+            .getState()
+            .patchConversation(conv.id, { is_blocked: false });
+          toast.danger("Couldn't block. Try again.");
+        }
+      },
+    });
+  }, [user?.id, user?.full_name, conv, toast]);
+
+  const handleClearChat = useCallback(() => {
+    if (!user?.id || !conv) return;
+    setPendingAction({
+      title: "Clear this chat?",
+      body: "Every message will disappear from your view. The other person still sees their copy.",
+      confirmLabel: "Clear",
+      danger: true,
+      run: async () => {
+        const store = useChatStore.getState();
+        const convId = conv.id;
+        // Wipe the visible thread immediately for snappy feedback.
+        const thread = store.threadsByConversation[convId];
+        if (thread) {
+          store.setThread(convId, []);
+        }
+        // Drop the conversation-list preview too so the row's last
+        // message line goes blank without a manual refresh.
+        store.patchConversation(convId, {
+          last_message_text: null,
+          last_message_at: null,
+          last_message_sender_id: null,
+          unread_count: 0,
+        });
+        // Wipe the warm-start snapshot so revisiting doesn't briefly
+        // flash the cleared messages.
+        void deleteCachedThread(user.id, convId);
+        try {
+          await clearChatForUser(convId, user.id);
+          toast.info("Chat cleared");
+        } catch {
+          toast.danger("Couldn't clear. Try again.");
+        }
+      },
+    });
+  }, [user?.id, conv, toast]);
+
+  // === Per-message action handlers (Phase 4 — Interactions) ===
+  // Stage 1 only ships Copy + Delete-for-me. Later stages bolt Reply,
+  // React, Edit, Delete-for-everyone, Forward onto the same menu.
+
+  const handleCopyMessage = useCallback(
+    async (message: ChatMessage) => {
+      const text = message.content ?? "";
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        toast.info("Copied");
+      } catch {
+        // Clipboard API can fail in older WebViews or insecure
+        // contexts. Fall back to the textarea-select-copy trick.
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          document.body.removeChild(ta);
+          toast.info("Copied");
+        } catch {
+          toast.danger("Couldn't copy.");
+        }
+      }
+    },
+    [toast]
+  );
+
+  // Toggle a reaction. Rules: same emoji from me → remove. New emoji
+  // from me → swap (remove old, add new). The optimistic UI is
+  // applied immediately via the store; the DB calls go through the
+  // offline-aware action queue so an offline toggle survives the
+  // disconnect and replays when the user is back online.
+  const handleToggleReaction = useCallback(
+    async (message: ChatMessage, emoji: string) => {
+      if (!user?.id) return;
+      const store = useChatStore.getState();
+      const convId = message.conversation_id;
+      const mine = (message.reactions || []).filter(
+        (r) => r.user_id === user.id
+      );
+      const existingSame = mine.find((r) => r.emoji === emoji);
+      if (existingSame) {
+        // Toggle off — optimistic remove, queue the DB delete.
+        store.removeReaction(convId, message.id, { id: existingSame.id });
+        void dispatchOrQueue(user.id, {
+          id: actionUuid(),
+          kind: "react-remove",
+          reaction_id: existingSame.id,
+          conversation_id: convId,
+          message_id: message.id,
+          attempts: 0,
+          last_error: null,
+        });
+        return;
+      }
+      // Different emoji or first reaction. Atomic swap in the store
+      // first; then queue both the delete-old(s) AND the add-new so
+      // they replay correctly across an offline / reconnect window.
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const optimistic: MessageReaction = {
+        id: tempId,
+        message_id: message.id,
         user_id: user.id,
         emoji,
         created_at: new Date().toISOString(),
       };
-
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId
-            ? { ...m, reactions: [...(m.reactions || []), tempReaction] }
-            : m
-        )
-      );
-
-      // Background DB call
-      supabase
-        .from("message_reactions")
-        .insert({ message_id: messageId, user_id: user.id, emoji })
-        .select()
-        .single()
-        .then(({ data: newReaction, error }) => {
-          if (error) {
-            // Revert on failure
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === messageId
-                  ? { ...m, reactions: (m.reactions || []).filter((r) => r.id !== tempReaction.id) }
-                  : m
-              )
-            );
-          } else if (newReaction) {
-            // Replace temp with real
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === messageId
-                  ? {
-                      ...m,
-                      reactions: (m.reactions || []).map((r) =>
-                        r.id === tempReaction.id ? newReaction : r
-                      ),
-                    }
-                  : m
-              )
-            );
-          }
+      store.replaceMyReaction(convId, message.id, user.id, optimistic);
+      for (const r of mine) {
+        void dispatchOrQueue(user.id, {
+          id: actionUuid(),
+          kind: "react-remove",
+          reaction_id: r.id,
+          conversation_id: convId,
+          message_id: message.id,
+          attempts: 0,
+          last_error: null,
         });
-    }
-
-    closeContextMenu();
-  }, [user?.id, messages, closeContextMenu]);
-
-  // =====================================================
-  // DELETE / EDIT / COPY / REPLY
-  // =====================================================
-  const handleDeleteForEveryone = async (messageId: string) => {
-    try {
-      await supabase
-        .from("messages")
-        .update({ is_deleted: true, content: null })
-        .eq("id", messageId)
-        .eq("sender_id", user?.id || "");
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId ? { ...m, is_deleted: true, content: null } : m
-        )
-      );
-    } catch {
-      toast.danger("Failed to delete message");
-    }
-    closeContextMenu();
-  };
-
-  const handleDeleteForMe = async (messageId: string) => {
-    try {
-      await supabase.from("message_deletions").insert({
-        message_id: messageId,
-        user_id: user?.id,
+      }
+      void dispatchOrQueue(user.id, {
+        id: actionUuid(),
+        kind: "react-add",
+        message_id: message.id,
+        conversation_id: convId,
+        user_id: user.id,
+        emoji,
+        temp_reaction_id: tempId,
+        attempts: 0,
+        last_error: null,
       });
-      myDeletionsRef.current.add(messageId);
-      setMessages((prev) => prev.filter((m) => m.id !== messageId));
-    } catch {
-      toast.danger("Failed to delete message");
-    }
-    closeContextMenu();
-  };
+      // Notify the other side — but only if we're reacting to
+      // THEIR message AND they're not currently looking at this
+      // chat. The notification call is best-effort and doesn't
+      // need to survive offline: by the time the user is back,
+      // the recipient's chat will show the reaction either way.
+      if (
+        message.sender_id !== user.id &&
+        conv &&
+        conv.other_user_id &&
+        !isUserViewingConversation(conv.other_user_id, convId)
+      ) {
+        notifyDMReaction(
+          conv.other_user_id,
+          user.full_name || "Someone",
+          emoji,
+          convId
+        ).catch(() => {});
+      }
+    },
+    [user?.id, user?.full_name, conv, toast]
+  );
 
-  const handleCopy = (content: string | null) => {
-    if (!content) return;
-    const clean = content
-      .replace(/\*\*(.*?)\*\*/g, "$1")
-      .replace(/\*(.*?)\*/g, "$1")
-      .replace(/`(.*?)`/g, "$1");
-    navigator.clipboard.writeText(clean).then(() => {
-      toast.info("Copied to clipboard");
+  const handleStartEdit = useCallback(
+    (message: ChatMessage) => {
+      if (!conversationId) return;
+      // Save the current draft so we can restore it on cancel.
+      savedDraftRef.current = draft;
+      setEditingMessage(message);
+      // Pre-fill the composer with the existing content.
+      setDraft(conversationId, message.content || "");
+      // If a reply context was open, dismiss it — edit and reply are
+      // mutually exclusive modes for the composer.
+      setReplyingTo(null);
+    },
+    [conversationId, draft, setDraft]
+  );
+
+  const handleCancelEdit = useCallback(() => {
+    if (!conversationId) return;
+    setEditingMessage(null);
+    // Restore whatever the user had typed before they entered edit
+    // mode. If they had nothing typed, this just clears the draft.
+    setDraft(conversationId, savedDraftRef.current);
+    savedDraftRef.current = "";
+  }, [conversationId, setDraft]);
+
+  const handleSubmitEdit = useCallback(async () => {
+    if (!editingMessage || !conversationId || !user?.id) return;
+    const next = draft.trim();
+    if (!next) {
+      toast.danger("Message can't be empty.");
+      return;
+    }
+    if (next === (editingMessage.content || "").trim()) {
+      // Nothing changed → just exit edit mode without a network call.
+      handleCancelEdit();
+      return;
+    }
+    // Optimistic patch — the realtime UPDATE echo will overwrite
+    // with the authoritative timestamp once it lands. We DON'T
+    // revert on API failure anymore because the action queue takes
+    // over: if we're offline or the call fails, the edit replays
+    // on reconnect and the store stays consistent the whole time.
+    const optimisticEditedAt = new Date().toISOString();
+    useChatStore.getState().patchMessage(conversationId, editingMessage.id, {
+      content: next,
+      edited_at: optimisticEditedAt,
     });
-    closeContextMenu();
-  };
+    setEditingMessage(null);
+    setDraft(conversationId, savedDraftRef.current);
+    savedDraftRef.current = "";
+    void dispatchOrQueue(user.id, {
+      id: actionUuid(),
+      kind: "edit",
+      message_id: editingMessage.id,
+      conversation_id: conversationId,
+      content: next,
+      attempts: 0,
+      last_error: null,
+    });
+  }, [editingMessage, conversationId, user?.id, draft, setDraft, toast, handleCancelEdit]);
 
-  const handleEdit = (msg: Message) => {
-    setEditingMessage(msg);
-    setTimeout(() => {
-      if (editorRef.current && msg.content) {
-        const cleaned = msg.content
-          .replace(/\*\*(.*?)\*\*/g, "$1")
-          .replace(/\*(.*?)\*/g, "$1");
-        editorRef.current.innerText = cleaned;
-        editorRef.current.focus();
-        setCharCount(cleaned.length);
-      }
-    }, 50);
-    closeContextMenu();
-  };
-
-  const handleReply = (msg: Message) => {
-    setReplyingTo(msg);
-    closeContextMenu();
-    setTimeout(() => editorRef.current?.focus(), 100);
-  };
-
-  // =====================================================
-  // MUTE / BLOCK
-  // =====================================================
-  const toggleMute = async () => {
-    const newVal = !isMuted;
-    setIsMuted(newVal);
-    setShowMenu(false);
-    await supabase
-      .from("conversation_participants")
-      .update({ is_muted: newVal })
-      .eq("conversation_id", conversationId)
-      .eq("user_id", user?.id || "");
-    toast.info(newVal ? "Conversation muted" : "Conversation unmuted");
-  };
-
-  const toggleBlock = async () => {
-    if (!otherUser?.id || !user?.id) return;
-    setShowMenu(false);
-
-    if (isBlocked) {
-      await supabase.from("dm_blocks").delete()
-        .eq("blocker_id", user.id).eq("blocked_id", otherUser.id);
-      await supabase.from("conversation_participants")
-        .update({ is_blocked: false })
-        .eq("conversation_id", conversationId).eq("user_id", user.id);
-      setIsBlocked(false);
-      toast.info("User unblocked");
-    } else {
-      await supabase.from("dm_blocks").insert({
-        blocker_id: user.id, blocked_id: otherUser.id,
+  const handleDeleteForEveryone = useCallback(
+    (message: ChatMessage) => {
+      if (!user?.id) return;
+      const convId = message.conversation_id;
+      setPendingAction({
+        title: "Delete for everyone?",
+        body: "This message will be removed from both sides of the chat. This can't be undone.",
+        confirmLabel: "Delete",
+        danger: true,
+        run: async () => {
+          // Optimistic: flip the local copy to deleted so the bubble
+          // renders as "Message deleted" instantly. We don't revert
+          // on failure anymore — the queue will replay the UPDATE
+          // when the user is back online and the bubble stays
+          // consistent with intent in the meantime.
+          useChatStore
+            .getState()
+            .patchMessage(convId, message.id, { is_deleted: true });
+          void dispatchOrQueue(user.id, {
+            id: actionUuid(),
+            kind: "delete-all",
+            message_id: message.id,
+            conversation_id: convId,
+            attempts: 0,
+            last_error: null,
+          });
+        },
       });
-      await supabase.from("conversation_participants")
-        .update({ is_blocked: true })
-        .eq("conversation_id", conversationId).eq("user_id", user.id);
-      setIsBlocked(true);
-      toast.warning("User blocked");
+    },
+    [user?.id, toast]
+  );
 
-      const { notifyDMBlocked } = await import("@/lib/notifications");
-      notifyDMBlocked(otherUser.id, user.full_name || "Someone");
-    }
-  };
-
-  const deleteChat = async () => {
-    if (!user?.id) return;
-    try {
-      const { data: allMsgs } = await supabase
-        .from("messages")
-        .select("id")
-        .eq("conversation_id", conversationId);
-
-      if (allMsgs && allMsgs.length > 0) {
-        const deletions = allMsgs.map((m) => ({
-          message_id: m.id,
-          user_id: user.id,
-        }));
-        await supabase.from("message_deletions").upsert(deletions, {
-          onConflict: "message_id,user_id",
-        });
-      }
-
-      toast.info("Chat cleared");
-      setMessages([]);
-      setShowChatInfo(false);
-    } catch {
-      toast.danger("Failed to clear chat");
-    }
-  };
-
-    // =====================================================
-  // DOCUMENT DOWNLOAD (with proper filename)
-  // =====================================================
-const handleDocumentOpen = useCallback(async (url: string, fileName: string | null, fileSize?: number | null) => {
-    // Resolve to a signed URL when the file is in the private message-media
-    // bucket. Falls through to the original URL for legacy/public files.
-    const signed = await signMessageUrl(url);
-    setDocViewer({ url: signed || url, fileName, fileSize: fileSize || null });
-  }, []);
-
-  // =====================================================
-  // FORMAT COMMANDS
-  // =====================================================
-  const applyBold = () => { document.execCommand("bold"); editorRef.current?.focus(); };
-  const applyItalic = () => { document.execCommand("italic"); editorRef.current?.focus(); };
-  const applyBulletList = () => { document.execCommand("insertUnorderedList"); editorRef.current?.focus(); };
-  const applyNumberedList = () => { document.execCommand("insertOrderedList"); editorRef.current?.focus(); };
-
-  const openLinkInput = () => {
-    const selection = window.getSelection();
-    if (selection && selection.toString()) setLinkText(selection.toString());
-    setShowLinkInput(true);
-  };
-
-  const insertLink = () => {
-    if (!linkUrl.trim()) return;
-    const url = linkUrl.startsWith("http") ? linkUrl : `https://${linkUrl}`;
-    const displayText = linkText || url;
-    const editor = editorRef.current;
-    if (editor) {
-      editor.focus();
-      setTimeout(() => {
-        const linkHTML = `<a href="${url}" target="_blank" rel="noopener noreferrer" class="text-primary-400 underline">${displayText}</a>&nbsp;`;
-        document.execCommand("insertHTML", false, linkHTML);
-      }, 50);
-    }
-    setShowLinkInput(false);
-    setLinkUrl("");
-    setLinkText("");
-  };
-
-  // =====================================================
-  // FILE HANDLING
-  // =====================================================
- const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const files = e.target.files;
-  if (!files) return;
-
-  const { validateMediaFile } = await import("@/lib/mediaCompression");
-
-  const newMedia: { file: File; preview: string; type: string }[] = [];
-
-  for (const file of Array.from(files)) {
-    // Validate file
-    const validation = validateMediaFile(file);
-    if (!validation.valid) {
-      toast.warning(validation.error || "Invalid file");
-      continue;
-    }
-
-    let preview = "";
-    if (file.type.startsWith("image/")) {
-      preview = URL.createObjectURL(file);
-    } else if (file.type.startsWith("video/")) {
+  const handleSubmitReport = useCallback(
+    async (reason: UserReportReason, notes: string | null) => {
+      if (!user?.id || !conv?.id) return;
+      // Per-message report path (groups): use the message's sender
+      // as the reported user and attach the message_id. Else fall
+      // back to the conversation's other user (DM path).
+      const reportedId = reportingMessage
+        ? reportingMessage.sender_id
+        : conv.other_user_id;
+      if (!reportedId) return;
       try {
-        const { generateVideoThumbnail } = await import("@/lib/videoThumbnail");
-        preview = (await generateVideoThumbnail(file)) || "";
-      } catch (e) {
+        await submitUserReport({
+          reporterId: user.id,
+          reportedId,
+          conversationId: conv.id,
+          messageId: reportingMessage?.id ?? null,
+          reason,
+          notes,
+        });
+        toast.info("Report submitted. Thanks for helping keep peja safe.");
+        setReportOpen(false);
+        setReportingMessage(null);
+      } catch {
+        toast.danger("Couldn't submit report. Try again.");
       }
-    }
+    },
+    [user?.id, conv, toast, reportingMessage]
+  );
 
-    newMedia.push({ file, preview, type: file.type });
-  }
+  const handleReportMessage = useCallback(
+    (message: ChatMessage) => {
+      setReportingMessage(message);
+      setReportOpen(true);
+    },
+    []
+  );
 
-  if (newMedia.length === 0) return;
+  // ---- Mentions composer typeahead ----
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  // `mentionQuery` is null when the popover is closed; a string (possibly
+  // empty) means the user just typed "@…" and the popover is open. We
+  // also remember the start index of the @ token so insertMention can
+  // splice the picked name back into the textarea.
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionAnchor, setMentionAnchor] = useState<number>(0);
+  const [mentionIndex, setMentionIndex] = useState(0);
 
-  setPendingMedia((prev) => [...prev, ...newMedia].slice(0, 5));
-  setShowAttach(false);
-  setPlusRotated(false);
-  e.target.value = "";
-};
+  const updateMentionContext = useCallback(
+    (value: string, caret: number | null) => {
+      if (caret == null) {
+        setMentionQuery(null);
+        return;
+      }
+      // Walk backwards from the caret to find an "@" with whitespace
+      // (or start-of-string) before it and no space between it and the
+      // caret. That gives the active mention query.
+      let i = caret - 1;
+      while (i >= 0) {
+        const ch = value[i];
+        if (ch === "@") {
+          const before = i === 0 ? " " : value[i - 1];
+          if (before === " " || before === "\n" || i === 0) {
+            const q = value.slice(i + 1, caret);
+            if (/^[A-Za-z0-9_'-]*$/.test(q)) {
+              setMentionAnchor(i);
+              setMentionQuery(q);
+              setMentionIndex(0);
+              return;
+            }
+          }
+          break;
+        }
+        if (ch === " " || ch === "\n") break;
+        i--;
+      }
+      setMentionQuery(null);
+    },
+    []
+  );
 
-  const removePendingMedia = (index: number) => {
-    setPendingMedia((prev) => {
-      const copy = [...prev];
-      if (copy[index]?.preview) URL.revokeObjectURL(copy[index].preview);
-      copy.splice(index, 1);
-      return copy;
-    });
+  // Candidate list for the mentions popover. Pulls from
+  // groupParticipants (sans current user) + an implicit "everyone"
+  // sentinel for group-wide pings. DMs don't show the popover at
+  // all because there's only one other person to mention.
+  type MentionCandidate = {
+    id: string;
+    name: string;
+    handle: string;
+    subtitle?: string;
   };
+  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
+    if (mentionQuery === null) return [];
+    if (!conv?.is_group) return [];
+    const q = mentionQuery.toLowerCase();
+    const everyone: MentionCandidate = {
+      id: "__everyone__",
+      name: "everyone",
+      handle: "everyone",
+      subtitle: "Notify all members",
+    };
+    const memberHits: MentionCandidate[] = (groupParticipants || [])
+      .filter((p) => p.user_id !== user?.id)
+      .map((p) => {
+        const full = (p.full_name || "Member").trim();
+        const first = full.split(/\s+/)[0] || "Member";
+        // Build the inserted handle: prefer the first name; collapse
+        // any special chars so the rendered token matches the
+        // bubble-side MENTION_PATTERN (@[A-Za-z][A-Za-z0-9_'-]*).
+        const handle = first.replace(/[^A-Za-z0-9_'-]/g, "");
+        return { id: p.user_id, name: full, handle };
+      })
+      .filter((c) => !q || c.name.toLowerCase().includes(q) || c.handle.toLowerCase().startsWith(q));
+    return [
+      ...(q.length === 0 || "everyone".startsWith(q) ? [everyone] : []),
+      ...memberHits,
+    ];
+  }, [mentionQuery, conv?.is_group, groupParticipants, user?.id]);
 
-  // =====================================================
-  // VOICE NOTE
-  // =====================================================
-  // Voice recording handlers - delegated to VoiceNoteRecorder component
-  const handleRecordingStart = useCallback(() => {
-  setIsRecording(true);
-  setShowVoiceRecorder(true);
-  setShowEmoji(false);
-  setShowAttach(false);
-  setPlusRotated(false);
-  setShowFormatBar(false);
-  sendRecordingState(true);
-}, [sendRecordingState]);
+  const insertMention = useCallback(
+    (c: { handle: string }) => {
+      if (mentionQuery === null) return;
+      const ta = composerRef.current;
+      const value = draft;
+      const start = mentionAnchor;
+      // The token covered by mentionQuery runs from `start` (the "@")
+      // up to `start + 1 + mentionQuery.length` (immediately after
+      // the typed query). Replace that span with "@handle ".
+      const tokenEnd = start + 1 + mentionQuery.length;
+      const before = value.slice(0, start);
+      const after = value.slice(tokenEnd);
+      const replacement = `@${c.handle} `;
+      const next = before + replacement + after;
+      setDraft(conversationId, next);
+      setMentionQuery(null);
+      // Restore focus + caret after the inserted handle.
+      requestAnimationFrame(() => {
+        if (!ta) return;
+        ta.focus();
+        const pos = before.length + replacement.length;
+        try {
+          ta.setSelectionRange(pos, pos);
+        } catch {}
+      });
+    },
+    [conversationId, draft, mentionAnchor, mentionQuery, setDraft]
+  );
 
-  const handleRecordingEnd = useCallback((blob: Blob, duration: number) => {
-    // Recording ended but not cancelled - blob is ready
-    // The VoiceNoteRecorder will show the preview and send button
-  }, []);
+  const handleTogglePinMessage = useCallback(
+    async (message: ChatMessage) => {
+      if (!conv?.id) return;
+      const next = !message.is_pinned;
+      const store = useChatStore.getState();
+      // Optimistic patch — the bubble's Pin icon flips immediately,
+      // pinned-bar repopulates on the next refresh.
+      store.patchMessage(conv.id, message.id, {
+        is_pinned: next,
+        pinned_at: next ? new Date().toISOString() : null,
+      });
+      try {
+        await apiSetMessagePinned(message.id, next);
+        toast.info(next ? "Pinned" : "Unpinned");
+      } catch (err) {
+        store.patchMessage(conv.id, message.id, {
+          is_pinned: !next,
+          pinned_at: !next ? new Date().toISOString() : null,
+        });
+        const msg = err instanceof Error ? err.message : "Couldn't update pin";
+        toast.danger(msg);
+      }
+    },
+    [conv?.id, toast]
+  );
 
-  const handleRecordingCancel = useCallback(() => {
-  setIsRecording(false);
-  setShowVoiceRecorder(false);
-  sendRecordingState(false);
-}, [sendRecordingState]);
+  const handleStartReply = useCallback(
+    (message: ChatMessage) => {
+      // Build a ReplyTarget snapshot from the message we're replying to.
+      // Preview kind is derived from the first attached media row;
+      // text-only messages get "text".
+      let preview_kind: ReplyTarget["preview_kind"] = "text";
+      if (message.media && message.media.length > 0) {
+        const t = message.media[0].media_type;
+        if (
+          t === "image" ||
+          t === "video" ||
+          t === "audio" ||
+          t === "document"
+        ) {
+          preview_kind = t;
+        }
+      }
+      setReplyingTo({
+        id: message.id,
+        sender_id: message.sender_id,
+        content: message.content,
+        is_deleted: message.is_deleted,
+        preview_kind,
+      });
+    },
+    []
+  );
 
-  const formatDuration = (seconds: number): string => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  };
+  const handleDeleteForMe = useCallback(
+    (message: ChatMessage) => {
+      if (!user?.id) return;
+      const convId = message.conversation_id;
+      setPendingAction({
+        title: "Delete this message?",
+        body: "It'll disappear from your view. The other person still sees their copy.",
+        confirmLabel: "Delete",
+        danger: true,
+        run: async () => {
+          // Optimistic local removal — store stays consistent across
+          // an offline window because the action queue replays the
+          // insert into message_deletions on reconnect.
+          useChatStore.getState().removeMessage(convId, message.id);
+          void dispatchOrQueue(user.id, {
+            id: actionUuid(),
+            kind: "delete-me",
+            message_id: message.id,
+            conversation_id: convId,
+            user_id: user.id,
+            attempts: 0,
+            last_error: null,
+          });
+        },
+      });
+    },
+    [user?.id, toast]
+  );
 
-  // =====================================================
-  // LONG PRESS HANDLER — with haptic-style feedback
-  // =====================================================
-  // Track long press start position for movement detection
-const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
-
-const handleTouchStart = (msg: Message, e: React.TouchEvent | React.MouseEvent) => {
-  if (msg.is_deleted) return;
-
-  const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
-  const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
-
-  // Store start position for movement detection
-  longPressStartRef.current = { x: clientX, y: clientY };
-
-  longPressTimerRef.current = setTimeout(() => {
-    // Cancel any pending close animation
-    if (closeTimeoutRef.current) {
-      clearTimeout(closeTimeoutRef.current);
-      closeTimeoutRef.current = null;
-    }
-    contextMenuClosingRef.current = false;
-    setContextMenuClosing(false);
-
-    // Vibrate if available (haptic feedback)
-    if (navigator.vibrate) navigator.vibrate(30);
-    setContextMenuMsg(msg);
-    setContextMenuPos({ x: clientX, y: clientY });
-    longPressStartRef.current = null;
-  }, 400);
-};
-
-const handleTouchMove = (e: React.TouchEvent) => {
-  if (!longPressStartRef.current || !longPressTimerRef.current) return;
-
-  const clientX = e.touches[0].clientX;
-  const clientY = e.touches[0].clientY;
-
-  const dx = Math.abs(clientX - longPressStartRef.current.x);
-  const dy = Math.abs(clientY - longPressStartRef.current.y);
-
-  // Cancel long press if finger moved more than 10px
-  if (dx > 10 || dy > 10) {
-    clearTimeout(longPressTimerRef.current);
-    longPressTimerRef.current = null;
-    longPressStartRef.current = null;
-  }
-};
-
-const handleTouchEnd = () => {
-  if (longPressTimerRef.current) {
-    clearTimeout(longPressTimerRef.current);
-    longPressTimerRef.current = null;
-  }
-  longPressStartRef.current = null;
-};
-
-  // =====================================================
-  // SWIPE TO REPLY
-  // =====================================================
-  const handleSwipeStart = (msgId: string, e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    swipeStartRef.current = { x: touch.clientX, y: touch.clientY, locked: false };
-    // Do NOT set state here — prevents unnecessary re-renders that swallow iOS clicks
-  };
-
-  const handleSwipeMove = (msg: Message, e: React.TouchEvent) => {
-    if (!swipeStartRef.current || msg.is_deleted) return;
-    const touch = e.touches[0];
-    const dx = touch.clientX - swipeStartRef.current.x;
-    const dy = touch.clientY - swipeStartRef.current.y;
-
-    if (!swipeStartRef.current.locked) {
-      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-        swipeStartRef.current.locked = true;
-        if (Math.abs(dy) > Math.abs(dx)) {
-          // Vertical movement — cancel swipe, no state updates
-          swipeStartRef.current = null;
+  const handleDeleteChat = useCallback(() => {
+    if (!user?.id || !conv) return;
+    const convId = conv.id;
+    setPendingAction({
+      title: "Delete this chat?",
+      body: "It'll disappear from your list. If the other person messages you again, it'll come back.",
+      confirmLabel: "Delete",
+      danger: true,
+      run: async () => {
+        try {
+          await deleteChatForUser(convId, user.id);
+        } catch {
+          toast.danger("Couldn't delete. Try again.");
           return;
         }
-        // Horizontal movement confirmed — NOW set swipe state
-        setSwipingMsgId(msg.id);
-      } else {
-        return;
-      }
-    }
+        useChatStore.getState().removeConversation(convId);
+        // Drop the warm-start snapshot too — otherwise a stale
+        // version of the deleted chat would flash on screen if
+        // the conversation reappears later (e.g. the other side
+        // messages us again).
+        void deleteCachedThread(user.id, convId);
+        toast.info("Chat deleted");
+        router.push("/messages");
+      },
+    });
+  }, [user?.id, conv, toast, router]);
 
-    const isMine = msg.sender_id === user?.id;
-    const raw = isMine ? -dx : dx;
-    const clamped = Math.max(0, Math.min(raw, 80));
-    setSwipeX(clamped);
+  // ---- Group-specific handlers ----
+  const [addMemberOpen, setAddMemberOpen] = useState(false);
 
-    if (clamped > 5) {
-      e.preventDefault();
-    }
-
-    if (clamped > 10 && longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  const handleSwipeEnd = (msg: Message) => {
-    // If no swipe was active (just a normal tap), don't update state
-    if (!swipingMsgId) {
-      swipeStartRef.current = null;
-      return;
-    }
-
-    if (swipeX > 60) {
-      if (navigator.vibrate) navigator.vibrate(20);
-      handleReply(msg);
-    }
-    setSwipeX(0);
-    setSwipingMsgId(null);
-    swipeStartRef.current = null;
-  };
-
-  // =====================================================
-  // DATE SEPARATOR
-  // =====================================================
-  const getDateLabel = (dateStr: string) => {
-    const date = new Date(dateStr);
-    if (isToday(date)) return "Today";
-    if (isYesterday(date)) return "Yesterday";
-    return format(date, "MMM d, yyyy");
-  };
-
-  // =====================================================
-  // DELIVERY STATUS DISPLAY
-  // =====================================================
-  const DeliveryLabel = ({ status }: { status?: "sent" | "seen" | "sending" | "failed" | "queued" }) => {
-    if (!status) return null;
-    if (status === "seen") {
-      return (
-        <span className="text-[10px] text-purple-400 font-medium drop-shadow-[0_0_4px_rgba(168,85,247,0.6)]">
-          Seen
-        </span>
-      );
-    }
-    if (status === "sending") {
-      return <PejaSpinner className="w-3 h-3" />;
-    }
-    if (status === "queued") {
-      return (
-        <span className="text-[10px] text-yellow-400/70 font-medium flex items-center gap-1">
-          <Clock className="w-3 h-3" />
-          Queued
-        </span>
-      );
-    }
-    if (status === "failed") {
-      return (
-        <span className="text-[10px] text-red-400 font-medium flex items-center gap-1">
-          <AlertTriangle className="w-3 h-3" />
-          Failed
-        </span>
-      );
-    }
-    return <span className="text-[10px] text-white/40">Sent</span>;
-  };
-
-  // =====================================================
-  // CHAT INFO: files sent
-  // =====================================================
-  const chatMediaFiles = useMemo(() => {
-    return messages
-      .filter((m) => m.media && m.media.length > 0)
-      .flatMap((m) => m.media || []);
-  }, [messages]);
-
-  // =====================================================
-  // ONLINE STATUS TEXT
-  // =====================================================
-  const lastSeenText = useMemo(() => {
-    if (otherUserOnline) return "Online";
-    if (otherUser?.last_seen_at) {
-      return `Last seen ${formatDistanceToNow(new Date(otherUser.last_seen_at), { addSuffix: true })}`;
-    }
-    return "";
-  }, [otherUserOnline, otherUser?.last_seen_at]);
-    const isMineCtx = contextMenuMsg ? contextMenuMsg.sender_id === user?.id : false;
-
-  // =====================================================
-  // EDITOR KEYBOARD HANDLER
-  // =====================================================
-  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    // Only send on Enter from physical keyboards (desktop).
-    // Mobile soft keyboards: Enter inserts newline, Send button sends.
-    // Detect mobile by checking if a coarse pointer (touch) is available.
-    const isMobile =
-      typeof window !== "undefined" &&
-      window.matchMedia("(pointer: coarse)").matches;
-
-    if (e.key === "Enter" && !e.shiftKey && !isMobile) {
-      e.preventDefault();
-      handleSend();
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === "b") { e.preventDefault(); applyBold(); }
-    if ((e.ctrlKey || e.metaKey) && e.key === "i") { e.preventDefault(); applyItalic(); }
-  };
-
-    // =====================================================
-  // SEND VOICE NOTE
-  // =====================================================
-  const handleSendVoiceNote = useCallback(async (file: File, duration: number) => {
-  if (!user?.id || !conversationId) return;
-
-  // Validate file has content
-  if (!file || file.size === 0) {
-    toast.danger("Recording failed - no audio data");
-    return;
-  }
-
-
-  setVoiceNoteUploading(true);
-  setShowVoiceRecorder(false);
-  setIsRecording(false);
-  sendRecordingState(false);
-
-  const tempId = `temp-voice-${Date.now()}`;
-  const currentReplyingTo = replyingTo;
-
-  // Create optimistic message with loading state
-  const optimisticMsg: Message = {
-    id: tempId,
-    conversation_id: conversationId,
-    sender_id: user.id,
-    content: null,
-    content_type: "media",
-    created_at: new Date().toISOString(),
-    is_deleted: false,
-    edited_at: null,
-    reply_to_id: currentReplyingTo?.id || null,
-    metadata: { duration, uploading: true },
-    media: [{
-      id: `temp-media-${Date.now()}`,
-      message_id: tempId,
-      url: "",
-      media_type: "audio",
-      file_name: file.name,
-      file_size: file.size,
-      mime_type: file.type,
-      thumbnail_url: null,
-      created_at: new Date().toISOString(),
-    }],
-    delivery_status: "sending" as any,
-    read_at: null,
-    hidden_for_me: false,
-    reactions: [],
-    reply_to: currentReplyingTo || null,
-  };
-
-  setMessages((prev) => [...prev, optimisticMsg]);
-  setReplyingTo(null);
-
-  // Scroll to bottom
-  setTimeout(() => scrollToBottom(false), 100);
-
-  try {
-    // Determine file extension
-    let ext = file.name.split(".").pop()?.toLowerCase() || "m4a";
-    if (ext === "aac" || ext === "mp4") ext = "m4a";
-    else if (ext === "opus") ext = "webm";
-    
-    const path = `messages/${conversationId}/${Date.now()}_voice.${ext}`;
-
-    // Determine content type
-    let contentType = file.type;
-    if (!contentType || contentType === "application/octet-stream") {
-      if (ext === "m4a" || ext === "aac") contentType = "audio/mp4";
-      else if (ext === "webm") contentType = "audio/webm";
-      else if (ext === "mp3") contentType = "audio/mpeg";
-      else if (ext === "ogg") contentType = "audio/ogg";
-      else contentType = "audio/mp4";
-    }
-
-
-    // Upload to storage
-    const { error: uploadError } = await supabase.storage
-      .from("message-media")
-      .upload(path, file, {
-        contentType,
-        cacheControl: "3600",
-      });
-
-    if (uploadError) {
-      throw new Error(`Upload failed: ${uploadError.message}`);
-    }
-
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from("message-media")
-      .getPublicUrl(path);
-
-    if (!urlData?.publicUrl) {
-      throw new Error("Failed to get public URL after upload");
-    }
-
-
-    // Insert message into database
-    const { data: newMsg, error: msgError } = await supabase
-      .from("messages")
-      .insert({
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: null,
-        content_type: "media",
-        reply_to_id: currentReplyingTo?.id || null,
-        metadata: { duration },
-      })
-      .select()
-      .single();
-
-    if (msgError) {
-      throw new Error(`Message insert failed: ${msgError.message}`);
-    }
-
-
-    // Insert media record - THIS IS CRITICAL
-    const { data: mediaData, error: mediaError } = await supabase
-      .from("message_media")
-      .insert({
-        message_id: newMsg.id,
-        url: urlData.publicUrl,
-        media_type: "audio",
-        file_name: file.name,
-        file_size: file.size,
-        mime_type: contentType,
-      })
-      .select()
-      .single();
-
-    if (mediaError) {
-      // Delete the orphaned message since media failed
-      await supabase.from("messages").delete().eq("id", newMsg.id);
-      throw new Error(`Media record failed: ${mediaError.message}`);
-    }
-
-
-    // Update optimistic message with real data
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === tempId
-          ? {
-              ...newMsg,
-              media: [{
-                id: mediaData.id,
-                message_id: newMsg.id,
-                url: urlData.publicUrl,
-                media_type: "audio" as const,
-                file_name: file.name,
-                file_size: file.size,
-                mime_type: contentType,
-                thumbnail_url: null,
-                created_at: mediaData.created_at || new Date().toISOString(),
-              }],
-              delivery_status: "sent" as const,
-              read_at: null,
-              hidden_for_me: false,
-              reactions: [],
-              reply_to: currentReplyingTo || null,
-              metadata: { duration },
-            }
-          : msg
-      )
-    );
-
-      // Update messages list INSTANTLY (optimistic)
-      updateLastMessage(conversationId, "🎤 Voice message", user.id);
-
-      // Update conversation last message
-      await supabase
-        .from("conversations")
-        .update({
-        last_message_at: new Date().toISOString(),
-        last_message_text: "🎤 Voice message",
-        last_message_sender_id: user.id,
-      })
-      .eq("id", conversationId);
-
-    // Notify other user
-    if (otherUser) {
-      notifyDMMessage(
-        otherUser.id,
-        user.full_name || "Someone",
-        "🎤 Voice message",
-        conversationId
-      );
-    }
-
-
-  } catch (e: any) {
-
-    // Remove the failed optimistic message
-    setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
-
-    const raw = String(e?.message || "");
-    const lower = raw.toLowerCase();
-    let friendly = raw || "Failed to send voice note";
-    if (lower.includes("payload too large") || lower.includes("too large") || lower.includes("status 413")) {
-      friendly = "Voice note too large.";
-    } else if (lower.includes("network")) {
-      friendly = "Couldn't send — check your connection and try again.";
-    }
-    toast.danger(friendly);
-  } finally {
-    setVoiceNoteUploading(false);
-  }
-}, [user, conversationId, replyingTo, otherUser, scrollToBottom, toast, sendRecordingState]);
-    // =====================================================
-  // SEND MESSAGE
-  // =====================================================
-  const handleSend = useCallback(async () => {
-    const textContent = getEditorContent();
-    if ((!textContent && pendingMedia.length === 0) || !user?.id) return;
-
-    if (textContent.length > MAX_MESSAGE_LENGTH) {
-      toast.warning(`Message too long. Max ${MAX_MESSAGE_LENGTH.toLocaleString()} characters.`);
-      return;
-    }
-
-    // For media messages, block concurrent sends. For text-only, allow rapid fire.
-    const hasMedia = pendingMedia.length > 0;
-    if (hasMedia && sending) return;
-
-    // Check if blocked by the other user (only on first send or media sends to avoid latency)
-    if (otherUser?.id && hasMedia) {
-      const { data: blocked } = await supabase
-        .from("dm_blocks")
-        .select("id")
-        .eq("blocker_id", otherUser.id)
-        .eq("blocked_id", user.id)
-        .maybeSingle();
-      if (blocked) {
-        toast.warning("You have been blocked by this user");
-        return;
-      }
-    }
-    // If editing, handle separately
-  if (editingMessage) {
-      const editorHTML = getEditorHTML();
-      const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
-      const editId = editingMessage.id;
-      const editTime = new Date().toISOString();
-      
-      // Optimistic update - instant UI change
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === editId
-            ? { ...m, content: markdownContent, edited_at: editTime }
-            : m
-        )
-      );
-      setEditingMessage(null);
-      clearEditor();
-      setCharCount(0);
-      
-      // Background DB updates
-      supabase
-        .from("messages")
-        .update({ content: markdownContent, edited_at: editTime })
-        .eq("id", editId)
-        .eq("sender_id", user.id)
-        .then(({ error }) => {
-          if (error) {
-            toast.danger("Failed to save edit");
-            // Revert on failure
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === editId
-                  ? { ...m, content: editingMessage.content, edited_at: editingMessage.edited_at }
-                  : m
-              )
-            );
-          }
-        });
-      
-      supabase
-        .from("conversations")
-        .update({ last_message_text: markdownContent?.slice(0, 100) || "" })
-        .eq("id", conversationId)
-        .then(() => fetchConversations());
-      
-      return;
-    }
-
-    // Capture current state before clearing
-    const mediaToSend = [...pendingMedia];
-    const editorHTML = getEditorHTML();
-    const markdownContent = editorHTML ? htmlToMarkdown(editorHTML) : null;
-    const currentReplyingTo = replyingTo;
-
-    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-    let contentType = "text";
-    if (mediaToSend.length > 0) {
-      contentType = mediaToSend.some(
-        (m) => m.type.startsWith("image/") || m.type.startsWith("video/")
-      )
-        ? "media"
-        : "document";
-      if (mediaToSend.every((m) => m.type.startsWith("audio/"))) {
-        contentType = "media";
-      }
-    }
-
-    const optimisticMedia: MessageMediaItem[] = mediaToSend.map((m, i) => ({
-      id: `temp-media-${i}-${Date.now()}`,
-      message_id: tempId,
-      url: m.type.startsWith("video/") ? "" : (m.preview || ""),
-      media_type: (m.type.startsWith("image/")
-        ? "image"
-        : m.type.startsWith("video/")
-        ? "video"
-        : m.type.startsWith("audio/")
-        ? "audio"
-        : "document") as "image" | "video" | "document" | "audio",
-      file_name: m.file.name,
-      file_size: m.file.size,
-      mime_type: null,
-      thumbnail_url: m.type.startsWith("video/") ? (m.preview || null) : null,
-      created_at: new Date().toISOString(),
-    }));
-
-    const optimisticMsg: Message = {
-      id: tempId,
-      conversation_id: conversationId,
-      sender_id: user.id,
-      content: markdownContent || null,
-      content_type: contentType as "text" | "media" | "document" | "post_share" | "system",
-      created_at: new Date().toISOString(),
-      is_deleted: false,
-      edited_at: null,
-      reply_to_id: currentReplyingTo?.id || null,
-      metadata: {},
-      media: optimisticMedia,
-      delivery_status: "sending" as any,
-      read_at: null,
-      hidden_for_me: false,
-      reactions: [],
-      reply_to: currentReplyingTo || null,
-    };
-
-    setMessages((prev) => [...prev, optimisticMsg]);
-
-    // Clear input immediately
-    clearEditor();
-    setCharCount(0);
-    setPendingMedia([]);
-    setReplyingTo(null);
-
-    if (mediaToSend.length > 0) {
-      setUploadingMsgIds((prev) => new Map(prev).set(tempId, 0));
-    }
-
-    // Queue text-only messages when offline
-    if (isOffline() && mediaToSend.length === 0) {
-      enqueueAction(`messages-${conversationId}`, {
-        _tempId: tempId,
-        conversation_id: conversationId,
-        content: markdownContent,
-        reply_to_id: currentReplyingTo?.id || null,
-      });
-      setMessages((prev) =>
-        prev.map((m) => m.id === tempId ? { ...m, delivery_status: "queued" as any } : m)
-      );
-      return;
-    }
-
-    if (isOffline() && mediaToSend.length > 0) {
-      setMessages((prev) =>
-        prev.map((m) => m.id === tempId ? { ...m, delivery_status: "failed" as any } : m)
-      );
-      toast.warning("Can't send media while offline");
-      return;
-    }
-
-    // Background send
+  const refreshGroupAfterEdit = useCallback(async () => {
+    if (!user?.id || !conv?.id) return;
     try {
-      let mediaItems: { url: string; media_type: string; file_name: string; file_size: number; thumbnail_url?: string | null }[] = [];
+      const list = await import("@/features/chat/api").then((m) =>
+        m.fetchConversationList(user.id)
+      );
+      useChatStore.getState().setConversations(list);
+      const parts = await fetchGroupParticipants(conv.id);
+      setGroupParticipants(parts);
+    } catch (err) {
+      console.warn("[chat-v2] refreshGroupAfterEdit failed", err);
+    }
+  }, [user?.id, conv?.id]);
 
-      if (mediaToSend.length > 0) {
-  const { compressImage, compressVideo } = await import("@/lib/mediaCompression");
-
-  for (let i = 0; i < mediaToSend.length; i++) {
-    const media = mediaToSend[i];
-    let fileToUpload = media.file;
-    let uploadToCloudinary = false;
-    let cloudinaryUrl = "";
-
-    try {
-      // Compress images client-side
-      if (media.type.startsWith("image/")) {
-        toast.info("Processing image...", 2000);
-        
-        fileToUpload = await compressImage(media.file, (progress) => {
-          const overallProgress = Math.round(
-            ((i + progress / 100) / mediaToSend.length) * 100
-          );
-          setUploadingMsgIds((prev) => new Map(prev).set(tempId, overallProgress));
+  const handleRenameGroup = useCallback(
+    async (newName: string) => {
+      if (!conv?.id) return;
+      try {
+        await apiRenameGroup(conv.id, newName);
+        useChatStore.getState().patchConversation(conv.id, {
+          group_name: newName,
+          other_user_name: newName,
         });
+        toast.info("Group renamed");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Couldn't rename group";
+        toast.danger(msg);
+        throw err;
       }
+    },
+    [conv?.id, toast]
+  );
 
-      // Compress videos via Cloudinary
-      if (media.type.startsWith("video/")) {
-        const sizeMB = media.file.size / 1024 / 1024;
-        
-        if (sizeMB > 16) {
-         toast.info("Processing video...", 3000);
-          
+  const handleChangeGroupAvatar = useCallback(
+    async (file: File) => {
+      if (!conv?.id || !user?.id) return;
+      try {
+        const url = await apiUploadGroupAvatar(file, user.id);
+        await apiSetGroupAvatar(conv.id, url);
+        useChatStore.getState().patchConversation(conv.id, {
+          group_avatar_url: url,
+          other_user_avatar_url: url,
+        });
+        toast.info("Group photo updated");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Couldn't update photo";
+        toast.danger(msg);
+      }
+    },
+    [conv?.id, user?.id, toast]
+  );
+
+  const handleRemoveGroupMember = useCallback(
+    (userId: string) => {
+      if (!conv?.id) return;
+      const member = groupParticipants?.find((p) => p.user_id === userId);
+      setPendingAction({
+        title: `Remove ${member?.full_name || "this member"}?`,
+        body: "They won't be able to see or send new messages in this group.",
+        confirmLabel: "Remove",
+        danger: true,
+        run: async () => {
           try {
-            const result = await compressVideo(media.file, (progress) => {
-              const overallProgress = Math.round(
-                ((i + progress / 100) / mediaToSend.length) * 100
-              );
-              setUploadingMsgIds((prev) => new Map(prev).set(tempId, overallProgress));
+            await apiRemoveGroupMember(conv.id, userId);
+            // Optimistically drop from local state; the realtime
+            // refetch will reconcile if needed.
+            setGroupParticipants((prev) =>
+              prev ? prev.filter((p) => p.user_id !== userId) : prev
+            );
+            useChatStore.getState().patchConversation(conv.id, {
+              member_count: Math.max((conv.member_count ?? 1) - 1, 0),
             });
-
-            uploadToCloudinary = true;
-            cloudinaryUrl = result.url;
-            
-          } catch (error: any) {
-            if (error.message !== "SKIP_COMPRESSION") {
-              throw error;
-            }
-            // Video under limit, upload normally
+            toast.info("Member removed");
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Couldn't remove member";
+            toast.danger(msg);
           }
-        }
-      }
-
-      let mediaUrl = "";
-      let finalFileSize = fileToUpload.size;
-
-      // Upload to Cloudinary or Supabase Storage
-      if (uploadToCloudinary) {
-        mediaUrl = cloudinaryUrl;
-      } else {
-        const ext = fileToUpload.name.split(".").pop() || "file";
-        const path = `messages/${conversationId}/${Date.now()}_${Math.random()
-          .toString(36)
-          .slice(2)}.${ext}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("message-media")
-          .upload(path, fileToUpload);
-
-        if (uploadError) {
-          continue;
-        }
-
-        const { data: urlData } = supabase.storage
-          .from("message-media")
-          .getPublicUrl(path);
-
-        mediaUrl = urlData.publicUrl;
-      }
-
-      let mediaType = "document";
-      if (media.type.startsWith("image/")) mediaType = "image";
-      else if (media.type.startsWith("video/")) mediaType = "video";
-      else if (media.type.startsWith("audio/")) mediaType = "audio";
-
-      // Upload thumbnail for videos
-      let thumbnailUrl: string | null = null;
-      if (mediaType === "video" && media.preview && media.preview.startsWith("data:")) {
-        try {
-          const thumbBlob = await fetch(media.preview).then((r) => r.blob());
-          const thumbPath = `messages/${conversationId}/${Date.now()}_thumb.jpg`;
-          const { error: thumbErr } = await supabase.storage
-            .from("message-media")
-            .upload(thumbPath, thumbBlob, { contentType: "image/jpeg" });
-          if (!thumbErr) {
-            const { data: thumbUrlData } = supabase.storage
-              .from("message-media")
-              .getPublicUrl(thumbPath);
-            thumbnailUrl = thumbUrlData.publicUrl;
-          }
-        } catch (thumbError) {
-        }
-      }
-
-      mediaItems.push({
-        url: mediaUrl,
-        media_type: mediaType,
-        file_name: fileToUpload.name,
-        file_size: finalFileSize,
-        thumbnail_url: thumbnailUrl,
+        },
       });
+    },
+    [conv?.id, conv?.member_count, groupParticipants, toast]
+  );
 
-      const progress = Math.round(((i + 1) / mediaToSend.length) * 100);
-      setUploadingMsgIds((prev) => new Map(prev).set(tempId, progress));
+  const handleLeaveGroup = useCallback(() => {
+    if (!conv?.id) return;
+    setPendingAction({
+      title: "Leave this group?",
+      body: "You'll stop receiving messages. The owner can add you back later.",
+      confirmLabel: "Leave",
+      danger: true,
+      run: async () => {
+        try {
+          await apiLeaveGroup(conv.id);
+          useChatStore.getState().removeConversation(conv.id);
+          toast.info("Left the group");
+          router.push("/messages");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Couldn't leave the group";
+          toast.danger(msg);
+        }
+      },
+    });
+  }, [conv?.id, router, toast]);
 
-    } catch (error: any) {
-      const raw = String(error?.message || "");
-      const lower = raw.toLowerCase();
-      // Translate noisy upstream errors into something a user can act on.
-      // Anything that hints at file size collapses to the limit message.
-      let friendly = raw || "Failed to process media";
-      if (
-        lower.includes("file size too large") ||
-        lower.includes("size limit") ||
-        lower.includes("too large") ||
-        lower.includes("too big") ||
-        lower.includes("size exceeds") ||
-        (lower.includes("cloudinary") && (lower.includes("size") || lower.includes("large"))) ||
-        (lower.includes("status 413"))
-      ) {
-        friendly = "File size exceeds the 100MB limit.";
-      } else if (lower.startsWith("cloudinary error:")) {
-        friendly = "Upload failed. Try a smaller file or check your connection.";
-      } else if (lower.includes("network error")) {
-        friendly = "Upload failed — check your connection and try again.";
-      }
-      toast.danger(friendly);
-      continue;
-    }
-  }
-}
+  const handleDeleteGroup = useCallback(() => {
+    if (!conv?.id) return;
+    setPendingAction({
+      title: "Delete this group?",
+      body: "The group and every message in it will be removed for everyone. This can't be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+      run: async () => {
+        try {
+          await apiDeleteGroup(conv.id);
+          useChatStore.getState().removeConversation(conv.id);
+          toast.info("Group deleted");
+          router.push("/messages");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Couldn't delete the group";
+          toast.danger(msg);
+        }
+      },
+    });
+  }, [conv?.id, router, toast]);
 
-      // If the user attached files but every upload failed (and there's no
-      // text either), don't write an empty message — drop the optimistic
-      // bubble and surface a clear error instead.
-      const hasText = !!(markdownContent && markdownContent.trim());
-      const hasMedia = mediaItems.length > 0;
-      if (!hasText && !hasMedia) {
-        setMessages((prev) => prev.filter((m) => m.id !== tempId));
-        setUploadingMsgIds((prev) => {
-          const next = new Map(prev);
-          next.delete(tempId);
-          return next;
+  const handleSetNotificationMode = useCallback(
+    async (mode: NotificationMode) => {
+      if (!conv?.id) return;
+      const prevMode = (conv as { notification_mode?: NotificationMode })
+        .notification_mode || "all";
+      useChatStore.getState().patchConversation(conv.id, {
+        notification_mode: mode,
+        is_muted: mode !== "all",
+      });
+      try {
+        await apiSetNotificationMode(conv.id, mode);
+        toast.info(
+          mode === "all"
+            ? "Notifications on"
+            : mode === "mentions"
+              ? "Only mentions will notify you"
+              : "Notifications muted"
+        );
+      } catch (err) {
+        useChatStore.getState().patchConversation(conv.id, {
+          notification_mode: prevMode,
+          is_muted: prevMode !== "all",
         });
-        if (mediaToSend.length > 0) {
-          toast.danger("Couldn't send — all attachments failed to upload.");
-        }
-        return;
+        toast.danger("Couldn't update notifications");
       }
-
-      const messageData: any = {
-        conversation_id: conversationId,
-        sender_id: user.id,
-        content: markdownContent || null,
-        content_type: contentType,
-        reply_to_id: currentReplyingTo?.id || null,
-      };
-
-      const { data: newMsg, error: msgError } = await supabase
-        .from("messages")
-        .insert(messageData)
-        .select()
-        .single();
-      if (msgError) throw msgError;
-
-      if (mediaItems.length > 0 && newMsg) {
-        await supabase.from("message_media").insert(
-          mediaItems.map((m) => ({ message_id: newMsg.id, ...m }))
-        );
-      }
-
-      const realMedia: MessageMediaItem[] = mediaItems.map((m, i) => ({
-        id: `real-${i}-${Date.now()}`,
-        message_id: newMsg.id,
-        url: m.url,
-        media_type: m.media_type as "image" | "video" | "document" | "audio",
-        file_name: m.file_name,
-        file_size: m.file_size,
-        mime_type: null,
-        thumbnail_url: m.thumbnail_url || null,
-        created_at: new Date().toISOString(),
-      }));
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === tempId
-            ? {
-                ...newMsg,
-                media: realMedia,
-                delivery_status: "sent" as const,
-                read_at: null,
-                hidden_for_me: false,
-                reactions: [],
-                reply_to: currentReplyingTo || null,
-              }
-            : msg.id === newMsg.id
-            ? prev.find((m) => m.id === tempId) ? msg : msg
-            : msg
-        ).filter((msg, idx, arr) => {
-          return arr.findIndex((m) => m.id === msg.id) === idx;
-        })
-      );
-
-      setUploadingMsgIds((prev) => {
-        const next = new Map(prev);
-        next.delete(tempId);
-        return next;
-      });
-
-      // Update messages list INSTANTLY (optimistic)
-      updateLastMessage(
-        conversationId,
-        markdownContent?.slice(0, 100) || (mediaItems.length > 0 ? "Sent an attachment" : "New message"),
-        user.id
-      );
-
-      await supabase
-        .from("conversations")
-        .update({
-          last_message_at: new Date().toISOString(),
-          last_message_text: markdownContent?.slice(0, 100) || (mediaItems.length > 0 ? "Sent an attachment" : null),
-          last_message_sender_id: user.id,
-        })
-        .eq("id", conversationId);
-
-      if (otherUser) {
-        notifyDMMessage(
-          otherUser.id,
-          user.full_name || "Someone",
-          markdownContent || "Sent an attachment",
-          conversationId
-        );
-      }
-    } catch (e: any) {
-      // For text-only sends, persist to the offline queue so the message
-      // survives navigation. The drain effect retries on mount and on the
-      // next `online` event. Without this, a transient network blip would
-      // silently lose the message: the catch marks it failed in state, the
-      // user navigates away, the cache-save effect filters out `temp-`
-      // messages, and on return the DB doesn't have it either.
-      const hasText = !!(markdownContent && markdownContent.trim());
-      // Use `mediaToSend` (the user's attempted attachments) — `mediaItems`
-      // is scoped to the try block above and isn't reachable here. We only
-      // want to enqueue text-only sends; media re-sends aren't supported by
-      // the queue drain path.
-      const wasMediaAttempt = mediaToSend.length > 0;
-      if (hasText && !wasMediaAttempt) {
-        try {
-          enqueueAction(`messages-${conversationId}`, {
-            _tempId: tempId,
-            conversation_id: conversationId,
-            content: markdownContent,
-            reply_to_id: currentReplyingTo?.id || null,
-          });
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === tempId ? { ...msg, delivery_status: "queued" as any } : msg
-            )
-          );
-        } catch {
-          // If enqueue itself failed (localStorage full / unavailable), fall
-          // back to the old visible-failed marker so at least the user sees
-          // an error indicator.
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === tempId ? { ...msg, delivery_status: "failed" as any } : msg
-            )
-          );
-        }
-      } else {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === tempId
-              ? { ...msg, delivery_status: "failed" as any }
-              : msg
-          )
-        );
-      }
-
-      setUploadingMsgIds((prev) => {
-        const next = new Map(prev);
-        next.delete(tempId);
-        return next;
-      });
-
-      toast.danger("Failed to send message");
-    }
-  }, [
-    getEditorContent, getEditorHTML, htmlToMarkdown, pendingMedia,
-    sending, user, conversationId, otherUser, editingMessage, replyingTo,
-    clearEditor, toast, markAsRead,
-  ]);
-
-  // =====================================================
-  // LOADING / AUTH GUARDS
-  // =====================================================
-  if (authLoading || !user) return null;
-  if (user.is_vip === false) return null;
-
-  if (loading && messages.length === 0) {
-  return (
-    <div className="flex flex-col h-full bg-[var(--page-bg)]">
-      {/* Header skeleton */}
-      <header
-        className="glass-header flex items-center justify-between px-4 shrink-0 z-10"
-        style={{
-          height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
-          paddingTop: "env(safe-area-inset-top, 0px)",
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <Skeleton className="w-5 h-5 rounded" />
-          <Skeleton className="w-9 h-9 rounded-full" />
-          <div>
-            <Skeleton className="w-28 h-4 mb-1" />
-            <Skeleton className="w-16 h-3" />
-          </div>
-        </div>
-        <Skeleton className="w-5 h-5 rounded" />
-      </header>
-
-      {/* Messages skeleton - using flex-col-reverse like real messages */}
-      <div className="flex-1 overflow-hidden px-4 py-4 flex flex-col-reverse">
-        <div className="space-y-2">
-          {/* Recent messages at bottom */}
-          <div className="flex justify-end">
-            <Skeleton className="h-10 w-32 rounded-2xl rounded-br-md" />
-          </div>
-          <div className="flex justify-start items-end gap-2">
-            <Skeleton className="w-7 h-7 rounded-full shrink-0" />
-            <Skeleton className="h-14 w-48 rounded-2xl rounded-bl-md" />
-          </div>
-          <div className="flex justify-end">
-            <Skeleton className="h-10 w-40 rounded-2xl rounded-br-md" />
-          </div>
-          <div className="flex justify-start items-end gap-2">
-            <Skeleton className="w-7 h-7 rounded-full shrink-0" />
-            <Skeleton className="h-10 w-36 rounded-2xl rounded-bl-md" />
-          </div>
-          <div className="flex justify-end">
-            <Skeleton className="h-16 w-44 rounded-2xl rounded-br-md" />
-          </div>
-          <div className="flex justify-start items-end gap-2">
-            <Skeleton className="w-7 h-7 rounded-full shrink-0" />
-            <Skeleton className="h-10 w-52 rounded-2xl rounded-bl-md" />
-          </div>
-        </div>
-      </div>
-
-      {/* Input skeleton */}
-      <div
-        className="px-3 py-2 border-t border-white/5 bg-[var(--page-bg)] shrink-0"
-        style={{
-          paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
-        }}
-      >
-        <div className="flex items-end gap-1.5">
-          <Skeleton className="w-10 h-10 rounded-xl" />
-          <Skeleton className="flex-1 h-10 rounded-2xl" />
-          <Skeleton className="w-10 h-10 rounded-xl" />
-          <Skeleton className="w-10 h-10 rounded-xl" />
-          <Skeleton className="w-10 h-10 rounded-xl" />
-        </div>
-      </div>
-    </div>
+    },
+    [conv?.id, conv, toast]
   );
-}
 
-  if (!otherUser) {
-  // Show skeleton while loading user
-  return (
-    <div className="flex flex-col h-full bg-[var(--page-bg)]">
-      <header
-        className="glass-header flex items-center justify-between px-4 shrink-0 z-10"
-        style={{
-          height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
-          paddingTop: "env(safe-area-inset-top, 0px)",
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <Skeleton className="w-5 h-5 rounded" />
-          <Skeleton className="w-9 h-9 rounded-full" />
-          <div>
-            <Skeleton className="w-28 h-4 mb-1" />
-            <Skeleton className="w-16 h-3" />
-          </div>
-        </div>
-        <Skeleton className="w-5 h-5 rounded" />
-      </header>
-      <div className="flex-1" />
-    </div>
-  );
-}
-
-return (
-  <div className="flex flex-col h-full bg-[var(--page-bg)]">
-      {/* =====================================================
-          HEADER
-          ===================================================== */}
-      <header
-        className="glass-header flex items-center justify-between px-4 shrink-0 z-10"
-        style={{
-          height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
-          paddingTop: "env(safe-area-inset-top, 0px)",
-        }}
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          <button
-  onClick={() => {
-    // Trigger exit animation then navigate
-    const layout = document.querySelector('[data-chat-layout]');
-    if (layout) {
-      layout.classList.add('translate-x-full');
-      setTimeout(() => {
-        router.push("/messages", { scroll: false });
-      }, 250);
-    } else {
-      router.push("/messages", { scroll: false });
-    }
-  }}
-  className="p-1.5 -ml-1 hover:bg-white/5 rounded-lg active:scale-95 transition-transform"
->
-  <ArrowLeft className="w-5 h-5 text-dark-200" />
-</button>
-
-          <button
-            onClick={() => {
-              if (otherUser.avatar_url) setAvatarPreview(otherUser.avatar_url);
-            }}
-            className="relative shrink-0 active:scale-95 transition-transform"
-          >
-            <div className="w-9 h-9 rounded-full overflow-hidden bg-dark-800 border border-white/10 flex items-center justify-center">
-              {otherUser.avatar_url ? (
-                <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-4 h-4 text-dark-400" />
-              )}
-            </div>
-            {otherUserOnline && (
-              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-purple-500 border-2 border-[#0a0812] online-dot-pulse" />
-            )}
-          </button>
-
-          <button onClick={() => setShowChatInfo(true)} className="min-w-0 text-left">
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm font-semibold text-dark-100 truncate">
-                {otherUser.full_name || "Unknown"}
-              </span>
-              {otherUser.is_admin && <Crown className="w-3.5 h-3.5 text-yellow-400 shrink-0" />}
-            </div>
-          <p className="text-[11px] text-dark-500 truncate">
-  {recordingUsers.length > 0 ? (
-    <span className="text-red-400 flex items-center gap-1">
-      <Mic className="w-3 h-3 animate-pulse" />
-      Recording...
-    </span>
-  ) : typingUsers.length > 0 ? (
-    <span className="text-primary-400 flex items-center gap-1">
-      <span className="inline-block w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" />
-      typing...
-    </span>
-  ) : (
-    <span className={otherUserOnline ? "text-purple-400" : ""}>{lastSeenText}</span>
-  )}
-</p>
-          </button>
-        </div>
-
-        <div className="relative">
-          <button
-            onClick={() => setShowMenu(!showMenu)}
-            className="p-2 hover:bg-white/5 rounded-lg active:scale-95 transition-transform"
-          >
-            <MoreVertical className="w-5 h-5 text-dark-300" />
-          </button>
-          {showMenu && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
-              <div className="absolute right-0 top-full mt-1 w-48 glass-strong rounded-xl overflow-hidden z-20 shadow-2xl border border-white/10 animate-in fade-in slide-in-from-top-2 duration-150">
-                <button
-                  onClick={() => { setShowMenu(false); setShowChatInfo(true); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left"
-                >
-                  <Info className="w-4 h-4 text-dark-400" />
-                  <span className="text-sm text-dark-200">Chat info</span>
-                </button>
-                <button onClick={toggleMute} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left">
-                  {isMuted ? <Volume2 className="w-4 h-4 text-dark-400" /> : <VolumeX className="w-4 h-4 text-dark-400" />}
-                  <span className="text-sm text-dark-200">{isMuted ? "Unmute" : "Mute"}</span>
-                </button>
-                <button onClick={toggleBlock} className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left">
-                  <Ban className="w-4 h-4 text-red-400" />
-                  <span className="text-sm text-red-400">{isBlocked ? "Unblock" : "Block"}</span>
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      </header>
-
-      {/* =====================================================
-          MESSAGES LIST
-          ===================================================== */}
-      <div
-  ref={messagesContainerRef}
-  className="flex-1 overflow-y-auto px-4 py-4 flex flex-col-reverse"
-  style={{ 
-    overscrollBehavior: 'contain',
-    minHeight: 0, // Important for flex children
-  }}
-        onClick={() => {
-          // Close emoji picker when tapping messages area
-          if (showEmoji) setShowEmoji(false);
-          if (showAttach) { setShowAttach(false); setPlusRotated(false); }
-        }}
-      >
-
-        
-        {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-primary-600/10 flex items-center justify-center mx-auto mb-3">
-                <Send className="w-8 h-8 text-primary-400" />
-              </div>
-              <p className="text-sm text-dark-400">Send a message to start the conversation</p>
-            </div>
-          </div>
-        ) : (
-                             <>
-            {/* Typing indicator - appears at bottom (first in column-reverse) */}
-            {typingUsers.length > 0 && (
-              <div className="flex items-end gap-2 justify-start">
-                <div className="w-7 shrink-0">
-                  <div className="w-7 h-7 rounded-full overflow-hidden bg-dark-800 border border-white/10">
-                    {otherUser.avatar_url ? (
-                      <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="w-3.5 h-3.5 text-dark-400 m-auto mt-1.5" />
-                    )}
-                  </div>
-                </div>
-                <div className="px-4 py-3 rounded-2xl rounded-bl-md bg-[var(--glass-card-bg)] border border-[var(--glass-border-sm)]">
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <span className="w-2 h-2 rounded-full bg-dark-400 animate-bounce" style={{ animationDelay: "300ms" }} />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {[...messages].reverse().map((msg, idx, reversedArr) => {
-              const isMine = msg.sender_id === user.id;
-              // In reversed array, "previous" visually is actually next in array
-              const visualPrev = idx < reversedArr.length - 1 ? reversedArr[idx + 1] : null;
-              const visualNext = idx > 0 ? reversedArr[idx - 1] : null;
-              const showDate = !visualPrev || getDateLabel(msg.created_at) !== getDateLabel(visualPrev.created_at);
-              const showAvatar = !isMine && (!visualNext || visualNext.sender_id !== msg.sender_id);
-              const isSwipingThis = swipingMsgId === msg.id;
-
-              return (
-                <div key={msg.id} data-msg-id={msg.id} className="mb-1.5">
-                  {showDate && (
-                    <div className="flex justify-center my-4">
-                      <span
-                        className="text-[11px] text-dark-400 px-3 py-1 rounded-full"
-                        style={{
-                          background: "var(--glass-input-bg)",
-                          border: "1px solid var(--glass-border)",
-                        }}
-                      >
-                        {getDateLabel(msg.created_at)}
-                      </span>
-                    </div>
-                  )}
-
-                  <div
-                      className={`flex items-end gap-2 mb-0.5 ${isMine ? "justify-end" : "justify-start"} relative transition-all duration-500 ${
-                      highlightedMsgId === msg.id
-                        ? "scale-[1.02]"
-                        : ""
-                    }`}
-                    onTouchStart={(e) => {
-  handleTouchStart(msg, e);
-  handleSwipeStart(msg.id, e);
-}}
-onTouchMove={(e) => {
-  handleTouchMove(e); // Add this for long press cancellation
-  handleSwipeMove(msg, e);
-}}
-onTouchEnd={() => {
-  handleTouchEnd();
-  handleSwipeEnd(msg);
-}}
-                    onMouseDown={(e) => handleTouchStart(msg, e)}
-                    onMouseUp={handleTouchEnd}
-                    onMouseLeave={handleTouchEnd}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      if (!msg.is_deleted) {
-                        if (navigator.vibrate) navigator.vibrate(30);
-                        setContextMenuMsg(msg);
-                        setContextMenuPos({ x: e.clientX, y: e.clientY });
-                      }
-                    }}
-                  >
-                    {/* Swipe reply indicator — OUTSIDE the bubble, at the edge */}
-                    {isSwipingThis && swipeX > 10 && !isMine && (
-                      <div
-                        className="absolute left-0 top-1/2 -translate-y-1/2 z-0 transition-opacity"
-                        style={{
-                          opacity: Math.min(swipeX / 60, 1),
-                          transform: `translateY(-50%) translateX(${Math.min(swipeX - 20, 10)}px)`,
-                        }}
-                      >
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${swipeX > 60 ? "bg-primary-600/40" : "bg-primary-600/20"}`}>
-                          <Reply className={`w-4 h-4 transition-colors ${swipeX > 60 ? "text-primary-300" : "text-primary-400"}`} />
-                        </div>
-                      </div>
-                    )}
-                    {isSwipingThis && swipeX > 10 && isMine && (
-                      <div
-                        className="absolute right-0 top-1/2 -translate-y-1/2 z-0 transition-opacity"
-                        style={{
-                          opacity: Math.min(swipeX / 60, 1),
-                          transform: `translateY(-50%) translateX(-${Math.min(swipeX - 20, 10)}px)`,
-                        }}
-                      >
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${swipeX > 60 ? "bg-primary-600/40" : "bg-primary-600/20"}`}>
-                          <Reply className={`w-4 h-4 transition-colors ${swipeX > 60 ? "text-primary-300" : "text-primary-400"}`} />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Other user avatar */}
-                    {!isMine && (
-                      <div className="w-7 shrink-0">
-                        {showAvatar && (
-                          <button
-                            onClick={() => {
-                              if (otherUser.avatar_url) setAvatarPreview(otherUser.avatar_url);
-                            }}
-                            className="w-7 h-7 rounded-full overflow-hidden bg-dark-800 border border-white/10"
-                          >
-                            {otherUser.avatar_url ? (
-                              <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <User className="w-3.5 h-3.5 text-dark-400 m-auto mt-1.5" />
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Message bubble */}
-                        <div
-                      className={`max-w-[75%] relative z-[1] ${
-                        highlightedMsgId === msg.id
-                          ? "ring-2 ring-purple-500/60 rounded-2xl shadow-[0_0_20px_rgba(168,85,247,0.3)]"
-                          : ""
-                      }`}
-                      style={{
-                        transform: isSwipingThis
-                          ? `translateX(${isMine ? -swipeX : swipeX}px)`
-                          : undefined,
-                        transition: isSwipingThis
-                          ? "none"
-                          : "transform 200ms ease-out",
-                      }}
-                    >
-                      {msg.is_deleted ? (
-                        <div
-                          className={`px-4 py-2.5 rounded-2xl text-xs italic ${
-                            isMine
-                              ? "bg-dark-800/50 text-dark-500 rounded-br-md"
-                              : "bg-dark-800/30 text-dark-500 rounded-bl-md"
-                          }`}
-                        >
-                          Message deleted
-                        </div>
-                      ) : (
-                        <div>
-                          {/* Reply preview */}
-                          {msg.reply_to && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (msg.reply_to_id) scrollToMessage(msg.reply_to_id);
-                              }}
-                              className={`w-full text-left px-3 py-1.5 mb-0.5 rounded-t-2xl border-l-2 border-primary-500 active:scale-[0.98] transition-transform ${
-                                isMine ? "bg-primary-700/30" : "bg-white/5"
-                              }`}
-                            >
-                              <p className="text-[10px] text-primary-400 font-medium">
-                                {msg.reply_to.sender_id === user.id ? "You" : otherUser?.full_name || "Unknown"}
-                              </p>
-                              <p className="text-[11px] text-dark-400 truncate">
-                                {msg.reply_to.content?.slice(0, 60) || "Attachment"}
-                              </p>
-                            </button>
-                          )}
-
-                          <div
-                            className={`px-4 py-2.5 ${msg.reply_to ? "rounded-b-2xl" : "rounded-2xl"} ${
-                              isMine
-                                ? `bg-primary-600/90 text-white ${msg.reply_to ? "rounded-br-md" : "rounded-br-md"}`
-                                : `bg-[var(--glass-card-bg)] border border-[var(--glass-border-sm)] text-dark-100 ${msg.reply_to ? "rounded-bl-md" : "rounded-bl-md"}`
-                            }`}
-                          >
-                            {/* Media — single tap to open */}
-                            {msg.media && msg.media.length > 0 && (
-                              <div className="mb-2 space-y-2">
-                                {msg.media.map((m) => (
-                                  <div key={m.id}>
-                                    {m.media_type === "image" && (
-  <>
-    {m.url ? (
-      <SignedImage
-        url={m.url}
-        alt=""
-        loading="lazy"
-        className="rounded-xl max-w-full max-h-60 object-cover cursor-pointer active:scale-[0.98] transition-transform"
-        onClick={async (e) => {
-          e.stopPropagation();
-          const signed = await signMessageUrl(m.url);
-          setLightboxImage(signed || m.url);
-        }}
-        onTouchEnd={() => {
-          if (longPressTimerRef.current) {
-            clearTimeout(longPressTimerRef.current);
-            longPressTimerRef.current = null;
-          }
-        }}
-      />
-    ) : (
-      <div
-        className={`flex items-center gap-3 p-4 rounded-xl ${
-          isMine ? "bg-white/10" : "bg-white/5"
-        }`}
-      >
-        <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
-          <PejaSpinner className="w-5 h-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-white/60">Uploading image...</p>
-          <p className="text-[10px] text-white/40 truncate">{m.file_name}</p>
-        </div>
-      </div>
-    )}
-  </>
-)}
-                                     {m.media_type === "video" && (() => {
-  const thumbSrc = m.thumbnail_url || getVideoThumbnailUrl(m.url) || null;
-
-  if (m.url) {
-    return (
-      <div
-        className="cursor-pointer active:scale-[0.98] transition-transform relative rounded-xl overflow-hidden"
-        onClick={async (e) => {
-          e.stopPropagation();
-          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          setLightboxVideoRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-          const signed = await signMessageUrl(m.url);
-          setLightboxVideo(signed || m.url);
-        }}
-        onTouchEnd={() => {
-          if (longPressTimerRef.current) {
-            clearTimeout(longPressTimerRef.current);
-            longPressTimerRef.current = null;
-          }
-        }}
-      >
-        {thumbSrc ? (
-          <SignedImage
-            url={thumbSrc}
-            alt=""
-            className="rounded-xl max-w-full max-h-60 object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className={`rounded-xl w-48 h-32 flex items-center justify-center ${
-            isMine ? "bg-white/10" : "bg-dark-800"
-          }`}>
-            <span className="text-2xl">🎬</span>
-          </div>
-        )}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-12 h-12 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
-            <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-14 border-l-white ml-1" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (thumbSrc) {
-    return (
-      <div className="relative rounded-xl overflow-hidden">
-        <SignedImage
-          url={thumbSrc}
-          alt=""
-          className="rounded-xl max-w-full max-h-60 object-cover"
-        />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-          <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
-            <PejaSpinner className="w-5 h-5" />
-          </div>
-        </div>
-        <div className="absolute bottom-2 left-2 right-2">
-          <p className="text-[10px] text-white/70 truncate">{m.file_name}</p>
-        </div>
-      </div>
-    );
+  // Header subtitle priority: recording > typing > online > last seen.
+  // Recording wins over typing because it's the more committed
+  // signal — a user typing might trail off, but a user recording is
+  // actively making a voice note for you. Groups don't have a single
+  // "other side" presence so we show the member count instead.
+  let headerSubtitle: string | null = null;
+  if (conv?.is_group) {
+    const n = conv.member_count ?? 0;
+    headerSubtitle = `${n} member${n === 1 ? "" : "s"}`;
+  } else if (isOtherRecording) {
+    headerSubtitle = "recording…";
+  } else if (isOtherTyping) {
+    headerSubtitle = "typing…";
+  } else if (otherOnline) {
+    headerSubtitle = "online";
+  } else if (otherLastSeen) {
+    headerSubtitle = `last seen ${formatDistanceToNow(new Date(otherLastSeen), {
+      addSuffix: true,
+    })}`;
   }
 
   return (
     <div
-      className={`flex items-center gap-3 p-4 rounded-xl ${
-        isMine ? "bg-white/10" : "bg-white/5"
+      className={`fixed inset-0 flex flex-col bg-[var(--page-bg)] ${
+        closing ? "peja-slide-out-to-right" : "peja-slide-in-from-right"
       }`}
     >
-      <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
-        <PejaSpinner className="w-5 h-5" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-white/60">Uploading video...</p>
-        <p className="text-[10px] text-white/40 truncate">{m.file_name}</p>
-      </div>
-    </div>
-  );
-})()}
-                                    {m.media_type === "audio" && (
-  <>
-    {m.url ? (
-      <VoiceNotePlayer
-        src={m.url}
-        duration={msg.metadata?.duration}
-        isMine={isMine}
-        fileName={m.file_name || undefined}
+      <Header
+        variant="back"
+        title={conv?.other_user_name || "Chat"}
+        subtitle={headerSubtitle}
+        avatarUrl={conv?.other_user_avatar_url ?? null}
+        onBack={handleBack}
+        onAvatarTap={() => setShowAvatarPreview(true)}
+        onTitleTap={() => setShowChatInfo(true)}
+        actions={
+          conv ? (
+            <KebabMenu
+              isMuted={conv.is_muted}
+              isBlocked={conv.is_blocked}
+              onOpenInfo={() => setShowChatInfo(true)}
+              onSearch={() => setSearchOpen(true)}
+              onToggleMute={handleToggleMute}
+              onToggleBlock={handleToggleBlock}
+              onClearChat={handleClearChat}
+              onDeleteChat={
+                conv.is_group
+                  ? conv.my_role === "owner"
+                    ? handleDeleteGroup
+                    : handleLeaveGroup
+                  : handleDeleteChat
+              }
+              onReport={() => setReportOpen(true)}
+              isGroup={!!conv.is_group}
+              myRole={conv.my_role}
+              notificationMode={
+                (conv as { notification_mode?: NotificationMode }).notification_mode || "all"
+              }
+              onSetNotificationMode={handleSetNotificationMode}
+              onLeaveGroup={handleLeaveGroup}
+            />
+          ) : null
+        }
       />
-    ) : (
-      <div
-        className={`flex items-center gap-3 p-3 rounded-2xl min-w-[200px] ${
-          isMine ? "bg-white/10" : "bg-white/5"
-        }`}
+
+      <main
+        ref={scrollRef}
+        onScroll={handleThreadScroll}
+        className="flex-1 overflow-y-auto overscroll-contain pt-app-header-pill px-4 pb-3 relative"
       >
-        <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
-          <PejaSpinner className="w-5 h-5" />
-        </div>
-        <div className="flex-1">
-          <p className="text-xs text-white/60">Uploading voice note...</p>
-        </div>
-      </div>
-    )}
-  </>
-)}
-                                    {m.media_type === "document" && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                        handleDocumentOpen(m.url, m.file_name, m.file_size)
-                                        }}
-                                        className={`flex items-center gap-3 p-3 rounded-xl border active:scale-[0.98] transition-transform w-full text-left ${
-                                          isMine
-                                            ? "border-white/20 bg-white/10"
-                                            : "border-white/10 bg-white/5"
-                                        }`}
-                                      >
-                                        <div className="w-10 h-10 rounded-lg bg-primary-600/20 flex items-center justify-center shrink-0 text-lg">
-                                          {getDocIcon(m.file_name)}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                          <p className="text-sm font-medium truncate">
-                                            {m.file_name || "Document"}
-                                          </p>
-                                          <p className={`text-xs ${isMine ? "text-white/60" : "text-dark-500"}`}>
-                                            {m.file_size
-                                              ? m.file_size > 1024 * 1024
-                                                ? `${(m.file_size / (1024 * 1024)).toFixed(1)} MB`
-                                                : `${(m.file_size / 1024).toFixed(0)} KB`
-                                              : "Download"}
-                                          </p>
-                                        </div>
-                                        <Download className={`w-4 h-4 shrink-0 ${isMine ? "text-white/60" : "text-dark-400"}`} />
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
+        {!user && (
+          <p className="text-sm text-dark-400 py-12 text-center">Sign in to view this chat.</p>
+        )}
+
+        {(() => {
+          // Pinned-messages strip — fixed at the very top of the
+          // scrollable area, just below the header. Shows the most
+          // recently pinned message; tapping it scrolls + flashes
+          // the original. If more than one is pinned, the count
+          // pill on the right indicates how many.
+          if (!thread?.hydrated) return null;
+          const pinned = (thread.messages || []).filter(
+            (m) => m.is_pinned && !m.is_deleted
+          );
+          if (pinned.length === 0) return null;
+          // Most recently pinned shown first.
+          pinned.sort((a, b) => {
+            const ap = a.pinned_at ? new Date(a.pinned_at).getTime() : 0;
+            const bp = b.pinned_at ? new Date(b.pinned_at).getTime() : 0;
+            return bp - ap;
+          });
+          const top = pinned[0];
+          const preview = top.is_deleted
+            ? "Message deleted"
+            : (top.content || "").trim() ||
+              (top.media && top.media[0]
+                ? top.media[0].media_type === "image"
+                  ? "📷 Photo"
+                  : top.media[0].media_type === "video"
+                    ? "🎥 Video"
+                    : top.media[0].media_type === "audio"
+                      ? "🎙 Voice note"
+                      : "📎 File"
+                : "Pinned message");
+          return (
+            <button
+              type="button"
+              onClick={() => scrollToMessage(top.id)}
+              className="sticky top-0 z-20 -mx-4 mb-2 px-4 py-2 flex items-center gap-2 bg-[var(--page-bg)]/95 backdrop-blur border-b border-[var(--chat-input-border)] text-left"
+              aria-label="Jump to pinned message"
+            >
+              <PinIcon className="w-3.5 h-3.5 text-primary-300 shrink-0" />
+              <span className="flex-1 min-w-0">
+                <span className="block text-[11px] font-semibold text-primary-300 leading-none mb-0.5">
+                  Pinned message
+                </span>
+                <span className="block text-[12.5px] text-dark-200 truncate">
+                  {preview}
+                </span>
+              </span>
+              {pinned.length > 1 && (
+                <span className="text-[10px] text-dark-400 bg-[var(--chat-input-bg)] rounded-full px-1.5 py-0.5">
+                  {pinned.length}
+                </span>
+              )}
+            </button>
+          );
+        })()}
+
+        {/* Pre-hydration: show a skeleton for old messages we're loading,
+            plus any pending optimistic sends the user just typed. We
+            deliberately DON'T render realtime-delivered messages here —
+            those would be a partial subset of the real thread and cause
+            the "briefly one message, then everything pops in" artifact.
+            User's own pending sends are different: they're not partial
+            data, they're the user's immediate input and must show
+            instantly to feel responsive. */}
+        {user && (!thread || !thread.hydrated) && (
+          <>
+            <div className="space-y-3 py-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className={`flex ${i % 2 === 0 ? "justify-start" : "justify-end"}`}
+                >
+                  <div className="h-10 w-40 bg-[var(--chat-input-bg)] rounded-2xl animate-pulse" />
+                </div>
+              ))}
+            </div>
+            {/* User's own in-flight sends — render them so the user sees
+                immediate feedback even while history is still loading. */}
+            {messages.filter((m) => m.delivery_status === "pending").length > 0 && (
+              <div className="space-y-2 py-3">
+                {messages
+                  .filter((m) => m.delivery_status === "pending")
+                  .map((m) => (
+                    <div key={m.id} className="flex justify-end">
+                      <div className="max-w-[78%] rounded-2xl px-3.5 py-2 bg-primary-600 text-white">
+                        <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
+                        <div className="flex items-center justify-end gap-1 mt-0.5">
+                          <span className="text-[10px] text-white/70">
+                            {format(new Date(m.created_at), "HH:mm")}
+                          </span>
+                          <span className="text-[10px] text-white/70">...</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {user && thread?.hydrated && messages.length === 0 && (
+          <p className="text-sm text-dark-400 py-12 text-center">
+            No messages yet. Say hi 👋
+          </p>
+        )}
+
+        {user && thread?.hydrated && loadingOlder && (
+          <div className="flex justify-center py-3" aria-hidden>
+            <span className="text-[11px] text-dark-400 inline-flex items-center gap-2 bg-[var(--chat-other-bg)] rounded-full px-3 py-1">
+              <span className="w-3 h-3 rounded-full border-2 border-primary-500 border-t-transparent animate-spin" />
+              Loading older messages…
+            </span>
+          </div>
+        )}
+
+        {user && thread?.hydrated && messages.length > 0 && (() => {
+          // Iterate with two mutable counters: prevBucket lets us
+          // insert a DateDivider before the first message of a new
+          // calendar day; unreadInserted ensures the
+          // "Unread messages" pill is drawn EXACTLY ONCE, above the
+          // first message that came in after our snapshotted
+          // last_read_at. Both are scoped to this render pass.
+          let prevBucket: string | null = null;
+          let unreadInserted = false;
+          let prevSenderId: string | null = null;
+          const readAt = initialReadAtRef.current ?? null;
+          return (
+          <div className="space-y-2 py-3">
+            {messages.map((m) => {
+              // System messages render as a centered pill, NOT a
+              // bubble — used for group join / leave / rename
+              // announcements. They short-circuit all the normal
+              // bubble assembly logic below.
+              if (m.content_type === "system") {
+                const bucket = dateBucket(m.created_at);
+                const showDate = bucket !== prevBucket;
+                prevBucket = bucket;
+                return (
+                  <Fragment key={m.id}>
+                    {showDate && (
+                      <DateDivider key={`date-${bucket}`} iso={m.created_at} />
+                    )}
+                    <div className="flex justify-center py-1">
+                      <span className="text-[11px] text-dark-400 bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] rounded-full px-2.5 py-1">
+                        {m.content || "Group updated"}
+                      </span>
+                    </div>
+                  </Fragment>
+                );
+              }
+              const isMine = m.sender_id === user.id;
+              const isFailed = m.delivery_status === "failed";
+              const isPending = m.delivery_status === "pending";
+              const hasMedia = !!(m.media && m.media.length > 0);
+              // Visual (image / video) media gets the tight tile
+              // padding so the asset fills the bubble corner-to-
+              // corner. Audio-only and text use the standard text
+              // padding (the audio bubble is its own widget).
+              // For a deleted-for-everyone message we collapse the
+              // bubble to a tombstone — no media tile, no audio
+              // widget, no doc card. Forcing all of these to false
+              // also flips bubbleClass to text-padding so the bubble
+              // gets the right shape without the tile-tight `p-1`.
+              const hasVisualMedia =
+                !m.is_deleted &&
+                hasMedia &&
+                m.media!.some(
+                  (md) => md.media_type === "image" || md.media_type === "video"
+                );
+              // Bucket + sender-run flags are computed here (above
+              // bubbleInner) so the senderHeader pill can read them
+              // when it's assembled inside bubbleInner. The date
+              // divider logic below uses the same `bucket` value.
+              const bucket = dateBucket(m.created_at);
+              const isFirstInRun =
+                prevSenderId !== m.sender_id || prevBucket !== bucket;
+              const showSenderLabel =
+                !!conv?.is_group && !isMine && isFirstInRun;
+              const senderInfo = conv?.is_group
+                ? groupParticipantsById?.[m.sender_id]
+                : null;
+              const showSenderAvatar = !!conv?.is_group && !isMine;
+              // True when the message renders an inline incident
+              // preview card. We use this only to give the meta row
+              // a little more breathing room beneath the card so the
+              // timestamp doesn't kiss the card's bottom edge.
+              const hasIncidentPreview =
+                !m.is_deleted && !!extractIncidentPostId(m.content);
+              const hasAudio =
+                !m.is_deleted &&
+                hasMedia &&
+                m.media!.some((md) => md.media_type === "audio");
+              const hasDocument =
+                !m.is_deleted &&
+                hasMedia &&
+                m.media!.some((md) => md.media_type === "document");
+              // Audio + document bubbles render the timestamp + status
+              // ticks INSIDE themselves (via metaTrailing) so the icon
+              // / play button sits at the bubble's vertical centre.
+              // When ANY of those is present we skip the parent's
+              // external meta row — otherwise we'd render the meta
+              // twice. Caption text + visual-only messages keep the
+              // external meta row. Deleted messages render their own
+              // meta inline so this stays false.
+              const metaInsideBubble = hasAudio || hasDocument || m.is_deleted;
+              const baseColor = isMine
+                ? "bg-primary-600 text-white"
+                : "bg-[var(--chat-other-bg)] text-dark-100";
+              // `overflow-hidden` on the bubble is what actually clips
+              // the rectangular media tile to the bubble's rounded
+              // corners — without it, a single-image / single-video
+              // tile pokes out the bubble's rounded edges because the
+              // inner Tile itself doesn't carry a border-radius for
+              // the 1-item case.
+              // max-w-[78%] previously lived on the bubble itself,
+              // which meant the bubble was 78% of its parent column.
+              // Once we added the avatar/inner-column wrapper for
+              // group sender labels the parent column shrunk to
+              // fit-content, so 78% of that became "78% of the
+              // bubble's own natural width" and every bubble looked
+              // pinched. The cap now lives on the inner column
+              // (assigned in the row wrapper below) so the bubble
+              // grows naturally to its content within that cap.
+              const bubbleClass = `rounded-2xl ${
+                hasVisualMedia ? "p-1 overflow-hidden" : "px-3.5 py-2"
+              } ${baseColor} ${
+                isFailed ? "opacity-70 border border-red-500/60 cursor-pointer" : ""
+              }`;
+              // Partition media by kind so each gets its proper layout:
+              //   • audios → AudioBubble (one per row)
+              //   • documents → DocumentBubble (one per row)
+              //   • images / videos → MediaGrid (one shared grid)
+              //
+              // In practice each message contains only one kind because
+              // handleSend splits sends, but the rendering supports
+              // mixed messages for robustness against older / migrated
+              // data.
+              const audioMedia = hasMedia
+                ? m.media!.filter((md) => md.media_type === "audio")
+                : [];
+              const docMedia = hasMedia
+                ? m.media!.filter((md) => md.media_type === "document")
+                : [];
+              const visualMedia: MediaGridItem[] = hasMedia
+                ? m.media!
+                    .filter(
+                      (md) =>
+                        md.media_type === "image" || md.media_type === "video"
+                    )
+                    .map((md) => ({
+                      id: md.id,
+                      url: md.url,
+                      media_type: md.media_type as "image" | "video",
+                      thumbnail_url: md.thumbnail_url,
+                      width: md.width,
+                      height: md.height,
+                    }))
+                : [];
+              // When a message has been deleted FOR EVERYONE we render
+              // a minimal placeholder bubble — no media tile, no reply
+              // preview, no caption. Just the "Message deleted" line +
+              // the meta row. This matches WhatsApp: a tombstone bubble
+              // that gives the conversation context without leaking
+              // the original content's footprint.
+              // Sender name pill that sits inside the bubble, matching
+              // the WhatsApp pattern. Only renders on the first bubble
+              // of a sender's run in a group, and only on incoming
+              // bubbles (your own messages are obviously yours).
+              const senderHeader = showSenderLabel ? (
+                <p
+                  className={`text-[12px] font-semibold mb-0.5 ${
+                    hasVisualMedia ? "px-2.5 pt-1.5" : ""
+                  }`}
+                  style={{ color: pejaSenderColor(m.sender_id) }}
+                >
+                  {senderInfo?.full_name || "Member"}
+                </p>
+              ) : null;
+
+              const bubbleInner = m.is_deleted ? (
+                <>
+                  {senderHeader}
+                  <p className="text-sm italic opacity-70 inline-flex items-center gap-1.5">
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>Message deleted</span>
+                  </p>
+                  <div
+                    className={`flex items-center justify-end gap-1 mt-0.5 ${
+                      isMine ? "text-white/70" : "text-dark-500"
+                    }`}
+                  >
+                    {m.edited_at && (
+                      <span className="text-[10px] italic mr-1 opacity-70">
+                        edited
+                      </span>
+                    )}
+                    <span className="text-[10px]">
+                      {format(new Date(m.created_at), "HH:mm")}
+                    </span>
+                    {isMine && (
+                      <span className="text-[10px]">
+                        {m.delivery_status === "sent" && "✓"}
+                        {m.delivery_status === "seen" && "✓✓"}
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {senderHeader}
+                  {m.reply_to && (
+                    <QuotedReplyBlock
+                      target={m.reply_to}
+                      authorName={
+                        user && m.reply_to.sender_id === user.id
+                          ? "You"
+                          : conv?.other_user_name || "User"
+                      }
+                      variant={isMine ? "mine" : "theirs"}
+                      onJumpToOriginal={() => {
+                        if (m.reply_to) scrollToMessage(m.reply_to.id);
+                      }}
+                    />
+                  )}
+                  {audioMedia.map((media) => {
+                    // Render the time + status ticks INSIDE the audio
+                    // bubble so the parent doesn't also render its own
+                    // status row underneath (which makes the player
+                    // look off-centre).
+                    const meta = (
+                      <>
+                        {m.edited_at && (
+                          <span className="italic opacity-75">edited</span>
+                        )}
+                        <span>{format(new Date(m.created_at), "HH:mm")}</span>
+                        {isMine && (
+                          <span>
+                            {isPending && "..."}
+                            {m.delivery_status === "sent" && "✓"}
+                            {m.delivery_status === "seen" && "✓✓"}
+                          </span>
+                        )}
+                      </>
+                    );
+                    return (
+                      <AudioBubble
+                        key={media.id}
+                        url={media.url}
+                        initialDuration={undefined}
+                        variant={isMine ? "mine" : "theirs"}
+                        metaTrailing={meta}
+                        isPending={isPending}
+                        uploadFraction={uploadProgressById[m.id]?.fraction}
+                        onCancelUpload={() => handleCancel(m.id)}
+                      />
+                    );
+                  })}
+                  {docMedia.length > 0 && (
+                    <div className="space-y-1">
+                      {docMedia.map((media, i) => {
+                        // Attach the meta (timestamp + ticks) to the
+                        // LAST doc bubble of the message. With a single
+                        // doc that's the only bubble; with multiple
+                        // docs in one message the others just show
+                        // file size on the right and the last one
+                        // carries the time.
+                        const isLast = i === docMedia.length - 1;
+                        const meta = isLast ? (
+                          <>
+                            {m.edited_at && (
+                              <span className="italic opacity-75">edited</span>
                             )}
-
-                            {/* Post share */}
-                            {msg.content_type === "post_share" && msg.metadata?.post_id && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  router.push(`/post/${msg.metadata.post_id}`);
-                                }}
-                                className={`mb-2 w-full p-3 rounded-xl border text-left active:scale-[0.98] transition-transform ${
-                                  isMine ? "border-white/20 bg-white/10" : "border-white/10 bg-white/5"
-                                }`}
-                              >
-                                <p className="text-xs font-medium text-primary-400 mb-1">📍 Shared Post</p>
-                                <p className="text-sm truncate">{msg.metadata.post_preview || "View post"}</p>
-                              </button>
-                            )}
-
-                            {/* Text content */}
-                            {msg.content && renderContent(msg.content)}
-
-                            {/* Upload progress */}
-                            {isMine && uploadingMsgIds.has(msg.id) && (
-                              <div className="flex items-center gap-2 mt-1.5">
-                                <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-primary-400 rounded-full transition-all duration-300"
-                                    style={{ width: `${uploadingMsgIds.get(msg.id) || 0}%` }}
-                                  />
-                                </div>
-                                <span className="text-[10px] text-white/40 shrink-0">
-                                  {uploadingMsgIds.get(msg.id) || 0}%
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Timestamp + delivery status */}
-                            <div className={`flex items-center gap-1.5 mt-1.5 ${isMine ? "justify-end" : "justify-start"}`}>
-                              <span className={`text-[10px] ${isMine ? "text-white/50" : "text-dark-500"}`}>
-                                {format(new Date(msg.created_at), "HH:mm")}
+                            <span>{format(new Date(m.created_at), "HH:mm")}</span>
+                            {isMine && (
+                              <span>
+                                {isPending && "..."}
+                                {m.delivery_status === "sent" && "✓"}
+                                {m.delivery_status === "seen" && "✓✓"}
                               </span>
-                              {msg.edited_at && (
-                                <span className={`text-[10px] ${isMine ? "text-white/40" : "text-dark-600"}`}>
-                                  · edited
-                                </span>
-                              )}
-                              {isMine && <DeliveryLabel status={msg.delivery_status} />}
-                            </div>
+                            )}
+                          </>
+                        ) : undefined;
+                        return (
+                          <DocumentBubble
+                            key={media.id}
+                            url={media.url}
+                            fileName={media.file_name || "File"}
+                            fileSize={media.file_size}
+                            variant={isMine ? "mine" : "theirs"}
+                            isPending={isPending}
+                            isFailed={isFailed}
+                            uploadFraction={uploadProgressById[m.id]?.fraction}
+                            onCancelUpload={() => handleCancel(m.id)}
+                            onOpen={() =>
+                              setDocViewer({
+                                url: media.url,
+                                fileName: media.file_name || "File",
+                              })
+                            }
+                            metaTrailing={meta}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                  {visualMedia.length > 0 && (
+                    <div className="relative">
+                      <MediaGrid
+                        items={visualMedia}
+                        isPending={isPending}
+                        onTileTap={(idx) =>
+                          setLightbox({
+                            items: visualMedia.map((md) => ({
+                              url: md.url,
+                              type: md.media_type,
+                              posterUrl: md.thumbnail_url || undefined,
+                            })),
+                            index: idx,
+                          })
+                        }
+                      />
+                      {isPending && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <div className="pointer-events-auto">
+                            <UploadRing
+                              fraction={uploadProgressById[m.id]?.fraction ?? 0}
+                              label={uploadProgressById[m.id]?.label}
+                              showLabel
+                              onCancel={() => handleCancel(m.id)}
+                            />
                           </div>
-
-                          {/* Reactions display */}
-                          {msg.reactions && msg.reactions.length > 0 && (
-                            <div className={`flex flex-wrap gap-1 mt-1 ${isMine ? "justify-end" : "justify-start"}`}>
-                              {Object.entries(
-                                msg.reactions.reduce((acc, r) => {
-                                  acc[r.emoji] = (acc[r.emoji] || 0) + 1;
-                                  return acc;
-                                }, {} as Record<string, number>)
-                              ).map(([emoji, count]) => {
-                                const myReaction = msg.reactions?.some(
-                                  (r) => r.emoji === emoji && r.user_id === user.id
-                                );
-                                return (
-                                  <button
-                                    key={emoji}
-                                    data-reaction={`${msg.id}-${emoji}`}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleReaction(msg.id, emoji);
-                                    }}
-                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all active:scale-90 animate-bounce-in ${
-                                      myReaction
-                                        ? "border-primary-500/40 bg-primary-600/20"
-                                        : "border-white/10 bg-white/5 hover:bg-white/10"
-                                    }`}
-                                  >
-                                    <span>{emoji}</span>
-                                    {(count as number) > 1 && (
-                                      <span className="text-[10px] text-dark-300">{count as number}</span>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
+                  )}
+                  {m.is_deleted ? (
+                    <p
+                      className={`text-sm italic opacity-70 ${
+                        hasVisualMedia ? "px-2.5 pt-1.5" : ""
+                      }`}
+                    >
+                      Message deleted
+                    </p>
+                  ) : (
+                    m.content && (() => {
+                      const incidentId = extractIncidentPostId(m.content);
+                      // Whenever a message contains an incident URL we
+                      // hide the text body entirely and show only the
+                      // preview card — the card already carries the
+                      // category, comment, location, and time, so the
+                      // raw URL + post caption above it is duplicate
+                      // noise. Earlier-style forwards (caption + URL)
+                      // also collapse cleanly under this rule.
+                      return (
+                        <>
+                          {!incidentId && (
+                            <p
+                              className={`text-sm whitespace-pre-wrap break-words ${
+                                hasVisualMedia ? "px-2.5 pt-1.5" : ""
+                              }`}
+                            >
+                              <MessageText
+                                text={m.content}
+                                linkClass={
+                                  isMine ? "text-white/90" : "text-primary-300"
+                                }
+                                // On the sender-side purple bubble
+                                // the regular .peja-mention violet
+                                // disappears into the bg; override
+                                // with white for visibility there.
+                                mentionClass={
+                                  isMine
+                                    ? "text-white font-semibold underline decoration-white/60 underline-offset-2"
+                                    : undefined
+                                }
+                              />
+                            </p>
+                          )}
+                          {incidentId && (
+                            <div
+                              className={hasVisualMedia ? "px-2.5 pb-1" : ""}
+                            >
+                              <IncidentLinkPreview
+                                postId={incidentId}
+                                variant={isMine ? "mine" : "theirs"}
+                              />
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()
+                  )}
+                  {/* Audio + document bubbles render the timestamp +
+                      status ticks INSIDE themselves so the icon sits
+                      at the bubble's vertical centre. Skip the
+                      external meta row in those cases — otherwise
+                      we'd render it twice. */}
+                  {!metaInsideBubble && (
+                  <div
+                    className={`flex items-center justify-end gap-1 ${
+                      hasVisualMedia
+                        ? "mt-1.5 px-2.5 pb-1"
+                        : hasIncidentPreview
+                          ? "mt-1.5"
+                          : "mt-0.5"
+                    }`}
+                  >
+                    {isFailed && isMine ? (
+                      <>
+                        <span className="text-[10px] text-white/80">Tap to retry</span>
+                        <span className="text-[10px] text-red-300">!</span>
+                      </>
+                    ) : (
+                      <>
+                        {m.edited_at && (
+                          <span
+                            className={`text-[10px] italic ${
+                              isMine ? "text-white/65" : "text-dark-400"
+                            }`}
+                          >
+                            edited
+                          </span>
+                        )}
+                        <span
+                          className={`text-[10px] ${
+                            isMine ? "text-white/70" : "text-dark-500"
+                          }`}
+                        >
+                          {format(new Date(m.created_at), "HH:mm")}
+                        </span>
+                        {isMine && (
+                          <span className="text-[10px] text-white/70">
+                            {isPending && "..."}
+                            {m.delivery_status === "sent" && "✓"}
+                            {m.delivery_status === "seen" && "✓✓"}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
+                  )}
+                </>
+              );
+              const highlighted = highlightedMessageId === m.id;
+              const reactionBadges =
+                m.reactions && m.reactions.length > 0 ? (
+                  <ReactionBadges
+                    reactions={m.reactions}
+                    currentUserId={user?.id ?? null}
+                    variant={isMine ? "mine" : "theirs"}
+                    onToggle={(emoji) => handleToggleReaction(m, emoji)}
+                  />
+                ) : null;
+              // Compute the dividers to emit BEFORE this message row.
+              // bucket is already computed above (used by the sender
+              // header pill); we just consume it here.
+              const dividers: React.ReactNode[] = [];
+              if (bucket !== prevBucket) {
+                dividers.push(
+                  <DateDivider key={`date-${bucket}`} iso={m.created_at} />
+                );
+                prevBucket = bucket;
+              }
+              if (
+                !unreadInserted &&
+                m.sender_id !== user.id &&
+                (!readAt || m.created_at > readAt)
+              ) {
+                dividers.push(<UnreadDivider key="unread-divider" />);
+                unreadInserted = true;
+              }
+              prevSenderId = m.sender_id;
+              return (
+                <Fragment key={m.id}>
+                {dividers}
+                <div
+                  data-message-id={m.id}
+                  className={`flex ${
+                    isMine ? "justify-end" : "justify-start"
+                  } items-end gap-2`}
+                >
+                  {showSenderAvatar &&
+                    (isFirstInRun ? (
+                      <span className="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center self-end">
+                        {senderInfo?.avatar_url ? (
+                          <img
+                            src={senderInfo.avatar_url}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <User className="w-3.5 h-3.5 text-dark-400" />
+                        )}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 w-7" aria-hidden />
+                    ))}
+                <div
+                  className={`flex flex-col max-w-[78%] ${
+                    isMine ? "items-end" : "items-start"
+                  }`}
+                >
+                  {isFailed && isMine ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRetry(m.id)}
+                      className={`${bubbleClass} text-left ${
+                        highlighted ? "peja-highlight-flash" : ""
+                      }`}
+                      aria-label="Retry sending this message"
+                    >
+                      {bubbleInner}
+                    </button>
+                  ) : isPending ? (
+                    // Pending messages don't get the action menu — the
+                    // optimistic bubble has no server id yet, so most
+                    // actions (delete-for-me, future react/reply) would
+                    // need to wait for confirm. The progress ring +
+                    // cancel-X cover the relevant interactions.
+                    <div
+                      className={`${bubbleClass} ${
+                        highlighted ? "peja-highlight-flash" : ""
+                      }`}
+                    >
+                      {bubbleInner}
+                    </div>
+                  ) : (
+                    <MessageBubbleWrapper
+                      isMine={isMine}
+                      bubbleClass={bubbleClass}
+                      highlighted={highlighted}
+                      onOpenMenu={(anchor) =>
+                        setActiveMenu({ message: m, anchor })
+                      }
+                      onSwipeReply={() => handleStartReply(m)}
+                    >
+                      {bubbleInner}
+                    </MessageBubbleWrapper>
+                  )}
+                  {reactionBadges}
                 </div>
+                </div>
+                </Fragment>
               );
             })}
+          </div>
+          );
+        })()}
 
+        {/* In-thread activity indicator. Small left-aligned bubble
+            where an incoming message would appear. Pulsing chat-bubble
+            icon while typing; pulsing mic icon while recording a
+            voice note. The header subtitle ("typing…" / "recording…")
+            stays as the text companion. */}
+        {user && (isOtherTyping || isOtherRecording) && (
+          <div className="flex justify-start pb-3 pt-1">
+            <div className="rounded-2xl bg-[var(--chat-other-bg)] text-dark-100 px-3 py-2 inline-flex items-center">
+              {isOtherRecording ? (
+                <Mic
+                  className="w-4 h-4 text-red-400 animate-pulse"
+                  strokeWidth={2.25}
+                  aria-label="Recording"
+                />
+              ) : (
+                <MessageSquare
+                  className="w-4 h-4 text-primary-300 animate-pulse"
+                  strokeWidth={2.25}
+                  aria-label="Typing"
+                />
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Floating "new messages while you were scrolled up" indicator.
+          Avatar pops out from the bottom-right of the scroll area
+          (above the composer) with the unread-since-scroll count.
+          Tap → smooth-scroll to bottom + clear. We deliberately
+          render this OUTSIDE the scrollable <main> so it stays
+          fixed-position relative to the thread chrome. */}
+      {unseenCount > 0 && (
+        <button
+          type="button"
+          onClick={() => scrollToBottom(true)}
+          className="absolute right-3 z-30 flex items-center justify-center w-12 h-12 rounded-full bg-[var(--chat-other-bg)] shadow-lg ring-1 ring-[var(--chat-input-border)] active:scale-95 transition-transform peja-pop-in"
+          style={{
+            // Sit just above the composer / blocked banner.
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 78px)",
+          }}
+          aria-label={`Scroll to latest, ${unseenCount} new message${unseenCount > 1 ? "s" : ""}`}
+        >
+          <span className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-[var(--chat-input-bg)]">
+            {conv?.other_user_avatar_url ? (
+              <img
+                src={conv.other_user_avatar_url}
+                alt=""
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <ChevronDown className="w-5 h-5 text-dark-200" />
+            )}
+          </span>
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold rounded-full bg-primary-600 text-white tabular-nums">
+            {unseenCount > 99 ? "99+" : unseenCount}
+          </span>
+        </button>
+      )}
+
+      <div
+        className="border-t border-[var(--chat-input-border)] bg-[var(--page-bg)] px-3 py-2"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 0.5rem)" }}
+      >
+        {!conv?.blocked_by_other && editingMessage && (
+          <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--chat-input-bg)] border-l-2 border-primary-500">
+            <Pencil className="w-3.5 h-3.5 text-primary-300 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] font-semibold text-primary-300">
+                Editing message
+              </p>
+              <p className="text-xs text-dark-400 truncate">
+                {editingMessage.content || ""}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCancelEdit}
+              className="shrink-0 w-7 h-7 rounded-full bg-[var(--chat-input-hover)] flex items-center justify-center"
+              aria-label="Cancel edit"
+            >
+              <X className="w-3.5 h-3.5 text-dark-200" />
+            </button>
+          </div>
+        )}
+        {!conv?.blocked_by_other && replyingTo && !editingMessage && (
+          <ReplyPreview
+            target={replyingTo}
+            authorName={
+              user && replyingTo.sender_id === user.id
+                ? "yourself"
+                : conv?.other_user_name || "user"
+            }
+            onDismiss={() => setReplyingTo(null)}
+          />
+        )}
+        {conv?.blocked_by_other ? (
+          // The other user has blocked us. Replace the composer with a
+          // static notice — same visual height + safe-area handling as
+          // the real composer so the layout doesn't jump when block /
+          // unblock toggles via realtime.
+          <div className="max-w-2xl mx-auto flex items-center justify-center gap-2 py-2 text-sm text-dark-300 text-center">
+            <Ban className="w-4 h-4 text-red-400 shrink-0" />
+            <span>
+              You can&apos;t reply to this chat.{" "}
+              <span className="text-dark-400">
+                {conv.other_user_name || "This user"} has blocked you.
+              </span>
+            </span>
+          </div>
+        ) : (
+          <>
+        {/* Pending-attachments preview row. Renders thumbnails of the
+            images the user has picked but hasn't yet sent. Each has a
+            small X to remove before send. */}
+        {pendingFiles.length > 0 && (
+          <div className="max-w-2xl mx-auto flex gap-2 overflow-x-auto pb-2">
+            {pendingFiles.map((file, i) => (
+              <PendingThumb
+                key={`${file.name}-${i}`}
+                file={file}
+                onRemove={() => handleRemovePending(i)}
+              />
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2 max-w-2xl mx-auto">
+          {/* Hidden file input — used by the attach button below. No
+              `accept` filter so the picker offers images, videos AND
+              documents (PDF, doc/docx, etc.). The pipeline routes each
+              file through chatMedia.ts which picks the right
+              media_type and upload destination. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={handleFilesPicked}
+            className="hidden"
+          />
+
+          {/* Attach + textarea are hidden while voice recording fills
+              the row. The VoiceRecorderBar tells us via its
+              onActiveChange callback when it's expanded. */}
+          {!recording && (
+            <>
+              {!editingMessage && (
+                <button
+                  type="button"
+                  onClick={handleAttachClick}
+                  className="shrink-0 w-10 h-10 rounded-full bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] text-dark-200 flex items-center justify-center hover:bg-[var(--chat-input-hover)] active:scale-90 transition-all"
+                  aria-label="Attach file"
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
+              )}
+              <div className="flex-1 relative rounded-2xl bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] focus-within:border-primary-500/40">
+                <textarea
+                  ref={composerRef}
+                  value={draft}
+                  onChange={(e) => {
+                    setDraft(conversationId, e.target.value);
+                    if (e.target.value.length > 0) sendTyping();
+                    updateMentionContext(e.target.value, e.target.selectionStart);
+                  }}
+                  onKeyDown={(e) => {
+                    // When the mentions popover is open, arrow keys
+                    // and Enter/Tab navigate it instead of the
+                    // textarea. Escape always closes it first.
+                    if (mentionQuery !== null) {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setMentionQuery(null);
+                        return;
+                      }
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setMentionIndex((i) => Math.min(i + 1, mentionCandidates.length - 1));
+                        return;
+                      }
+                      if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setMentionIndex((i) => Math.max(i - 1, 0));
+                        return;
+                      }
+                      if (e.key === "Enter" || e.key === "Tab") {
+                        if (mentionCandidates.length > 0) {
+                          e.preventDefault();
+                          insertMention(mentionCandidates[mentionIndex]);
+                          return;
+                        }
+                      }
+                    }
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (editingMessage) {
+                        void handleSubmitEdit();
+                      } else {
+                        handleSend();
+                      }
+                    } else if (e.key === "Escape" && editingMessage) {
+                      e.preventDefault();
+                      handleCancelEdit();
+                    }
+                  }}
+                  onSelect={(e) => {
+                    updateMentionContext(
+                      (e.target as HTMLTextAreaElement).value,
+                      (e.target as HTMLTextAreaElement).selectionStart
+                    );
+                  }}
+                  onBlur={() => {
+                    // Defer so a click on a candidate row lands before
+                    // we close the popover.
+                    window.setTimeout(() => setMentionQuery(null), 120);
+                  }}
+                  placeholder={editingMessage ? "Edit message" : "Message"}
+                  rows={1}
+                  onScroll={(e) => {
+                    if (overlayRef.current) {
+                      overlayRef.current.scrollTop = e.currentTarget.scrollTop;
+                      overlayRef.current.scrollLeft = e.currentTarget.scrollLeft;
+                    }
+                  }}
+                  // The textarea sits ON TOP with transparent text +
+                  // transparent bg, so the styled mirror behind it
+                  // shows through. Caret stays visible via
+                  // caret-color. The wrapper carries the bg/border
+                  // chrome so the textarea doesn't paint over the
+                  // overlay.
+                  style={{
+                    color: "transparent",
+                    caretColor: "var(--color-dark-100)",
+                    background: "transparent",
+                  }}
+                  className="w-full max-h-32 resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder-dark-500 focus:outline-none relative z-10"
+                />
+                {/* Styled mirror — sits BEHIND the textarea (z-0)
+                    and renders the draft with @mentions in purple.
+                    Same padding / type so each glyph lines up under
+                    the (transparent) textarea text. */}
+                <div
+                  ref={overlayRef}
+                  aria-hidden
+                  className="absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-sm text-dark-100 whitespace-pre-wrap break-words pointer-events-none z-0"
+                >
+                  {(() => {
+                    const re = /(^|\s)(@everyone|@all|@[A-Za-z][A-Za-z0-9_'-]*)/g;
+                    const segs: Array<{ type: "text" | "mention"; value: string }> = [];
+                    let last = 0;
+                    let m: RegExpExecArray | null;
+                    while ((m = re.exec(draft)) !== null) {
+                      const prefixEnd = m.index + m[1].length;
+                      if (prefixEnd > last) {
+                        segs.push({ type: "text", value: draft.slice(last, prefixEnd) });
+                      }
+                      const tokenEnd = prefixEnd + m[2].length;
+                      segs.push({ type: "mention", value: draft.slice(prefixEnd, tokenEnd) });
+                      last = tokenEnd;
+                    }
+                    if (last < draft.length) {
+                      segs.push({ type: "text", value: draft.slice(last) });
+                    }
+                    // Add a zero-width trailing space if the draft
+                    // ends in a newline so the mirror keeps the
+                    // trailing line that the textarea renders for
+                    // the next character.
+                    const trailingNewline = draft.endsWith("\n") ? "​" : "";
+                    return (
+                      <>
+                        {segs.map((s, i) =>
+                          s.type === "mention" ? (
+                            <span key={i} className="peja-mention">
+                              {s.value}
+                            </span>
+                          ) : (
+                            <span key={i}>{s.value}</span>
+                          )
+                        )}
+                        {trailingNewline}
+                      </>
+                    );
+                  })()}
+                </div>
+                {mentionQuery !== null && mentionCandidates.length > 0 && (
+                  <ul
+                    role="listbox"
+                    className="absolute bottom-full left-0 right-0 mb-1 max-h-56 overflow-y-auto rounded-xl bg-[var(--glass-card-bg)] border border-[var(--glass-border-sm)] shadow-lg z-50"
+                  >
+                    {mentionCandidates.map((c, i) => (
+                      <li key={c.id}>
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => insertMention(c)}
+                          className={`w-full flex items-center gap-2 px-2.5 py-2 text-left ${
+                            i === mentionIndex
+                              ? "bg-[var(--chat-input-hover)]"
+                              : "hover:bg-[var(--chat-input-hover)]"
+                          }`}
+                        >
+                          <span className="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center text-[10px] font-semibold text-primary-300">
+                            {c.id === "__everyone__" ? "@all" : (c.name[0] || "?").toUpperCase()}
+                          </span>
+                          <span className="flex-1 min-w-0 text-sm text-dark-100 truncate">
+                            {c.name}
+                          </span>
+                          {c.subtitle && (
+                            <span className="shrink-0 text-[10px] text-dark-400">
+                              {c.subtitle}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Right-hand action slot.
+              In edit mode → check (save edit) button, exclusive.
+              Otherwise → the VoiceRecorderBar lives here in its
+              idle/hold/locked states, AND a Send button is layered
+              on top of the idle mic when the user has text or
+              pending files. The send overlay fades + rotates in
+              over the mic so the swap reads as one fluid morph
+              instead of an abrupt unmount-and-remount. When
+              recording, the bar expands into the row and the send
+              overlay is removed from the DOM entirely. */}
+          {editingMessage ? (
+            <button
+              type="button"
+              onClick={() => void handleSubmitEdit()}
+              disabled={!draft.trim()}
+              className="shrink-0 w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center disabled:opacity-50 active:scale-90 transition-transform"
+              aria-label="Save edit"
+            >
+              <Check className="w-4 h-4" />
+            </button>
+          ) : (
+            <div
+              className={`relative ${
+                recording ? "flex-1 flex" : "w-10 h-10 shrink-0"
+              }`}
+            >
+              <VoiceRecorderBar
+              maxSeconds={120}
+              onRecordingTick={sendRecording}
+              onActiveChange={setRecording}
+              onAutoStopped={() =>
+                toast.danger("Voice note maxed at 2 minutes. Sending now.")
+              }
+              onSend={(file) => {
+                // Capture + clear the reply context BEFORE the await so
+                // a follow-up VN doesn't accidentally inherit it.
+                const replyForVN = replyingTo;
+                if (replyForVN) setReplyingTo(null);
+                void (async () => {
+                  try {
+                    await send(conversationId, "", [file], replyForVN);
+                  } catch {
+                    toast.danger("Failed to send. Tap the message to retry.");
+                  }
+                })();
+              }}
+              onCancel={() => { /* state already reset internally */ }}
+            />
+              {/* Send-button overlay. Rendered on top of the idle
+                  mic so the icon swap is a single crossfade +
+                  rotation rather than an unmount-and-remount. The
+                  send button is only mounted while we're NOT
+                  recording — when recording starts, the VoiceRecorder
+                  expands and we don't want a phantom send button
+                  sitting in the corner. */}
+              {!recording && (
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={
+                    !(draft.trim().length > 0 || pendingFiles.length > 0)
+                  }
+                  className={`absolute inset-0 rounded-full bg-primary-600 text-white flex items-center justify-center transition-all duration-200 ease-out ${
+                    draft.trim().length > 0 || pendingFiles.length > 0
+                      ? "opacity-100 scale-100 rotate-0 pointer-events-auto"
+                      : "opacity-0 scale-50 -rotate-180 pointer-events-none"
+                  }`}
+                  aria-label="Send"
+                  aria-hidden={
+                    !(draft.trim().length > 0 || pendingFiles.length > 0)
+                  }
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
           </>
         )}
       </div>
 
-      {/* =====================================================
-          BLOCKED BANNER
-          ===================================================== */}
-      {isBlocked && (
-        <div className="px-4 py-3 bg-red-500/10 border-t border-red-500/20 text-center">
-          <p className="text-sm text-red-400">You have blocked this user</p>
-          <button onClick={toggleBlock} className="text-xs text-red-300 underline mt-1">
-            Unblock
-          </button>
-        </div>
+      {/* Fullscreen viewer for image / video bundles. Single component
+          handles both types and any number of items — taps inside a
+          bubble's grid pass the whole array and the tapped index so
+          users can swipe through the rest of the album. */}
+      {lightbox && (
+        <MediaCarousel
+          items={lightbox.items}
+          initialIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
+        />
+      )}
+      {docViewer && (
+        <DocumentViewer
+          url={docViewer.url}
+          fileName={docViewer.fileName}
+          onClose={() => setDocViewer(null)}
+        />
       )}
 
-      {/* =====================================================
-          REPLY BANNER
-          ===================================================== */}
-      {replyingTo && !isBlocked && (
-        <div className="px-4 py-2 border-t border-primary-500/20 bg-primary-600/5 flex items-center justify-between animate-in slide-in-from-bottom-2 duration-150">
-          <div className="flex items-center gap-2 min-w-0">
-            <Reply className="w-4 h-4 text-primary-400 shrink-0" />
-            <div className="min-w-0">
-              <p className="text-xs text-primary-400 font-medium">
-                Replying to {replyingTo.sender_id === user.id ? "yourself" : otherUser?.full_name || "Unknown"}
-              </p>
-              <p className="text-xs text-dark-400 truncate">{replyingTo.content?.slice(0, 60) || "Attachment"}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => setReplyingTo(null)}
-            className="p-1 rounded-lg hover:bg-white/10 active:scale-90 transition-transform"
-          >
-            <X className="w-4 h-4 text-dark-400" />
-          </button>
-        </div>
+      {reportOpen && conv?.other_user_id && (
+        <ReportUserModal
+          reportedName={conv.other_user_name || "this user"}
+          onClose={() => setReportOpen(false)}
+          onSubmit={handleSubmitReport}
+        />
       )}
 
-      {/* =====================================================
-          EDITING BANNER
-          ===================================================== */}
-      {editingMessage && !isBlocked && (
-        <div className="px-4 py-2 border-t border-primary-500/20 bg-primary-600/5 flex items-center justify-between animate-in slide-in-from-bottom-2 duration-150">
-          <div className="flex items-center gap-2 min-w-0">
-            <Pencil className="w-4 h-4 text-primary-400 shrink-0" />
-            <div className="min-w-0">
-              <p className="text-xs text-primary-400 font-medium">Editing message</p>
-              <p className="text-xs text-dark-400 truncate">{editingMessage.content?.slice(0, 60)}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => { setEditingMessage(null); clearEditor(); setCharCount(0); }}
-            className="p-1 rounded-lg hover:bg-white/10 active:scale-90 transition-transform"
-          >
-            <X className="w-4 h-4 text-dark-400" />
-          </button>
-        </div>
-      )}
-
-      {/* =====================================================
-          PENDING MEDIA PREVIEW
-          ===================================================== */}
-      {pendingMedia.length > 0 && (
-        <div className="px-4 py-2 border-t border-white/5 bg-[var(--page-bg)] animate-in slide-in-from-bottom-2 duration-150">
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {pendingMedia.map((m, i) => (
-              <div key={i} className="relative shrink-0">
-                {m.preview ? (
-                  <div className="relative">
-                    <img src={m.preview} alt="" className="w-16 h-16 rounded-xl object-cover" />
-                    {m.type.startsWith("video/") && (
-                      <div className="absolute inset-0 flex items-center justify-center rounded-xl">
-                        <div className="w-5 h-5 rounded-full bg-black/50 flex items-center justify-center">
-                          <div className="w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-l-[6px] border-l-white ml-0.5" />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="w-16 h-16 rounded-xl bg-dark-800 border border-white/10 flex flex-col items-center justify-center gap-0.5">
-                    {m.type.startsWith("audio/") ? (
-                      <>
-                        <Mic className="w-5 h-5 text-primary-400" />
-                        <span className="text-[9px] text-dark-400">Voice</span>
-                      </>
-                    ) : (
-                      <FileIcon className="w-6 h-6 text-dark-400" />
-                    )}
-                  </div>
-                )}
-                <button
-                  onClick={() => removePendingMedia(i)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 flex items-center justify-center active:scale-90 transition-transform"
-                >
-                  <X className="w-3 h-3 text-white" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================
-          FORMAT BAR
-          ===================================================== */}
-      {showFormatBar && !isBlocked && (
-        <div className="px-4 py-2 border-t border-white/5 bg-[var(--page-bg)] flex items-center justify-center gap-3 animate-in slide-in-from-bottom-2 duration-100">
-          <button onClick={applyBold} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-dark-100 transition-all" title="Bold"><Bold className="w-4 h-4" /></button>
-          <button onClick={applyItalic} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-dark-100 transition-all" title="Italic"><Italic className="w-4 h-4" /></button>
-          <button onClick={applyBulletList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-dark-100 transition-all" title="Bullets"><List className="w-4 h-4" /></button>
-          <button onClick={applyNumberedList} className="p-2.5 rounded-lg hover:bg-white/10 active:scale-90 text-dark-300 hover:text-dark-100 transition-all" title="Numbers"><ListOrdered className="w-4 h-4" /></button>
-        </div>
-      )}
-
-      {/* =====================================================
-          LINK INPUT
-          ===================================================== */}
-      {showLinkInput && !isBlocked && (
-        <div className="px-4 py-3 border-t border-white/5 bg-[var(--page-bg)] space-y-2 animate-in slide-in-from-bottom-2 duration-150">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-dark-400 font-medium">Insert Link</p>
-            <button onClick={() => { setShowLinkInput(false); setLinkUrl(""); setLinkText(""); }} className="p-1 rounded-lg hover:bg-white/10 text-dark-400 active:scale-90 transition-transform">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          {linkText && <p className="text-xs text-dark-500">Text: <span className="text-dark-300">{linkText}</span></p>}
-          <div className="flex gap-2">
-            <input
-              value={linkUrl}
-              onChange={(e) => setLinkUrl(e.target.value)}
-              placeholder="https://..."
-              autoFocus
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); insertLink(); } }}
-              className="flex-1 h-9 px-3 bg-[var(--glass-card-bg)] border border-[var(--glass-border)] rounded-lg text-sm text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500/40"
-            />
-            <button onClick={insertLink} disabled={!linkUrl.trim()} className="px-4 h-9 rounded-lg bg-primary-600 text-white text-sm font-medium disabled:opacity-30 active:scale-95 transition-transform">
-              Add
-            </button>
-          </div>
-        </div>
-      )}
-            {/* =====================================================
-          EMOJI PICKER — with fixed X button
-          ===================================================== */}
-      {showEmoji && !isBlocked && (
-        <div className="border-t border-white/10 bg-[var(--page-bg)] flex flex-col shrink-0 animate-in slide-in-from-bottom-3 duration-200" style={{ maxHeight: "40vh" }}>
-          {/* Fixed header with tabs and X */}
-          <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 shrink-0">
-            <div className="flex-1 flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
-              {EMOJI_TABS.map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setEmojiTab(tab.key)}
-                  className={`px-3 py-1.5 rounded-lg text-lg shrink-0 transition-colors ${
-                    emojiTab === tab.key ? "bg-primary-600/20" : "hover:bg-white/5"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            <button
-              onClick={() => setShowEmoji(false)}
-              className="p-2 rounded-lg hover:bg-white/10 text-dark-400 shrink-0 ml-1 active:scale-90 transition-transform"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-            {(() => {
-              const tab = EMOJI_TABS.find((t) => t.key === emojiTab);
-              if (!tab) return null;
-              const isKaomoji = tab.key === "kaomoji";
-              return (
-                <div className={isKaomoji ? "flex flex-wrap gap-1" : "grid grid-cols-9 gap-px"}>
-                  {tab.emojis.map((emoji, i) => (
-                    <button
-                      key={`${emoji}-${i}`}
-                      onClick={() => {
-                        if (editorRef.current) {
-                          editorRef.current.focus();
-                          document.execCommand("insertText", false, emoji);
-                        }
-                      }}
-                      className={
-                        isKaomoji
-                          ? "px-2 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 text-xs text-dark-200 border border-white/5 transition-all"
-                          : "w-full aspect-square flex items-center justify-center rounded-md hover:bg-white/10 active:scale-90 text-[22px] leading-none transition-all"
-                      }
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================
-          INPUT BAR
-          ===================================================== */}
-      {!isBlocked && (
-        <div
-          className="px-3 py-2 border-t border-white/5 bg-[var(--page-bg)] shrink-0 relative"
-          style={{
-            paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom, 0px))",
+      {searchOpen && conv && user && (
+        <SearchInChatSheet
+          conversationId={conv.id}
+          currentUserId={user.id}
+          otherUserName={conv.other_user_name}
+          onClose={() => setSearchOpen(false)}
+          onJumpTo={async (messageId) => {
+            // If the message is already in the rendered window,
+            // scrollToMessage is enough. Otherwise walk pagination
+            // backward until it's loaded — same loop as the
+            // ?focus= handler, scoped to this single tap.
+            const inStore = (
+              useChatStore.getState().threadsByConversation[conv.id]?.messages ||
+              []
+            ).some((m) => m.id === messageId);
+            if (!inStore) {
+              for (let i = 0; i < 10; i++) {
+                if (!hasMoreOlderRef.current) break;
+                await loadOlderMessages();
+                const nowIn = (
+                  useChatStore.getState().threadsByConversation[conv.id]
+                    ?.messages || []
+                ).some((m) => m.id === messageId);
+                if (nowIn) break;
+              }
+            }
+            scrollToMessage(messageId);
           }}
-        >
-                    <div className={`flex items-end gap-1.5 ${showVoiceRecorder ? "hidden" : ""}`}>
-            {/* Plus / Attach button with rotation animation */}
-            <div className="relative shrink-0">
-              <button
-                onClick={() => {
-                  const next = !showAttach;
-                  setShowAttach(next);
-                  setPlusRotated(next);
-                  setShowEmoji(false);
-                  setShowLinkInput(false);
-                }}
-                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-dark-400 hover:text-dark-100 active:scale-90 transition-all"
-              >
-                <Plus
-                  className="w-5 h-5 transition-transform duration-300"
-                  style={{ transform: plusRotated ? "rotate(135deg)" : "rotate(0deg)" }}
-                />
-              </button>
-              {showAttach && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => { setShowAttach(false); setPlusRotated(false); }} />
-                  <div className="absolute bottom-full left-0 mb-2 z-20 glass-strong rounded-xl overflow-hidden shadow-2xl border border-white/10 w-48 animate-in fade-in slide-in-from-bottom-2 duration-150">
-                    <button
-                      onClick={() => { fileInputRef.current?.click(); }}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
-                        <ImageIcon className="w-4 h-4 text-primary-400" />
-                      </div>
-                      <span className="text-sm text-dark-200">Photo / Video</span>
-                    </button>
-                    <button
-                      onClick={() => { docInputRef.current?.click(); }}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-blue-600/20 flex items-center justify-center">
-                        <FileText className="w-4 h-4 text-blue-400" />
-                      </div>
-                      <span className="text-sm text-dark-200">Document</span>
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div
-                ref={editorRef}
-                contentEditable
-                role="textbox"
-                aria-multiline="true"
-                data-placeholder={editingMessage ? "Edit message..." : replyingTo ? "Reply..." : "Message..."}
-                onInput={() => {
-                  sendTyping();
-                  const len = editorRef.current?.innerText.trim().length || 0;
-                  setCharCount(len);
-                }}
-                onKeyDown={handleEditorKeyDown}
-                onFocus={() => {
-                  // Close attach menu when focusing editor, but NOT emoji picker
-                  if (showAttach) { setShowAttach(false); setPlusRotated(false); }
-                }}
-                className="w-full bg-[var(--glass-card-bg)] border border-[var(--glass-border)] rounded-2xl px-4 py-2.5 text-sm text-dark-100 focus:outline-none focus:border-primary-500/40 resize-none transition-colors overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-dark-500 empty:before:pointer-events-none [&_b]:font-bold [&_strong]:font-bold [&_i]:italic [&_em]:italic [&_a]:text-primary-400 [&_a]:underline [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4"
-                style={{ minHeight: 40, maxHeight: 120 }}
-                suppressContentEditableWarning
-              />
-              {charCount > 4800 && (
-                <div className={`text-[10px] text-right mt-0.5 pr-2 ${
-                  charCount > MAX_MESSAGE_LENGTH ? "text-red-400 font-bold" : "text-dark-500"
-                }`}>
-                  {charCount.toLocaleString()}/{MAX_MESSAGE_LENGTH.toLocaleString()}
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={() => { setShowFormatBar(!showFormatBar); setShowEmoji(false); setShowLinkInput(false); }}
-              className={`w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 active:scale-90 transition-all shrink-0 ${
-                showFormatBar ? "text-primary-400" : "text-dark-400 hover:text-dark-100"
-              }`}
-            >
-              <Bold className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => { setShowEmoji(!showEmoji); setShowAttach(false); setPlusRotated(false); setShowFormatBar(false); setShowLinkInput(false); }}
-              className={`w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 active:scale-90 transition-all shrink-0 ${
-                showEmoji ? "text-primary-400" : "text-dark-400 hover:text-dark-100"
-              }`}
-            >
-              <Smile className="w-5 h-5" />
-            </button>
-
-            {isEditorEmpty() && pendingMedia.length === 0 && !editingMessage && !showVoiceRecorder ? (
-              <button
-                onClick={() => {
-                  setShowVoiceRecorder(true);
-                  setIsRecording(true);
-                  setShowEmoji(false);
-                  setShowAttach(false);
-                  setPlusRotated(false);
-                }}
-                className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-white/10 text-dark-400 hover:text-dark-100 active:scale-90 transition-all shrink-0"
-              >
-                <Mic className="w-5 h-5" />
-              </button>
-            ) : !showVoiceRecorder ? (
-              <button
-                onClick={handleSend}
-                className="w-10 h-10 flex items-center justify-center rounded-xl bg-primary-600 hover:bg-primary-500 text-white active:scale-90 transition-all shrink-0"
-              >
-                <Send className="w-5 h-5" />
-              </button>
-            ) : null}
-          </div>
-
-          {/* Voice Note Recorder */}
-          {showVoiceRecorder && (
-            <div className="mt-2">
-              <VoiceNoteRecorder
-                onRecordingStart={handleRecordingStart}
-                onRecordingEnd={handleRecordingEnd}
-                onCancel={handleRecordingCancel}
-                onSend={handleSendVoiceNote}
-                isUploading={voiceNoteUploading}
-              />
-            </div>
-          )}
-        </div>
+        />
       )}
 
-      {/* Hidden file inputs */}
-      <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={handleFileSelect} />
-      <input ref={docInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.xlsx,.xls,.pptx,.ppt,.zip,.rar" multiple className="hidden" onChange={handleFileSelect} />
+      {forwardSource && user && (
+        <ForwardSheet
+          excludeConversationId={conversationId}
+          onClose={() => setForwardSource(null)}
+          onForward={async (targetIds) => {
+            try {
+              await apiForwardMessage(forwardSource, targetIds, user.id);
+              setForwardSource(null);
+              toast.info(
+                targetIds.length === 1
+                  ? "Forwarded"
+                  : `Forwarded to ${targetIds.length} chats`
+              );
+            } catch {
+              toast.danger("Couldn't forward. Try again.");
+            }
+          }}
+        />
+      )}
 
-      {/* =====================================================
-          CONTEXT MENU — WhatsApp-style with bounce + message preview
-          ===================================================== */}
-      {contextMenuMsg && contextMenuPos && typeof document !== "undefined" &&
-        createPortal(
+      {showAvatarPreview && (
+        <AvatarPreview
+          url={conv?.other_user_avatar_url ?? null}
+          name={conv?.other_user_name ?? null}
+          onClose={() => setShowAvatarPreview(false)}
+        />
+      )}
+
+      {showChatInfo && conv && user && (
+        <ChatInfoSheet
+          conversationId={conv.id}
+          currentUserId={user.id}
+          otherUserName={conv.other_user_name}
+          otherUserAvatarUrl={conv.other_user_avatar_url}
+          statusLine={headerSubtitle}
+          isMuted={conv.is_muted}
+          isBlocked={conv.is_blocked}
+          onClose={() => setShowChatInfo(false)}
+          onAvatarTap={() => setShowAvatarPreview(true)}
+          onToggleMute={handleToggleMute}
+          onToggleBlock={handleToggleBlock}
+          onClearChat={() => {
+            setShowChatInfo(false);
+            handleClearChat();
+          }}
+          onDeleteChat={() => {
+            setShowChatInfo(false);
+            handleDeleteChat();
+          }}
+          onReport={() => {
+            setShowChatInfo(false);
+            setReportOpen(true);
+          }}
+          onOpenMedia={(items, index, kind) => {
+            if (kind === "visual") {
+              setLightbox({
+                items: items.map((md) => ({
+                  url: md.url,
+                  type: md.media_type as "image" | "video",
+                  posterUrl: md.thumbnail_url || undefined,
+                })),
+                index,
+              });
+            } else if (kind === "document") {
+              const md = items[index];
+              setDocViewer({
+                url: md.url,
+                fileName: md.file_name || "File",
+              });
+            } else {
+              // Audio: open in document viewer (browser plays audio
+              // natively). A dedicated voice-note viewer can come later.
+              const md = items[index];
+              setDocViewer({
+                url: md.url,
+                fileName: md.file_name || "Voice note",
+              });
+            }
+          }}
+          onOpenLink={(url) => {
+            const a = document.createElement("a");
+            a.href = url;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            a.click();
+          }}
+          isGroup={!!conv.is_group}
+          myRole={conv.my_role}
+          memberCount={conv.member_count}
+          participants={groupParticipants}
+          notificationMode={
+            (conv as { notification_mode?: NotificationMode }).notification_mode || "all"
+          }
+          onSetNotificationMode={handleSetNotificationMode}
+          onLeaveGroup={() => {
+            setShowChatInfo(false);
+            handleLeaveGroup();
+          }}
+          onDeleteGroup={() => {
+            setShowChatInfo(false);
+            handleDeleteGroup();
+          }}
+          onRenameGroup={handleRenameGroup}
+          onChangeGroupAvatar={handleChangeGroupAvatar}
+          onAddMember={() => setAddMemberOpen(true)}
+          onRemoveMember={handleRemoveGroupMember}
+        />
+      )}
+
+      {addMemberOpen && user && conv?.is_group && (
+        <AddMemberSheet
+          conversationId={conv.id}
+          currentUserId={user.id}
+          existingMemberIds={
+            new Set((groupParticipants || []).map((p) => p.user_id))
+          }
+          onClose={() => setAddMemberOpen(false)}
+          onAdded={async () => {
+            await refreshGroupAfterEdit();
+          }}
+        />
+      )}
+
+      {activeMenu && (() => {
+        const m = activeMenu.message;
+        const isMine = user ? m.sender_id === user.id : false;
+        const isTextOnly = !m.media || m.media.length === 0;
+        const hasContent = !!(m.content && m.content.trim());
+        // Note: visibility flags here are deliberately conservative —
+        // every later Phase 4 stage will add more actions to this menu
+        // (Reply, React, Edit, Delete-for-everyone, Forward).
+        const actions: MenuAction[] = [
+          {
+            key: "reply",
+            label: "Reply",
+            icon: <ReplyIcon className="w-4 h-4" />,
+            onClick: () => handleStartReply(m),
+            visible: !m.is_deleted,
+          },
+          {
+            key: "copy",
+            label: "Copy",
+            icon: <CopyIcon className="w-4 h-4" />,
+            onClick: () => handleCopyMessage(m),
+            // Only meaningful when there's text. Media-only bubbles
+            // hide the action — copying a blob: URL isn't useful.
+            visible: hasContent && isTextOnly && !m.is_deleted,
+          },
+          {
+            key: "edit",
+            label: "Edit",
+            icon: <Pencil className="w-4 h-4" />,
+            onClick: () => handleStartEdit(m),
+            // Mine + text-only + not already deleted. Phase 4 honours
+            // the no-time-limit rule from the HANDOFF spec.
+            visible: isMine && hasContent && isTextOnly && !m.is_deleted,
+          },
+          {
+            key: "forward",
+            label: "Forward",
+            icon: <ForwardIcon className="w-4 h-4" />,
+            onClick: () => setForwardSource(m),
+            visible: !m.is_deleted,
+          },
+          {
+            key: "pin",
+            label: m.is_pinned ? "Unpin message" : "Pin message",
+            icon: m.is_pinned ? (
+              <PinOff className="w-4 h-4" />
+            ) : (
+              <PinIcon className="w-4 h-4" />
+            ),
+            onClick: () => handleTogglePinMessage(m),
+            visible: !m.is_deleted,
+          },
+          {
+            key: "report-msg",
+            label: "Report message",
+            icon: <FlagIcon className="w-4 h-4" />,
+            danger: true,
+            // Per-message report only makes sense for OTHER people's
+            // messages — you can't usefully report yourself — and we
+            // keep it group-only because DMs already expose
+            // "Report user" via the chat-info sheet.
+            onClick: () => handleReportMessage(m),
+            visible: !isMine && !m.is_deleted && !!conv?.is_group,
+          },
+          {
+            key: "delete-everyone",
+            label: "Delete for everyone",
+            icon: <Trash2 className="w-4 h-4" />,
+            danger: true,
+            onClick: () => handleDeleteForEveryone(m),
+            visible: isMine && !m.is_deleted,
+          },
+          {
+            key: "delete-me",
+            label: "Delete for me",
+            icon: <Trash2 className="w-4 h-4" />,
+            danger: true,
+            onClick: () => handleDeleteForMe(m),
+          },
+        ];
+        // Suppress when no action survives the visibility filter
+        // (e.g. media-only bubble whose only entry would be Copy).
+        if (actions.filter((a) => a.visible !== false).length === 0) {
+          // unused branch for now since delete-for-me is always
+          // visible; kept as a guard for future stages.
+          return null;
+        }
+        // `isMine` referenced for symmetry with later stages (Edit /
+        // Delete-for-everyone gate on mine-only). Suppress unused-var
+        // warning by reading it.
+        void isMine;
+        const myReaction = user
+          ? (m.reactions || []).find((r) => r.user_id === user.id)
+          : undefined;
+        return (
+          <MessageActionMenu
+            anchor={activeMenu.anchor}
+            actions={actions}
+            onClose={() => setActiveMenu(null)}
+            reactionEmojis={REACTION_EMOJIS}
+            myEmoji={myReaction?.emoji ?? null}
+            onReact={(emoji) => handleToggleReaction(m, emoji)}
+          />
+        );
+      })()}
+
+      {pendingAction && (
+        <div
+          onClick={() => setPendingAction(null)}
+          className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-6"
+        >
           <div
-            className="fixed inset-0 z-[99999]"
-            style={{
-              backdropFilter: "blur(12px)",
-              WebkitBackdropFilter: "blur(12px)",
-              backgroundColor: "rgba(0,0,0,0.5)",
-              animation: contextMenuClosing
-                ? "context-menu-backdrop-out 200ms ease-out forwards"
-                : "context-menu-backdrop-in 200ms ease-out forwards",
-            }}
-            onClick={closeContextMenu}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-2xl bg-[var(--glass-card-bg)] border border-[var(--glass-border-sm)] shadow-2xl p-5"
           >
-            <div
-              className={`absolute flex flex-col ${isMineCtx ? "items-end" : "items-start"}`}
-              style={{
-                left: isMineCtx ? "auto" : 16,
-                right: isMineCtx ? 16 : "auto",
-                top: Math.min(
-                  Math.max(contextMenuPos.y - 160, 60),
-                  window.innerHeight - 500
-                ),
-                maxWidth: "min(80vw, 320px)",
-                transformOrigin: isMineCtx ? "top right" : "top left",
-                animation: contextMenuClosing
-                  ? "context-menu-bounce-out 200ms ease-out forwards"
-                  : "context-menu-bounce-in 300ms ease-out forwards",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Quick Reactions row */}
-              {!contextMenuMsg.is_deleted && (
-                <div className="flex items-center gap-1 mb-2 px-1">
-                  {QUICK_REACTIONS.map((emoji) => {
-                    const hasReacted = contextMenuMsg.reactions?.some(
-                      (r) => r.emoji === emoji && r.user_id === user.id
-                    );
-                    return (
-                      <button
-                        key={emoji}
-                        onClick={() => toggleReaction(contextMenuMsg.id, emoji)}
-                        className={`text-2xl hover:scale-125 active:scale-90 transition-all p-1.5 rounded-full ${
-                          hasReacted ? "bg-primary-600/30 scale-110" : "hover:bg-white/10"
-                        }`}
-                      >
-                        {emoji}
-                      </button>
-                    );
-                  })}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setReactionPickerMsgId(contextMenuMsg.id);
-                      setReactionPickerTab("smileys");
-                      closeContextMenu();
-                    }}
-                    className="w-9 h-9 flex items-center justify-center rounded-full bg-white/5 border border-white/10 hover:bg-white/10 active:scale-90 transition-all ml-1"
-                  >
-                    <Plus className="w-4 h-4 text-dark-300" />
-                  </button>
-                </div>
-              )}
-
-              {/* Floating Message Preview */}
-              <div className="mb-2 max-w-[280px] w-fit">
-                {/* Reply preview */}
-                {contextMenuMsg.reply_to && (
-                  <div className={`px-3 py-1.5 rounded-t-2xl border-l-2 border-primary-500 ${
-                    isMineCtx ? "bg-primary-700/30" : "bg-white/5"
-                  }`}>
-                    <p className="text-[10px] text-primary-400 font-medium">
-                      {contextMenuMsg.reply_to.sender_id === user.id ? "You" : otherUser?.full_name || "Unknown"}
-                    </p>
-                    <p className="text-[11px] text-dark-400 truncate">
-                      {contextMenuMsg.reply_to.content?.slice(0, 60) || "Attachment"}
-                    </p>
-                  </div>
-                )}
-
-                <div className={`px-4 py-2.5 shadow-lg ${
-                  contextMenuMsg.reply_to ? "rounded-b-2xl" : "rounded-2xl"
-                } ${
-                  isMineCtx
-                    ? "bg-primary-600/90 text-white rounded-br-md"
-                    : "bg-[var(--glass-card-bg)] border border-[var(--glass-border-sm)] text-dark-100 rounded-bl-md"
-                }`}>
-                  {/* Media preview */}
-                  {contextMenuMsg.media && contextMenuMsg.media.length > 0 && (
-                    <div className="mb-2 space-y-1.5">
-                      {contextMenuMsg.media.map((m) => (
-                        <div key={m.id}>
-                          {m.media_type === "image" && m.url && (
-                            <SignedImage
-                              url={m.url}
-                              alt=""
-                              className="rounded-xl max-w-full max-h-32 object-cover pointer-events-none"
-                            />
-                          )}
-                          {m.media_type === "video" && m.url && (
-                            <div className="relative pointer-events-none">
-                              <SignedVideo url={m.url} className="rounded-xl max-w-full max-h-32" preload="metadata" />
-                              <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="w-8 h-8 rounded-full bg-black/50 flex items-center justify-center backdrop-blur-sm">
-                                  <div className="w-0 h-0 border-t-[5px] border-t-transparent border-b-[5px] border-b-transparent border-l-[8px] border-l-white ml-0.5" />
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          {m.media_type === "audio" && (
-                            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${
-                              isMineCtx ? "bg-white/10" : "bg-white/5"
-                            }`}>
-                              <Mic className="w-4 h-4 text-primary-400 shrink-0" />
-                              <span className="text-xs">Voice message</span>
-                              {contextMenuMsg.metadata?.duration && (
-                                <span className={`text-[10px] ${isMineCtx ? "text-white/50" : "text-dark-500"}`}>
-                                  {formatDuration(contextMenuMsg.metadata.duration)}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                          {m.media_type === "document" && (
-                            <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${
-                              isMineCtx ? "bg-white/10" : "bg-white/5"
-                            }`}>
-                              <span className="text-sm">{getDocIcon(m.file_name)}</span>
-                              <span className="text-xs truncate max-w-[180px]">{m.file_name || "Document"}</span>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Post share */}
-                  {contextMenuMsg.content_type === "post_share" && contextMenuMsg.metadata?.post_id && (
-                    <div className={`mb-2 p-2 rounded-lg ${isMineCtx ? "bg-white/10" : "bg-white/5"}`}>
-                      <p className="text-xs font-medium text-primary-400">📍 Shared Post</p>
-                      <p className="text-xs truncate">{contextMenuMsg.metadata.post_preview || "View post"}</p>
-                    </div>
-                  )}
-
-                  {/* Text content — clamped for long messages */}
-                  {contextMenuMsg.content && (
-                    <div className="relative max-h-[4.5rem] overflow-hidden">
-                      {renderContent(contextMenuMsg.content)}
-                      {contextMenuMsg.content.length > 150 && (
-                        <div
-                          className={`absolute bottom-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-t to-transparent ${
-                            isMineCtx ? "from-primary-600" : "from-[#1a1525]"
-                          }`}
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {/* Timestamp + delivery status */}
-                  <div className={`flex items-center gap-1.5 mt-1.5 ${isMineCtx ? "justify-end" : "justify-start"}`}>
-                    <span className={`text-[10px] ${isMineCtx ? "text-white/50" : "text-dark-500"}`}>
-                      {format(new Date(contextMenuMsg.created_at), "HH:mm")}
-                    </span>
-                    {contextMenuMsg.edited_at && (
-                      <span className={`text-[10px] ${isMineCtx ? "text-white/40" : "text-dark-600"}`}>
-                        · edited
-                      </span>
-                    )}
-                    {isMineCtx && <DeliveryLabel status={contextMenuMsg.delivery_status} />}
-                  </div>
-                </div>
-
-                {/* Reactions on the floating message */}
-                {contextMenuMsg.reactions && contextMenuMsg.reactions.length > 0 && (
-                  <div className={`flex flex-wrap gap-1 mt-1 ${isMineCtx ? "justify-end" : "justify-start"}`}>
-                    {Object.entries(
-                      contextMenuMsg.reactions.reduce((acc, r) => {
-                        acc[r.emoji] = (acc[r.emoji] || 0) + 1;
-                        return acc;
-                      }, {} as Record<string, number>)
-                    ).map(([emoji, count]) => {
-                      const myReaction = contextMenuMsg.reactions?.some(
-                        (r) => r.emoji === emoji && r.user_id === user.id
-                      );
-                      return (
-                        <button
-                          key={emoji}
-                          data-reaction={`${contextMenuMsg.id}-${emoji}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleReaction(contextMenuMsg.id, emoji);
-                          }}
-                          className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-all active:scale-90 animate-bounce-in ${
-                            myReaction
-                              ? "border-primary-500/40 bg-primary-600/20"
-                              : "border-white/10 bg-white/5 hover:bg-white/10"
-                          }`}
-                        >
-                          <span>{emoji}</span>
-                          {(count as number) > 1 && (
-                            <span className="text-[10px] text-dark-300">{count as number}</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Action menu */}
-              <div className="glass-strong rounded-2xl overflow-hidden shadow-2xl border border-white/10 w-56">
-                {/* Reply */}
-                {!contextMenuMsg.is_deleted && (
-                  <button
-                    onClick={() => handleReply(contextMenuMsg)}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                  >
-                    <Reply className="w-4 h-4 text-dark-400" />
-                    <span className="text-sm text-dark-200">Reply</span>
-                  </button>
-                )}
-
-                {/* Copy */}
-                {contextMenuMsg.content && (
-                  <button
-                    onClick={() => handleCopy(contextMenuMsg.content)}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                  >
-                    <Copy className="w-4 h-4 text-dark-400" />
-                    <span className="text-sm text-dark-200">Copy</span>
-                  </button>
-                )}
-
-                {/* Edit */}
-                {contextMenuMsg.sender_id === user.id &&
-                  contextMenuMsg.content &&
-                  !contextMenuMsg.is_deleted && (
-                    <button
-                      onClick={() => handleEdit(contextMenuMsg)}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                    >
-                      <Pencil className="w-4 h-4 text-dark-400" />
-                      <span className="text-sm text-dark-200">Edit</span>
-                    </button>
-                  )}
-
-                <div className="h-px bg-white/5" />
-
-                {/* Delete for me */}
-                <button
-                  onClick={() => handleDeleteForMe(contextMenuMsg.id)}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                >
-                  <Trash2 className="w-4 h-4 text-dark-400" />
-                  <span className="text-sm text-dark-200">Delete for me</span>
-                </button>
-
-                {/* Delete for everyone */}
-                {contextMenuMsg.sender_id === user.id && !contextMenuMsg.is_deleted && (
-                  <button
-                    onClick={() => handleDeleteForEveryone(contextMenuMsg.id)}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                  >
-                    <Trash2 className="w-4 h-4 text-red-400" />
-                    <span className="text-sm text-red-400">Delete for everyone</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-
-      {/* =====================================================
-          REACTION EMOJI PICKER (full picker from + button)
-          ===================================================== */}
-      {reactionPickerMsgId && typeof document !== "undefined" &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[99999] flex flex-col justify-end animate-in fade-in duration-150"
-            style={{ backdropFilter: "blur(4px)", backgroundColor: "rgba(0,0,0,0.4)" }}
-            onClick={() => setReactionPickerMsgId(null)}
-          >
-            <div
-              className="bg-[var(--page-bg)] border-t border-white/10 rounded-t-3xl max-h-[50vh] flex flex-col animate-in slide-in-from-bottom-4 duration-300"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-0.5 px-2 py-2 border-b border-white/5 shrink-0">
-                <div className="flex-1 flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
-                  {EMOJI_TABS.map((tab) => (
-                    <button
-                      key={tab.key}
-                      onClick={() => setReactionPickerTab(tab.key)}
-                      className={`px-3 py-1.5 rounded-lg text-lg shrink-0 transition-colors ${
-                        reactionPickerTab === tab.key ? "bg-primary-600/20" : "hover:bg-white/5"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={() => setReactionPickerMsgId(null)}
-                  className="p-2 rounded-lg hover:bg-white/10 text-dark-400 shrink-0 ml-1 active:scale-90 transition-transform"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2 scrollbar-hide">
-                {(() => {
-                  const tab = EMOJI_TABS.find((t) => t.key === reactionPickerTab);
-                  if (!tab) return null;
-                  const isKaomoji = tab.key === "kaomoji";
-                  return (
-                    <div className={isKaomoji ? "flex flex-wrap gap-1" : "grid grid-cols-9 gap-px"}>
-                      {tab.emojis.map((emoji, i) => (
-                        <button
-                          key={`${emoji}-${i}`}
-                          onClick={() => {
-                            if (reactionPickerMsgId) {
-                              toggleReaction(reactionPickerMsgId, emoji);
-                              setReactionPickerMsgId(null);
-                            }
-                          }}
-                          className={
-                            isKaomoji
-                              ? "px-2 py-1.5 rounded-lg hover:bg-white/10 active:scale-95 text-xs text-dark-200 border border-white/5 transition-all"
-                              : "w-full aspect-square flex items-center justify-center rounded-md hover:bg-white/10 active:scale-90 text-[22px] leading-none transition-all"
-                          }
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>,
-          document.body
-        )}
-
-      {/* =====================================================
-          AVATAR PREVIEW
-          ===================================================== */}
-      {avatarPreview && typeof document !== "undefined" &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-[99999] flex items-center justify-center animate-in fade-in duration-200"
-            style={{ backdropFilter: "blur(12px)", backgroundColor: "rgba(0,0,0,0.7)" }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setAvatarPreview(null);
-            }}
-          >
-            <div className="animate-in zoom-in-90 duration-300" onClick={(e) => e.stopPropagation()}>
-              <div className="w-72 h-72 rounded-full overflow-hidden border-4 border-white/20 shadow-2xl">
-                <img src={avatarPreview} alt="" className="w-full h-full object-cover" />
-              </div>
-              <p className="text-center mt-4 text-sm text-dark-200 font-medium">
-                {otherUser?.full_name || "Unknown"}
-              </p>
-            </div>
-          </div>,
-          document.body
-        )}
-
-      {/* =====================================================
-          CHAT INFO PANEL
-          ===================================================== */}
-      {showChatInfo && typeof document !== "undefined" &&
-        createPortal(
-          <div className="fixed inset-0 z-[99998] bg-[var(--page-bg)] flex flex-col animate-in slide-in-from-right duration-200">
-            <header
-              className="glass-header flex items-center gap-3 px-4 shrink-0"
-              style={{
-                height: "calc(3.5rem + env(safe-area-inset-top, 0px))",
-                paddingTop: "env(safe-area-inset-top, 0px)",
-              }}
-            >
+            <h3 className="text-base font-semibold text-dark-100 mb-1.5">
+              {pendingAction.title}
+            </h3>
+            <p className="text-sm text-dark-400 mb-5">{pendingAction.body}</p>
+            <div className="flex gap-2 justify-end">
               <button
-                onClick={() => { setShowChatInfo(false); setChatInfoPlayingVN(null); }}
-                className="p-1.5 -ml-1 hover:bg-white/5 rounded-lg active:scale-95 transition-transform"
+                type="button"
+                onClick={() => setPendingAction(null)}
+                className="px-4 h-10 rounded-xl bg-[var(--chat-input-bg)] text-dark-100 text-sm font-medium"
               >
-                <ArrowLeft className="w-5 h-5 text-dark-200" />
+                Cancel
               </button>
-              <h2 className="text-sm font-semibold text-dark-100">Chat Info</h2>
-            </header>
-
-            <div className="flex-1 overflow-y-auto">
-              <div className="flex flex-col items-center py-8 px-4">
-                <div className="relative mb-3">
-                  <button
-                    onClick={() => {
-                      if (otherUser?.avatar_url) {
-                        setAvatarPreview(otherUser.avatar_url);
-                      }
-                    }}
-                    className="w-24 h-24 rounded-full overflow-hidden bg-dark-800 border-2 border-white/10"
-                  >
-                    {otherUser?.avatar_url ? (
-                      <img src={otherUser.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="w-12 h-12 text-dark-400 m-auto mt-5" />
-                    )}
-                  </button>
-                  {otherUserOnline && (
-                    <div className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-purple-500 border-[3px] border-[#0a0812] online-dot-pulse" />
-                  )}
-                </div>
-                <h3 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
-                  {otherUser?.full_name || "Unknown"}
-                  {otherUser?.is_admin && <Crown className="w-4 h-4 text-yellow-400" />}
-                </h3>
-                <p className="text-sm text-dark-400">{otherUser?.email}</p>
-                <p className={`text-xs mt-1 ${otherUserOnline ? "text-purple-400" : "text-dark-500"}`}>
-                  {lastSeenText}
-                </p>
-              </div>
-
-              <div className="px-4 py-4 border-t border-white/5">
-                <h4 className="text-sm font-medium text-dark-200 mb-3 flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 text-primary-400" />
-                  Shared Media & Files ({chatMediaFiles.length})
-                </h4>
-                {chatMediaFiles.length === 0 ? (
-                  <p className="text-xs text-dark-500">No media shared yet</p>
-                ) : (
-                  <>
-                    {/* Inline VN Player for chat info */}
-                    {chatInfoPlayingVN && (
-                      <div className="mb-3 animate-in slide-in-from-bottom-2 duration-200">
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-xs text-dark-400">Playing voice note</span>
-                          <button
-                            onClick={() => setChatInfoPlayingVN(null)}
-                            className="p-1 rounded-lg hover:bg-white/10 active:scale-90 transition-transform"
-                          >
-                            <X className="w-3.5 h-3.5 text-dark-400" />
-                          </button>
-                        </div>
-                        <VoiceNotePlayer
-                          src={chatInfoPlayingVN.url}
-                          duration={chatInfoPlayingVN.duration}
-                          isMine={false}
-                        />
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {chatMediaFiles.slice(0, 12).map((m) => (
-                        <div key={m.id}>
-                          {m.media_type === "image" ? (
-                            <button
-                              onClick={async () => {
-                                const signed = await signMessageUrl(m.url);
-                                setLightboxImage(signed || m.url);
-                              }}
-                              className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800"
-                            >
-                              <SignedImage url={m.url} alt="" className="w-full h-full object-cover" />
-                            </button>
-                          ) : m.media_type === "video" ? (
-                            <button
-                              onClick={async (e) => {
-                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                setLightboxVideoRect({ x: rect.x, y: rect.y, width: rect.width, height: rect.height });
-                                const signed = await signMessageUrl(m.url);
-                                setLightboxVideo(signed || m.url);
-                              }}
-                              className="w-full aspect-square rounded-lg overflow-hidden bg-dark-800 relative"
-                            >
-                              {(m.thumbnail_url || getVideoThumbnailUrl(m.url)) ? (
-                                <SignedImage
-                                  url={m.thumbnail_url || getVideoThumbnailUrl(m.url)!}
-                                  alt=""
-                                  className="w-full h-full object-cover"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-dark-800">
-                                  <span className="text-lg">🎬</span>
-                                </div>
-                              )}
-                              <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                                <div className="w-6 h-6 rounded-full bg-white/80 flex items-center justify-center">
-                                  <div className="w-0 h-0 border-t-4 border-t-transparent border-b-4 border-b-transparent border-l-[7px] border-l-black ml-0.5" />
-                                </div>
-                              </div>
-                            </button>
-                          ) : m.media_type === "audio" ? (
-                            <button
-                              onClick={() => {
-                                setChatInfoPlayingVN(
-                                  chatInfoPlayingVN?.url === m.url
-                                    ? null
-                                    : { url: m.url, duration: undefined }
-                                );
-                              }}
-                              className={`w-full aspect-square rounded-lg border flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${
-                                chatInfoPlayingVN?.url === m.url
-                                  ? "bg-primary-600/20 border-primary-500/40"
-                                  : "bg-dark-800 border-white/10"
-                              }`}
-                            >
-                              <Mic className={`w-5 h-5 ${
-                                chatInfoPlayingVN?.url === m.url ? "text-primary-400" : "text-dark-400"
-                              }`} />
-                              <span className="text-[9px] text-dark-400">Voice</span>
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => handleDocumentOpen(m.url, m.file_name)}
-                              className="w-full aspect-square rounded-lg bg-dark-800 border border-white/10 flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform"
-                            >
-                              <span className="text-lg">{getDocIcon(m.file_name)}</span>
-                              <span className="text-[9px] text-dark-400 truncate max-w-full px-1 break-all leading-tight text-center">
-                                {m.file_name
-                                  ? m.file_name.length > 12
-                                    ? m.file_name.slice(0, 9) + "..." + (m.file_name.split(".").pop() || "")
-                                    : m.file_name
-                                  : "FILE"}
-                              </span>
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="px-4 py-4 border-t border-white/5 space-y-1">
-                <button
-                  onClick={toggleMute}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                >
-                  {isMuted ? <Volume2 className="w-5 h-5 text-dark-400" /> : <VolumeX className="w-5 h-5 text-dark-400" />}
-                  <span className="text-sm text-dark-200">{isMuted ? "Unmute notifications" : "Mute notifications"}</span>
-                </button>
-
-                <button
-                  onClick={deleteChat}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                >
-                  <Trash2 className="w-5 h-5 text-red-400" />
-                  <span className="text-sm text-red-400">Clear chat</span>
-                </button>
-
-                <button
-                  onClick={() => { setShowChatInfo(false); toggleBlock(); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/5 text-left active:scale-[0.98] transition-transform"
-                >
-                  <Ban className="w-5 h-5 text-red-400" />
-                  <span className="text-sm text-red-400">{isBlocked ? "Unblock user" : "Block user"}</span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const fn = pendingAction.run;
+                  setPendingAction(null);
+                  await fn();
+                }}
+                className={`px-4 h-10 rounded-xl text-white text-sm font-medium ${
+                  pendingAction.danger ? "bg-red-600" : "bg-primary-600"
+                }`}
+              >
+                {pendingAction.confirmLabel}
+              </button>
             </div>
-          </div>,
-          document.body
-        )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-      {/* =====================================================
-          LIGHTBOXES
-          ===================================================== */}
-      <ImageLightbox
-        isOpen={!!lightboxImage}
-        onClose={() => setLightboxImage(null)}
-        imageUrl={lightboxImage}
-      />
+// Bubble row wrapper for non-pending, non-failed messages. Owns the
+// long-press / right-click / hover-chevron triggers that open the
+// MessageActionMenu. Extracted so each row gets its own
+// `useLongPress` hook instance (hooks can't be called inside `.map`).
+function MessageBubbleWrapper({
+  isMine,
+  bubbleClass,
+  highlighted,
+  onOpenMenu,
+  onSwipeReply,
+  children,
+}: {
+  isMine: boolean;
+  bubbleClass: string;
+  highlighted?: boolean;
+  onOpenMenu: (anchor: { x: number; y: number }) => void;
+  onSwipeReply: () => void;
+  children: React.ReactNode;
+}) {
+  // Long-press → context menu. Swipe (touch only) → trigger reply.
+  // The two hooks each return pointer handlers; we compose them so
+  // both observe the same gesture sequence. Long-press cancels on
+  // ≥8px of movement, so a real swipe never fires the menu.
+  const longPress = useLongPress({
+    onLongPress: (x, y) => onOpenMenu({ x, y }),
+  });
+  const swipe = useSwipeToReply({
+    direction: isMine ? "left" : "right",
+    onCommit: onSwipeReply,
+  });
+  const handlers = {
+    onPointerDown: (e: React.PointerEvent) => {
+      longPress.onPointerDown(e);
+      swipe.handlers.onPointerDown(e);
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      longPress.onPointerMove(e);
+      swipe.handlers.onPointerMove(e);
+    },
+    onPointerUp: (e: React.PointerEvent) => {
+      longPress.onPointerUp(e);
+      swipe.handlers.onPointerUp();
+    },
+    onPointerCancel: (e: React.PointerEvent) => {
+      longPress.onPointerCancel();
+      swipe.handlers.onPointerCancel();
+      void e;
+    },
+    onPointerLeave: () => {
+      longPress.onPointerLeave();
+    },
+  };
+  const dragX = swipe.dragX;
+  return (
+    <div
+      className={`${bubbleClass} relative group ${
+        highlighted ? "peja-highlight-flash" : ""
+      }`}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onOpenMenu({ x: e.clientX, y: e.clientY });
+      }}
+      style={{
+        transform: dragX !== 0 ? `translateX(${dragX}px)` : undefined,
+        // Snap back smoothly when the gesture ends (dragX = 0). While
+        // the user is actively dragging we want the transform to track
+        // their finger 1:1, so no transition.
+        transition: dragX === 0 ? "transform 200ms ease" : undefined,
+      }}
+      {...handlers}
+    >
+      {children}
+      {/* Desktop-only hover affordance — a chevron in the top-right
+          corner that opens the same menu the long-press / right-click
+          triggers. Hidden by default and surfaced via `group-hover`,
+          so touch devices (which don't fire :hover) never see it. */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          const rect = e.currentTarget.getBoundingClientRect();
+          onOpenMenu({ x: rect.right, y: rect.bottom });
+        }}
+        className={`absolute top-1.5 ${
+          isMine ? "left-1.5" : "right-1.5"
+        } w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
+          isMine
+            ? "bg-white/25 text-white hover:bg-white/35"
+            : "bg-black/15 text-dark-200 hover:bg-black/25"
+        }`}
+        aria-label="Message options"
+      >
+        <ChevronDown className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
 
-      <VideoLightbox
-        isOpen={!!lightboxVideo}
-        onClose={() => { setLightboxVideo(null); setLightboxVideoRect(null); }}
-        videoUrl={lightboxVideo}
-        sourceRect={lightboxVideoRect}
-      />
-      {/* Document Viewer */}
-      <DocumentViewer
-        isOpen={!!docViewer}
-        onClose={() => setDocViewer(null)}
-        url={docViewer?.url || null}
-        fileName={docViewer?.fileName || null}
-        fileSize={docViewer?.fileSize}
-      />
+// Thumbnail for a File in the to-be-sent row. Builds + revokes its own
+// blob URL so the parent doesn't have to manage memory for previews.
+// For videos, renders a muted `<video preload="metadata">` so the
+// browser pulls the first frame on its own — looks like a real
+// Stable color per sender id for the WhatsApp-style sender name
+// pill at the top of each group bubble. Pure function of the user
+// id so the same person always gets the same colour across renders.
+const SENDER_PALETTE = [
+  "#10b981", // emerald
+  "#f59e0b", // amber
+  "#ec4899", // pink
+  "#06b6d4", // cyan
+  "#a78bfa", // violet
+  "#f97316", // orange
+  "#22c55e", // green
+  "#ef4444", // red
+  "#3b82f6", // blue
+];
+function pejaSenderColor(userId: string): string {
+  let h = 0;
+  for (let i = 0; i < userId.length; i++) {
+    h = (h * 31 + userId.charCodeAt(i)) >>> 0;
+  }
+  return SENDER_PALETTE[h % SENDER_PALETTE.length];
+}
+
+// thumbnail without any extra canvas/extraction code.
+function PendingThumb({
+  file,
+  onRemove,
+}: {
+  file: File;
+  onRemove: () => void;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const isVideo = file.type.startsWith("video/");
+  const isImage = file.type.startsWith("image/");
+  const isDocument = !isImage && !isVideo;
+  useEffect(() => {
+    // Documents don't need a blob preview — we render an icon + name
+    // card instead. Skip the URL.createObjectURL allocation so we
+    // don't leak it for files we never display.
+    if (isDocument) return;
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file, isDocument]);
+  return (
+    <div className="relative shrink-0">
+      <div className="w-16 h-16 rounded-xl overflow-hidden bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)]">
+        {isDocument ? (
+          <div className="w-full h-full flex flex-col items-center justify-center px-1 text-center">
+            <FileText className="w-5 h-5 text-dark-300" />
+            <span className="text-[9px] text-dark-300 truncate w-full mt-0.5">
+              {file.name}
+            </span>
+          </div>
+        ) : url && isVideo ? (
+          <video
+            src={url}
+            muted
+            playsInline
+            preload="metadata"
+            className="w-full h-full object-cover"
+          />
+        ) : url ? (
+          <img src={url} alt="" className="w-full h-full object-cover" />
+        ) : null}
+      </div>
+      {isVideo && (
+        <span
+          className="absolute bottom-1 left-1 bg-black/70 text-white text-[10px] font-semibold px-1 rounded"
+          aria-hidden
+        >
+          ▶
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/80 border border-white/20 text-white flex items-center justify-center"
+        aria-label="Remove"
+      >
+        <X className="w-3 h-3" />
+      </button>
     </div>
   );
 }

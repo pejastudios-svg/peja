@@ -50,13 +50,13 @@ export async function POST(req: NextRequest) {
 
   if (fails >= 10) {
     return NextResponse.json(
-      { ok: false, error: "Locked — too many attempts", locked: true, lockout_minutes: 60 },
+      { ok: false, error: "Locked. Too many attempts", locked: true, lockout_minutes: 60 },
       { status: 429 }
     );
   }
   if (fails >= 5) {
     return NextResponse.json(
-      { ok: false, error: "Too many attempts — wait 5 min", locked: true, lockout_minutes: 5 },
+      { ok: false, error: "Too many attempts. Wait 5 min", locked: true, lockout_minutes: 5 },
       { status: 429 }
     );
   }

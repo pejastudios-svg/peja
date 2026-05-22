@@ -104,9 +104,15 @@ export default function InAppNotificationToasts() {
 
           const n = payload.new as NotificationRow;
 
-          // Suppress completely if user is currently in the chat this DM belongs to
+          // Suppress completely if user is currently in the chat this DM belongs to.
+          // Digest rows (dm_message_digest) carry the same conversation_id and
+          // need the same treatment — they're inserted via the delete-then-insert
+          // pattern in peja_notify_dm so they fire INSERT realtime, which would
+          // otherwise toast you for the very chat you're looking at.
           if (
-            (n.type === "dm_message" || n.type === "dm_reaction") &&
+            (n.type === "dm_message" ||
+              n.type === "dm_reaction" ||
+              n.type === "dm_message_digest") &&
             n.data?.conversation_id
           ) {
             const activeConvo = (window as any).__pejaActiveConversationId;
@@ -178,11 +184,36 @@ export default function InAppNotificationToasts() {
       className="fixed left-0 right-0 z-[9999999] flex justify-center px-3"
       style={{ top: "calc(64px + env(safe-area-inset-top, 0px) + 8px)" }}
     >
-      <div className="w-full max-w-md space-y-2">
-        {toasts.map((n) => (
+      {/* Toast stack. Newest sits in front; older toasts peek out
+          from behind with a downward offset + slight scale-down, so
+          rapid bursts compress into a card stack instead of a long
+          vertical list. Capped at 3 simultaneous in the setToasts
+          updater above. Front card stays fully readable; the peek
+          height (8 / 16 px) is just enough to telegraph "there are
+          more behind." Clicking still routes to the front toast;
+          older cards become reachable as the front one auto-dismisses. */}
+      <div className="w-full max-w-md relative">
+        {toasts.map((n, i) => (
           <div
             key={n.id}
-            className="glass-float rounded-2xl border border-white/10 shadow-xl overflow-hidden animate-[toastIn_180ms_ease-out] cursor-pointer"
+            className="glass-float rounded-2xl border border-white/10 shadow-xl overflow-hidden cursor-pointer transition-all duration-200 ease-out"
+            style={{
+              // Front toast (i=0) stays in the document flow so it
+              // dictates the container's height; deeper cards layer
+              // behind it via absolute + transform. Without that, the
+              // container would collapse to 0 and the page below
+              // would jump as the toast count changes.
+              position: i === 0 ? "relative" : "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              transform: `translateY(${i * 8}px) scale(${1 - i * 0.04})`,
+              transformOrigin: "top center",
+              zIndex: 30 - i,
+              opacity: 1 - i * 0.18,
+              animation:
+                i === 0 ? "toastIn 180ms ease-out" : undefined,
+            }}
             onClick={() => handleClick(n)}
           >
             <div className="p-3 flex items-start gap-3">

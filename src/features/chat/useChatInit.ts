@@ -28,6 +28,7 @@ import { fetchConversationList } from "./api";
 import { readOutbox } from "./outbox";
 import { getBlob } from "./mediaBlobs";
 import { useOutboxDrain } from "./useOutboxDrain";
+import { useActionQueueDrain } from "./useActionQueueDrain";
 import type { ChatMessageMedia } from "./types";
 
 export function useChatInit() {
@@ -103,6 +104,11 @@ export function useChatInit() {
   // Outbox drain — listens for online + visibility + reconnect events
   // and replays anything still queued. Self-contained, idempotent.
   useOutboxDrain(userId);
+  // Same pattern but for non-send actions (edit, delete-me,
+  // delete-all, react-add, react-remove). Lives in a parallel queue
+  // (actionQueue.ts) because the data shapes don't overlap with the
+  // send outbox's OutboxItem.
+  useActionQueueDrain(userId);
 }
 
 // Build blob: URLs for a queued media message and patch them onto the

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Bell, ArrowLeft, User, MessageCircle, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { useMessageCache } from "@/context/MessageCacheContext";
+import { useChatStore } from "@/features/chat/store";
 import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "@/lib/supabase";
 
@@ -26,6 +26,20 @@ interface HeaderProps {
   // Back variant only. Renders the default bell + theme-toggle pill. Used by
   // Map / Notifications which want to expose those even on back-style pages.
   showDefaultActions?: boolean;
+  // Back variant only. Small circular avatar rendered between the back arrow
+  // and the title — used by the chat thread to show the other user's profile
+  // pic. `undefined` (default) renders no slot; `null` renders a placeholder
+  // user icon; a string renders the image.
+  avatarUrl?: string | null;
+  // Back variant only. When set, the avatar becomes its own tap target
+  // (so e.g. the chat thread can pop a circular preview modal). When
+  // undefined the avatar is decorative.
+  onAvatarTap?: () => void;
+  // Back variant only. When set, the title+subtitle area becomes a
+  // separate tap target (so e.g. tapping the name opens the chat
+  // info sheet). When undefined the whole back pill behaves as one
+  // back button — current behaviour, preserved for the other pages.
+  onTitleTap?: () => void;
 }
 
 // Theme-aware liquid glass via CSS variables. blur(20px) is the sweet spot —
@@ -50,17 +64,33 @@ export function Header({
   subtitle,
   actions,
   showDefaultActions = false,
+  avatarUrl,
+  onAvatarTap,
+  onTitleTap,
 }: HeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
-  const { conversations } = useMessageCache();
+  // v2 chat store: conversationsById is populated globally by the
+  // ChatBootstrap component mounted in app/layout.tsx (same role v1's
+  // MessageCacheProvider played). Selector returns the record so we
+  // can sum unread_count without re-rendering on unrelated store
+  // changes.
+  const conversationsById = useChatStore((s) => s.conversationsById);
   const { theme, toggle: toggleTheme } = useTheme();
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const isVip = user?.is_vip === true;
-  const dmUnread = isVip
-    ? conversations.reduce((sum, c) => sum + (c.unread_count || 0), 0)
+  // Show the message button to anyone who can actually message — that's
+  // VIPs and MVPs (and admins, who can DM anyone). Regular users see no
+  // button at all; the v1 version only checked is_vip and locked MVPs
+  // out by accident.
+  const canMessage =
+    user?.is_vip === true || user?.is_mvp === true || user?.is_admin === true;
+  const dmUnread = canMessage
+    ? Object.values(conversationsById).reduce(
+        (sum, c) => sum + (c.unread_count || 0),
+        0
+      )
     : 0;
 
   useEffect(() => {
@@ -117,22 +147,101 @@ export function Header({
       >
         <div className="flex items-center gap-2 px-3 pt-2">
           <div className="flex items-center h-11 px-3 flex-1 min-w-0" style={GLASS}>
-            <button
-              onClick={onBack || (() => router.back())}
-              className="flex items-center gap-1.5 p-0.5 rounded-lg active:opacity-70 transition-opacity min-w-0 flex-1"
-            >
-              <ArrowLeft className="w-5 h-5 text-dark-200 shrink-0" strokeWidth={2.5} />
-              <span className="flex flex-col min-w-0 items-start leading-tight">
-                <span className="text-[15px] font-semibold text-dark-100 truncate max-w-full">
-                  {title || "Back"}
+            {(() => {
+              // Two layouts share the back pill:
+              //
+              //   • One-big-button (default): the entire pill is one back
+              //     button — current behaviour for the rest of the app.
+              //
+              //   • Split tap targets (opted in by passing onAvatarTap or
+              //     onTitleTap): the back arrow, avatar, and title become
+              //     three separate buttons so the chat thread can route
+              //     avatar-tap to the preview modal and name-tap to the
+              //     chat info sheet. Nested <button> is invalid HTML, so
+              //     we deliberately can't keep the whole row as one
+              //     button when the children need to be tappable.
+              const splitTargets = onAvatarTap || onTitleTap;
+
+              const avatarContent = avatarUrl !== undefined && (
+                <span className="w-7 h-7 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-[var(--chat-other-bg)]">
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User
+                      className="w-3.5 h-3.5"
+                      style={{ color: "var(--color-dark-400)" }}
+                    />
+                  )}
                 </span>
-                {subtitle && (
-                  <span className="text-[11px] text-dark-400 truncate max-w-full">
-                    {subtitle}
+              );
+
+              const titleContent = (
+                <span className="flex flex-col min-w-0 items-start leading-tight">
+                  <span className="text-[15px] font-semibold text-dark-100 truncate max-w-full">
+                    {title || "Back"}
                   </span>
-                )}
-              </span>
-            </button>
+                  {subtitle && (
+                    <span className="text-[11px] text-dark-400 truncate max-w-full">
+                      {subtitle}
+                    </span>
+                  )}
+                </span>
+              );
+
+              if (!splitTargets) {
+                return (
+                  <button
+                    onClick={onBack || (() => router.back())}
+                    className="flex items-center gap-1.5 p-0.5 rounded-lg active:opacity-70 transition-opacity min-w-0 flex-1"
+                  >
+                    <ArrowLeft className="w-5 h-5 text-dark-200 shrink-0" strokeWidth={2.5} />
+                    {avatarContent}
+                    {titleContent}
+                  </button>
+                );
+              }
+
+              return (
+                <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={onBack || (() => router.back())}
+                    className="p-0.5 rounded-lg active:opacity-70 transition-opacity shrink-0"
+                    aria-label="Back"
+                  >
+                    <ArrowLeft className="w-5 h-5 text-dark-200" strokeWidth={2.5} />
+                  </button>
+                  {avatarUrl !== undefined &&
+                    (onAvatarTap ? (
+                      <button
+                        type="button"
+                        onClick={onAvatarTap}
+                        className="shrink-0 active:opacity-70 transition-opacity"
+                        aria-label="View profile picture"
+                      >
+                        {avatarContent}
+                      </button>
+                    ) : (
+                      avatarContent
+                    ))}
+                  {onTitleTap ? (
+                    <button
+                      type="button"
+                      onClick={onTitleTap}
+                      className="min-w-0 flex-1 p-0.5 rounded-lg active:opacity-70 transition-opacity text-left"
+                    >
+                      {titleContent}
+                    </button>
+                  ) : (
+                    titleContent
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {actions ? (
@@ -230,8 +339,8 @@ export function Header({
             )}
           </button>
 
-          {/* VIP Messages */}
-          {isVip && (
+          {/* DM entry — gated to VIPs/MVPs/admins (regular users get nothing) */}
+          {canMessage && (
             <Link
               href="/messages"
               className={`relative p-2 rounded-xl transition-colors active:bg-white/10 ${

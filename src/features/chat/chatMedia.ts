@@ -42,8 +42,10 @@ export type ProcessedAttachment =
       file: File;
       // Video lands here only via the SKIP_COMPRESSION fallback (the
       // original is already small enough or Cloudinary isn't
-      // configured). Image / document are the typical paths.
-      media_type: "image" | "video" | "document";
+      // configured). Image / audio / document are the typical paths.
+      // Audio is here because voice notes are small enough that
+      // Cloudinary transcoding isn't worth the round-trip.
+      media_type: "image" | "video" | "audio" | "document";
       width?: number;
       height?: number;
     }
@@ -176,6 +178,17 @@ export async function processAttachment(
       }
       throw e;
     }
+  }
+
+  if (type === "audio") {
+    // Voice notes are small (typically <1 MB at 60 s) — upload as-is
+    // to Supabase Storage. No transcoding. media_type must stay
+    // "audio" all the way through so the recipient's bubble routes
+    // to the audio player; if we dropped to "document" here, the
+    // message_media row would render as a blank chat bubble on the
+    // other side.
+    onProgress?.({ fraction: 1, label: "Ready" });
+    return { kind: "supabase", file: working, media_type: "audio" };
   }
 
   // Documents / other — no compression, upload as-is.

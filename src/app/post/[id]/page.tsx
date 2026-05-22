@@ -22,6 +22,7 @@ import { PostDetailSkeleton } from "@/components/posts/PostDetailSkeleton";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/context/ToastContext";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
+import { IncidentForwardSheet } from "@/components/messages-v2/IncidentForwardSheet";
 import { getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { apiUrl } from "@/lib/api";
 import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
@@ -277,6 +278,11 @@ export default function PostDetailPage() {
   const searchParams = useSearchParams();
   const sourceKey = searchParams.get("sourceKey");
   const { user, loading: authLoading } = useAuth();
+  // Only elevated users see the "Send to chat" button; matches the gate
+  // baked into peja_can_dm so a regular user can't even reach the picker.
+  const canForwardToChat =
+    user?.is_vip === true || user?.is_mvp === true || user?.is_admin === true;
+  const [forwardSheetOpen, setForwardSheetOpen] = useState(false);
   // Some messaging clients append the post body to the URL when sharing,
   // producing paths like /post/<uuid>%20Armed%20bandits... — extract just the
   // leading UUID so the deep link still resolves.
@@ -1505,6 +1511,15 @@ if (error || !post) {
                 <CheckCircle className="w-4 h-4" strokeWidth={2.2} />
                 {isConfirmed ? "Confirmed" : "Confirm"} ({confirmCount})
               </button>
+              {canForwardToChat && (
+                <button
+                  onClick={() => setForwardSheetOpen(true)}
+                  className="p-2.5 rounded-xl glass-sm text-dark-300 hover:bg-white/10 active:scale-90 transition-transform duration-150"
+                  aria-label="Send to chat"
+                >
+                  <Send className="w-5 h-5" />
+                </button>
+              )}
               <button onClick={handleShare} className="p-2.5 rounded-xl glass-sm text-dark-300 hover:bg-white/10">
                 <Share2 className="w-5 h-5" />
               </button>
@@ -1780,6 +1795,22 @@ if (error || !post) {
           <Button variant="danger" className="flex-1" onClick={handleDeleteCommentAction}>Delete</Button>
         </div>
       </Modal>
+
+      {forwardSheetOpen && user && post && (
+        <IncidentForwardSheet
+          currentUserId={user.id}
+          messageBody={`https://peja.life/post/${post.id}`}
+          onClose={() => setForwardSheetOpen(false)}
+          onSent={(count: number) => {
+            toastApi.success(
+              count === 1 ? "Sent to 1 chat" : `Sent to ${count} chats`
+            );
+          }}
+          onError={() => {
+            toastApi.danger("Couldn't send. Try again.");
+          }}
+        />
+      )}
     </div>
   );
 }

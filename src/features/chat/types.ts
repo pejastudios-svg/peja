@@ -22,6 +22,11 @@ export interface ChatMessage {
   edited_at: string | null;
   is_deleted: boolean;
   reply_to_id: string | null;
+  // Snapshot of the parent message this is a reply to. Hydrated on
+  // fetch + realtime, populated optimistically on send. Lightweight on
+  // purpose — just enough to render the quoted-reference bubble; we
+  // never use it to drive logic beyond display.
+  reply_to?: ReplyTarget | null;
   // UI state, not persisted. "pending" → on the wire. "sent" → server
   // confirmed via realtime. "seen" → recipient's read receipt arrived.
   // "failed" → insert errored; user can retry.
@@ -30,6 +35,40 @@ export interface ChatMessage {
   // table on fetch, populated optimistically on send. Empty / undefined
   // for text messages.
   media?: ChatMessageMedia[];
+  // Emoji reactions on this message — multiple users can react, the
+  // same user may react with multiple emojis. We render a grouped
+  // badge cluster (👍 2 / ❤️ 1 / …) on the bubble.
+  reactions?: MessageReaction[];
+  // Per-conversation pinning. Any participant can pin or unpin —
+  // pinned messages surface in the pinned-bar above the thread.
+  is_pinned?: boolean;
+  pinned_at?: string | null;
+}
+
+// One row of the `message_reactions` table. v2 keeps the legacy v1
+// shape so the existing data is forward-compatible — same columns,
+// same constraints, no migration needed.
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+}
+
+// Minimal snapshot of the parent message that a reply is referencing.
+// Stored on the reply itself (not re-fetched per-render) so the
+// quoted-reference block in the bubble doesn't have to do a network
+// trip when scrolling.
+export interface ReplyTarget {
+  id: string;
+  sender_id: string;
+  content: string | null;
+  is_deleted: boolean;
+  // Coarse preview kind so we can show "📷 Photo" / "🎙 Voice note"
+  // when the parent was media-only. Derived from message_media for
+  // media parents, or "text" for text-only parents.
+  preview_kind: "text" | "image" | "video" | "audio" | "document";
 }
 
 // One row of the `message_media` table. We use the same shape v1 used so
@@ -77,6 +116,59 @@ export interface ChatConversationSummary {
   // double-tick "seen" indicator in the list.
   last_message_seen: boolean;
   unread_count: number;
+  // Per-user moderation flags read from conversation_participants for the
+  // CURRENT user (mirrors v1's chat). is_muted silences notifications for
+  // this conversation. is_blocked means I've blocked the other user (also
+  // backed by the global `dm_blocks` table).
+  is_muted: boolean;
+  is_blocked: boolean;
+  // True when the OTHER participant has set their own is_blocked flag —
+  // i.e., they've blocked me. Drives the in-thread "you've been blocked"
+  // banner that replaces the composer.
+  blocked_by_other: boolean;
+  // My own last_read_at from conversation_participants. Used by the
+  // thread page to render the "Unread messages" divider above the
+  // first message that arrived after I last read the chat. Snapshotted
+  // at mount time so the divider stays put even as the live read
+  // pointer advances.
+  my_last_read_at: string | null;
+  // Per-user pinning. Pinned conversations sort to the top of the
+  // list regardless of last_message_at. is_pinned drives the
+  // indicator + the kebab toggle; pinned_at is the secondary sort
+  // key when multiple pins exist (most recent pin first).
+  is_pinned?: boolean;
+  pinned_at?: string | null;
+  // Per-user notification mode. 'all' is the default; 'mentions'
+  // only fires for @mentions in groups; 'muted' suppresses all
+  // notifications. is_muted (legacy boolean) is kept in lock step
+  // by the RPC so older readers still see the right value.
+  notification_mode?: "all" | "mentions" | "muted";
+  // Group-chat metadata. is_group flips the row into "group mode" —
+  // the other_user_* fields stay populated for backward compatibility
+  // (set to the group's name / avatar so the list / header render
+  // cleanly without branching) but the group_* fields are the source
+  // of truth.
+  is_group: boolean;
+  group_name: string | null;
+  group_avatar_url: string | null;
+  // Total participant count for groups — drives the "12 members"
+  // subtitle in the thread header. Always 2 for DMs (left undefined
+  // there to keep the DM render path untouched).
+  member_count?: number;
+  // My own role inside the group. 'owner' grants member-management
+  // controls in the chat-info sheet; 'member' shows only the Leave
+  // button. Undefined for DMs.
+  my_role?: "owner" | "member";
+}
+
+export interface GroupParticipant {
+  user_id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+  role: "owner" | "member";
+  is_vip: boolean;
+  is_mvp: boolean;
+  is_admin: boolean;
 }
 
 // Per-conversation thread slice held in the store. Separated from the

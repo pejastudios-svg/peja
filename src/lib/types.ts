@@ -251,6 +251,10 @@ export interface VIPUser {
   email: string | null;
   avatar_url: string | null;
   is_vip: boolean;
+  // MVP is the role tier strictly above VIP. Admin-managed. See
+  // project_mvp_vip_roles memory note for the visibility rules
+  // (MVPs see MVPs + VIPs; VIPs see only VIPs).
+  is_mvp?: boolean;
   is_admin?: boolean;
   is_guardian?: boolean;
   last_seen_at?: string | null;

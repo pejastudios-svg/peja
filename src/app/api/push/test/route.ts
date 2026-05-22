@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
             notification: {
               channelId: "peja_alerts",
               title: "Peja Test",
-              body: "Push notification test — if you see this, it works!",
+              body: "Push notification test. If you see this, it works!",
               sound: "peja_alert",
               visibility: "public",
               icon: "ic_notification",
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
     tokenCount: tokens.length,
     results,
     diagnosis: anySuccess
-      ? "Push sent successfully — check your device."
+      ? "Push sent successfully. Check your device."
       : "Send failed. See results[].errorCode / errorMessage.",
   });
 }

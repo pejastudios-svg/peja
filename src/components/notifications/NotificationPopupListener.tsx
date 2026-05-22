@@ -74,7 +74,9 @@ export function NotificationPopupListener({ table, userColumn, onNotification }:
           const row = payload.new as NotifRow;
 
           if (
-            (row.type === "dm_message" || row.type === "dm_reaction") &&
+            (row.type === "dm_message" ||
+              row.type === "dm_reaction" ||
+              row.type === "dm_message_digest") &&
             row.data?.conversation_id
           ) {
             const activeConvo = (window as any).__pejaActiveConversationId;
