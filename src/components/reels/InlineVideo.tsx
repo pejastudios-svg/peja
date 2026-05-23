@@ -59,6 +59,15 @@ export function InlineVideo({
     };
   }, []);
   const scheduleVideoRetry = () => {
+    // Retry logic is only for Cloudinary async transcode warm-up behavior.
+    // For non-Cloudinary sources, fail fast to avoid repeated reload loops.
+    if (!optimizedSrc.includes("res.cloudinary.com")) {
+      onError?.();
+      return;
+    }
+    // Once playable content is already shown, don't trigger forced reloads.
+    if (videoReadyRef.current) return;
+
     const attempt = errorRetryRef.current;
     // Delays: 2s, 5s, 10s, 20s. Total ~37s before giving up — enough for
     // Cloudinary to finish async transcoding a short clip.
@@ -69,6 +78,7 @@ export function InlineVideo({
       errorRetryTimerRef.current = setTimeout(() => {
         const v = videoRef.current;
         if (!v) return;
+        if (videoReadyRef.current) return;
         try { v.load(); } catch {}
       }, delays[attempt]);
     } else {
@@ -90,6 +100,10 @@ export function InlineVideo({
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const videoReadyRef = useRef(false);
+  useEffect(() => {
+    videoReadyRef.current = videoReady;
+  }, [videoReady]);
   // Smart preload: "none" while far from viewport, "metadata" within ~1
   // viewport of visible. Previously hardcoded to "metadata" which fired a
   // ranged HTTP request for every video on mount — a 50-post feed meant
@@ -504,7 +518,7 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
         if (errorRetryTimerRef.current) clearTimeout(errorRetryTimerRef.current);
         errorRetryTimerRef.current = setTimeout(() => {
           const v = videoRef.current;
-          if (v && v.readyState < 1) scheduleVideoRetry();
+          if (v && !videoReadyRef.current && v.readyState < 1) scheduleVideoRetry();
         }, 6000);
       }}
       onLoadedMetadata={(e) => {
@@ -516,7 +530,10 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
       onPlaying={() => setVideoReady(true)}
       onPause={() => { setIsPlaying(false); setShowControls(true); }}
       onError={scheduleVideoRetry}
-      onStalled={scheduleVideoRetry}
+      onStalled={() => {
+        // Avoid repeated reload loops after video has already become playable.
+        if (!videoReadyRef.current) scheduleVideoRetry();
+      }}
     />
   );
 
@@ -528,9 +545,7 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
             alt=""
             loading="eager"
             decoding="async"
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore — fetchpriority is valid HTML but not yet in React types
-            fetchpriority="high"
+            fetchPriority="high"
             className={isExpanded ? "absolute inset-0 w-full h-full object-contain" : "w-full h-full object-cover"}
           />
         : <div className="w-full h-full bg-black" />}

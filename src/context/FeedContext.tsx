@@ -37,7 +37,15 @@ const FeedContext = createContext<FeedContextType | null>(null);
 const STORAGE_KEY = "peja-feed-v2";
 const PENDING_KEY = "peja-feed-pending-v1";
 const MAX_AGE = 10 * 60 * 1000; // 10 minutes for cached feeds
-const PENDING_TTL = 2 * 60 * 1000; // 2 minutes — server should have caught up by then
+const PENDING_TTL = 2 * 60 * 1000; // 2 minutes — server should have caught up by then (creates only)
+
+function isCapacitorNative(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    (window as Window & { Capacitor?: unknown }).Capacitor !== undefined ||
+    (/Android/.test(navigator.userAgent) && /wv/.test(navigator.userAgent))
+  );
+}
 
 function loadPersistedFeed(): Map<FeedKey, FeedCacheValue> {
   const map = new Map<FeedKey, FeedCacheValue>();
@@ -76,9 +84,12 @@ function loadPending(): PendingState {
     Object.entries(parsed.creates || {}).forEach(([id, v]) => {
       if (v?.createdAt && now - v.createdAt < PENDING_TTL) creates[id] = v;
     });
+    // Deletes are kept until the server/reconcile confirms removal — do not
+    // TTL-expire them, or a stale localStorage feed can resurrect deleted posts
+    // after the Android WebView resumes from background.
     const deletes: Record<string, number> = {};
     Object.entries(parsed.deletes || {}).forEach(([id, ts]) => {
-      if (typeof ts === "number" && now - ts < PENDING_TTL) deletes[id] = ts;
+      if (typeof ts === "number") deletes[id] = ts;
     });
     return { creates, deletes };
   } catch {}
@@ -153,6 +164,45 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
+  // Global UI-event sync: any page that dispatches local delete/archive events
+  // should instantly update shared caches + pending tombstones.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const applyLocalDelete = (id?: string) => {
+      if (!id) return;
+
+      const store = storeRef.current!;
+      let changed = false;
+      store.forEach((value, key) => {
+        const filtered = value.posts.filter((p) => p.id !== id);
+        if (filtered.length !== value.posts.length) {
+          store.set(key, { ...value, posts: filtered });
+          changed = true;
+        }
+      });
+      if (changed) persistFeed(store);
+
+      const p = pendingRef.current!;
+      p.deletes[id] = Date.now();
+      delete p.creates[id];
+      persistPending(p);
+    };
+
+    const onDeleted = (e: Event) => {
+      const { postId } = (e as CustomEvent).detail || {};
+      applyLocalDelete(postId);
+    };
+
+    window.addEventListener("peja-post-deleted", onDeleted);
+    window.addEventListener("peja-post-archived", onDeleted);
+
+    return () => {
+      window.removeEventListener("peja-post-deleted", onDeleted);
+      window.removeEventListener("peja-post-archived", onDeleted);
+    };
+  }, []);
+
   // Periodic pending-state sweep as a failsafe — cap entries at PENDING_TTL.
   useEffect(() => {
     const interval = setInterval(() => {
@@ -162,21 +212,90 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
       Object.entries(p.creates).forEach(([id, v]) => {
         if (now - v.createdAt > PENDING_TTL) { delete p.creates[id]; changed = true; }
       });
-      Object.entries(p.deletes).forEach(([id, ts]) => {
-        if (now - ts > PENDING_TTL) { delete p.deletes[id]; changed = true; }
-      });
       if (changed) persistPending(p);
     }, 30 * 1000);
     return () => clearInterval(interval);
   }, []);
 
+  // Capacitor/Android: on resume, re-read pending deletes from storage (WebView may
+  // have cleared or desynced memory), scrub stale posts from persisted feeds, and
+  // tell mounted pages to revalidate against the server.
+  useEffect(() => {
+    if (!isCapacitorNative()) return;
+
+    const onForeground = () => {
+      pendingRef.current = loadPending();
+      const deleteIds = new Set(Object.keys(pendingRef.current.deletes));
+      const store = storeRef.current!;
+      let changed = false;
+
+      if (deleteIds.size > 0) {
+        store.forEach((value, key) => {
+          const filtered = value.posts.filter((p) => !deleteIds.has(p.id));
+          if (filtered.length !== value.posts.length) {
+            store.set(key, { ...value, posts: filtered });
+            changed = true;
+          }
+        });
+        if (changed) persistFeed(store);
+      }
+
+      window.dispatchEvent(new CustomEvent("peja-app-foreground"));
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") onForeground();
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+
+    let removeAppListener: (() => void) | undefined;
+    void import("@capacitor/app")
+      .then(({ App }) =>
+        App.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) onForeground();
+        })
+      )
+      .then((handle) => {
+        removeAppListener = () => void handle.remove();
+      })
+      .catch(() => {});
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      removeAppListener?.();
+    };
+  }, []);
+
   const api = useMemo<FeedContextType>(() => {
+    const filterPendingDeletes = (posts: Post[]) => {
+      const deleteIds = new Set(Object.keys(pendingRef.current!.deletes));
+      if (deleteIds.size === 0) return posts;
+      return posts.filter((x) => !deleteIds.has(x.id));
+    };
+
     return {
-      get: (key) => storeRef.current!.get(key) || null,
+      get: (key) => {
+        const cached = storeRef.current!.get(key) || null;
+        if (!cached) return null;
+
+        // Enforce pending-delete overlay on every cache read so route
+        // navigation can't resurrect a locally deleted post from stale storage.
+        const cleaned = filterPendingDeletes(cached.posts);
+        if (cleaned.length !== cached.posts.length) {
+          const next = { ...cached, posts: cleaned };
+          storeRef.current!.set(key, next);
+          persistFeed(storeRef.current!);
+          return next;
+        }
+
+        return cached;
+      },
       setPosts: (key, posts) => {
         const prev = storeRef.current!.get(key);
+        const cleaned = filterPendingDeletes(posts);
         storeRef.current!.set(key, {
-          posts,
+          posts: cleaned,
           updatedAt: Date.now(),
           scrollY: prev?.scrollY || 0,
         });
@@ -243,6 +362,10 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
         // If a pending create now appears in server data, the server caught up.
         Object.keys(p.creates).forEach((id) => {
           if (fetchedIds.has(id)) { delete p.creates[id]; changed = true; }
+        });
+        // Hard-deleted posts never appear in server responses — clear overlay.
+        Object.keys(p.deletes).forEach((id) => {
+          if (!fetchedIds.has(id)) { delete p.deletes[id]; changed = true; }
         });
         if (changed) persistPending(p);
       },

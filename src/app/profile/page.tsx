@@ -233,7 +233,7 @@ export default function ProfilePage() {
       feedCache.reconcile(formattedPosts);
       const display = feedCache.applyOverlay(formattedPosts);
       setUserPosts(display);
-      feedCache.setPosts("profile:posts", formattedPosts);
+      feedCache.setPosts("profile:posts", display);
       confirm.hydrateCounts(
         display.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 }))
       );
@@ -292,7 +292,7 @@ export default function ProfilePage() {
       const filtered = formatted.filter((p) => p.status !== "archived");
       const display = feedCache.applyDeletes(filtered);
       setConfirmedPosts(display);
-      feedCache.setPosts("profile:confirmed", filtered);
+      feedCache.setPosts("profile:confirmed", display);
       confirm.hydrateCounts(display.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
       confirm.loadConfirmedFor(display.map((p) => p.id));
     } catch (e) {
@@ -300,6 +300,17 @@ export default function ProfilePage() {
       setConfirmedLoading(false);
     }
   };
+
+  // Capacitor resume: refresh profile posts from server.
+  useEffect(() => {
+    const onForeground = () => {
+      if (!user) return;
+      void fetchUserPosts();
+      void fetchConfirmedPosts();
+    };
+    window.addEventListener("peja-app-foreground", onForeground);
+    return () => window.removeEventListener("peja-app-foreground", onForeground);
+  }, [user]);
 
   // ============================================================
   // ALL HOOKS ARE DONE — early returns are now safe

@@ -37,6 +37,7 @@ import { Header } from "@/components/layout/Header";
 import { VideoRecorder } from "@/components/media/VideoRecorder";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
 import { useProfileGate } from "@/components/profile/ProfileCompletionGate";
+import { buildLoginHref } from "@/lib/safeNext";
 
 // Category icon mapping
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -193,12 +194,15 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   useEffect(() => {
     if (authLoading) return;
     if (!user) {
-      // Small delay to avoid race condition during auth state transitions
-      // (e.g. overlay mounting briefly before session is hydrated)
-      const timer = setTimeout(() => {
-        router.replace("/login");
-      }, 500);
-      return () => clearTimeout(timer);
+      const href = buildLoginHref("/create");
+      // Use a hard navigation so we never get stuck on a blank client frame
+      // when this page is reached without an authenticated session.
+      if (typeof window !== "undefined") {
+        window.location.replace(href);
+      } else {
+        router.replace(href);
+      }
+      return;
     }
     handleGetLocation();
   }, [user, authLoading, router]);
@@ -219,7 +223,19 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     );
   }
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <div className="min-h-screen pb-8">
+        <Header variant="back" title="Report Incident" onBack={() => router.back()} />
+        <main className="pt-app-header-pill px-4 max-w-2xl mx-auto">
+          <div className="glass-card flex items-center justify-center gap-3 py-8">
+            <PejaSpinner className="w-5 h-5" />
+            <p className="text-sm text-dark-300">Redirecting to sign in...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   // Returns both the display address string AND the structured state name
   // from Nominatim. State is stored on the post row so the notification

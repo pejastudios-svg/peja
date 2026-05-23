@@ -70,6 +70,11 @@ export default function Home() {
   const { user, loading: authLoading, session } = useAuth();
   const feedCache = useFeedCache();
   const pageCache = usePageCache();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Restore UI state from PageCache (instant, no flash)
   const cachedUI = pageCache.getMeta<HomeUIState>("home:ui");
@@ -432,7 +437,7 @@ posts.forEach((p: any) => {
         setPosts(displayPosts);
         if (feedKey === "home:nearby") setNearbyPosts(displayPosts);
         else if (feedKey === "home:trending") setTrendingPosts(displayPosts);
-        feedCache.setPosts(feedKey, finalPosts);
+        feedCache.setPosts(feedKey, displayPosts);
         preloadFeedVideos(displayPosts);
 
         // Preload video thumbnails
@@ -525,6 +530,15 @@ posts.forEach((p: any) => {
       }
     }
   }, [feedKey, authLoading, feedCache]);
+
+  // Capacitor resume: revalidate against DB (bypasses the 60s cache shortcut).
+  useEffect(() => {
+    const onForeground = () => {
+      if (!authLoading) fetchPostsRef.current(true);
+    };
+    window.addEventListener("peja-app-foreground", onForeground);
+    return () => window.removeEventListener("peja-app-foreground", onForeground);
+  }, [authLoading]);
 
   // Expire job
   useEffect(() => {
@@ -685,7 +699,7 @@ posts.forEach((p: any) => {
   // ALL HOOKS ARE DONE — early returns are now safe
   // ============================================================
 
-  if (posts.length === 0 && (authLoading || (!user && !authCheckDone))) {
+  if (!mounted || (posts.length === 0 && (authLoading || (!user && !authCheckDone)))) {
     return (
       <div className="min-h-screen pb-20">
         <Header onCreateClick={() => {}} />
