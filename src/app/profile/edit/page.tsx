@@ -12,6 +12,51 @@ import { Header } from "@/components/layout/Header";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { REQUIRED_PROFILE_FIELDS } from "@/lib/profileComplete";
 
+type FormState = {
+  full_name: string;
+  phone: string;
+  occupation: string;
+  date_of_birth: string;
+  avatar_url: string;
+  home_address: string;
+};
+
+const profileEditDraftKey = (userId: string) => `peja-profile-edit-draft-${userId}`;
+
+function readProfileEditDraft(userId: string): FormState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(profileEditDraftKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as FormState;
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      full_name: parsed.full_name ?? "",
+      phone: parsed.phone ?? "",
+      occupation: parsed.occupation ?? "",
+      date_of_birth: parsed.date_of_birth ?? "",
+      avatar_url: parsed.avatar_url ?? "",
+      home_address: parsed.home_address ?? "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeProfileEditDraft(userId: string, data: FormState) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(profileEditDraftKey(userId), JSON.stringify(data));
+  } catch {}
+}
+
+function clearProfileEditDraft(userId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(profileEditDraftKey(userId));
+  } catch {}
+}
+
 export default function EditProfilePage() {
   const router = useRouter();
   const { user, loading: authLoading, refreshUser } = useAuth();
@@ -52,19 +97,15 @@ export default function EditProfilePage() {
   // Save with a partially-seeded state and wipe fields that hadn't loaded
   // yet. The earlier dual-effect approach raced the save and silently
   // blanked unseeded fields on submit.
-  type FormState = {
-    full_name: string;
-    phone: string;
-    occupation: string;
-    date_of_birth: string;
-    avatar_url: string;
-    home_address: string;
-  };
   const [formData, setFormData] = useState<FormState | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  // Hydrate the form once per user id. Auth refreshes/realtime updates replace the
+  // `user` object frequently — re-seeding on every change wiped in-progress edits.
+  const hydratedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -72,20 +113,42 @@ export default function EditProfilePage() {
     }
   }, [user, authLoading, router]);
 
-  // Single source of truth: once auth is settled, fetch the row from
-  // Supabase and seed the form. The form doesn't render until this resolves,
-  // so there's no window for a save-before-hydration race.
   useEffect(() => {
-    if (!user) return;
+    return () => {
+      if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
+    };
+  }, [avatarPreviewUrl]);
+
+  // Single source of truth: once auth is settled, fetch the row from Supabase and
+  // seed the form. Only runs once per user id so background auth/profile refreshes
+  // do not overwrite fields the user is actively typing into.
+  useEffect(() => {
+    if (!user?.id) {
+      hydratedUserIdRef.current = null;
+      return;
+    }
+
+    if (hydratedUserIdRef.current === user.id) return;
+
+    // Restored after image-picker / backgrounding remounts the screen.
+    const savedDraft = readProfileEditDraft(user.id);
+    if (savedDraft) {
+      setFormData(savedDraft);
+      hydratedUserIdRef.current = user.id;
+      return;
+    }
+
     let cancelled = false;
+    setFormData(null);
+
     (async () => {
       const fallback = (): FormState => ({
-        full_name: (user as any).full_name || "",
-        phone: (user as any).phone || "",
-        occupation: (user as any).occupation || "",
-        date_of_birth: (user as any).date_of_birth || "",
-        avatar_url: (user as any).avatar_url || "",
-        home_address: (user as any).home_address || "",
+        full_name: user.full_name || "",
+        phone: user.phone || "",
+        occupation: user.occupation || "",
+        date_of_birth: user.date_of_birth || "",
+        avatar_url: user.avatar_url || "",
+        home_address: user.home_address || "",
       });
       try {
         const { data } = await supabase
@@ -94,7 +157,7 @@ export default function EditProfilePage() {
           .eq("id", user.id)
           .single();
         if (cancelled) return;
-        const src: any = data ?? user;
+        const src = data ?? user;
         setFormData({
           full_name: src.full_name || "",
           phone: src.phone || "",
@@ -103,12 +166,25 @@ export default function EditProfilePage() {
           avatar_url: src.avatar_url || "",
           home_address: src.home_address || "",
         });
+        hydratedUserIdRef.current = user.id;
       } catch {
-        if (!cancelled) setFormData(fallback());
+        if (!cancelled) {
+          setFormData(fallback());
+          hydratedUserIdRef.current = user.id;
+        }
       }
     })();
-    return () => { cancelled = true; };
-  }, [user]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  // Persist in-progress edits so avatar picker / app backgrounding can't wipe them.
+  useEffect(() => {
+    if (!user?.id || !formData) return;
+    writeProfileEditDraft(user.id, formData);
+  }, [formData, user?.id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData((prev) => (prev ? { ...prev, [e.target.name]: e.target.value } : prev));
@@ -118,6 +194,11 @@ export default function EditProfilePage() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
+    const localPreview = URL.createObjectURL(file);
+    setAvatarPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return localPreview;
+    });
     setUploadingAvatar(true);
     setError("");
 
@@ -140,15 +221,25 @@ export default function EditProfilePage() {
         .from("media")
         .getPublicUrl(filePath);
 
-      setFormData((prev) => (prev ? { ...prev, avatar_url: publicUrl.publicUrl } : prev));
-      
+      setFormData((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, avatar_url: publicUrl.publicUrl };
+        writeProfileEditDraft(user.id, next);
+        return next;
+      });
+
       await supabase
         .from("users")
         .update({ avatar_url: publicUrl.publicUrl })
         .eq("id", user.id);
 
-      await refreshUser();
+      // Do not refreshUser() here — it can remount/rehydrate the form and wipe
+      // unsaved text fields. Avatar is already in local form state + draft.
     } catch (err) {
+      setAvatarPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       setError("Failed to upload image");
     } finally {
       setUploadingAvatar(false);
@@ -186,6 +277,11 @@ export default function EditProfilePage() {
         return;
       }
       
+      clearProfileEditDraft(user.id);
+      setAvatarPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       await refreshUser();
       setSuccess(true);
       setLoading(false);
@@ -227,6 +323,8 @@ export default function EditProfilePage() {
   if (!user) {
     return null;
   }
+
+  const shownAvatarUrl = avatarPreviewUrl || formData.avatar_url;
 
   return (
     <div
@@ -323,9 +421,9 @@ export default function EditProfilePage() {
         <div className="flex justify-center mb-6">
           <div className="relative">
             <div className="w-24 h-24 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden">
-              {formData.avatar_url ? (
+              {shownAvatarUrl ? (
                 <img
-                  src={formData.avatar_url}
+                  src={shownAvatarUrl}
                   alt="Profile"
                   className="w-full h-full object-cover"
                 />

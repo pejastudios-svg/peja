@@ -164,6 +164,45 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, []);
 
+  // Global UI-event sync: any page that dispatches local delete/archive events
+  // should instantly update shared caches + pending tombstones.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const applyLocalDelete = (id?: string) => {
+      if (!id) return;
+
+      const store = storeRef.current!;
+      let changed = false;
+      store.forEach((value, key) => {
+        const filtered = value.posts.filter((p) => p.id !== id);
+        if (filtered.length !== value.posts.length) {
+          store.set(key, { ...value, posts: filtered });
+          changed = true;
+        }
+      });
+      if (changed) persistFeed(store);
+
+      const p = pendingRef.current!;
+      p.deletes[id] = Date.now();
+      delete p.creates[id];
+      persistPending(p);
+    };
+
+    const onDeleted = (e: Event) => {
+      const { postId } = (e as CustomEvent).detail || {};
+      applyLocalDelete(postId);
+    };
+
+    window.addEventListener("peja-post-deleted", onDeleted);
+    window.addEventListener("peja-post-archived", onDeleted);
+
+    return () => {
+      window.removeEventListener("peja-post-deleted", onDeleted);
+      window.removeEventListener("peja-post-archived", onDeleted);
+    };
+  }, []);
+
   // Periodic pending-state sweep as a failsafe — cap entries at PENDING_TTL.
   useEffect(() => {
     const interval = setInterval(() => {
@@ -236,7 +275,22 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
     };
 
     return {
-      get: (key) => storeRef.current!.get(key) || null,
+      get: (key) => {
+        const cached = storeRef.current!.get(key) || null;
+        if (!cached) return null;
+
+        // Enforce pending-delete overlay on every cache read so route
+        // navigation can't resurrect a locally deleted post from stale storage.
+        const cleaned = filterPendingDeletes(cached.posts);
+        if (cleaned.length !== cached.posts.length) {
+          const next = { ...cached, posts: cleaned };
+          storeRef.current!.set(key, next);
+          persistFeed(storeRef.current!);
+          return next;
+        }
+
+        return cached;
+      },
       setPosts: (key, posts) => {
         const prev = storeRef.current!.get(key);
         const cleaned = filterPendingDeletes(posts);
