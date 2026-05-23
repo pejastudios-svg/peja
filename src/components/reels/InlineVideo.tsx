@@ -545,9 +545,7 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
             alt=""
             loading="eager"
             decoding="async"
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore — fetchpriority is valid HTML but not yet in React types
-            fetchpriority="high"
+            fetchPriority="high"
             className={isExpanded ? "absolute inset-0 w-full h-full object-contain" : "w-full h-full object-cover"}
           />
         : <div className="w-full h-full bg-black" />}

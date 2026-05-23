@@ -70,7 +70,7 @@ export default function RootLayout({
   overlay: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         {/* No-flicker theme bootstrap — runs before paint to set data-theme from localStorage. */}
         <script

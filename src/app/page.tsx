@@ -70,6 +70,11 @@ export default function Home() {
   const { user, loading: authLoading, session } = useAuth();
   const feedCache = useFeedCache();
   const pageCache = usePageCache();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Restore UI state from PageCache (instant, no flash)
   const cachedUI = pageCache.getMeta<HomeUIState>("home:ui");
@@ -694,7 +699,7 @@ posts.forEach((p: any) => {
   // ALL HOOKS ARE DONE — early returns are now safe
   // ============================================================
 
-  if (posts.length === 0 && (authLoading || (!user && !authCheckDone))) {
+  if (!mounted || (posts.length === 0 && (authLoading || (!user && !authCheckDone)))) {
     return (
       <div className="min-h-screen pb-20">
         <Header onCreateClick={() => {}} />

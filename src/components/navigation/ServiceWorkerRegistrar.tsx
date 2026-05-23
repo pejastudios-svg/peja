@@ -6,27 +6,29 @@ export function ServiceWorkerRegistrar() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    const isProd = process.env.NODE_ENV === "production";
 
-    // Register after the page loads to not block initial render
-    const register = async () => {
-      try {
-        const reg = await navigator.serviceWorker.register("/sw.js", {
-          scope: "/",
+    // This component is legacy; real SW registration lives in
+    // ServiceWorkerRegistration. In dev/localhost, proactively clean up old
+    // workers/caches so stale route shells cannot cause black-screen navigations.
+    if (!isProd || isLocalhost) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((r) => r.unregister().catch(() => {}));
+      });
+      if ("caches" in window) {
+        caches.keys().then((keys) => {
+          keys
+            .filter((k) => k.startsWith("peja-") || k.includes("peja"))
+            .forEach((k) => caches.delete(k).catch(() => {}));
         });
-
-        // Check for updates every 30 minutes
-        setInterval(() => {
-          reg.update().catch(() => {});
-        }, 30 * 60 * 1000);
-      } catch {}
-    };
-
-    // Delay registration so it doesn't compete with initial page load
-    if (document.readyState === "complete") {
-      setTimeout(register, 2000);
-    } else {
-      window.addEventListener("load", () => setTimeout(register, 2000));
+      }
+      return;
     }
+
+    // No-op in production: avoid duplicate SW registration.
   }, []);
 
   return null;

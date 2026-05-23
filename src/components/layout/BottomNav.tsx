@@ -8,6 +8,7 @@ import { Home, Map, PlusCircle, Search } from "lucide-react";
 import { SOSButton } from "../sos/SOSButton";
 import { useAuth } from "@/context/AuthContext";
 import { SMLButton } from "../safety/SMLButton";
+import { buildLoginHref } from "@/lib/safeNext";
 
 const PEJA_LOGO = "https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png";
 
@@ -183,6 +184,22 @@ export function BottomNav() {
             else router.push("/", { scroll: false });
           }}
           className="flex-1 flex items-center justify-center"
+        >
+          {inner}
+        </button>
+      );
+    }
+
+    if (item.href === "/create" && !user) {
+      return (
+        <button
+          key={item.href}
+          ref={(el) => { itemRefs.current[index] = el; }}
+          data-tutorial="nav-report"
+          className="flex-1 flex items-center justify-center"
+          onClick={() => {
+            router.push(buildLoginHref("/create", "/login"), { scroll: false });
+          }}
         >
           {inner}
         </button>

@@ -6,6 +6,26 @@ export function ServiceWorkerRegistration() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    const isProd = process.env.NODE_ENV === "production";
+
+    // Never keep SW active on localhost/dev: stale app-shell cache can trap
+    // navigation transitions (e.g. /create -> /login) behind a black frame.
+    if (!isProd || isLocalhost) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        regs.forEach((r) => r.unregister().catch(() => {}));
+      });
+      if ("caches" in window) {
+        caches.keys().then((keys) => {
+          keys
+            .filter((k) => k.startsWith("peja-") || k.includes("peja"))
+            .forEach((k) => caches.delete(k).catch(() => {}));
+        });
+      }
+      return;
+    }
 
     // Reload once when a new SW takes over so the page picks up fresh code
     let reloaded = false;
@@ -24,7 +44,7 @@ export function ServiceWorkerRegistration() {
 
         // Check for updates periodically (every 30 minutes)
         setInterval(() => {
-          registration.update();
+          registration.update().catch(() => {});
         }, 30 * 60 * 1000);
 
         // Check for updates every time the app becomes visible (Capacitor foreground)
