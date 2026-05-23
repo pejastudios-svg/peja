@@ -1,7 +1,7 @@
 "use client";
 
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES } from "@/lib/types";
@@ -208,7 +208,7 @@ function SearchContent() {
       confirm.hydrateCounts(display.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
       confirm.loadConfirmedFor(display.map((p) => p.id));
       setPosts(display);
-      feedCache.setPosts(feedKey, top);
+      feedCache.setPosts(feedKey, display);
     } catch (error) {
       if (posts.length === 0) setPosts([]);
     } finally {
@@ -280,6 +280,19 @@ function SearchContent() {
 
     return () => unsubscribe();
   }, [feedKey, feedCache]);
+
+  const performSearchRef = useRef(performSearch);
+  useEffect(() => {
+    performSearchRef.current = performSearch;
+  }, [performSearch]);
+
+  useEffect(() => {
+    const onForeground = () => {
+      if (query.trim()) performSearchRef.current();
+    };
+    window.addEventListener("peja-app-foreground", onForeground);
+    return () => window.removeEventListener("peja-app-foreground", onForeground);
+  }, [query]);
 
 useEffect(() => {
     const debounce = setTimeout(() => {

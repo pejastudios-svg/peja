@@ -432,7 +432,7 @@ posts.forEach((p: any) => {
         setPosts(displayPosts);
         if (feedKey === "home:nearby") setNearbyPosts(displayPosts);
         else if (feedKey === "home:trending") setTrendingPosts(displayPosts);
-        feedCache.setPosts(feedKey, finalPosts);
+        feedCache.setPosts(feedKey, displayPosts);
         preloadFeedVideos(displayPosts);
 
         // Preload video thumbnails
@@ -525,6 +525,15 @@ posts.forEach((p: any) => {
       }
     }
   }, [feedKey, authLoading, feedCache]);
+
+  // Capacitor resume: revalidate against DB (bypasses the 60s cache shortcut).
+  useEffect(() => {
+    const onForeground = () => {
+      if (!authLoading) fetchPostsRef.current(true);
+    };
+    window.addEventListener("peja-app-foreground", onForeground);
+    return () => window.removeEventListener("peja-app-foreground", onForeground);
+  }, [authLoading]);
 
   // Expire job
   useEffect(() => {
