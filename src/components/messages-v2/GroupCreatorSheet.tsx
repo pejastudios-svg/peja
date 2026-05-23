@@ -202,20 +202,29 @@ export function GroupCreatorSheet({ currentUserId, onClose }: Props) {
         closing ? "peja-slide-out-to-right" : "peja-slide-in-from-right"
       }`}
     >
-      <header className="shrink-0 flex items-center gap-3 px-3 h-14 border-b border-[var(--chat-input-border)]">
-        <button
-          type="button"
-          onClick={handleClose}
-          className="w-9 h-9 rounded-full bg-[var(--chat-input-bg)] flex items-center justify-center"
-          aria-label="Close"
-        >
-          <ArrowLeft className="w-5 h-5 text-dark-200" />
-        </button>
-        <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-primary-300" />
-          <span className="text-base font-semibold text-dark-100">
-            New group
-          </span>
+      {/* Header: respects safe-area top inset so the title doesn't sit
+          under the notch / status bar. */}
+      <header
+        className="shrink-0 border-b border-[var(--chat-input-border)]"
+        style={{
+          paddingTop: "var(--app-top-inset, env(safe-area-inset-top, 0px))",
+        }}
+      >
+        <div className="flex items-center gap-3 px-3 h-14">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[var(--chat-input-bg)] flex items-center justify-center"
+            aria-label="Close"
+          >
+            <ArrowLeft className="w-5 h-5 text-dark-200" />
+          </button>
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-primary-300" />
+            <span className="text-base font-semibold text-dark-100">
+              New group
+            </span>
+          </div>
         </div>
       </header>
 

@@ -64,6 +64,14 @@ interface Props {
 }
 
 const MARGIN = 8;
+// Reserve more space at the bottom than at the other edges so the menu
+// never crowds the home indicator / soft-nav bar when the long-pressed
+// message is near the bottom of the viewport. The previous 8px gap let
+// the menu hug the bottom edge and felt cramped; ~72px keeps a
+// comfortable visual buffer above the home indicator on iOS and the
+// nav bar on Android. env(safe-area-inset-bottom) is read at clamp
+// time via window.innerHeight - safe inset.
+const BOTTOM_MARGIN = 72;
 const MENU_WIDTH = 220;
 
 export function MessageActionMenu({
@@ -92,8 +100,8 @@ export function MessageActionMenu({
     if (left + rect.width + MARGIN > vw) {
       left = Math.max(MARGIN, vw - rect.width - MARGIN);
     }
-    if (top + rect.height + MARGIN > vh) {
-      top = Math.max(MARGIN, vh - rect.height - MARGIN);
+    if (top + rect.height + BOTTOM_MARGIN > vh) {
+      top = Math.max(MARGIN, vh - rect.height - BOTTOM_MARGIN);
     }
     if (left < MARGIN) left = MARGIN;
     if (top < MARGIN) top = MARGIN;

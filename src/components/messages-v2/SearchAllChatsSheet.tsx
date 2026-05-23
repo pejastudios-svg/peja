@@ -79,7 +79,15 @@ export function SearchAllChatsSheet({ currentUserId, onClose }: Props) {
         closing ? "peja-slide-out-to-right" : "peja-slide-in-from-right"
       }`}
     >
-      <header className="shrink-0 flex items-center gap-3 px-3 h-14 border-b border-[var(--chat-input-border)]">
+      {/* Header: respects safe-area top inset so search bar isn't
+          clipped under the notch / status bar. */}
+      <header
+        className="shrink-0 border-b border-[var(--chat-input-border)]"
+        style={{
+          paddingTop: "var(--app-top-inset, env(safe-area-inset-top, 0px))",
+        }}
+      >
+       <div className="flex items-center gap-3 px-3 h-14">
         <button
           type="button"
           onClick={handleClose}
@@ -111,6 +119,7 @@ export function SearchAllChatsSheet({ currentUserId, onClose }: Props) {
             </button>
           )}
         </div>
+       </div>
       </header>
 
       <div className="flex-1 overflow-y-auto px-2 py-2">

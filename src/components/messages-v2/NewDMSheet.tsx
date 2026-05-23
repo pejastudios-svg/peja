@@ -122,37 +122,48 @@ export function NewDMSheet({ currentUserId, onClose }: Props) {
         closing ? "peja-slide-out-to-right" : "peja-slide-in-from-right"
       }`}
     >
-      <header className="shrink-0 flex items-center gap-3 px-3 h-14 border-b border-[var(--chat-input-border)]">
-        <button
-          type="button"
-          onClick={handleClose}
-          className="w-9 h-9 rounded-full bg-[var(--chat-input-bg)] flex items-center justify-center"
-          aria-label="Close"
-        >
-          <ArrowLeft className="w-5 h-5 text-dark-200" />
-        </button>
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400 pointer-events-none" />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find someone to message"
-            className="w-full h-10 rounded-xl bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] pl-9 pr-9 text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-primary-500/40"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => {
-                setQuery("");
-                inputRef.current?.focus();
-              }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[var(--chat-input-hover)] flex items-center justify-center"
-              aria-label="Clear search"
-            >
-              <X className="w-3 h-3 text-dark-200" />
-            </button>
-          )}
+      {/* Header: respects the device's safe-area top inset (notch /
+          status bar) so the back button and search input never get
+          clipped on iOS or Capacitor builds. Same convention used by
+          the main app header (glass-header in globals.css). */}
+      <header
+        className="shrink-0 border-b border-[var(--chat-input-border)]"
+        style={{
+          paddingTop: "var(--app-top-inset, env(safe-area-inset-top, 0px))",
+        }}
+      >
+        <div className="flex items-center gap-3 px-3 h-14">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[var(--chat-input-bg)] flex items-center justify-center"
+            aria-label="Close"
+          >
+            <ArrowLeft className="w-5 h-5 text-dark-200" />
+          </button>
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-400 pointer-events-none" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Find someone to message"
+              className="w-full h-10 rounded-xl bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] pl-9 pr-9 text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-primary-500/40"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  inputRef.current?.focus();
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[var(--chat-input-hover)] flex items-center justify-center"
+                aria-label="Clear search"
+              >
+                <X className="w-3 h-3 text-dark-200" />
+              </button>
+            )}
+          </div>
         </div>
       </header>
 

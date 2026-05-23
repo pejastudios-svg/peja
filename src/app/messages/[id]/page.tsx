@@ -3135,47 +3135,74 @@ function MessageBubbleWrapper({
     },
   };
   const dragX = swipe.dragX;
+  const swipeProgress = swipe.progress;
   return (
-    <div
-      className={`${bubbleClass} relative group ${
-        highlighted ? "peja-highlight-flash" : ""
-      }`}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        onOpenMenu({ x: e.clientX, y: e.clientY });
-      }}
-      style={{
-        transform: dragX !== 0 ? `translateX(${dragX}px)` : undefined,
-        // Snap back smoothly when the gesture ends (dragX = 0). While
-        // the user is actively dragging we want the transform to track
-        // their finger 1:1, so no transition.
-        transition: dragX === 0 ? "transform 200ms ease" : undefined,
-      }}
-      {...handlers}
-    >
-      {children}
-      {/* Desktop-only hover affordance — a chevron in the top-right
-          corner that opens the same menu the long-press / right-click
-          triggers. Hidden by default and surfaced via `group-hover`,
-          so touch devices (which don't fire :hover) never see it. */}
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          const rect = e.currentTarget.getBoundingClientRect();
-          onOpenMenu({ x: rect.right, y: rect.bottom });
+    // Outer wrapper stays still so the reply-icon hint behind the
+    // bubble doesn't translate along with the bubble itself. Only the
+    // inner bubble div carries the transform. Without this split the
+    // icon would never become visible because it would move out of
+    // its slot at the same rate as the bubble.
+    <div className="relative">
+      {/* Reply-icon hint — appears on the side the bubble is moving
+          AWAY from as the user drags. Faded in by `swipeProgress`,
+          which saturates at 1 right before the commit fires, so the
+          icon hits full opacity at the moment of the trigger. Pure
+          visual; doesn't catch pointer events. */}
+      <div
+        aria-hidden
+        className={`absolute top-1/2 -translate-y-1/2 ${
+          isMine ? "right-1" : "left-1"
+        } w-9 h-9 rounded-full bg-primary-600 flex items-center justify-center pointer-events-none`}
+        style={{
+          opacity: swipeProgress,
+          transform: `translateY(-50%) scale(${0.5 + swipeProgress * 0.5})`,
+          transition: dragX === 0 ? "opacity 180ms ease" : undefined,
         }}
-        className={`absolute top-1.5 ${
-          isMine ? "left-1.5" : "right-1.5"
-        } w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
-          isMine
-            ? "bg-white/25 text-white hover:bg-white/35"
-            : "bg-black/15 text-dark-200 hover:bg-black/25"
-        }`}
-        aria-label="Message options"
       >
-        <ChevronDown className="w-3.5 h-3.5" />
-      </button>
+        <ReplyIcon className="w-4 h-4 text-white" />
+      </div>
+
+      <div
+        className={`${bubbleClass} relative group ${
+          highlighted ? "peja-highlight-flash" : ""
+        }`}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onOpenMenu({ x: e.clientX, y: e.clientY });
+        }}
+        style={{
+          transform: dragX !== 0 ? `translateX(${dragX}px)` : undefined,
+          // Snap back smoothly when the gesture ends (dragX = 0). While
+          // the user is actively dragging we want the transform to track
+          // their finger 1:1, so no transition.
+          transition: dragX === 0 ? "transform 200ms ease" : undefined,
+        }}
+        {...handlers}
+      >
+        {children}
+        {/* Desktop-only hover affordance — a chevron in the top-right
+            corner that opens the same menu the long-press / right-click
+            triggers. Hidden by default and surfaced via `group-hover`,
+            so touch devices (which don't fire :hover) never see it. */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            const rect = e.currentTarget.getBoundingClientRect();
+            onOpenMenu({ x: rect.right, y: rect.bottom });
+          }}
+          className={`absolute top-1.5 ${
+            isMine ? "left-1.5" : "right-1.5"
+          } w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
+            isMine
+              ? "bg-white/25 text-white hover:bg-white/35"
+              : "bg-black/15 text-dark-200 hover:bg-black/25"
+          }`}
+          aria-label="Message options"
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

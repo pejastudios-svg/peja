@@ -1,37 +1,34 @@
 "use client";
 
-// Input-bar UI for recording voice notes. Sits in place of the
-// textarea + send button while a recording is in progress.
+// Voice-note input bar. WhatsApp-style hold-to-record:
 //
-// Two ways to start a recording (matches user request):
+//   • Press and HOLD the mic button to start recording.
+//   • Release (without dragging) to stop and send.
+//   • While still holding, drag finger LEFT past the cancel threshold
+//     to discard the recording on release.
 //
-//   1. HOLD the mic button:
-//        • Press and hold → recording starts.
-//        • Drag finger LEFT past the cancel threshold → recording is
-//          cancelled when released.
-//        • Release without dragging → recording stops and sends.
+// There is no tap-to-lock or hands-free mode any more. The previous
+// "tap = lock, hold = release-to-send" split confused users because a
+// natural tap kept catching the threshold edge. The single hold
+// gesture is unambiguous and matches what most users expect from a
+// messaging app's mic button.
 //
-//   2. TAP the mic button:
-//        • Short press (released before kRecordHoldThresholdMs) →
-//          enters "locked" recording mode. The user can record
-//          hands-free and tap explicit buttons to either cancel or
-//          send when done.
-//
-// Both modes share the same recorder (useVoiceRecorder) underneath;
-// only the UI affordances differ.
+// Cancel-via-drag is visually progressive: a "← Slide to cancel" hint
+// is always visible during recording, and once the user crosses the
+// halfway point of the drag the hint flips to "Release to cancel" in
+// red to telegraph what releasing now would do.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, Trash2, Send, Lock, LockOpen } from "lucide-react";
+import { Mic, Trash2 } from "lucide-react";
 import { useVoiceRecorder, type RecorderResult } from "@/features/chat/useVoiceRecorder";
 
 interface Props {
-  // Fires once a recording is finalised — either via release-to-send,
-  // tap-send-from-locked, or auto-stop at the 2-minute cap. Caller is
-  // responsible for actually shipping it through the send pipeline.
+  // Fires once a recording is finalised — either via release-to-send
+  // or auto-stop at the 2-minute cap. Caller is responsible for
+  // shipping it through the send pipeline.
   onSend: (file: File, duration: number) => void;
-  // Fires when recording is cancelled (slide-to-cancel, explicit
-  // cancel tap, or permission denial). UI returns to the idle text
-  // input. No file is produced.
+  // Fires when recording is cancelled (slide-to-cancel or permission
+  // denial). UI returns to the idle text input. No file is produced.
   onCancel: () => void;
   // Fires whenever recording starts / stops. Parent uses this to hide
   // its own input affordances (textarea, attach button) while the bar
@@ -48,13 +45,6 @@ interface Props {
   // the cap was hit.
   onAutoStopped?: () => void;
 }
-
-// Hold/tap threshold: a press that releases before this counts as
-// a "tap" → locked mode. After this it counts as "hold" → release to
-// send. 250ms was too tight — natural taps regularly exceeded it,
-// which made the tap-to-lock affordance feel unreliable. 400ms tracks
-// WhatsApp's behaviour and gives users meaningful headroom.
-const HOLD_THRESHOLD_MS = 400;
 
 // How far the user has to drag left to count as a cancel during a
 // hold-recording. Below this they probably just shifted their finger.
@@ -83,22 +73,12 @@ export function VoiceRecorderBar({
   });
 
   // -----------------------------------------------------
-  // UI mode: idle (showing only the mic button) vs hold-recording
-  // (button is being pressed) vs locked-recording (hands-free mode).
+  // UI mode: idle (mic button only) or recording (full bar with
+  // timer + amplitude + slide-to-cancel hint). No locked / hands-free
+  // mode — see top comment.
   // -----------------------------------------------------
-  const [mode, setMode] = useState<"idle" | "hold" | "locked">("idle");
+  const [mode, setMode] = useState<"idle" | "recording">("idle");
   const [dragX, setDragX] = useState(0);
-  // While in "hold" mode but BEFORE the HOLD_THRESHOLD_MS elapses we
-  // don't yet know if this is going to be a tap (→ locked mode) or a
-  // hold (→ release-to-send + slide-to-cancel). The "Slide to cancel"
-  // hint + padlock are misleading during that window — the user might
-  // be lifting their finger any moment to commit a tap. So we flip
-  // `holdConfirmed` to true only once the threshold passes, and the
-  // bar swaps from a tap-friendly trash hint into the slide-to-cancel
-  // UI on the same beat.
-  const [holdConfirmed, setHoldConfirmed] = useState(false);
-  const holdConfirmTimerRef = useRef<number | null>(null);
-  const pressedAtRef = useRef(0);
   const startXRef = useRef(0);
 
   // -----------------------------------------------------
@@ -140,24 +120,12 @@ export function VoiceRecorderBar({
       if (mode !== "idle") return;
       e.preventDefault();
       (e.target as Element).setPointerCapture?.(e.pointerId);
-      pressedAtRef.current = Date.now();
       startXRef.current = e.clientX;
-      setMode("hold");
+      setMode("recording");
       setDragX(0);
-      setHoldConfirmed(false);
-      // Confirm "this is a hold" after the threshold so the bar UI
-      // can swap from the tap-friendly state into the slide-to-cancel
-      // state. If pointer-up fires first we cancel this timer.
-      if (holdConfirmTimerRef.current !== null) {
-        window.clearTimeout(holdConfirmTimerRef.current);
-      }
-      holdConfirmTimerRef.current = window.setTimeout(() => {
-        setHoldConfirmed(true);
-        holdConfirmTimerRef.current = null;
-      }, HOLD_THRESHOLD_MS);
-      // Kick off recording. Don't await — the UI should already be in
-      // hold mode while the mic spins up to make the press feel
-      // instantaneous.
+      // Kick off recording. Don't await — the UI should already show
+      // the recording bar while the mic spins up to make the press
+      // feel instantaneous.
       void recorder.start();
     },
     [mode, recorder]
@@ -165,8 +133,11 @@ export function VoiceRecorderBar({
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (mode !== "hold") return;
-      const dx = Math.min(0, e.clientX - startXRef.current); // only left
+      if (mode !== "recording") return;
+      // Only track leftward drift (dragX <= 0). The user dragging
+      // RIGHT shouldn't visually shift the bar — that's not a
+      // meaningful gesture in this UI.
+      const dx = Math.min(0, e.clientX - startXRef.current);
       setDragX(dx);
     },
     [mode]
@@ -174,34 +145,13 @@ export function VoiceRecorderBar({
 
   const onPointerUp = useCallback(
     async (e: React.PointerEvent) => {
-      // If we're in locked mode, the pointer-up after a fresh press
-      // is just letting go of the explicit Send button (handled by
-      // that button's own onClick). Nothing to do here.
-      if (mode !== "hold") return;
+      if (mode !== "recording") return;
       (e.target as Element).releasePointerCapture?.(e.pointerId);
 
-      // Always cancel the pending hold-confirm timer — we now know
-      // whether this was a tap or a hold based on the actual elapsed
-      // time, so the deferred flag doesn't need to fire.
-      if (holdConfirmTimerRef.current !== null) {
-        window.clearTimeout(holdConfirmTimerRef.current);
-        holdConfirmTimerRef.current = null;
-      }
-      setHoldConfirmed(false);
-
-      const held = Date.now() - pressedAtRef.current;
       const draggedFarEnough = dragX < -CANCEL_DRAG_PX;
 
-      // Tap (not a hold): transition to locked mode and keep
-      // recording. User finishes via the Send button.
-      if (held < HOLD_THRESHOLD_MS && !draggedFarEnough) {
-        setMode("locked");
-        setDragX(0);
-        return;
-      }
-
-      // Slide-to-cancel: discard the recording.
       if (draggedFarEnough) {
+        // Slide-to-cancel: discard the recording.
         await recorder.cancel();
         onCancel();
         setMode("idle");
@@ -223,25 +173,6 @@ export function VoiceRecorderBar({
     [mode, dragX, recorder, onCancel, finalize]
   );
 
-  // Explicit cancel from locked mode.
-  const onLockedCancel = useCallback(async () => {
-    await recorder.cancel();
-    onCancel();
-    setMode("idle");
-  }, [recorder, onCancel]);
-
-  // Explicit send from locked mode.
-  const onLockedSend = useCallback(async () => {
-    try {
-      const r = await recorder.stop();
-      finalize(r);
-    } catch (err) {
-      console.warn("[voice] locked-send failed", err);
-      onCancel();
-      setMode("idle");
-    }
-  }, [recorder, onCancel, finalize]);
-
   // -----------------------------------------------------
   // Permission-denied path: surface and bail back to idle.
   // -----------------------------------------------------
@@ -262,122 +193,53 @@ export function VoiceRecorderBar({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={() => {
-          if (holdConfirmTimerRef.current !== null) {
-            window.clearTimeout(holdConfirmTimerRef.current);
-            holdConfirmTimerRef.current = null;
-          }
-          setHoldConfirmed(false);
           setMode("idle");
           setDragX(0);
           recorder.cancel();
         }}
         className="shrink-0 w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center active:scale-90 transition-transform"
-        aria-label="Hold to record, tap to lock"
+        aria-label="Hold to record"
       >
         <Mic className="w-4 h-4" />
       </button>
     );
   }
 
-  // Hold mode — pill-shaped recording surface with timer + amplitude
-  // ring + slide-to-cancel hint. Spans the input area so the user has
-  // somewhere to drag from. The whole bar animates IN from the mic
-  // position on the right (peja-bar-expand-from-right) so it reads as
-  // "the mic pulled out into a recording surface" rather than a
-  // hard-cut swap.
-  if (mode === "hold") {
-    const draggedFar = dragX < -CANCEL_DRAG_PX;
-    // The padlock animates open as the user slides away from it
-    // (toward the cancel side, dragX < 0). We cross-fade two icons
-    // sharing the same slot so the swap is smooth — no "icon
-    // missing" frame between Lock and LockOpen. The visual midpoint
-    // is half the cancel threshold so feedback starts as soon as
-    // the user moves, well before they commit to cancel.
-    const unlockProgress = Math.min(1, Math.max(0, -dragX / CANCEL_DRAG_PX));
-    const padlockUnlocked = unlockProgress > 0.35;
-    return (
-      <div
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        className="flex-1 flex items-center gap-2 h-10 rounded-2xl bg-red-500/15 border border-red-500/40 px-3 peja-bar-expand-from-right"
-      >
-        <RecordingPulse amplitude={recorder.amplitude} />
-        <span className="text-sm font-medium text-red-300 tabular-nums">
-          {formatTime(recorder.duration)}
-        </span>
-        {/* During the pre-threshold press window the user might still
-            be intending to tap-to-lock — we don't yet know which mode
-            they want. Showing the slide-to-cancel hint here was
-            misleading (it advertised a behaviour that doesn't apply
-            yet) and the previous "Lift to lock, then [trash] to
-            cancel" hint flashed on every tap, which made taps feel
-            like they triggered the hold UI. Empty during the window
-            is the right answer: timer + pulse is enough, and the bar
-            still telegraphs "recording" without instructing the user
-            to do something that may not apply. Slide hint + padlock
-            appear only once the hold is confirmed. */}
-        {holdConfirmed && (
-          <>
-            <span
-              className={`flex-1 text-right text-xs ${
-                draggedFar ? "text-red-300 font-semibold" : "text-dark-300"
-              }`}
-              style={{ transform: `translateX(${dragX}px)` }}
-            >
-              {draggedFar ? "Release to cancel" : "← Slide to cancel"}
-            </span>
-            <span
-              className="relative w-3.5 h-3.5 shrink-0"
-              aria-label="Lift to lock"
-            >
-              <Lock
-                className="absolute inset-0 w-3.5 h-3.5 text-dark-400 transition-opacity duration-150"
-                style={{ opacity: padlockUnlocked ? 0 : 1 }}
-              />
-              <LockOpen
-                className="absolute inset-0 w-3.5 h-3.5 text-red-300 transition-opacity duration-150"
-                style={{
-                  opacity: padlockUnlocked ? 1 : 0,
-                  // Small upward float on the unlocked state so the
-                  // metaphor lands — the shackle "pops" up off the
-                  // body as it opens.
-                  transform: padlockUnlocked
-                    ? "translateY(-1px)"
-                    : "translateY(0)",
-                  transition: "opacity 150ms ease, transform 150ms ease",
-                }}
-              />
-            </span>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  // Locked mode — hands-free. Cancel on the left, mic + timer in the
-  // middle, send on the right.
+  // Recording mode: pill-shaped surface with timer + amplitude pulse
+  // + slide-to-cancel hint. Drag tracks the user's finger so they get
+  // immediate feedback that the gesture is being received.
+  const draggedFar = dragX < -CANCEL_DRAG_PX;
   return (
-    <div className="flex-1 flex items-center gap-2 h-10 rounded-2xl bg-red-500/15 border border-red-500/40 px-2 peja-bar-expand-from-right">
-      <button
-        type="button"
-        onClick={onLockedCancel}
-        className="shrink-0 w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center active:scale-90 transition-transform"
-        aria-label="Cancel recording"
-      >
-        <Trash2 className="w-4 h-4 text-red-300" />
-      </button>
+    <div
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      className="flex-1 flex items-center gap-2 h-10 rounded-2xl bg-red-500/15 border border-red-500/40 px-3 peja-bar-expand-from-right"
+    >
       <RecordingPulse amplitude={recorder.amplitude} />
-      <span className="flex-1 text-sm font-medium text-red-300 tabular-nums">
+      <span className="text-sm font-medium text-red-300 tabular-nums">
         {formatTime(recorder.duration)}
       </span>
-      <button
-        type="button"
-        onClick={onLockedSend}
-        className="shrink-0 w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center active:scale-90 transition-transform"
-        aria-label="Send voice note"
+      {/* Slide-to-cancel hint. The whole label tracks the user's
+          horizontal drag so the gesture feels physical. Past the
+          threshold the copy flips to "Release to cancel" in a bolder
+          red so the user knows what releasing now would do. */}
+      <span
+        className={`flex-1 text-right text-xs inline-flex items-center justify-end gap-1.5 ${
+          draggedFar
+            ? "text-red-300 font-semibold"
+            : "text-dark-300"
+        }`}
+        style={{ transform: `translateX(${dragX}px)` }}
       >
-        <Send className="w-3.5 h-3.5" />
-      </button>
+        {draggedFar ? (
+          <>
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Release to cancel</span>
+          </>
+        ) : (
+          <span>← Slide to cancel</span>
+        )}
+      </span>
     </div>
   );
 }
@@ -408,7 +270,8 @@ function formatTime(seconds: number): string {
 function extFor(mime: string): string {
   if (mime.includes("webm")) return "webm";
   if (mime.includes("ogg")) return "ogg";
-  if (mime.includes("mp4") || mime.includes("m4a") || mime.includes("aac")) return "m4a";
-  if (mime.includes("mp3") || mime.includes("mpeg")) return "mp3";
+  if (mime.includes("mp4") || mime.includes("aac") || mime.includes("m4a"))
+    return "m4a";
+  if (mime.includes("mpeg")) return "mp3";
   return "webm";
 }

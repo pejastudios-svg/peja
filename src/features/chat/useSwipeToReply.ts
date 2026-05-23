@@ -107,8 +107,15 @@ export function useSwipeToReply({
     setDragX(0);
   }, []);
 
+  // 0..1 — how close the user is to the commit threshold. Consumers
+  // use this to fade in a reply icon next to the bubble so the
+  // gesture becomes visible / discoverable. Saturates at 1 right
+  // before the commit fires.
+  const progress = Math.min(1, Math.abs(dragX) / threshold);
+
   return {
     dragX,
+    progress,
     handlers: {
       onPointerDown,
       onPointerMove,
