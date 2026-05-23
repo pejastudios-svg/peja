@@ -1794,7 +1794,19 @@ export default function ThreadV2Page() {
             <button
               type="button"
               onClick={() => scrollToMessage(top.id)}
-              className="sticky top-0 z-20 -mx-4 mb-2 px-4 py-2 flex items-center gap-2 bg-[var(--page-bg)]/95 backdrop-blur border-b border-[var(--chat-input-border)] text-left"
+              // Full-bleed sticky banner. The parent <main> has px-4
+              // padding for messages, but the pinned-message strip
+              // should run edge-to-edge so the right side doesn't clip
+              // when the preview is long (audio messages especially).
+              // The classic "break-out of constrained parent" trick:
+              // width:100vw with marginLeft / marginRight calculated to
+              // cancel the parent's padding regardless of viewport size.
+              className="sticky top-0 z-20 mb-2 px-4 py-2 flex items-center gap-2 bg-[var(--page-bg)]/95 backdrop-blur border-b border-[var(--chat-input-border)] text-left"
+              style={{
+                width: "100vw",
+                marginLeft: "calc(50% - 50vw)",
+                marginRight: "calc(50% - 50vw)",
+              }}
               aria-label="Jump to pinned message"
             >
               <PinIcon className="w-3.5 h-3.5 text-primary-300 shrink-0" />
@@ -3201,23 +3213,41 @@ function MessageBubbleWrapper({
     // its slot at the same rate as the bubble.
     <div className="relative">
       {/* Reply-icon hint — appears on the side the bubble is moving
-          AWAY from as the user drags. Faded in by `swipeProgress`,
-          which saturates at 1 right before the commit fires, so the
-          icon hits full opacity at the moment of the trigger. Pure
-          visual; doesn't catch pointer events. */}
-      <div
-        aria-hidden
-        className={`absolute top-1/2 -translate-y-1/2 ${
-          isMine ? "right-1" : "left-1"
-        } w-9 h-9 rounded-full bg-primary-600 flex items-center justify-center pointer-events-none`}
-        style={{
-          opacity: swipeProgress,
-          transform: `translateY(-50%) scale(${0.5 + swipeProgress * 0.5})`,
-          transition: dragX === 0 ? "opacity 180ms ease" : undefined,
-        }}
-      >
-        <ReplyIcon className="w-4 h-4 text-white" />
-      </div>
+          AWAY from as the user drags. Two tiers:
+            • below threshold: translucent primary background, growing scale
+            • armed (swipeProgress >= 1): solid primary, slight overshoot
+          The IIFE keeps the armed flag local to the render block so the
+          surrounding wrapper stays a pure layout primitive. */}
+      {(() => {
+        const armed = swipeProgress >= 1;
+        return (
+          <div
+            aria-hidden
+            className={`absolute top-1/2 ${
+              isMine ? "right-1" : "left-1"
+            } w-9 h-9 rounded-full flex items-center justify-center pointer-events-none ${
+              armed
+                ? "bg-primary-600 text-white"
+                : "bg-primary-500/25 text-primary-300"
+            }`}
+            style={{
+              opacity: swipeProgress,
+              // Scale grows linearly 0.5 → 1.0 with progress, then bumps
+              // to ~1.15 once armed. The translateY(-50%) keeps it
+              // vertically centered (it has top: 50%).
+              transform: `translateY(-50%) scale(${
+                0.5 + swipeProgress * 0.5 + (armed ? 0.15 : 0)
+              })`,
+              transition:
+                dragX === 0
+                  ? "opacity 180ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 150ms, color 150ms"
+                  : "background-color 150ms, color 150ms",
+            }}
+          >
+            <ReplyIcon className="w-4 h-4" />
+          </div>
+        );
+      })()}
 
       <div
         className={`${bubbleClass} relative group ${

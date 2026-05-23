@@ -1,126 +1,167 @@
 "use client";
 
-// Touch gesture: swipe a message bubble horizontally (toward the
-// center of the screen) past a threshold to trigger "reply". Same
-// pattern as WhatsApp / Telegram.
+// useSwipeToReply
+// ---------------
+// Drag a message sideways to set the reply target. Returns
+// { handlers, dragX, progress } so the bubble can translate + render
+// a fading reply-icon hint.
 //
-//   • mine bubble (sender, right-aligned)   → swipe LEFT to reply
-//   • theirs bubble (receiver, left-aligned) → swipe RIGHT to reply
-//
-// Returns the props to spread on the bubble + a `dragX` value (0 when
-// idle, negative for mine, positive for theirs) so the caller can
-// translate the bubble and fade a reply icon in.
-//
-// Implementation rules:
-//   • Only horizontal pointer movement counts as a swipe. Once we
-//     detect a vertical drag dominates, we bail so the user can keep
-//     scrolling the thread.
-//   • We DO NOT listen on mouse — desktop has its own action menu via
-//     the chevron. This gesture is touch-only.
-//   • If the swipe commits past the threshold, fire `onCommit` once
-//     and snap dragX back to 0.
+// Behaviour notes:
+//   • Direction lock: we only commit to the swipe gesture after the
+//     pointer has moved more horizontally than vertically. Vertical
+//     scroll wins until the horizontal motion is unambiguous, so the
+//     thread keeps scrolling smoothly without each bubble nudging
+//     sideways on every touchmove.
+//   • Damping: the bubble follows the finger at 50% speed so the
+//     reply icon behind it has room to fade in before the bubble
+//     fully clears the threshold. Same feel as Telegram / WhatsApp.
+//   • Progress saturates at 1 right at the commit point and clamps
+//     there even if the user keeps dragging. The caller uses this
+//     to flip the reply icon into its "armed" state.
+//   • Releasing past the threshold fires onCommit() and the bubble
+//     snaps back via the consumer's `transition` on dragX === 0.
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
-interface Options {
-  // Which direction this bubble allows the swipe to commit in.
-  // Determined by isMine — see comments above.
-  direction: "left" | "right";
-  threshold?: number;
-  onCommit: () => void;
-}
+type Direction = "left" | "right";
 
-const DEFAULT_THRESHOLD = 60;
-const VERTICAL_SLOP = 12;
-const MAX_DRAG = 90;
+type SwipeHandlers = {
+  onPointerDown: (e: ReactPointerEvent) => void;
+  onPointerMove: (e: ReactPointerEvent) => void;
+  onPointerUp: () => void;
+  onPointerCancel: () => void;
+};
+
+type UseSwipeToReplyResult = {
+  handlers: SwipeHandlers;
+  /** Current horizontal offset to apply to the bubble (already dampened). */
+  dragX: number;
+  /** 0..1 — how close the gesture is to firing. Pass to the reply-icon hint. */
+  progress: number;
+};
+
+// How far the finger has to travel before we commit. The bubble actually
+// translates by ~half of this because of damping below, so visually the
+// threshold lands around 28px of bubble movement.
+const COMMIT_THRESHOLD = 56;
+// Damping factor — the bubble follows at half the finger's pace.
+const DAMPING = 0.5;
+// How much horizontal motion we need before locking into the swipe gesture.
+// Below this we still allow the parent scroller to claim the gesture for a
+// vertical pan.
+const HORIZONTAL_ACTIVATION = 5;
+// How much vertical motion before we bail entirely — the user is scrolling,
+// not swiping.
+const VERTICAL_CANCEL = 8;
 
 export function useSwipeToReply({
   direction,
-  threshold = DEFAULT_THRESHOLD,
   onCommit,
-}: Options) {
+}: {
+  direction: Direction;
+  onCommit: () => void;
+}): UseSwipeToReplyResult {
   const [dragX, setDragX] = useState(0);
-  const startRef = useRef<{
-    x: number;
-    y: number;
-    locked: "horizontal" | "vertical" | null;
-    committed: boolean;
+  const [progress, setProgress] = useState(0);
+
+  // Everything we need to remember about the in-flight gesture. Kept
+  // in a ref so updates don't trigger a re-render — only setDragX /
+  // setProgress do.
+  const gestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    active: boolean;
+    lastAllowedDx: number;
+    captureTarget: Element | null;
   } | null>(null);
 
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType !== "touch") return;
-    startRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      locked: null,
-      committed: false,
+  const reset = useCallback(() => {
+    setDragX(0);
+    setProgress(0);
+    gestureRef.current = null;
+  }, []);
+
+  const onPointerDown = useCallback((e: ReactPointerEvent) => {
+    gestureRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+      lastAllowedDx: 0,
+      captureTarget: e.currentTarget as Element,
     };
   }, []);
 
   const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const start = startRef.current;
-      if (!start) return;
-      const dx = e.clientX - start.x;
-      const dy = e.clientY - start.y;
+    (e: ReactPointerEvent) => {
+      const g = gestureRef.current;
+      if (!g || e.pointerId !== g.pointerId) return;
+      const dx = e.clientX - g.startX;
+      const dy = e.clientY - g.startY;
 
-      // Decide axis on first meaningful movement. Once locked we
-      // stick with that axis for the rest of the gesture so a stray
-      // vertical wobble doesn't kill the swipe halfway through.
-      if (start.locked === null) {
-        if (Math.abs(dx) > VERTICAL_SLOP && Math.abs(dx) > Math.abs(dy)) {
-          start.locked = "horizontal";
-        } else if (Math.abs(dy) > VERTICAL_SLOP) {
-          start.locked = "vertical";
+      // First-move arbitration: decide whether this is a swipe or a
+      // scroll. Once we've decided it's a swipe we capture the pointer
+      // so the bubble keeps receiving events even if the finger drifts
+      // off it.
+      if (!g.active) {
+        if (Math.abs(dy) > VERTICAL_CANCEL && Math.abs(dy) > Math.abs(dx)) {
+          // Vertical pan wins — let the chat scroll, and bail.
+          gestureRef.current = null;
+          return;
+        }
+        if (Math.abs(dx) > HORIZONTAL_ACTIVATION) {
+          g.active = true;
+          try {
+            g.captureTarget?.setPointerCapture(g.pointerId);
+          } catch {
+            /* noop */
+          }
+        } else {
+          return;
         }
       }
-      if (start.locked !== "horizontal") return;
 
-      // Only register movement in the allowed direction. Pulling in
-      // the wrong direction does nothing.
-      const allowed =
-        direction === "left" ? Math.min(0, dx) : Math.max(0, dx);
-      const clamped = Math.max(-MAX_DRAG, Math.min(MAX_DRAG, allowed));
-      setDragX(clamped);
+      // Direction-aware allowed motion. We never let the bubble move
+      // the "wrong" way — it would imply replying to your own message
+      // by swiping toward your own side of the screen.
+      let allowed = 0;
+      if (direction === "right" && dx > 0) allowed = dx;
+      if (direction === "left" && dx < 0) allowed = dx;
 
-      if (
-        !start.committed &&
-        Math.abs(clamped) >= threshold
-      ) {
-        start.committed = true;
-        onCommit();
-        // Snap back so the bubble doesn't keep dragging after commit.
+      if (allowed === 0) {
         setDragX(0);
-        startRef.current = null;
+        setProgress(0);
+        g.lastAllowedDx = 0;
+        return;
       }
+
+      g.lastAllowedDx = allowed;
+      setDragX(allowed * DAMPING);
+      setProgress(Math.min(1, Math.abs(allowed) / COMMIT_THRESHOLD));
     },
-    [direction, threshold, onCommit]
+    [direction],
   );
 
   const onPointerUp = useCallback(() => {
-    startRef.current = null;
-    setDragX(0);
-  }, []);
+    const g = gestureRef.current;
+    if (!g) return;
+    if (g.active && Math.abs(g.lastAllowedDx) >= COMMIT_THRESHOLD) {
+      // Commit — fire onCommit BEFORE resetting so the parent can
+      // capture the current scroll position / focus before the
+      // spring-back starts.
+      onCommit();
+    }
+    reset();
+  }, [onCommit, reset]);
 
   const onPointerCancel = useCallback(() => {
-    startRef.current = null;
-    setDragX(0);
-  }, []);
-
-  // 0..1 — how close the user is to the commit threshold. Consumers
-  // use this to fade in a reply icon next to the bubble so the
-  // gesture becomes visible / discoverable. Saturates at 1 right
-  // before the commit fires.
-  const progress = Math.min(1, Math.abs(dragX) / threshold);
+    reset();
+  }, [reset]);
 
   return {
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
     dragX,
     progress,
-    handlers: {
-      onPointerDown,
-      onPointerMove,
-      onPointerUp,
-      onPointerCancel,
-    },
   };
 }
