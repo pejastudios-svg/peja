@@ -153,9 +153,21 @@ export function AudioBubble({
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
+    // iOS WebKit dislikes the "seek to 1e10 to force end-of-file
+    // duration discovery" trick — it can leave the audio element in a
+    // perpetual seeking state where canplay never fires and play()
+    // hangs (which surfaced as "loading forever" for VNs the user
+    // sent and played on their own iPhone). On iOS we accept a
+    // possibly-Infinity duration; the scrubber dot will be inert but
+    // playback works. Detection is a one-shot UA sniff because
+    // WebKit's quirk applies to every iOS browser (they all wrap
+    // WKWebView), not just Safari.
+    const isIOS =
+      typeof navigator !== "undefined" &&
+      /iPad|iPhone|iPod/.test(navigator.userAgent);
     let durationFixApplied = false;
     const tryFixDuration = () => {
-      if (durationFixApplied) return;
+      if (durationFixApplied || isIOS) return;
       if (!Number.isFinite(el.duration)) {
         durationFixApplied = true;
         try {
@@ -429,11 +441,30 @@ export function AudioBubble({
   // anchored to the waveform's left edge.
   return (
     <div className="flex items-center gap-3 min-w-[230px]">
-      {/* Hide the audio element completely — without `controls` it
-          renders as a 0×0 inline element by default, but
-          `display:none` is the explicit guarantee that it never
-          contributes any layout. */}
-      <audio ref={audioRef} src={url} preload="metadata" className="hidden" />
+      {/* Audio element parked offscreen instead of `display: none`.
+          iOS Safari (and Capacitor's WKWebView) refuses to play audio
+          tracks on elements that are `display: none` — the controls
+          look fine but no sound comes out, OR the load stalls
+          indefinitely. Position-absolute with a 1×1 box outside the
+          viewport keeps it logically present without contributing to
+          layout. `aria-hidden` so screen readers don't see it twice.
+          The visible play / pause UI below is what the user interacts
+          with; this element is just the playback engine. */}
+      <audio
+        ref={audioRef}
+        src={url}
+        preload="metadata"
+        aria-hidden
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          left: -9999,
+          top: -9999,
+          pointerEvents: "none",
+          opacity: 0,
+        }}
+      />
 
       {isPending ? (
         // Upload in flight — swap the play button for the same
