@@ -57,6 +57,24 @@ function clearProfileEditDraft(userId: string) {
   } catch {}
 }
 
+function countFilledFields(data: FormState): number {
+  return REQUIRED_PROFILE_FIELDS.filter(
+    (f) => typeof (data as any)[f.key] === "string" && (data as any)[f.key].trim() !== ""
+  ).length;
+}
+
+/** Prefer non-empty draft values (in-progress edits); fall back to DB for the rest. */
+function mergeFormWithDraft(db: FormState, draft: FormState): FormState {
+  return {
+    full_name: draft.full_name.trim() || db.full_name,
+    phone: draft.phone.trim() || db.phone,
+    occupation: draft.occupation.trim() || db.occupation,
+    date_of_birth: draft.date_of_birth.trim() || db.date_of_birth,
+    avatar_url: draft.avatar_url.trim() || db.avatar_url,
+    home_address: draft.home_address.trim() || db.home_address,
+  };
+}
+
 export default function EditProfilePage() {
   const router = useRouter();
   const { user, loading: authLoading, refreshUser } = useAuth();
@@ -130,19 +148,13 @@ export default function EditProfilePage() {
 
     if (hydratedUserIdRef.current === user.id) return;
 
-    // Restored after image-picker / backgrounding remounts the screen.
     const savedDraft = readProfileEditDraft(user.id);
-    if (savedDraft) {
-      setFormData(savedDraft);
-      hydratedUserIdRef.current = user.id;
-      return;
-    }
 
     let cancelled = false;
     setFormData(null);
 
     (async () => {
-      const fallback = (): FormState => ({
+      const fromAuth = (): FormState => ({
         full_name: user.full_name || "",
         phone: user.phone || "",
         occupation: user.occupation || "",
@@ -158,18 +170,27 @@ export default function EditProfilePage() {
           .single();
         if (cancelled) return;
         const src = data ?? user;
-        setFormData({
+        const fromDb: FormState = {
           full_name: src.full_name || "",
           phone: src.phone || "",
           occupation: src.occupation || "",
           date_of_birth: src.date_of_birth || "",
           avatar_url: src.avatar_url || "",
           home_address: src.home_address || "",
-        });
+        };
+        const next = savedDraft ? mergeFormWithDraft(fromDb, savedDraft) : fromDb;
+        setFormData(next);
+        // Drop stale drafts (e.g. only avatar after picker) so mobile doesn't stick at 1/6.
+        if (savedDraft && countFilledFields(savedDraft) < countFilledFields(fromDb)) {
+          clearProfileEditDraft(user.id);
+          writeProfileEditDraft(user.id, next);
+        }
         hydratedUserIdRef.current = user.id;
       } catch {
         if (!cancelled) {
-          setFormData(fallback());
+          const fromDb = fromAuth();
+          const next = savedDraft ? mergeFormWithDraft(fromDb, savedDraft) : fromDb;
+          setFormData(next);
           hydratedUserIdRef.current = user.id;
         }
       }
