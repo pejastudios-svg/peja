@@ -3263,6 +3263,15 @@ function MessageBubbleWrapper({
           // the user is actively dragging we want the transform to track
           // their finger 1:1, so no transition.
           transition: dragX === 0 ? "transform 200ms ease" : undefined,
+          // `touch-action: pan-y` tells the browser: "vertical scrolls
+          // are yours, horizontal touches are ours." Without this,
+          // Android Chrome (and Capacitor's Chrome-based WebView)
+          // grabs the horizontal motion for parent scroll/back-swipe
+          // arbitration and cancels our pointer stream mid-gesture —
+          // which is exactly the "about to swipe then stops"
+          // behaviour. Setting it here scopes the override to the
+          // bubble; the surrounding thread can still scroll vertically.
+          touchAction: "pan-y",
         }}
         {...handlers}
       >

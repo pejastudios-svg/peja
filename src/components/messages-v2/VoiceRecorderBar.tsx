@@ -129,6 +129,18 @@ export function VoiceRecorderBar({
   const startTimeRef = useRef(0);
   const lastDxRef = useRef(0);
   const lastDyRef = useRef(0);
+  // Tap-vs-hold detection by TIMER instead of `Date.now() - start`
+  // arithmetic. On mobile WebViews (especially Capacitor's iOS
+  // WKWebView) the event loop can stretch a quick tap's elapsed
+  // time past any threshold we pick — the user releases their
+  // finger after ~80ms but our pointerup handler runs ~600ms later,
+  // and the math says "this was a hold, send it". The timer flips
+  // isHoldRef from false to true at exactly TAP_MAX_MS regardless
+  // of when pointerup actually fires, so the "did the user mean to
+  // tap or hold?" decision is anchored to wall-clock time the way
+  // the user experiences it. Cleared in pointerup and elsewhere.
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHoldRef = useRef(false);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const waveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartMsRef = useRef(0);
@@ -385,6 +397,15 @@ export function VoiceRecorderBar({
     startTimeRef.current = Date.now();
     lastDxRef.current = 0;
     lastDyRef.current = 0;
+    // Schedule the tap-vs-hold flip. Until this timer fires, any
+    // release counts as a tap → enter locked. After it fires, a
+    // release counts as a deliberate hold → send.
+    isHoldRef.current = false;
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+    tapTimerRef.current = setTimeout(() => {
+      isHoldRef.current = true;
+      tapTimerRef.current = null;
+    }, TAP_MAX_MS);
     void startAudioCapture();
     startTimers();
   };
@@ -432,22 +453,34 @@ export function VoiceRecorderBar({
       /* noop */
     }
     pointerIdRef.current = null;
+    // Clear the tap timer — its only job was to decide whether
+    // pointerup, if it happens, should be classified as tap or hold.
+    // Whichever fired first (timer or pointerup) is the source of
+    // truth via isHoldRef.
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = null;
+    }
     const dx = lastDxRef.current;
     const dy = lastDyRef.current;
-    const held = Date.now() - startTimeRef.current;
+    const wasHold = isHoldRef.current;
 
     if (-dx > TRASH_THRESHOLD) {
       void runTrashAnimation();
     } else if (-dy > LOCK_THRESHOLD) {
       enterLocked();
-    } else if (held < TAP_MAX_MS && Math.abs(dx) < TAP_MAX_DRIFT_PX && Math.abs(dy) < TAP_MAX_DRIFT_PX) {
-      // Treated as a tap — lock and stay recording so the user can hit
-      // trash or send without holding their finger down. The tap window
-      // is wide (500ms / 12px) because mobile event timing can stretch
-      // a "quick tap" beyond a strict 280ms / 8px box (iOS especially
-      // reports small jitter and slight event delay), and we'd rather
-      // err on the side of locking than send an accidental half-second
-      // recording.
+    } else if (
+      !wasHold &&
+      Math.abs(dx) < TAP_MAX_DRIFT_PX &&
+      Math.abs(dy) < TAP_MAX_DRIFT_PX
+    ) {
+      // Released before the tap timer fired → user meant to tap.
+      // Enter locked mode so the recording continues hands-free and
+      // they can explicitly choose Send or Trash. Decoupling this
+      // from Date.now() math avoids the mobile-WebView quirk where
+      // event-loop scheduling stretched the perceived "held" time
+      // past the threshold and pushed every tap into the send
+      // branch.
       enterLocked();
     } else {
       void completeSend();
@@ -456,6 +489,10 @@ export function VoiceRecorderBar({
 
   const onMicPointerCancel = () => {
     if (stateRef.current === "holding") {
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
+        tapTimerRef.current = null;
+      }
       stopTimers();
       discardAudioCapture();
       onCancel?.();
