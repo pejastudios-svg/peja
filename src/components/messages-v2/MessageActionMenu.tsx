@@ -89,6 +89,12 @@ export function MessageActionMenu({
   // Clamp the menu inside the viewport. We measure the menu after
   // first paint (useLayoutEffect → before the user sees a flash) and
   // shift it back inside if the anchor is too close to the edges.
+  //
+  // Re-runs when `emojiExpanded` flips because the menu's height
+  // jumps as the full picker comes in. Without that dep, the initial
+  // clamp would be based on the collapsed-row height; expanding the
+  // picker afterward would push the Reply / Copy / Forward / Pin
+  // rows off the bottom of the screen.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -106,7 +112,7 @@ export function MessageActionMenu({
     if (left < MARGIN) left = MARGIN;
     if (top < MARGIN) top = MARGIN;
     setPos({ left, top });
-  }, [anchor.x, anchor.y]);
+  }, [anchor.x, anchor.y, emojiExpanded]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

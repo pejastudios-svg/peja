@@ -7,16 +7,26 @@
 //   • While still holding, drag finger LEFT past the cancel threshold
 //     to discard the recording on release.
 //
-// There is no tap-to-lock or hands-free mode any more. The previous
-// "tap = lock, hold = release-to-send" split confused users because a
-// natural tap kept catching the threshold edge. The single hold
-// gesture is unambiguous and matches what most users expect from a
-// messaging app's mic button.
+// There is no tap-to-lock or hands-free mode. The previous "tap = lock,
+// hold = release-to-send" split confused users because natural taps
+// kept catching the threshold edge. The single hold gesture is
+// unambiguous and matches what most users expect from a messaging
+// app's mic button. It also mirrors the SOSButton's hold-to-confirm
+// behaviour (`components/sos/SOSButton.tsx`) — same conceptual model.
 //
-// Cancel-via-drag is visually progressive: a "← Slide to cancel" hint
-// is always visible during recording, and once the user crosses the
-// halfway point of the drag the hint flips to "Release to cancel" in
-// red to telegraph what releasing now would do.
+// Why document-level listeners while recording, instead of the
+// usual React pointerup on the button:
+//
+//   On press, the UI swaps from <button> (idle) to <div> (recording
+//   bar). The button unmounts. A pointer that was captured by the
+//   button is dropped along with it, so subsequent pointermove /
+//   pointerup events never reach the React handlers we attached to
+//   the bar. That is exactly the bug the user reported ("I let go but
+//   it keeps recording"). We sidestep it by binding pointermove /
+//   pointerup to `document` for the lifetime of the recording, so
+//   release is detected regardless of which element is under the
+//   finger at the time. Refs carry mutable state so the document
+//   listener always sees the latest values.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, Trash2 } from "lucide-react";
@@ -79,12 +89,17 @@ export function VoiceRecorderBar({
   // -----------------------------------------------------
   const [mode, setMode] = useState<"idle" | "recording">("idle");
   const [dragX, setDragX] = useState(0);
+
+  // Refs that the document-level pointer listeners read from. State
+  // alone wouldn't work — the listener closure captures the value at
+  // bind-time and never sees subsequent updates, which is how the
+  // previous version was misreading the slide distance.
   const startXRef = useRef(0);
+  const dragXRef = useRef(0);
+  const modeRef = useRef<"idle" | "recording">("idle");
 
   // -----------------------------------------------------
   // Helper: package the recorder result as a File and hand off.
-  // The pipeline expects a File with a sensible extension; we derive
-  // it from the recorder's reported mimeType.
   // -----------------------------------------------------
   const finalize = useCallback(
     (r: RecorderResult) => {
@@ -93,7 +108,9 @@ export function VoiceRecorderBar({
       const file = new File([r.blob], name, { type: r.mimeType });
       onSend(file, r.duration);
       setMode("idle");
+      modeRef.current = "idle";
       setDragX(0);
+      dragXRef.current = 0;
     },
     [onSend]
   );
@@ -113,53 +130,41 @@ export function VoiceRecorderBar({
   }, [mode, onActiveChange]);
 
   // -----------------------------------------------------
-  // Press handlers (mouse + touch unified)
+  // Document-level gesture: only mounted while recording.
+  //
+  // pointermove tracks horizontal drag distance for the
+  // slide-to-cancel visual. pointerup decides whether the user
+  // crossed the cancel threshold (discard) or simply released
+  // (send). Both are bound to `document` rather than the bar so we
+  // continue to receive events even though the original press target
+  // (the mic button) has been unmounted.
   // -----------------------------------------------------
-  const onPointerDown = useCallback(
-    async (e: React.PointerEvent<HTMLButtonElement>) => {
-      if (mode !== "idle") return;
-      e.preventDefault();
-      (e.target as Element).setPointerCapture?.(e.pointerId);
-      startXRef.current = e.clientX;
-      setMode("recording");
-      setDragX(0);
-      // Kick off recording. Don't await — the UI should already show
-      // the recording bar while the mic spins up to make the press
-      // feel instantaneous.
-      void recorder.start();
-    },
-    [mode, recorder]
-  );
+  useEffect(() => {
+    if (mode !== "recording") return;
 
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (mode !== "recording") return;
-      // Only track leftward drift (dragX <= 0). The user dragging
-      // RIGHT shouldn't visually shift the bar — that's not a
-      // meaningful gesture in this UI.
+    const onMove = (e: PointerEvent) => {
+      if (modeRef.current !== "recording") return;
+      // Only leftward drag counts toward cancel. Right of the start
+      // position stays at 0 (no visual shift).
       const dx = Math.min(0, e.clientX - startXRef.current);
+      dragXRef.current = dx;
       setDragX(dx);
-    },
-    [mode]
-  );
+    };
 
-  const onPointerUp = useCallback(
-    async (e: React.PointerEvent) => {
-      if (mode !== "recording") return;
-      (e.target as Element).releasePointerCapture?.(e.pointerId);
-
-      const draggedFarEnough = dragX < -CANCEL_DRAG_PX;
-
-      if (draggedFarEnough) {
-        // Slide-to-cancel: discard the recording.
-        await recorder.cancel();
+    const finish = async (cancel: boolean) => {
+      if (modeRef.current !== "recording") return;
+      // Set mode immediately so a second release event can't double-
+      // fire send + cancel. The recorder hook is idempotent but the
+      // UI state isn't.
+      modeRef.current = "idle";
+      if (cancel) {
+        await recorder.cancel().catch(() => {});
         onCancel();
         setMode("idle");
         setDragX(0);
+        dragXRef.current = 0;
         return;
       }
-
-      // Normal release: stop + send.
       try {
         const r = await recorder.stop();
         finalize(r);
@@ -168,9 +173,49 @@ export function VoiceRecorderBar({
         onCancel();
         setMode("idle");
         setDragX(0);
+        dragXRef.current = 0;
       }
+    };
+
+    const onUp = () => {
+      const cancel = dragXRef.current < -CANCEL_DRAG_PX;
+      void finish(cancel);
+    };
+
+    // pointercancel covers cases where the browser revokes the
+    // gesture mid-flight (e.g. switching apps on Capacitor). Treat
+    // like release-without-drag — send what we have so the user
+    // doesn't lose the recording entirely.
+    const onCancelEvt = () => {
+      void finish(false);
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onCancelEvt);
+    return () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onCancelEvt);
+    };
+  }, [mode, recorder, finalize, onCancel]);
+
+  // -----------------------------------------------------
+  // Press handler on the mic button — only fires in idle mode. The
+  // moment we flip to recording, the button unmounts and the document
+  // listeners above take over for the rest of the gesture.
+  // -----------------------------------------------------
+  const handleHoldStart = useCallback(
+    (clientX: number) => {
+      if (modeRef.current !== "idle") return;
+      startXRef.current = clientX;
+      dragXRef.current = 0;
+      modeRef.current = "recording";
+      setMode("recording");
+      setDragX(0);
+      void recorder.start();
     },
-    [mode, dragX, recorder, onCancel, finalize]
+    [recorder]
   );
 
   // -----------------------------------------------------
@@ -179,7 +224,10 @@ export function VoiceRecorderBar({
   useEffect(() => {
     if (!recorder.permissionDenied) return;
     onCancel();
+    modeRef.current = "idle";
     setMode("idle");
+    setDragX(0);
+    dragXRef.current = 0;
   }, [recorder.permissionDenied, onCancel]);
 
   // -----------------------------------------------------
@@ -189,13 +237,12 @@ export function VoiceRecorderBar({
     return (
       <button
         type="button"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => {
-          setMode("idle");
-          setDragX(0);
-          recorder.cancel();
+        // Pointer events for unified mouse/touch input. The handler
+        // ONLY starts the gesture — release / move are caught by the
+        // document listeners installed in the recording effect above.
+        onPointerDown={(e) => {
+          e.preventDefault();
+          handleHoldStart(e.clientX);
         }}
         className="shrink-0 w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center active:scale-90 transition-transform"
         aria-label="Hold to record"
@@ -206,14 +253,14 @@ export function VoiceRecorderBar({
   }
 
   // Recording mode: pill-shaped surface with timer + amplitude pulse
-  // + slide-to-cancel hint. Drag tracks the user's finger so they get
-  // immediate feedback that the gesture is being received.
+  // + slide-to-cancel hint. Pointer-events:none so document-level
+  // handlers stay in charge (the user is still holding their finger
+  // somewhere — the bar shouldn't intercept it).
   const draggedFar = dragX < -CANCEL_DRAG_PX;
   return (
     <div
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      className="flex-1 flex items-center gap-2 h-10 rounded-2xl bg-red-500/15 border border-red-500/40 px-3 peja-bar-expand-from-right"
+      className="flex-1 flex items-center gap-2 h-10 rounded-2xl bg-red-500/15 border border-red-500/40 px-3 peja-bar-expand-from-right pointer-events-none"
+      aria-live="polite"
     >
       <RecordingPulse amplitude={recorder.amplitude} />
       <span className="text-sm font-medium text-red-300 tabular-nums">
@@ -225,9 +272,7 @@ export function VoiceRecorderBar({
           red so the user knows what releasing now would do. */}
       <span
         className={`flex-1 text-right text-xs inline-flex items-center justify-end gap-1.5 ${
-          draggedFar
-            ? "text-red-300 font-semibold"
-            : "text-dark-300"
+          draggedFar ? "text-red-300 font-semibold" : "text-dark-300"
         }`}
         style={{ transform: `translateX(${dragX}px)` }}
       >

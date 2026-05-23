@@ -1367,25 +1367,82 @@ export default function ThreadV2Page() {
       if (!conv?.id) return;
       const next = !message.is_pinned;
       const store = useChatStore.getState();
-      // Optimistic patch — the bubble's Pin icon flips immediately,
-      // pinned-bar repopulates on the next refresh.
-      store.patchMessage(conv.id, message.id, {
-        is_pinned: next,
-        pinned_at: next ? new Date().toISOString() : null,
-      });
-      try {
-        await apiSetMessagePinned(message.id, next);
-        toast.info(next ? "Pinned" : "Unpinned");
-      } catch (err) {
-        store.patchMessage(conv.id, message.id, {
-          is_pinned: !next,
-          pinned_at: !next ? new Date().toISOString() : null,
+
+      // Apply the pin/unpin against the server + optimistic store
+      // patch. Factored out so the swap path below can reuse it for
+      // both the new pin and the implicit unpin of the existing one.
+      const applyPin = async (msgId: string, value: boolean) => {
+        store.patchMessage(conv.id!, msgId, {
+          is_pinned: value,
+          pinned_at: value ? new Date().toISOString() : null,
         });
+        try {
+          await apiSetMessagePinned(msgId, value);
+        } catch (err) {
+          store.patchMessage(conv.id!, msgId, {
+            is_pinned: !value,
+            pinned_at: !value ? new Date().toISOString() : null,
+          });
+          throw err;
+        }
+      };
+
+      // Unpinning is always safe — no confirmation needed.
+      if (!next) {
+        try {
+          await applyPin(message.id, false);
+          toast.info("Unpinned");
+        } catch (err) {
+          const msg =
+            err instanceof Error ? err.message : "Couldn't update pin";
+          toast.danger(msg);
+        }
+        return;
+      }
+
+      // Pinning. If another message is already pinned in this
+      // conversation, ask before swapping. We enforce one pinned
+      // message per conversation in the UI; the server side allows
+      // multiple but the user expectation is "one important message
+      // at a time".
+      const existingPinned = (thread?.messages || []).find(
+        (m) => m.is_pinned && !m.is_deleted && m.id !== message.id
+      );
+
+      if (existingPinned) {
+        setPendingAction({
+          title: "Replace pinned message?",
+          body: `${pinSwapBody(existingPinned, message)}`,
+          confirmLabel: "Replace",
+          danger: false,
+          run: async () => {
+            try {
+              // Unpin the old one first, then pin the new one. Sequential
+              // so we don't briefly have two pinned messages on the
+              // server (the optimistic patches mirror the order).
+              await applyPin(existingPinned.id, false);
+              await applyPin(message.id, true);
+              toast.info("Pinned");
+            } catch (err) {
+              const msg =
+                err instanceof Error ? err.message : "Couldn't update pin";
+              toast.danger(msg);
+            }
+          },
+        });
+        return;
+      }
+
+      // No existing pin — straight pin.
+      try {
+        await applyPin(message.id, true);
+        toast.info("Pinned");
+      } catch (err) {
         const msg = err instanceof Error ? err.message : "Couldn't update pin";
         toast.danger(msg);
       }
     },
-    [conv?.id, toast]
+    [conv?.id, toast, thread?.messages]
   );
 
   const handleStartReply = useCallback(
@@ -3211,6 +3268,39 @@ function MessageBubbleWrapper({
 // blob URL so the parent doesn't have to manage memory for previews.
 // For videos, renders a muted `<video preload="metadata">` so the
 // browser pulls the first frame on its own — looks like a real
+
+// Friendly confirm-dialog body for the "you have a pinned message,
+// pin a new one?" flow. We surface a short excerpt of each so the
+// user knows exactly what they're swapping. Media messages collapse
+// to a media-type label since their content is the (often empty)
+// caption.
+function pinSwapBody(existing: ChatMessage, incoming: ChatMessage): string {
+  const exLabel = pinPreviewLabel(existing);
+  const inLabel = pinPreviewLabel(incoming);
+  return `Unpin "${exLabel}" and pin "${inLabel}" instead?`;
+}
+
+function pinPreviewLabel(m: ChatMessage): string {
+  const text = (m.content || "").trim();
+  if (text) {
+    return text.length > 40 ? text.slice(0, 40) + "..." : text;
+  }
+  if (m.media && m.media.length > 0) {
+    const first = m.media[0];
+    switch (first.media_type) {
+      case "image":
+        return "Photo";
+      case "video":
+        return "Video";
+      case "audio":
+        return "Voice note";
+      case "document":
+        return first.file_name || "File";
+    }
+  }
+  return "Message";
+}
+
 // Stable color per sender id for the WhatsApp-style sender name
 // pill at the top of each group bubble. Pure function of the user
 // id so the same person always gets the same colour across renders.
