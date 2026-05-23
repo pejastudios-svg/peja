@@ -193,7 +193,16 @@ export function VoiceRecorderBar({
           resolve(null);
           return;
         }
-        const type = mr.mimeType || "audio/webm";
+        // Strip codec parameters from the MIME (e.g. "audio/webm;codecs=opus"
+        // → "audio/webm"). The full string is fine as a MediaRecorder input
+        // but some object stores serve it back with a mangled Content-Type
+        // (e.g. the semicolon gets URL-encoded or the codec param is
+        // dropped without renormalising), which then breaks <audio> on
+        // certain browsers — the player silently fails to decode. The
+        // base MIME alone is universally understood by browsers when
+        // playing back a properly-formed file.
+        const fullType = mr.mimeType || "audio/webm";
+        const type = fullType.split(";")[0].trim() || "audio/webm";
         const ext = type.includes("mp4") ? "m4a" : "webm";
         const blob = new Blob(chunks, { type });
         const file = new File([blob], `voice-${Date.now()}.${ext}`, { type });
@@ -910,8 +919,13 @@ function TrashCanSVG({ lidOpen, shake }: { lidOpen: boolean; shake: boolean }) {
     >
       <g
         style={{
+          // Pivot at the bottom-right corner of the lid. SVG y points
+          // DOWN, so a positive rotation is clockwise in screen terms
+          // — which here sweeps the left edge UP and to the LEFT,
+          // away from the bin body. The previous -50deg rotated
+          // counter-clockwise and pushed the lid INTO the body.
           transformOrigin: "24px 7px",
-          transform: lidOpen ? "rotate(-50deg) translateY(-1px)" : "none",
+          transform: lidOpen ? "rotate(50deg) translateY(-1px)" : "none",
           transition: "transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1)",
         }}
       >
