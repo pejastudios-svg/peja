@@ -97,20 +97,51 @@ async function sendFCMPush(
 
 // Calculate distance between two points in km (Haversine formula)
 function calculateDistanceKm(
-  lat1: number, 
-  lon1: number, 
-  lat2: number, 
+  lat1: number,
+  lon1: number,
+  lat2: number,
   lon2: number
 ): number {
   const R = 6371; // Earth's radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
+  const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+// Coarse "is this point inside Nigeria?" check used as a fallback
+// when a post's country_code column is null (rows created before the
+// 20260611 migration). The box is intentionally permissive — it
+// covers all of Nigeria plus a slim border buffer — so we err on
+// the side of "treat as Nigeria" for legacy posts rather than
+// silently dropping them from the all_nigeria gate. Coordinates
+// well outside the box (e.g. somewhere in the US) get rejected
+// reliably, which is what fixes the Eastport-style cross-country
+// leak. Once country_code is populated on every row we can drop
+// this and check the column alone.
+function isInNigeriaBBox(lat: number, lng: number): boolean {
+  return lat >= 4.0 && lat <= 14.0 && lng >= 2.5 && lng <= 14.7;
+}
+
+// Combined country gate. Uses the stored country_code when present
+// (precise), falls back to the bounding-box check for legacy rows
+// (good enough). Returns false when we lack any signal at all —
+// safer to suppress a notification than to spam everyone with
+// uncountriable coords.
+export function isNigeriaPost(
+  countryCode: string | null | undefined,
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+): boolean {
+  if (countryCode) return countryCode.toLowerCase() === "ng";
+  if (typeof lat === "number" && typeof lng === "number") {
+    return isInNigeriaBBox(lat, lng);
+  }
+  return false;
 }
 
 
@@ -200,11 +231,25 @@ async function shouldNotifyUser(
   postLatitude: number | null,
   postLongitude: number | null,
   postAddress: string | null,
-  postState: string | null
+  postState: string | null,
+  postCountryCode: string | null,
 ): Promise<boolean> {
   const settings = user.settings;
   const catType = getCategoryType(category);
 
+
+  // ============================================
+  // CASE 0: Country gate (NEW)
+  // ============================================
+  // The whole app is Nigeria-focused. A post created from outside
+  // Nigeria (someone testing from Eastport, US for example) used
+  // to slip through the all_nigeria zone because that branch was
+  // unconditional. Reject up front: if we can't prove the post is
+  // in Nigeria via stored country_code or a bounding-box fallback
+  // on the coords, no Nigerian user gets pinged.
+  if (!isNigeriaPost(postCountryCode, postLatitude, postLongitude)) {
+    return false;
+  }
 
   // ============================================
   // CASE 1: No settings - BLOCK
@@ -320,7 +365,12 @@ export async function notifyUsersAboutIncident(
   address: string | null,
   latitude?: number,
   longitude?: number,
-  state?: string | null
+  state?: string | null,
+  // ISO 3166-1 alpha-2 (e.g. "ng"). When present, shouldNotifyUser's
+  // country gate uses it directly; when null/undefined we fall back
+  // to a coordinate bounding-box check. The create flow now always
+  // passes this from the Nominatim reverse-geocode result.
+  countryCode?: string | null,
 ): Promise<number> {
 
   try {
@@ -389,7 +439,8 @@ export async function notifyUsersAboutIncident(
         latitude || null,
         longitude || null,
         address,
-        state ?? null
+        state ?? null,
+        countryCode ?? null,
       );
 
       if (shouldNotify) {

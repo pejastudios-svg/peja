@@ -15,6 +15,7 @@ import { usePageCache } from "@/context/PageCacheContext";
 import DataAnalyticsPanel from "@/components/map/DataAnalyticsPanel";
 import { ChevronDown } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { isNigeriaPost } from "@/lib/notifications";
 
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
@@ -232,7 +233,7 @@ export default function MapClient() {
         .from("posts")
         .select(`
           id, user_id, category, comment, address,
-          latitude, longitude,
+          latitude, longitude, country_code,
           is_anonymous, status, is_sensitive,
           confirmations, views, comment_count, report_count, created_at,
           post_media (id, post_id, url, thumbnail_url, media_type, is_sensitive)
@@ -248,12 +249,14 @@ export default function MapClient() {
 
       const formatted: Post[] = (data || [])
         .filter((p: any) => p.latitude && p.longitude)
+        .filter((p: any) => isNigeriaPost(p.country_code, p.latitude, p.longitude))
         .map((p: any) => ({
           id: p.id,
           user_id: p.user_id,
           category: p.category,
           comment: p.comment,
           location: { latitude: p.latitude, longitude: p.longitude },
+          country_code: p.country_code ?? null,
           address: p.address,
           is_anonymous: p.is_anonymous,
           status: p.status,

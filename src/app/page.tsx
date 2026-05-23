@@ -20,6 +20,10 @@ import { usePageCache } from "@/context/PageCacheContext";
 import { preloadFeedVideos, getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { profileCompletion } from "@/lib/profileComplete";
+import { isNigeriaPost } from "@/lib/notifications";
+
+// Nearby tab radius. Hard-coded by product: no toggle, no slider.
+const NEARBY_RADIUS_KM = 50;
 
 type FeedTab = "nearby" | "trending";
 type TrendingMode = "recommended" | "top";
@@ -301,7 +305,7 @@ posts.forEach((p: any) => {
       try {
         const baseSelect = `
           id, user_id, category, comment, address,
-          latitude, longitude,
+          latitude, longitude, country_code,
           is_anonymous, status, is_sensitive, confirmations, views, comment_count, report_count, created_at,
           post_media (id, url, media_type, is_sensitive),
           post_tags (tag)
@@ -342,6 +346,7 @@ posts.forEach((p: any) => {
             latitude: (post as any).latitude ?? 0,
             longitude: (post as any).longitude ?? 0,
           },
+          country_code: (post as any).country_code ?? null,
           address: post.address,
           is_anonymous: post.is_anonymous,
           status: post.status,
@@ -371,8 +376,25 @@ posts.forEach((p: any) => {
           const userLat = currentUser?.last_latitude ?? null;
           const userLng = currentUser?.last_longitude ?? null;
 
+          // Country gate first. Excludes cross-country pollution (e.g. a US
+          // post leaking into a Nigerian feed) regardless of whether we
+          // know the user's lat/lng. Uses stored country_code when present,
+          // bbox fallback for legacy rows.
+          const inCountry = formattedPosts.filter((p) =>
+            isNigeriaPost(p.country_code, p.location?.latitude, p.location?.longitude),
+          );
+
           if (userLat != null && userLng != null) {
-            finalPosts = [...formattedPosts].sort((a, b) => {
+            // Radius gate. Posts with no coords are dropped here — the
+            // Nearby tab is by definition about proximity.
+            const withinRadius = inCountry.filter((p) => {
+              const lat = p.location?.latitude ?? 0;
+              const lng = p.location?.longitude ?? 0;
+              if (!lat || !lng) return false;
+              return distanceKm(userLat, userLng, lat, lng) <= NEARBY_RADIUS_KM;
+            });
+
+            finalPosts = [...withinRadius].sort((a, b) => {
               const pa = categoryPriority(a);
               const pb = categoryPriority(b);
               if (pa !== pb) return pa - pb;
@@ -381,15 +403,6 @@ posts.forEach((p: any) => {
               const aLng = a.location?.longitude ?? 0;
               const bLat = b.location?.latitude ?? 0;
               const bLng = b.location?.longitude ?? 0;
-
-              const aHas = !!aLat && !!aLng;
-              const bHas = !!bLat && !!bLng;
-
-              if (!aHas && bHas) return 1;
-              if (aHas && !bHas) return -1;
-              if (!aHas && !bHas) {
-                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-              }
 
               const da = distanceKm(userLat, userLng, aLat, aLng);
               const db = distanceKm(userLat, userLng, bLat, bLng);
@@ -401,7 +414,9 @@ posts.forEach((p: any) => {
 
             finalPosts = finalPosts.slice(0, 30);
           } else {
-            finalPosts = [...formattedPosts]
+            // No user location yet — keep the country gate but skip the
+            // radius filter so the feed isn't empty on first paint.
+            finalPosts = [...inCountry]
               .sort((a, b) => {
                 const pa = categoryPriority(a);
                 const pb = categoryPriority(b);
