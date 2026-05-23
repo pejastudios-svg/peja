@@ -69,6 +69,15 @@ type RecState = "idle" | "holding" | "locked" | "trashing" | "sending";
 const LOCK_THRESHOLD = 50;
 const TRASH_THRESHOLD = 70;
 
+// What counts as a "tap" (press + release with no real movement).
+// Generous on both axes because mobile pointer events can stretch a
+// quick tap to ~400ms total and report 10px+ of phantom drift before
+// touchcancel kicks in. Anything inside this box gets routed to the
+// tap-to-lock branch; anything outside is treated as a deliberate
+// hold + release that sends.
+const TAP_MAX_MS = 500;
+const TAP_MAX_DRIFT_PX = 12;
+
 // Number of bars in the live waveform. Each one bounces independently driven
 // by a sin wave + noise so the row looks like a real spectrogram.
 const WAVEFORM_BARS = 20;
@@ -82,6 +91,16 @@ export function VoiceRecorderBar({
   onCancel,
 }: VoiceRecorderBarProps) {
   const [state, setState] = useState<RecState>("idle");
+  // Mirror of `state` in a ref. Handlers like onMicPointerDown /
+  // onMicPointerUp need to read the *latest* state value, but React
+  // doesn't guarantee re-render before pointerup fires after a fast
+  // tap — the closure captured at render time would still see "idle"
+  // when pointerup hits, causing the early `if (state !== "holding")
+  // return` to bail out (which is what surfaced as "first tap on
+  // Android doesn't trigger anything"). Reading from a ref bypasses
+  // the closure entirely.
+  const stateRef = useRef<RecState>("idle");
+  stateRef.current = state;
   const [elapsed, setElapsed] = useState(0);
   const [waveHeights, setWaveHeights] = useState<number[]>(() =>
     new Array(WAVEFORM_BARS).fill(4),
@@ -166,7 +185,15 @@ export function VoiceRecorderBar({
       mr.ondataavailable = (e) => {
         if (e.data.size > 0) audioChunksRef.current.push(e.data);
       };
-      mr.start(250);
+      // No timeslice. iOS WKWebView's MediaRecorder records to MP4,
+      // and calling `start(N)` produces files with an incomplete moov
+      // atom that no browser will play back (flat-waveform bubble,
+      // play button does nothing — exactly the symptom users hit on
+      // iPhone). A bare `start()` emits one dataavailable + onstop on
+      // .stop(), and the resulting blob is a properly-formed file.
+      // Chrome / Android WebView produce playable webm either way, so
+      // the change is iOS-correct and Android-neutral.
+      mr.start();
       mediaRecorderRef.current = mr;
     } catch (err) {
       // Permission denied or no mic — fail quietly and let the user retry.
@@ -337,8 +364,13 @@ export function VoiceRecorderBar({
   }, []);
 
   // --- Pointer handlers (mic button) ----------------------------------------
+  // All four read `stateRef.current` instead of `state` directly. The
+  // closure-captured `state` value from the previous render can lag
+  // behind the actual one when two pointer events arrive in the same
+  // frame (the common "fast tap on mobile" case), causing the early-
+  // return guards to bail unexpectedly.
   const onMicPointerDown = (e: ReactPointerEvent) => {
-    if (state !== "idle") return;
+    if (stateRef.current !== "idle") return;
     e.preventDefault();
     pointerIdRef.current = e.pointerId;
     try {
@@ -346,6 +378,7 @@ export function VoiceRecorderBar({
     } catch {
       /* noop */
     }
+    stateRef.current = "holding";
     setState("holding");
     startXRef.current = e.clientX;
     startYRef.current = e.clientY;
@@ -357,7 +390,8 @@ export function VoiceRecorderBar({
   };
 
   const onMicPointerMove = (e: ReactPointerEvent) => {
-    if (state !== "holding" || e.pointerId !== pointerIdRef.current) return;
+    if (stateRef.current !== "holding" || e.pointerId !== pointerIdRef.current)
+      return;
     const dx = e.clientX - startXRef.current;
     const dy = e.clientY - startYRef.current;
     lastDxRef.current = dx;
@@ -390,7 +424,8 @@ export function VoiceRecorderBar({
   };
 
   const onMicPointerUp = (e: ReactPointerEvent) => {
-    if (state !== "holding" || e.pointerId !== pointerIdRef.current) return;
+    if (stateRef.current !== "holding" || e.pointerId !== pointerIdRef.current)
+      return;
     try {
       (e.currentTarget as Element).releasePointerCapture(e.pointerId);
     } catch {
@@ -405,9 +440,14 @@ export function VoiceRecorderBar({
       void runTrashAnimation();
     } else if (-dy > LOCK_THRESHOLD) {
       enterLocked();
-    } else if (held < 280 && Math.abs(dx) < 8 && Math.abs(dy) < 8) {
+    } else if (held < TAP_MAX_MS && Math.abs(dx) < TAP_MAX_DRIFT_PX && Math.abs(dy) < TAP_MAX_DRIFT_PX) {
       // Treated as a tap — lock and stay recording so the user can hit
-      // trash or send without holding their finger down.
+      // trash or send without holding their finger down. The tap window
+      // is wide (500ms / 12px) because mobile event timing can stretch
+      // a "quick tap" beyond a strict 280ms / 8px box (iOS especially
+      // reports small jitter and slight event delay), and we'd rather
+      // err on the side of locking than send an accidental half-second
+      // recording.
       enterLocked();
     } else {
       void completeSend();
@@ -415,7 +455,7 @@ export function VoiceRecorderBar({
   };
 
   const onMicPointerCancel = () => {
-    if (state === "holding") {
+    if (stateRef.current === "holding") {
       stopTimers();
       discardAudioCapture();
       onCancel?.();
@@ -425,10 +465,10 @@ export function VoiceRecorderBar({
 
   // --- Click handlers (locked state) ----------------------------------------
   const onTrashButtonClick = () => {
-    if (state === "locked") void runTrashAnimation();
+    if (stateRef.current === "locked") void runTrashAnimation();
   };
   const onSendButtonClick = () => {
-    if (state === "locked") void completeSend();
+    if (stateRef.current === "locked") void completeSend();
   };
 
   // --- Async actions ---------------------------------------------------------
