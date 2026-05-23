@@ -3280,6 +3280,13 @@ function MessageBubbleWrapper({
             corner that opens the same menu the long-press / right-click
             triggers. Hidden by default and surfaced via `group-hover`,
             so touch devices (which don't fire :hover) never see it. */}
+        {/* `pointer-events-none` by default + `group-hover:pointer-events-auto`
+            means touch devices (which never fire :hover) can't trigger
+            this button at all, even if their tap lands on the corner
+            where it would render on desktop. Without that pair the
+            button was invisible on mobile but still tappable — tapping
+            the top-left of your own message or top-right of someone
+            else's message would open the action menu unexpectedly. */}
         <button
           type="button"
           onClick={(e) => {
@@ -3289,7 +3296,7 @@ function MessageBubbleWrapper({
           }}
           className={`absolute top-1.5 ${
             isMine ? "left-1.5" : "right-1.5"
-          } w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
+          } w-6 h-6 rounded-full flex items-center justify-center opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity ${
             isMine
               ? "bg-white/25 text-white hover:bg-white/35"
               : "bg-black/15 text-dark-200 hover:bg-black/25"

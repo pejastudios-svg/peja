@@ -441,19 +441,28 @@ export function AudioBubble({
   // anchored to the waveform's left edge.
   return (
     <div className="flex items-center gap-3 min-w-[230px]">
-      {/* Audio element parked offscreen instead of `display: none`.
-          iOS Safari (and Capacitor's WKWebView) refuses to play audio
-          tracks on elements that are `display: none` — the controls
-          look fine but no sound comes out, OR the load stalls
-          indefinitely. Position-absolute with a 1×1 box outside the
-          viewport keeps it logically present without contributing to
-          layout. `aria-hidden` so screen readers don't see it twice.
-          The visible play / pause UI below is what the user interacts
-          with; this element is just the playback engine. */}
+      {/* Audio playback engine. Several iOS WebKit quirks at once:
+          - Parked offscreen rather than `display:none`. iOS silently
+            drops the audio track from elements that aren't laid out.
+          - `playsInline` matters even for <audio> in Capacitor's
+            WKWebView (the wrapper otherwise tries to hand audio to the
+            full-screen AVPlayer, which doesn't expose a JS play()).
+          - `preload="auto"` instead of `"metadata"`. Metadata-only
+            preload on iOS frequently stalls — the request goes out and
+            never resolves canplay, so play() hangs ("loading forever"
+            on the user's own VNs). Auto fetches enough of the file to
+            actually start playing immediately on tap.
+          - `aria-hidden` so screen readers don't see this twice; the
+            visible play / pause UI below is the real surface.
+          - `crossOrigin` left UNSET on purpose — adding "anonymous"
+            triggers a CORS preflight on iOS that Supabase Storage's
+            public bucket sometimes fails to satisfy, blocking the
+            audio entirely. */}
       <audio
         ref={audioRef}
         src={url}
-        preload="metadata"
+        preload="auto"
+        playsInline
         aria-hidden
         style={{
           position: "absolute",
