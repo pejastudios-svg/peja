@@ -134,10 +134,16 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
         <button
           type="button"
           onClick={startRecording}
+          // Themed via the same CSS vars the incident-type buttons
+          // (Car Accident / Armed Robbery / etc.) use in their
+          // base state — `--glass-input-bg` for the surface and
+          // `--glass-border` for the outline. Keeps the voice-note
+          // row visually consistent with the rest of the SOS form
+          // in both dark and light mode.
           className="w-full flex items-center gap-3 p-3 rounded-xl transition-all active:scale-[0.97]"
           style={{
-            background: "#ffffff",
-            border: "1px solid #d4d4d8",
+            background: "var(--glass-input-bg)",
+            border: "1px solid var(--glass-border)",
           }}
         >
           <div className="w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center">
@@ -146,8 +152,8 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
               <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
             </svg>
           </div>
-          <span className="text-sm text-zinc-600">Tap to record voice note</span>
-          <span className="text-[10px] text-zinc-500 ml-auto">Max 60s</span>
+          <span className="text-sm text-dark-200">Tap to record a voice note</span>
+          <span className="text-[10px] text-dark-400 ml-auto">Max 60s</span>
         </button>
       )}
 
