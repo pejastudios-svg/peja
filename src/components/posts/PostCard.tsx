@@ -272,7 +272,8 @@ const handleShareClick = async (e: React.MouseEvent) => {
 
   return (
     <article
-      className="glass-card-feed overflow-hidden cursor-pointer sm:hover:ring-1 sm:hover:ring-white/10 transition-all active:scale-[0.99] duration-200"
+      data-no-feed-swipe="true"
+      className="glass-card-feed overflow-hidden cursor-pointer transition-opacity active:opacity-90"
       onClick={handleCardClick}
     >
       {/* Top section — padded so header chips don't touch the edge */}
@@ -347,8 +348,16 @@ const handleShareClick = async (e: React.MouseEvent) => {
               <div
                 ref={scrollerRef}
                 onScroll={handleScrollerScroll}
-                className="aspect-video relative bg-dark-900 flex overflow-x-auto snap-x snap-mandatory scroll-smooth"
-                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+                className={`aspect-video relative bg-dark-900 flex scroll-smooth ${
+                  post.media.length > 1
+                    ? "overflow-x-auto snap-x snap-mandatory"
+                    : "overflow-hidden"
+                }`}
+                style={{
+                  scrollbarWidth: "none",
+                  msOverflowStyle: "none",
+                  touchAction: post.media.length > 1 ? "pan-x" : "pan-y",
+                }}
               >
                 <style jsx>{`
                   div::-webkit-scrollbar { display: none; }
@@ -442,7 +451,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
       )}
 
       {/* Bottom section — padded so text/buttons don't touch the screen edge */}
-      <div className="px-4 sm:px-6 pt-3 pb-4 sm:pb-5">
+      <div className="px-4 sm:px-6 pt-3 pb-5 sm:pb-6">
       {/* Category */}
       <div className="mb-3">
         <Badge variant={badgeVariant}>{category?.name || post.category}</Badge>
@@ -500,7 +509,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2 pt-3 border-t border-white/5">
+      <div className="flex gap-2 pt-3 pb-1 border-t border-[var(--border-subtle)]">
 <button
   ref={confirmBtnRef}
   onClick={handleConfirmClick}

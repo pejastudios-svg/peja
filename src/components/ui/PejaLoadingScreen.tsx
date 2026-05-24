@@ -19,14 +19,14 @@ export function PejaLoadingScreen() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[#020617] relative overflow-hidden">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--page-bg)] relative overflow-hidden">
       {/* Background grid */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
           opacity: 0.1,
           backgroundImage:
-            "linear-gradient(rgba(167,139,250,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(167,139,250,0.3) 1px, transparent 1px)",
+            "linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)",
           backgroundSize: "44px 44px",
           maskImage: "radial-gradient(circle at 50% 50%, black 0%, transparent 70%)",
           WebkitMaskImage: "radial-gradient(circle at 50% 50%, black 0%, transparent 70%)",
@@ -40,7 +40,7 @@ export function PejaLoadingScreen() {
           width: 350,
           height: 350,
           background:
-            "radial-gradient(circle, rgba(124,58,237,0.15) 0%, rgba(34,197,94,0.08) 30%, rgba(59,130,246,0.06) 50%, transparent 70%)",
+            "radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%)",
           animation: "peja-load-ambient 2.5s ease-in-out infinite",
         }}
       />

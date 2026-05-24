@@ -168,7 +168,7 @@ export function IOSSwipeBack() {
             width: 24,
             height: 24,
             borderRadius: 12,
-            backgroundColor: `rgba(124, 58, 237, ${0.3 + progress * 0.5})`,
+            backgroundColor: `rgba(255, 255, 255, ${0.15 + progress * 0.25})`,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",

@@ -19,13 +19,6 @@ const navItems = [
   { href: "/search", icon: Search, label: "Search" },
 ];
 
-const GLASS: React.CSSProperties = {
-  background: "var(--glass-footer-bg)",
-  backdropFilter: "blur(40px) saturate(180%)",
-  WebkitBackdropFilter: "blur(40px) saturate(180%)",
-  border: "1px solid var(--glass-border)",
-  boxShadow: "var(--glass-shadow-footer)",
-};
 
 export function BottomNav() {
   const router = useRouter();
@@ -51,7 +44,9 @@ export function BottomNav() {
   }, []);
 
   const isHidden =
-    pathname.startsWith("/post/") || !!pathname.match(/^\/messages\/[^/]+$/);
+    pathname.startsWith("/post/") ||
+    pathname.startsWith("/create") ||
+    !!pathname.match(/^\/messages\/[^/]+$/);
 
   const activeIndex = useMemo(() => {
     if (pathname === "/" || pathname === "") return 0;
@@ -153,20 +148,20 @@ export function BottomNav() {
           }}
         >
           <Icon
-            className="w-[22px] h-[22px]"
+            className="w-[24px] h-[24px]"
             style={{
-              color: isActive ? "var(--color-primary-600)" : "var(--color-dark-400)",
-              filter: isActive ? "drop-shadow(0 0 6px rgba(167,139,250,0.5))" : "none",
-              transition: "all 0.3s ease",
+              color: isActive ? "var(--nav-active)" : "var(--color-dark-400)",
+              transition: "color 0.2s ease",
             }}
-            strokeWidth={isActive ? 2.8 : 2.2}
+            strokeWidth={isActive ? 2.5 : 2}
           />
         </div>
         <span
-          className="text-[10px] mt-0.5 font-semibold"
+          className="text-[10px] mt-0.5"
           style={{
-            color: isActive ? "var(--color-primary-600)" : "var(--color-dark-500)",
-            transition: "color 0.3s ease",
+            color: isActive ? "var(--nav-active)" : "var(--color-dark-500)",
+            fontWeight: isActive ? 600 : 400,
+            transition: "color 0.2s ease",
           }}
         >
           {item.label}
@@ -241,17 +236,16 @@ export function BottomNav() {
       )}
 
       <nav
-        className="fixed bottom-0 left-0 right-0 z-50"
+        className="fixed bottom-0 left-0 right-0 z-50 glass-footer"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        <div className="px-4 pb-2 relative">
+        <div className="relative max-w-2xl mx-auto w-full">
 
           {/* ── Full nav ── */}
           <div>
             <div
               ref={navRef}
-              className="relative flex items-center h-[60px]"
-              style={{ ...GLASS, borderRadius: "22px" }}
+              className="relative flex items-center h-[50px]"
             >
               {/* Sliding active indicator */}
               {activeIndex >= 0 && (
@@ -259,13 +253,12 @@ export function BottomNav() {
                   className="absolute pointer-events-none"
                   style={{
                     left: indicatorX,
-                    bottom: -2,
-                    width: 20,
-                    height: 3,
-                    borderRadius: "2px",
-                    background: "#a78bfa",
-                    boxShadow: "0 0 8px rgba(167, 139, 250, 0.5)",
-                    transition: "left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                    bottom: 0,
+                    width: 24,
+                    height: 2,
+                    borderRadius: "1px",
+                    background: "var(--nav-active)",
+                    transition: "left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
                     transform: "translateX(-50%)",
                     zIndex: 20,
                   }}
@@ -287,7 +280,7 @@ export function BottomNav() {
             {/* ── Center Peja Logo + SOS/SML fan ── */}
             <div
               className="absolute left-1/2 -translate-x-1/2"
-              style={{ bottom: 18, zIndex: 60 }}
+              style={{ bottom: 12, zIndex: 60 }}
             >
               {/* Fan-out: SML (left) */}
               <div
@@ -367,8 +360,8 @@ export function BottomNav() {
                         : "var(--peja-btn-outline, rgba(139, 92, 246, 0.5))"
                   }`,
                   boxShadow: menuOpen && !menuClosing
-                    ? "0 0 30px rgba(139, 92, 246, 0.35), 0 4px 20px rgba(0, 0, 0, 0.4)"
-                    : "0 0 15px rgba(139, 92, 246, 0.12), 0 4px 16px rgba(0, 0, 0, 0.3)",
+                    ? "0 4px 20px rgba(0, 0, 0, 0.45)"
+                    : "0 4px 16px rgba(0, 0, 0, 0.35)",
                   animation: (() => {
                     if (menuOpen) return "none";
                     const redActive = sosActive || smlOverdue;
@@ -388,7 +381,7 @@ export function BottomNav() {
                   alt="Peja"
                   className="w-8 h-8 object-contain"
                   style={{
-                    filter: "drop-shadow(0 0 3px rgba(167, 139, 250, 0.3))",
+                    filter: "none",
                     transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
                     transform: menuOpen && !menuClosing ? "rotate(-45deg)" : "rotate(0deg)",
                   }}

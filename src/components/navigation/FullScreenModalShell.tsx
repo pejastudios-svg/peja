@@ -14,6 +14,7 @@ export default function FullScreenModalShell({
   emitOverlayEvents = true,
   emitModalEvents = false,
   animation = "fade", // Default to your existing fade behavior
+  contentSafeArea = true,
 }: {
   children: React.ReactNode;
   closeOnBackdrop?: boolean;
@@ -23,6 +24,8 @@ export default function FullScreenModalShell({
   emitOverlayEvents?: boolean;
   emitModalEvents?: boolean;
   animation?: ShellAnimation;
+  /** Set false when the child page has its own header with safe-area padding */
+  contentSafeArea?: boolean;
 }) {
   const router = useRouter();
 
@@ -152,7 +155,7 @@ export default function FullScreenModalShell({
           getAnimationClasses(),
         ].join(" ")}
         style={{
-          paddingTop: "env(safe-area-inset-top)",
+          paddingTop: contentSafeArea ? "env(safe-area-inset-top)" : undefined,
         }}
         onClick={(e) => e.stopPropagation()}
       >

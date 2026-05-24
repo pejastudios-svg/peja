@@ -5,7 +5,7 @@ import CreatePage from "@/app/create/page";
 
 export default function CreateOverlay() {
   return (
-    <FullScreenModalShell>
+    <FullScreenModalShell contentSafeArea={false}>
       <CreatePage />
     </FullScreenModalShell>
   );

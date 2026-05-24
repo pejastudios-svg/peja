@@ -364,8 +364,8 @@ if (checkingStatus) {
       <div
         className="w-full mb-6 p-4 rounded-2xl animate-pulse"
         style={{
-          background: "rgba(139, 92, 246, 0.05)",
-          border: "1px solid rgba(139, 92, 246, 0.1)",
+          background: "var(--soft-surface)",
+          border: "1px solid var(--border-subtle)",
           height: 72,
         }}
       />
@@ -487,8 +487,8 @@ if (checkingStatus) {
         }}
         className="w-full mb-6 p-4 rounded-2xl flex items-center gap-4 transition-all active:scale-[0.98] hover:bg-white/5"
         style={{
-          background: "rgba(139, 92, 246, 0.08)",
-          border: "1px solid rgba(139, 92, 246, 0.2)",
+          background: "var(--soft-surface)",
+          border: "1px solid var(--border-default)",
         }}
       >
            <div className="w-11 h-11 rounded-full bg-primary-500/15 flex items-center justify-center shrink-0">
@@ -637,7 +637,7 @@ if (checkingStatus) {
                   className="w-full py-4 rounded-xl font-semibold text-white disabled:opacity-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                   style={{
                     background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                    boxShadow: "0 4px 20px rgba(124, 58, 237, 0.3)",
+                    boxShadow: "0 4px 16px rgba(0, 0, 0, 0.25)",
                   }}
                 >
                   {starting ? (

@@ -4,26 +4,14 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
-  Camera,
   Video,
   X,
-  Loader2,
-  Hash,
   AlertTriangle,
   Play,
   Shield,
   Eye,
-  EyeOff,
-  Upload,
   MapPin,
-  Crosshair,
-  Flame,
-  UserX,
-  Skull,
-  Info,
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
 import { useAuth } from "@/context/AuthContext";
 import { useFeedCache } from "@/context/FeedContext";
 import { supabase } from "@/lib/supabase";
@@ -38,24 +26,12 @@ import { VideoRecorder } from "@/components/media/VideoRecorder";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
 import { useProfileGate } from "@/components/profile/ProfileCompletionGate";
 import { buildLoginHref } from "@/lib/safeNext";
-
-// Category icon mapping
-const CATEGORY_ICONS: Record<string, React.ReactNode> = {
-  crime: <AlertTriangle className="w-5 h-5" />,
-  fire: <Flame className="w-5 h-5" />,
-  kidnapping: <UserX className="w-5 h-5" />,
-  terrorist: <Skull className="w-5 h-5" />,
-  general: <Info className="w-5 h-5" />,
-};
-
-// Category color themes
-const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string; glow: string }> = {
-  crime: { bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.3)", text: "#f87171", glow: "0 0 20px rgba(239,68,68,0.15)" },
-  fire: { bg: "rgba(249,115,22,0.1)", border: "rgba(249,115,22,0.3)", text: "#fb923c", glow: "0 0 20px rgba(249,115,22,0.15)" },
-  kidnapping: { bg: "rgba(239,68,68,0.1)", border: "rgba(239,68,68,0.3)", text: "#f87171", glow: "0 0 20px rgba(239,68,68,0.15)" },
-  terrorist: { bg: "rgba(220,38,38,0.15)", border: "rgba(220,38,38,0.4)", text: "#ef4444", glow: "0 0 20px rgba(220,38,38,0.2)" },
-  general: { bg: "rgba(59,130,246,0.1)", border: "rgba(59,130,246,0.3)", text: "#60a5fa", glow: "0 0 20px rgba(59,130,246,0.15)" },
-};
+import { ReportMediaSection } from "@/components/create/ReportMediaSection";
+import { ReportLocationRow } from "@/components/create/ReportLocationRow";
+import { ReportThreatPicker } from "@/components/create/ReportThreatPicker";
+import { ReportDescriptionField } from "@/components/create/ReportDescriptionField";
+import { ReportTagsField } from "@/components/create/ReportTagsField";
+import { ReportSensitiveRow } from "@/components/create/ReportSensitiveRow";
 
 // Image compression utility
 async function compressImage(file: File, maxWidth = 1920, quality = 0.8): Promise<File> {
@@ -210,9 +186,9 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
 
   if (authLoading) {
     return (
-      <div className="min-h-screen pb-8">
+      <div className="min-h-screen bg-[var(--page-bg)]">
         <Header variant="back" title="Report Incident" onBack={() => router.back()} />
-        <main className="pt-app-header-pill px-4 max-w-2xl mx-auto space-y-4">
+        <main className="report-page-main pt-app-header-pill px-4 max-w-2xl mx-auto space-y-4">
           <Skeleton className="h-40 w-full rounded-2xl" />
           <Skeleton className="h-20 w-full rounded-2xl" />
           <Skeleton className="h-40 w-full rounded-2xl" />
@@ -225,9 +201,9 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
 
   if (!user) {
     return (
-      <div className="min-h-screen pb-8">
+      <div className="min-h-screen bg-[var(--page-bg)]">
         <Header variant="back" title="Report Incident" onBack={() => router.back()} />
-        <main className="pt-app-header-pill px-4 max-w-2xl mx-auto">
+        <main className="report-page-main pt-app-header-pill px-4 max-w-2xl mx-auto">
           <div className="glass-card flex items-center justify-center gap-3 py-8">
             <PejaSpinner className="w-5 h-5" />
             <p className="text-sm text-dark-300">Redirecting to sign in...</p>
@@ -1018,10 +994,10 @@ setToast("Processing video...");
     : "0 files";
 
   return (
-    <div className="min-h-screen pb-8">
+    <div className="min-h-screen bg-[var(--page-bg)]">
       <Header variant="back" title="Report Incident" onBack={() => router.back()} />
 
-      <main className="pt-app-header-pill px-4 max-w-2xl mx-auto">
+      <main className="report-page-main pt-app-header-pill px-4 max-w-2xl mx-auto">
         {/* Error */}
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-2">
@@ -1039,347 +1015,79 @@ setToast("Processing video...");
 
         {!profileGate.blocked && <>
 
-        {/* Media Upload */}
-        <div className="glass-card mb-4">
-          <input type="file" ref={cameraInputRef} onChange={handleFileSelect} accept="image/*" capture="environment" className="hidden" />
-          <input type="file" ref={videoInputRef} onChange={handleFileSelect} accept="video/*" className="hidden" />
+        <ReportMediaSection
+          mediaCountText={mediaCountText}
+          media={media}
+          mediaPreviews={mediaPreviews}
+          cameraInputRef={cameraInputRef}
+          videoInputRef={videoInputRef}
+          onFileSelect={handleFileSelect}
+          onOpenRecorder={() => setShowRecorder(true)}
+          onRemoveMedia={handleRemoveMedia}
+          preUploadTick={preUploadTick}
+          getUploadStatus={(file) => preUploadStatusMapRef.current.get(file)}
+          getUploadProgress={(file) => preUploadProgressRef.current.get(file) ?? 0}
+          getUploadError={(file) => preUploadErrorRef.current.get(file)}
+        />
 
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Upload className="w-4 h-4 text-primary-400" />
-              <span className="text-sm font-medium text-dark-200">Evidence</span>
-            </div>
-            <span className="text-xs text-dark-500">{mediaCountText}</span>
-          </div>
+        <ReportLocationRow
+          location={location}
+          locationLoading={locationLoading}
+          onGetLocation={handleGetLocation}
+        />
 
-          {/* Media previews */}
-          {mediaPreviews.length > 0 && (
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {mediaPreviews.map((preview, index) => (
-                <div key={index} className="relative aspect-square rounded-xl overflow-hidden bg-dark-800">
-                  {preview.type === "video" ? (
-                    <div className="relative w-full h-full">
-                      {preview.url ? (
-                        <img src={preview.url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full bg-dark-800 flex items-center justify-center">
-                          <Video className="w-5 h-5 text-dark-500" />
-                        </div>
-                      )}
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                        <Play className="w-5 h-5 text-white" />
-                      </div>
-                    </div>
-                  ) : (
-                    <img src={preview.url} alt="" className="w-full h-full object-cover" />
-                  )}
-                  {/* Pre-upload progress indicator */}
-                  {preUploadStatusMapRef.current.get(media[index]) === "uploading" && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 z-20">
-                      <Loader2 className="w-5 h-5 text-white animate-spin" />
-                      <span className="text-[10px] font-mono tabular-nums text-white/90">
-                        {preUploadProgressRef.current.get(media[index]) ?? 0}%
-                      </span>
-                    </div>
-                  )}
-                  {preUploadStatusMapRef.current.get(media[index]) === "failed" && (
-                    <div
-                      className="absolute inset-x-0 bottom-0 bg-red-500/85 text-[9px] text-white text-center py-0.5 px-1 z-20 truncate"
-                      title={preUploadErrorRef.current.get(media[index]) || "Upload failed"}
-                    >
-                      {preUploadErrorRef.current.get(media[index]) || "Upload failed"}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveMedia(index)}
-                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center z-10"
-                  >
-                    <X className="w-3 h-3 text-white" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+        <ReportThreatPicker value={category} onChange={setCategory} />
 
-          {/* Upload buttons */}
-          <div className="grid grid-cols-3 gap-2">
-            <button
-              type="button"
-              onClick={() => cameraInputRef.current?.click()}
-              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
-              style={{
-                background: "rgba(139, 92, 246, 0.08)",
-                border: "1px dashed rgba(139, 92, 246, 0.3)",
-              }}
-            >
-              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(139, 92, 246, 0.15)" }}>
-                <Camera className="w-5 h-5 text-primary-400" />
-              </div>
-              <span className="text-[10px] text-dark-400 font-medium">Photo</span>
-            </button>
+        <ReportDescriptionField value={comment} onChange={setComment} />
 
-            <button
-              type="button"
-              onClick={() => setShowRecorder(true)}
-              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
-              style={{
-                background: "rgba(239, 68, 68, 0.08)",
-                border: "1px dashed rgba(239, 68, 68, 0.35)",
-              }}
-            >
-              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(239, 68, 68, 0.15)" }}>
-                <Video className="w-5 h-5 text-red-400" />
-              </div>
-              <span className="text-[10px] text-dark-400 font-medium">Record</span>
-            </button>
+        <ReportTagsField
+          tagInput={tagInput}
+          tags={tags}
+          onTagInputChange={setTagInput}
+          onAddTag={handleAddTag}
+          onRemoveTag={handleRemoveTag}
+        />
 
-            <button
-              type="button"
-              onClick={() => videoInputRef.current?.click()}
-              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
-              style={{
-                background: "rgba(139, 92, 246, 0.08)",
-                border: "1px dashed rgba(139, 92, 246, 0.3)",
-              }}
-            >
-              <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(139, 92, 246, 0.15)" }}>
-                <Upload className="w-5 h-5 text-primary-400" />
-              </div>
-              <span className="text-[10px] text-dark-400 font-medium">Library</span>
-            </button>
-          </div>
-        </div>
+        <ReportSensitiveRow
+          isSensitive={isSensitive}
+          onToggle={() => setIsSensitive(!isSensitive)}
+        />
 
-        {/* Location */}
-        <div className="glass-card mb-4">
+        <div className="report-submit-bar">
           <button
             type="button"
-            onClick={handleGetLocation}
-            disabled={locationLoading}
-            className="w-full flex items-center gap-3"
+            onClick={() => {
+              if (media[0]?.type.startsWith("video/")) {
+                setPreviewVideoUrl(URL.createObjectURL(media[0]));
+              }
+              setShowPreview(true);
+            }}
+            disabled={isLoading || submitted || !category || media.length === 0}
+            className="w-full py-3.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:hover:scale-100"
+            style={{
+              background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.3)",
+            }}
           >
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
-              style={{
-                background: location ? "rgba(34, 197, 94, 0.15)" : "rgba(139, 92, 246, 0.15)",
-                border: `1px solid ${location ? "rgba(34, 197, 94, 0.3)" : "rgba(139, 92, 246, 0.3)"}`,
-              }}
-            >
-              {locationLoading ? (
+            {isLoading ? (
+              <div className="flex items-center justify-center gap-2">
                 <PejaSpinner className="w-5 h-5" />
-              ) : (
-                <Crosshair className={`w-5 h-5 ${location ? "text-green-400" : "text-primary-400"}`} />
-              )}
-            </div>
-            <div className="flex-1 text-left min-w-0">
-              {location ? (
-                <>
-                  <p className="text-sm text-dark-200 truncate">{location.address || "Location captured"}</p>
-                  <p className="text-xs text-dark-500">{location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}</p>
-                </>
-              ) : (
-                <p className="text-sm text-dark-400">{locationLoading ? "Getting location..." : "Tap to get location"}</p>
-              )}
-            </div>
-            {location && (
-              <div className="flex items-center gap-1 px-2 py-1 rounded-full" style={{ background: "rgba(34,197,94,0.1)" }}>
-                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-[10px] text-green-400 font-medium">LIVE</span>
+                Uploading... {uploadProgress}%
+              </div>
+            ) : (
+              <div className="flex items-center justify-center gap-2">
+                <Eye className="w-5 h-5" />
+                Preview Post
               </div>
             )}
           </button>
         </div>
 
-        {/* Category */}
-        <div className="glass-card mb-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="w-4 h-4 text-primary-400" />
-            <span className="text-sm font-medium text-dark-200">Threat Level *</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {CATEGORIES.filter((cat) => cat.id !== "crime" && cat.id !== "fire").map((cat) => {
-              const colors = CATEGORY_COLORS[cat.id] || CATEGORY_COLORS.general;
-              const icon = CATEGORY_ICONS[cat.id] || <Info className="w-5 h-5" />;
-              const isSelected = category === cat.id;
-
-              return (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => setCategory(cat.id)}
-                  className="relative p-3 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
-                  style={{
-                    background: isSelected ? colors.bg : "var(--glass-input-bg)",
-                    border: `1px solid ${isSelected ? colors.border : "var(--glass-border)"}`,
-                    boxShadow: isSelected ? colors.glow : "none",
-                  }}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
-                      style={{
-                        background: isSelected ? colors.bg : "var(--glass-bg)",
-                        color: isSelected ? colors.text : "var(--color-dark-300)",
-                      }}
-                    >
-                      {icon}
-                    </div>
-                    <span
-                      className="text-sm font-medium transition-colors"
-                      style={{ color: isSelected ? colors.text : "var(--color-dark-100)" }}
-                    >
-                      {cat.name}
-                    </span>
-                  </div>
-                  {isSelected && (
-                    <div
-                      className="absolute top-2 right-2 w-2 h-2 rounded-full"
-                      style={{ background: colors.text, boxShadow: `0 0 8px ${colors.text}` }}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Description */}
-        <div className="glass-card mb-4">
-          <label className="block text-sm font-medium text-dark-200 mb-2">Description (Optional)</label>
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="What's happening?"
-            rows={3}
-            className="w-full px-4 py-3 glass-input resize-none text-base"
-          />
-        </div>
-
-        {/* Tags */}
-        <div className="mb-4">
-          <div className="glass-card !p-3">
-            <div className="flex items-center gap-1.5 mb-2">
-              <Hash className="w-3.5 h-3.5 text-primary-400" />
-              <span className="text-xs font-medium text-dark-300">Tags</span>
-            </div>
-            <div className="flex gap-2 mb-2">
-              <Input
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                placeholder="Add tag"
-                className="text-sm"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddTag();
-                  }
-                }}
-              />
-              <Button type="button" variant="secondary" size="sm" onClick={handleAddTag}>+</Button>
-            </div>
-            {tags.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs max-w-full wrap-anywhere"
-                    style={{
-                      background: "rgba(124, 58, 237, 0.15)",
-                      border: "1px solid rgba(139, 92, 246, 0.25)",
-                      color: "#c4b5fd",
-                    }}
-                  >
-                    #{tag}
-                    <button type="button" onClick={() => handleRemoveTag(tag)}>
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Sensitive Content Toggle */}
-        <div className="glass-card mb-4">
-          <button
-            type="button"
-            onClick={() => setIsSensitive(!isSensitive)}
-            className="w-full flex items-center gap-3 transition-all active:scale-[0.98]"
-          >
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all"
-              style={{
-                background: isSensitive ? "rgba(249, 115, 22, 0.15)" : "var(--glass-input-bg)",
-                border: `1px solid ${isSensitive ? "rgba(249, 115, 22, 0.3)" : "var(--glass-border)"}`,
-              }}
-            >
-              {isSensitive ? (
-                <EyeOff className="w-5 h-5 text-orange-400" />
-              ) : (
-                <Eye className="w-5 h-5 text-dark-500" />
-              )}
-            </div>
-            <div className="flex-1 text-left">
-              <p className="text-sm font-medium" style={{ color: isSensitive ? "#fb923c" : "var(--color-dark-100)" }}>
-                {isSensitive ? "Sensitive Content" : "Safe Content"}
-              </p>
-              <p className="text-xs text-dark-500">
-                Turn this on if the content contains blood, graphic injuries, or anything disturbing
-              </p>
-            </div>
-            <div
-              className="w-11 h-6 rounded-full relative transition-all shrink-0"
-              style={{
-                background: isSensitive ? "rgba(249, 115, 22, 0.5)" : "var(--glass-border)",
-              }}
-            >
-              <div
-                className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
-                style={{
-                  left: isSensitive ? "calc(100% - 22px)" : "2px",
-                  background: isSensitive ? "#fb923c" : "#64748b",
-                }}
-              />
-            </div>
-          </button>
-        </div>
-
-{/* Preview / Submit */}
-        <button
-          type="button"
-          onClick={() => {
-            // Create blob URL for video preview
-            if (media[0]?.type.startsWith("video/")) {
-              setPreviewVideoUrl(URL.createObjectURL(media[0]));
-            }
-            setShowPreview(true);
-          }}
-          disabled={isLoading || submitted || !category || media.length === 0}
-          className="w-full py-3.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:hover:scale-100"
-          style={{
-            background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-            boxShadow: "0 4px 20px rgba(124, 58, 237, 0.4), 0 0 40px rgba(124, 58, 237, 0.1)",
-          }}
-        >
-          {isLoading ? (
-            <div className="flex items-center justify-center gap-2">
-              <PejaSpinner className="w-5 h-5" />
-              Uploading... {uploadProgress}%
-            </div>
-          ) : (
-<div className="flex items-center justify-center gap-2">
-              <Eye className="w-5 h-5" />
-              Preview Post
-            </div>
-          )}
-        </button>
-{/* Preview Modal */}
+        {/* Preview Modal */}
         {showPreview && (
           <>
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50" onClick={() => { setShowPreview(false); if (previewVideoUrl) { URL.revokeObjectURL(previewVideoUrl); setPreviewVideoUrl(null); } }} />
-            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100]" onClick={() => { setShowPreview(false); if (previewVideoUrl) { URL.revokeObjectURL(previewVideoUrl); setPreviewVideoUrl(null); } }} />
+            <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
               <div
                 className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl"
                 style={{
@@ -1511,7 +1219,7 @@ setToast("Processing video...");
                       className="flex-1 py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2"
                       style={{
                         background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                        boxShadow: "0 4px 20px rgba(124, 58, 237, 0.4)",
+                        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.3)",
                       }}
                     >
                       <Shield className="w-4 h-4" />

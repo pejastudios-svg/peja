@@ -320,7 +320,7 @@ export default function ProfilePage() {
     // AuthLoading=true: show skeleton briefly while session is being checked
     // AuthLoading=false: the useEffect above will redirect to /login
     return (
-      <div className="min-h-screen pb-20 pt-app-header-pill">
+      <div className="min-h-screen pt-app-header-pill pb-app-bottom-nav lg:pb-0">
         <Header variant="back" title="Profile" onBack={() => router.back()} />
         <div className="glass border-b border-white/5 px-4 py-6">
           <div className="max-w-2xl mx-auto flex items-center gap-4">
@@ -346,7 +346,7 @@ export default function ProfilePage() {
 
   return (
     <PullToRefresh onRefresh={async () => { await fetchUserPosts(); }}>
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-app-bottom-nav lg:pb-0">
       <Header variant="back" title="Profile" onBack={() => router.back()} />
 
       <main className="pt-app-header-pill">

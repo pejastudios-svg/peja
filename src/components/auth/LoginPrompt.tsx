@@ -81,17 +81,15 @@ export function LoginPrompt() {
           className={`w-full max-w-sm rounded-3xl overflow-hidden ${closing ? "animate-bounce-out" : "animate-bounce-in"}`}
           style={{
             background: "var(--glass-strong-bg)",
-            border: "1px solid rgba(139, 92, 246, 0.2)",
-            boxShadow:
-              "0 0 80px rgba(139, 92, 246, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
+            border: "1px solid var(--border-subtle)",
+            boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
           }}
         >
           {/* Header illustration */}
           <div
             className="relative h-36 flex items-center justify-center overflow-hidden"
             style={{
-              background:
-                "linear-gradient(135deg, rgba(124,58,237,0.2) 0%, rgba(139,92,246,0.1) 50%, rgba(59,130,246,0.1) 100%)",
+              background: "var(--surface-raised)",
             }}
           >
             <div className="absolute inset-0 opacity-30">
@@ -102,9 +100,9 @@ export function LoginPrompt() {
              <div
                 className="w-16 h-16 rounded-2xl flex items-center justify-center mb-2"
                 style={{
-                  background: "rgba(124, 58, 237, 0.2)",
-                  border: "2px solid rgba(139, 92, 246, 0.3)",
-                  boxShadow: "0 0 30px rgba(139, 92, 246, 0.2)",
+                  background: "var(--soft-surface)",
+                  border: "2px solid var(--border-default)",
+                  boxShadow: "none",
                 }}
               >
                 <img
@@ -143,7 +141,7 @@ export function LoginPrompt() {
               style={{
                 background:
                   "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                boxShadow: "0 4px 20px rgba(124, 58, 237, 0.4)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.25)",
               }}
             >
               <UserPlus className="w-5 h-5" />
@@ -158,7 +156,7 @@ export function LoginPrompt() {
               }}
               className="w-full py-3 rounded-xl text-sm font-medium text-primary-400 transition-colors hover:bg-white/5 active:bg-white/10 flex items-center justify-center gap-2"
               style={{
-                border: "1px solid rgba(139, 92, 246, 0.2)",
+                border: "1px solid var(--border-subtle)",
               }}
             >
               <LogIn className="w-4 h-4" />

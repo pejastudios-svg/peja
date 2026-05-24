@@ -406,7 +406,7 @@ export default function MessagesV2Page() {
   }, [user?.id, selectedIds, toast, exitSelectMode]);
 
   return (
-    <div className="min-h-screen pb-20">
+    <div className="min-h-screen pb-app-bottom-nav lg:pb-0">
       {selectMode ? (
         <SelectActionBar
           selectedCount={selectedIds.size}

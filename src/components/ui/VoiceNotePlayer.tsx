@@ -80,8 +80,8 @@ export function VoiceNotePlayer({ src, compact = false }: VoiceNotePlayerProps) 
     <div
       className={`flex items-center gap-3 rounded-xl ${compact ? "p-2" : "p-3"}`}
       style={{
-        background: "rgba(124, 58, 237, 0.08)",
-        border: "1px solid rgba(124, 58, 237, 0.15)",
+        background: "var(--soft-surface)",
+        border: "1px solid var(--border-subtle)",
       }}
     >
       <audio
@@ -110,9 +110,9 @@ export function VoiceNotePlayer({ src, compact = false }: VoiceNotePlayerProps) 
           width: compact ? 32 : 38,
           height: compact ? 32 : 38,
           background: playing
-            ? "rgba(124, 58, 237, 0.3)"
-            : "rgba(124, 58, 237, 0.2)",
-          border: `1.5px solid ${playing ? "rgba(124, 58, 237, 0.5)" : "rgba(124, 58, 237, 0.3)"}`,
+            ? "var(--soft-surface-strong)"
+            : "var(--soft-surface)",
+          border: `1.5px solid ${playing ? "var(--nav-active)" : "var(--border-default)"}`,
         }}
       >
         {playing ? (
@@ -140,7 +140,7 @@ export function VoiceNotePlayer({ src, compact = false }: VoiceNotePlayerProps) 
                   height: `${h * 100}%`,
                   minHeight: 3,
                   background: isPlayed
-                    ? "rgba(124, 58, 237, 0.8)"
+                    ? "var(--nav-active)"
                     : "rgba(255, 255, 255, 0.12)",
                 }}
               />

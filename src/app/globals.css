@@ -23,8 +23,8 @@
   --color-dark-500: #64748b;
   --color-dark-600: #475569;
   --color-dark-700: #334155;
-  --color-dark-800: #1e293b;
-  --color-dark-900: #0a0612;
+  --color-dark-800: #1a1a1a;
+  --color-dark-900: #121212;
   --color-dark-950: #000000;
 }
 
@@ -33,36 +33,45 @@
    Tailwind dark- and primary- utilities pick these up automatically. */
 :root {
   --page-bg: #000000;
-  --body-bg: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 58, 237, 0.12), transparent), #000000;
+  --body-bg: #000000;
   --fg-default: #f8fafc;
 
-  --glass-bg: rgba(15, 10, 26, 0.85);
-  --glass-sm-bg: rgba(15, 10, 26, 0.75);
-  --glass-card-bg: #0a0612;
-  --glass-strong-bg: #000000;
-  /* Header bg uses a low alpha so the .glass-header backdrop-filter blur is
-     visible when content scrolls underneath. */
-  --glass-header-bg: rgba(10, 6, 18, 0.55);
-  --glass-footer-bg: rgba(0, 0, 0, 0.9);
-  --glass-float-bg: rgba(10, 6, 18, 0.92);
-  --glass-input-bg: rgba(15, 10, 26, 0.6);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-default: rgba(255, 255, 255, 0.12);
+  --surface-raised: #121212;
+  --nav-active: #7c3aed;
 
-  --glass-border: rgba(139, 92, 246, 0.2);
-  --glass-border-sm: rgba(139, 92, 246, 0.15);
-  --glass-border-strong: rgba(139, 92, 246, 0.45);
-  --glass-border-float: rgba(139, 92, 246, 0.25);
+  /* Space for fixed BottomNav: bar (50px) + center FAB overhang + tap margin */
+  --bottom-nav-clearance: calc(
+    6.75rem + env(safe-area-inset-bottom, 0px)
+  );
 
-  --glass-shadow: 0 32px 80px 0 rgba(0, 0, 0, 0.45), 0 8px 24px 0 rgba(0, 0, 0, 0.18);
-  --glass-shadow-sm: 0 14px 32px 0 rgba(0, 0, 0, 0.2), 0 2px 8px 0 rgba(0, 0, 0, 0.1);
-  --glass-shadow-strong: 0 32px 80px 0 rgba(0, 0, 0, 0.55);
-  --glass-shadow-header: 0 4px 20px 0 rgba(0, 0, 0, 0.4);
-  --glass-shadow-footer: 0 -4px 20px 0 rgba(0, 0, 0, 0.4);
-  --glass-shadow-float: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
+  --glass-bg: rgba(0, 0, 0, 0.85);
+  --glass-sm-bg: rgba(18, 18, 18, 0.9);
+  --glass-card-bg: #000000;
+  --glass-strong-bg: #121212;
+  /* Opaque header — scrolling feed must not show through the top chrome. */
+  --glass-header-bg: rgba(0, 0, 0, 0.96);
+  --glass-footer-bg: rgba(0, 0, 0, 0.92);
+  --glass-float-bg: rgba(18, 18, 18, 0.95);
+  --glass-input-bg: rgba(255, 255, 255, 0.06);
 
-  --peja-btn-outline: rgba(139, 92, 246, 0.5);
-  /* Peja center floating button (BottomNav) */
-  --peja-btn-bg: linear-gradient(135deg, rgba(100, 50, 200, 0.35) 0%, rgba(80, 40, 160, 0.55) 100%);
-  --peja-btn-pressed-bg: #000000;
+  --glass-border: var(--border-subtle);
+  --glass-border-sm: var(--border-subtle);
+  --glass-border-strong: var(--border-default);
+  --glass-border-float: var(--border-subtle);
+
+  --glass-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.04);
+  --glass-shadow-sm: 0 1px 0 0 rgba(255, 255, 255, 0.03);
+  --glass-shadow-strong: 0 8px 24px 0 rgba(0, 0, 0, 0.5);
+  --glass-shadow-header: none;
+  --glass-shadow-footer: none;
+  --glass-shadow-float: 0 4px 16px 0 rgba(0, 0, 0, 0.45);
+
+  --peja-btn-outline: rgba(124, 58, 237, 0.55);
+  /* Peja center button — brand gradient on the button only */
+  --peja-btn-bg: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  --peja-btn-pressed-bg: #121212;
 
   /* Soft contrast surface for chips/players/badges that need to read on the
      page background (not on a colored bubble). Slightly visible in both themes. */
@@ -92,11 +101,16 @@
   --body-bg: #ffffff;
   --fg-default: #0c0a14;
 
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-default: rgba(0, 0, 0, 0.14);
+  --surface-raised: #ffffff;
+  --nav-active: #7c3aed;
+
   --glass-bg: rgba(255, 255, 255, 0.85);
   --glass-sm-bg: rgba(255, 255, 255, 0.75);
   --glass-card-bg: #ffffff;
   --glass-strong-bg: #ffffff;
-  --glass-header-bg: rgba(255, 255, 255, 0.55);
+  --glass-header-bg: rgba(255, 255, 255, 0.96);
   --glass-footer-bg: rgba(255, 255, 255, 0.95);
   --glass-float-bg: rgba(255, 255, 255, 0.92);
   --glass-input-bg: rgba(255, 255, 255, 0.7);
@@ -154,6 +168,7 @@
 html {
   background-color: var(--page-bg);
   transition: background-color 0.3s ease;
+  scroll-padding-bottom: var(--bottom-nav-clearance);
 }
 
 body {
@@ -325,17 +340,19 @@ textarea,
    the video can sit edge-to-edge while text content stays inset. */
 .glass-card-feed {
   background: var(--glass-card-bg);
-  border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
-  border-radius: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  box-shadow: none;
+  border-radius: 0;
   padding: 0;
 }
-@media (max-width: 639px) {
+@media (min-width: 640px) {
   .glass-card-feed {
-    border-radius: 0;
-    border-left: 0;
-    border-right: 0;
-    box-shadow: none;
+    border: 1px solid var(--glass-border);
+    border-radius: 0.75rem;
+    margin-bottom: 0;
+  }
+  .glass-card-feed + .glass-card-feed {
+    margin-top: 0.75rem;
   }
 }
 
@@ -354,14 +371,16 @@ textarea,
 /* Header specific */
 .glass-header {
   background: var(--glass-header-bg);
-  /* Stronger blur + saturation gives the proper frosted-glass effect when
-     content scrolls past underneath. Header bg alpha is intentionally low
-     (~0.55) so the blurred page is actually visible behind it. */
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow-header);
-  /* Push content below the system status bar / notch on every device. */
+  padding-top: 0;
+  isolation: isolate;
+}
+
+/* Status-bar / notch clearance — only when JS measured a real inset (see CapacitorInit). */
+html.has-top-chrome .glass-header {
   padding-top: var(--app-top-inset, env(safe-area-inset-top, 0px));
 }
 
@@ -1978,10 +1997,10 @@ html.capacitor-native header.absolute.top-0 {
   top: 0 !important;
 }
 html.capacitor-native main.pt-16 {
-  padding-top: calc(3rem + var(--cap-status-bar-height)) !important;
+  padding-top: calc(var(--header-bar-height) + var(--cap-status-bar-height)) !important;
 }
 html.capacitor-native main.pt-14 {
-  padding-top: calc(3rem + var(--cap-status-bar-height)) !important;
+  padding-top: calc(var(--header-bar-height) + var(--cap-status-bar-height)) !important;
 }
 /* Post detail full-screen layout: push scrollable area down */
 html.capacitor-native .fixed.inset-0 > main.pt-14 {
@@ -2392,33 +2411,294 @@ input, textarea, [contenteditable] {
      with the real value from @capacitor/status-bar.
      Web on regular Android Chrome: both fall back to 0 (system bar isn't ours to cover). */
   --app-top-inset: max(env(safe-area-inset-top, 0px), var(--cap-status-bar-height, 0px));
+
+  /* Flat app header content row (Instagram-style ~44px). */
+  --header-bar-height: 2.75rem;
 }
 
-/* In native, status bar height varies wildly by OEM (24-48dp on Android,
-   notch / Dynamic Island on iOS). If StatusBar.getInfo() returned 0 for any
-   reason we still want to clear ~24dp of system chrome. */
-html.capacitor-native {
-  --app-top-inset: max(env(safe-area-inset-top, 0px), var(--cap-status-bar-height, 0px), 24px);
+html.capacitor-native,
+html.has-top-chrome {
+  --app-top-inset: max(env(safe-area-inset-top, 0px), var(--cap-status-bar-height, 0px));
 }
 
-/* Use on the page-level <main> to clear the fixed Header pill on any device.
-   On a regular browser (no notch / no status bar overlay) this resolves to
-   exactly 56px — same as the legacy `pt-14`. On a notched / Capacitor-native
-   device it adds the actual status-bar inset on top so the header doesn't
-   tuck under system chrome. No extra breathing-room constant — the header's
-   own border-bottom is the visual separator.
-   Use this on pages that have an inline `<header className="glass-header">`.
-   48px = h-12 inner row. */
+/* Use on the page-level <main> to clear the fixed Header on any device.
+   Web: header bar only (44px). Native: status-bar inset + bar height. */
 .pt-app-header {
-  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 48px);
+  padding-top: var(--header-bar-height);
 }
 
-/* For pages using the shared <Header /> component (the *floating* pill).
-   The pill's actual bottom edge is max(inset, 16) + 8 (outer) + 8 (pt-2)
-   + 44 (h-11) = max(inset, 16) + 60. The extra 12px is a breathing-room gap
-   so page content doesn't sit flush against the pill. */
 .pt-app-header-pill {
-  padding-top: calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 72px);
+  padding-top: var(--header-bar-height);
+}
+
+html.has-top-chrome .pt-app-header,
+html.has-top-chrome .pt-app-header-pill {
+  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + var(--header-bar-height));
+}
+
+/* Clear fixed BottomNav + raised center Peja button (replaces pb-20). */
+.pb-app-bottom-nav {
+  padding-bottom: var(--bottom-nav-clearance);
+}
+
+.feed-end-spacer {
+  height: 1.5rem;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* Home feed: Nearby / Trending tabs stick below the fixed Header. */
+.home-feed-tabs {
+  position: sticky;
+  z-index: 40;
+  top: var(--header-bar-height);
+  background: var(--page-bg);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+html.has-top-chrome .home-feed-tabs {
+  top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + var(--header-bar-height));
+}
+
+/* Report / create form: sticky Preview / Submit bar above home indicator */
+.report-submit-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 40;
+  margin-top: 1rem;
+  padding: 0.75rem 0;
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  background: var(--page-bg);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.report-page-main {
+  padding-bottom: 0.5rem;
+  scroll-padding-top: var(--header-bar-height);
+}
+
+html.has-top-chrome .report-page-main {
+  scroll-padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + var(--header-bar-height));
+}
+
+/* Report form sections — flat layout, no heavy cards */
+.report-section {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.report-section:last-of-type {
+  border-bottom: none;
+}
+
+.report-section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-dark-400);
+  margin-bottom: 0.75rem;
+}
+
+.report-section-hint {
+  font-size: 0.8125rem;
+  color: var(--color-dark-500);
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+}
+
+/* Custom form controls (report + reusable) */
+.peja-input,
+.peja-textarea {
+  display: block;
+  width: 100%;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--fg-default);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: 0.75rem;
+  outline: none;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background-color 0.15s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.peja-input {
+  padding: 0.75rem 1rem;
+}
+
+/* Leading icon inside peja-input (padding shorthand wins over Tailwind pl-*) */
+.peja-input-icon-wrap {
+  position: relative;
+}
+
+.peja-input-icon-wrap .peja-input {
+  padding-left: 2.75rem;
+}
+
+.peja-input-icon-wrap .peja-input-icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-dark-500);
+  pointer-events: none;
+}
+
+.peja-textarea {
+  padding: 0.875rem 1rem;
+  resize: vertical;
+  min-height: 6rem;
+}
+
+.peja-input::placeholder,
+.peja-textarea::placeholder {
+  color: var(--color-dark-500);
+}
+
+.peja-input:focus,
+.peja-textarea:focus {
+  border-color: var(--nav-active);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2);
+  background: var(--surface-raised);
+}
+
+:root[data-theme="light"] .peja-input:focus,
+:root[data-theme="light"] .peja-textarea:focus {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+}
+
+.peja-input:disabled,
+.peja-textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.peja-field-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-dark-400);
+  margin-bottom: 0.5rem;
+}
+
+.peja-field-hint {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--color-dark-500);
+  line-height: 1.4;
+}
+
+.peja-field-error {
+  margin-top: 0.375rem;
+  font-size: 0.8125rem;
+  color: #f87171;
+}
+
+/* Media filmstrip */
+.report-media-strip {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.75rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.report-media-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.report-media-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 0.625rem;
+  overflow: hidden;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+}
+
+.report-media-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  padding: 0 0.875rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-dark-200);
+  background: var(--soft-surface);
+  border: 1px solid var(--border-default);
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.report-media-chip:active {
+  opacity: 0.85;
+}
+
+.report-media-chip--record {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+}
+
+.report-threat-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  border: 1px solid var(--border-default);
+  background: var(--soft-surface);
+  color: var(--color-dark-200);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.report-threat-pill:active {
+  opacity: 0.9;
+}
+
+.report-list-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.25rem 0;
+  text-align: left;
+  transition: opacity 0.15s ease;
+}
+
+.report-list-row:active {
+  opacity: 0.85;
+}
+
+.report-list-row-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.625rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--soft-surface);
+  border: 1px solid var(--border-subtle);
 }
 
 /* Android-specific overrides */

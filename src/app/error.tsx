@@ -22,8 +22,8 @@ export default function Error({
         <div
           className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
           style={{
-            background: "rgba(124, 58, 237, 0.15)",
-            border: "2px solid rgba(139, 92, 246, 0.3)",
+            background: "var(--soft-surface)",
+            border: "2px solid var(--border-default)",
           }}
         >
           <img
@@ -41,7 +41,7 @@ export default function Error({
           className="w-full py-3.5 rounded-xl font-semibold text-white mb-3"
           style={{
             background: "linear-gradient(135deg, #7c3aed, #6d28d9)",
-            boxShadow: "0 4px 20px rgba(124, 58, 237, 0.3)",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.25)",
           }}
         >
           Try Again
@@ -49,7 +49,7 @@ export default function Error({
         <button
           onClick={() => router.push("/")}
           className="w-full py-3 rounded-xl text-sm font-medium text-dark-400 hover:text-dark-200"
-          style={{ border: "1px solid rgba(255,255,255,0.1)" }}
+          style={{ border: "1px solid var(--border-subtle)" }}
         >
           Go Home
         </button>

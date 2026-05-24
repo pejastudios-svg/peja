@@ -34,8 +34,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       primary:
         "bg-primary-600 hover:bg-primary-700 text-white shadow-lg hover:shadow-xl",
       secondary:
-        "glass-sm text-dark-100 hover:bg-white/10",
-      ghost: "text-dark-100 hover:bg-white/5",
+        "glass-sm text-dark-100 hover:bg-[var(--soft-surface-strong)]",
+      ghost: "text-dark-100 hover:bg-[var(--soft-surface)]",
       danger:
         "bg-red-600 hover:bg-red-700 text-white shadow-lg",
     };

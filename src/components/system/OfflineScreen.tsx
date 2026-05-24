@@ -38,7 +38,7 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden"
-      style={{ background: "linear-gradient(135deg, #020617 0%, #0f172a 50%, #1e1033 100%)" }}
+      style={{ background: "var(--page-bg)" }}
     >
       {/* Background grid */}
       <div
@@ -46,7 +46,7 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
         style={{
           opacity: 0.1,
           backgroundImage:
-            "linear-gradient(rgba(167,139,250,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(167,139,250,0.3) 1px, transparent 1px)",
+            "linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px)",
           backgroundSize: "44px 44px",
           maskImage: "radial-gradient(circle at 50% 50%, black 0%, transparent 70%)",
           WebkitMaskImage: "radial-gradient(circle at 50% 50%, black 0%, transparent 70%)",
@@ -60,7 +60,7 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
           width: 300,
           height: 300,
           borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(124,58,237,0.18) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%)",
           animation: "peja-load-ambient 2.5s ease-in-out infinite",
         }}
       />
@@ -107,7 +107,7 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
           className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-semibold text-white transition-all active:scale-95"
           style={{
             background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-            boxShadow: "0 4px 20px rgba(124, 58, 237, 0.35)",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.3)",
           }}
         >
           <svg

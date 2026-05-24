@@ -15,45 +15,31 @@ interface HeaderProps {
   variant?: "default" | "back";
   title?: string;
   onBack?: () => void;
-  // Back variant only. A small status line rendered under the title — used
-  // by the chat thread to show "online" / "typing…" / "last seen 3m ago".
-  // Renders nothing when undefined.
   subtitle?: ReactNode;
-  // Back variant only. Renders a second pill with custom right-side content.
-  // If unset and `showDefaultActions` is false, no right-side pill is rendered
-  // (the back pill stretches to fill).
   actions?: ReactNode;
-  // Back variant only. Renders the default bell + theme-toggle pill. Used by
-  // Map / Notifications which want to expose those even on back-style pages.
   showDefaultActions?: boolean;
-  // Back variant only. Small circular avatar rendered between the back arrow
-  // and the title — used by the chat thread to show the other user's profile
-  // pic. `undefined` (default) renders no slot; `null` renders a placeholder
-  // user icon; a string renders the image.
   avatarUrl?: string | null;
-  // Back variant only. When set, the avatar becomes its own tap target
-  // (so e.g. the chat thread can pop a circular preview modal). When
-  // undefined the avatar is decorative.
   onAvatarTap?: () => void;
-  // Back variant only. When set, the title+subtitle area becomes a
-  // separate tap target (so e.g. tapping the name opens the chat
-  // info sheet). When undefined the whole back pill behaves as one
-  // back button — current behaviour, preserved for the other pages.
   onTitleTap?: () => void;
+  /** sticky keeps the bar in the scroll container (forms/overlays); fixed for main tabs */
+  dock?: "fixed" | "sticky";
 }
 
-// Theme-aware liquid glass via CSS variables. blur(20px) is the sweet spot —
-// visually nearly identical to the old blur(50px) but a fraction of the GPU
-// cost, which was triggering Android WebView compositor glitches (black
-// rectangles around text-selection popups and stacked glass surfaces).
-const GLASS: React.CSSProperties = {
-  background: "var(--glass-header-bg)",
-  backdropFilter: "blur(20px) saturate(180%)",
-  WebkitBackdropFilter: "blur(20px) saturate(180%)",
-  border: "1px solid var(--glass-border)",
-  boxShadow: "var(--glass-shadow-header)",
-  borderRadius: "16px",
-};
+function HeaderIconButton({
+  children,
+  className = "",
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      className={`relative p-2 rounded-lg active:opacity-70 transition-opacity ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function Header({
   onMenuClick,
@@ -67,23 +53,19 @@ export function Header({
   avatarUrl,
   onAvatarTap,
   onTitleTap,
+  dock = "fixed",
 }: HeaderProps) {
+  const dockClass =
+    dock === "sticky"
+      ? "sticky top-0 z-50 glass-header"
+      : "fixed top-0 left-0 right-0 z-50 glass-header";
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useAuth();
-  // v2 chat store: conversationsById is populated globally by the
-  // ChatBootstrap component mounted in app/layout.tsx (same role v1's
-  // MessageCacheProvider played). Selector returns the record so we
-  // can sum unread_count without re-rendering on unrelated store
-  // changes.
   const conversationsById = useChatStore((s) => s.conversationsById);
   const { theme, toggle: toggleTheme } = useTheme();
   const [unreadCount, setUnreadCount] = useState(0);
 
-  // Show the message button to anyone who can actually message — that's
-  // VIPs and MVPs (and admins, who can DM anyone). Regular users see no
-  // button at all; the v1 version only checked is_vip and locked MVPs
-  // out by accident.
   const canMessage =
     user?.is_vip === true || user?.is_mvp === true || user?.is_admin === true;
   const dmUnread = canMessage
@@ -138,148 +120,131 @@ export function Header({
     };
   };
 
-  // Back variant — back pill + optional actions pill
+  const renderThemeToggle = () => (
+    <HeaderIconButton onClick={toggleTheme} aria-label="Toggle theme">
+      {theme === "dark" ? (
+        <Sun className="w-6 h-6 text-dark-200" strokeWidth={2} />
+      ) : (
+        <Moon className="w-6 h-6 text-dark-200" strokeWidth={2} />
+      )}
+    </HeaderIconButton>
+  );
+
+  const renderNotifications = () => (
+    <Link
+      href="/notifications"
+      data-tutorial="header-notifications"
+      className={`relative p-2 rounded-lg active:opacity-70 transition-opacity ${
+        pathname === "/notifications" ? "opacity-100" : ""
+      }`}
+      aria-label="Notifications"
+    >
+      <Bell
+        className="w-6 h-6"
+        style={{
+          color:
+            pathname === "/notifications"
+              ? "var(--nav-active)"
+              : "var(--color-dark-200)",
+        }}
+        strokeWidth={pathname === "/notifications" ? 2.5 : 2}
+      />
+      {unreadCount > 0 && (
+        <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1 bg-red-500 text-white">
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      )}
+    </Link>
+  );
+
+  const renderBackContent = () => {
+    const splitTargets = onAvatarTap || onTitleTap;
+
+    const avatarContent = avatarUrl !== undefined && (
+      <span className="w-8 h-8 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-[var(--chat-other-bg)]">
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <User className="w-4 h-4" style={{ color: "var(--color-dark-400)" }} />
+        )}
+      </span>
+    );
+
+    const titleContent = (
+      <span className="flex flex-col min-w-0 items-start leading-tight">
+        <span className="text-[15px] font-semibold text-dark-100 truncate max-w-full">
+          {title || "Back"}
+        </span>
+        {subtitle && (
+          <span className="text-[11px] text-dark-400 truncate max-w-full">
+            {subtitle}
+          </span>
+        )}
+      </span>
+    );
+
+    if (!splitTargets) {
+      return (
+        <button
+          onClick={onBack || (() => router.back())}
+          className="flex items-center gap-2 min-w-0 flex-1 active:opacity-70 transition-opacity"
+        >
+          <ArrowLeft className="w-6 h-6 text-dark-100 shrink-0" strokeWidth={2.5} />
+          {avatarContent}
+          {titleContent}
+        </button>
+      );
+    }
+
+    return (
+      <div className="flex items-center gap-2 min-w-0 flex-1">
+        <button
+          type="button"
+          onClick={onBack || (() => router.back())}
+          className="shrink-0 active:opacity-70 transition-opacity"
+          aria-label="Back"
+        >
+          <ArrowLeft className="w-6 h-6 text-dark-100" strokeWidth={2.5} />
+        </button>
+        {avatarUrl !== undefined &&
+          (onAvatarTap ? (
+            <button
+              type="button"
+              onClick={onAvatarTap}
+              className="shrink-0 active:opacity-70 transition-opacity"
+              aria-label="View profile picture"
+            >
+              {avatarContent}
+            </button>
+          ) : (
+            avatarContent
+          ))}
+        {onTitleTap ? (
+          <button
+            type="button"
+            onClick={onTitleTap}
+            className="min-w-0 flex-1 active:opacity-70 transition-opacity text-left"
+          >
+            {titleContent}
+          </button>
+        ) : (
+          titleContent
+        )}
+      </div>
+    );
+  };
+
   if (variant === "back") {
     return (
-      <header
-        className="fixed top-0 left-0 right-0 z-50"
-        style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 8px)" }}
-      >
-        <div className="flex items-center gap-2 px-3 pt-2">
-          <div className="flex items-center h-11 px-3 flex-1 min-w-0" style={GLASS}>
-            {(() => {
-              // Two layouts share the back pill:
-              //
-              //   • One-big-button (default): the entire pill is one back
-              //     button — current behaviour for the rest of the app.
-              //
-              //   • Split tap targets (opted in by passing onAvatarTap or
-              //     onTitleTap): the back arrow, avatar, and title become
-              //     three separate buttons so the chat thread can route
-              //     avatar-tap to the preview modal and name-tap to the
-              //     chat info sheet. Nested <button> is invalid HTML, so
-              //     we deliberately can't keep the whole row as one
-              //     button when the children need to be tappable.
-              const splitTargets = onAvatarTap || onTitleTap;
-
-              const avatarContent = avatarUrl !== undefined && (
-                <span className="w-7 h-7 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-[var(--chat-other-bg)]">
-                  {avatarUrl ? (
-                    <img
-                      src={avatarUrl}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User
-                      className="w-3.5 h-3.5"
-                      style={{ color: "var(--color-dark-400)" }}
-                    />
-                  )}
-                </span>
-              );
-
-              const titleContent = (
-                <span className="flex flex-col min-w-0 items-start leading-tight">
-                  <span className="text-[15px] font-semibold text-dark-100 truncate max-w-full">
-                    {title || "Back"}
-                  </span>
-                  {subtitle && (
-                    <span className="text-[11px] text-dark-400 truncate max-w-full">
-                      {subtitle}
-                    </span>
-                  )}
-                </span>
-              );
-
-              if (!splitTargets) {
-                return (
-                  <button
-                    onClick={onBack || (() => router.back())}
-                    className="flex items-center gap-1.5 p-0.5 rounded-lg active:opacity-70 transition-opacity min-w-0 flex-1"
-                  >
-                    <ArrowLeft className="w-5 h-5 text-dark-200 shrink-0" strokeWidth={2.5} />
-                    {avatarContent}
-                    {titleContent}
-                  </button>
-                );
-              }
-
-              return (
-                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                  <button
-                    type="button"
-                    onClick={onBack || (() => router.back())}
-                    className="p-0.5 rounded-lg active:opacity-70 transition-opacity shrink-0"
-                    aria-label="Back"
-                  >
-                    <ArrowLeft className="w-5 h-5 text-dark-200" strokeWidth={2.5} />
-                  </button>
-                  {avatarUrl !== undefined &&
-                    (onAvatarTap ? (
-                      <button
-                        type="button"
-                        onClick={onAvatarTap}
-                        className="shrink-0 active:opacity-70 transition-opacity"
-                        aria-label="View profile picture"
-                      >
-                        {avatarContent}
-                      </button>
-                    ) : (
-                      avatarContent
-                    ))}
-                  {onTitleTap ? (
-                    <button
-                      type="button"
-                      onClick={onTitleTap}
-                      className="min-w-0 flex-1 p-0.5 rounded-lg active:opacity-70 transition-opacity text-left"
-                    >
-                      {titleContent}
-                    </button>
-                  ) : (
-                    titleContent
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-
+      <header className={dockClass}>
+        <div className="flex items-center h-11 px-3 gap-1 max-w-2xl mx-auto w-full">
+          <div className="flex items-center min-w-0 flex-1">{renderBackContent()}</div>
           {actions ? (
-            <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
-              {actions}
-            </div>
+            <div className="flex items-center gap-0.5 shrink-0">{actions}</div>
           ) : showDefaultActions ? (
-            <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
-                aria-label="Toggle theme"
-              >
-                {theme === "dark" ? (
-                  <Sun className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
-                ) : (
-                  <Moon className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
-                )}
-              </button>
-              <Link
-                href="/notifications"
-                className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
-              >
-                <Bell className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
-                {unreadCount > 0 && (
-                  <span
-                    className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1"
-                    style={{
-                      background: "#ef4444",
-                      color: "white",
-                      boxShadow: "0 0 6px rgba(239,68,68,0.5)",
-                    }}
-                  >
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </span>
-                )}
-              </Link>
+            <div className="flex items-center gap-0.5 shrink-0">
+              {renderThemeToggle()}
+              {renderNotifications()}
             </div>
           ) : null}
         </div>
@@ -287,135 +252,78 @@ export function Header({
     );
   }
 
-  // Default — two floating pills
   return (
-    <header
-      className="fixed top-0 left-0 right-0 z-50"
-      style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 32px)" }}
-    >
-      <div className="flex items-center gap-2 px-3 pt-2">
-  {/* ── Logo pill ── */}
-<div className="flex items-center h-11 px-3" style={GLASS}>
-  <a
-    href="https://www.youtube.com/@PejaStudios"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="flex items-center gap-1.5 peja-logo-morph"
-    aria-label="Peja Studios YouTube"
-  >
-    <span
-      className="peja-logo-text text-[17px]"
-      style={{ color: "#a78bfa", fontWeight: 900 }}
-    >
-      PEJA
-    </span>
-    <svg
-      className="peja-logo-youtube"
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      fill="#ef4444"
-    >
-      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-    </svg>
-  </a>
-</div>
+    <header className={dockClass}>
+      <div className="flex items-center h-11 px-4 max-w-2xl mx-auto w-full">
+        <a
+          href="https://www.youtube.com/@PejaStudios"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 peja-logo-morph shrink-0"
+          aria-label="Peja Studios YouTube"
+        >
+          <span
+            className="peja-logo-text text-[20px] tracking-tight"
+            style={{ color: "#a78bfa", fontWeight: 800 }}
+          >
+            PEJA
+          </span>
+          <svg
+            className="peja-logo-youtube"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="#ef4444"
+          >
+            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+          </svg>
+        </a>
 
         <div className="flex-1" />
 
-        {/* ── Actions pill ── */}
-        <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
-          {/* Theme toggle */}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
-            aria-label="Toggle theme"
-          >
-            {theme === "dark" ? (
-              <Sun className="w-5 h-5" style={{ color: "var(--color-dark-300)" }} strokeWidth={2.3} />
-            ) : (
-              <Moon className="w-5 h-5" style={{ color: "var(--color-dark-300)" }} strokeWidth={2.3} />
-            )}
-          </button>
+        <div className="flex items-center gap-0.5 shrink-0">
+          {renderThemeToggle()}
 
-          {/* DM entry — gated to VIPs/MVPs/admins (regular users get nothing) */}
           {canMessage && (
             <Link
               href="/messages"
-              className={`relative p-2 rounded-xl transition-colors active:bg-white/10 ${
-                pathname === "/messages" ? "bg-white/10" : ""
-              }`}
+              className="relative p-2 rounded-lg active:opacity-70 transition-opacity"
+              aria-label="Messages"
             >
               <MessageCircle
-                className="w-5 h-5"
+                className="w-6 h-6"
                 style={{
                   color:
                     pathname === "/messages"
-                      ? "#c4b5fd"
-                      : "var(--color-dark-300)",
+                      ? "var(--nav-active)"
+                      : "var(--color-dark-200)",
                 }}
-                strokeWidth={2.3}
+                strokeWidth={pathname === "/messages" ? 2.5 : 2}
               />
               {dmUnread > 0 && (
-                <span
-                  className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1"
-                  style={{
-                    background: "#8b5cf6",
-                    color: "white",
-                    boxShadow: "0 0 6px rgba(139,92,246,0.5)",
-                  }}
-                >
+                <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1 bg-primary-600 text-white">
                   {dmUnread > 99 ? "99+" : dmUnread}
                 </span>
               )}
             </Link>
           )}
 
-          {/* Notifications */}
-          <Link href="/notifications" data-tutorial="header-notifications"
-            className={`relative p-2 rounded-xl transition-colors active:bg-white/10 ${
-              pathname === "/notifications" ? "bg-white/10" : ""
-            }`}
-          >
-            <Bell
-              className="w-5 h-5"
-              style={{
-                color:
-                  pathname === "/notifications"
-                    ? "#c4b5fd"
-                    : "var(--color-dark-300)",
-              }}
-              strokeWidth={2.3}
-            />
-            {unreadCount > 0 && (
-              <span
-                className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1"
-                style={{
-                  background: "#ef4444",
-                  color: "white",
-                  boxShadow: "0 0 6px rgba(239,68,68,0.5)",
-                }}
-              >
-                {unreadCount > 99 ? "99+" : unreadCount}
-              </span>
-            )}
-          </Link>
+          {renderNotifications()}
 
-          {/* Profile */}
-          <Link href="/profile" data-tutorial="header-profile" 
-            className={`p-1.5 rounded-xl transition-colors active:bg-white/10 ${
-              pathname === "/profile" ? "bg-white/10" : ""
-            }`}
+          <Link
+            href="/profile"
+            data-tutorial="header-profile"
+            className="p-1.5 rounded-lg active:opacity-70 transition-opacity"
+            aria-label="Profile"
           >
             <div
-              className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center transition-all duration-300"
+              className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center"
               style={{
                 border:
                   pathname === "/profile"
-                    ? "2px solid rgba(167,139,250,0.7)"
-                    : "2px solid rgba(255,255,255,0.12)",
-                background: "rgba(139,92,246,0.12)",
+                    ? "2px solid var(--nav-active)"
+                    : "2px solid var(--border-default)",
+                background: "var(--soft-surface)",
               }}
             >
               {user?.avatar_url ? (

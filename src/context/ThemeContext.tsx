@@ -34,7 +34,7 @@ function syncNativeStatusBar(theme: Theme) {
   if ((window as any).Capacitor === undefined) return;
   import("@capacitor/status-bar")
     .then(({ StatusBar, Style }) => {
-      const bg = theme === "light" ? "#ffffff" : "#0c0818";
+      const bg = theme === "light" ? "#ffffff" : "#000000";
       StatusBar.setBackgroundColor({ color: bg }).catch(() => {});
       StatusBar.setStyle({ style: theme === "light" ? Style.Light : Style.Dark }).catch(() => {});
     })

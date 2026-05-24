@@ -15,9 +15,9 @@ import {
   Search,
   X,
   SlidersHorizontal,
-  MapPin,
 } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { SearchFiltersSheet } from "@/components/search/SearchFiltersSheet";
 
 function SearchContent() {
   // ============================================================
@@ -33,9 +33,10 @@ function SearchContent() {
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [locationFilter, setLocationFilter] = useState("");
   const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all">("all");
   const feedCache = useFeedCache();
-  const feedKey = `search:q=${query}|cat=${selectedCategory ?? "all"}|range=${dateRange}`;
+  const feedKey = `search:q=${query}|cat=${selectedCategory ?? "all"}|loc=${locationFilter.trim() || "all"}|range=${dateRange}`;
 
   // --- INSTANT CACHE INITIALIZATION ---
   const [posts, setPosts] = useState<Post[]>(() => {
@@ -203,6 +204,13 @@ function SearchContent() {
         }
       }
 
+      if (locationFilter.trim()) {
+        const loc = locationFilter.toLowerCase().trim();
+        formattedPosts = formattedPosts.filter((p) =>
+          (p.address ?? "").toLowerCase().includes(loc)
+        );
+      }
+
       const top = formattedPosts.slice(0, 50);
       const display = feedCache.applyDeletes(top);
       confirm.hydrateCounts(display.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
@@ -214,7 +222,7 @@ function SearchContent() {
     } finally {
       setLoading(false);
     }
-  }, [query, selectedCategory, dateRange, feedKey, feedCache, confirm]);
+  }, [query, selectedCategory, locationFilter, dateRange, feedKey, feedCache, confirm]);
 
   // Listen for post deleted/archived events
   useEffect(() => {
@@ -300,7 +308,7 @@ useEffect(() => {
     }, 300);
 
     return () => clearTimeout(debounce);
-  }, [query, selectedCategory, dateRange]);
+  }, [query, selectedCategory, locationFilter, dateRange]);
 
   // ============================================================
   // ALL HOOKS ARE DONE
@@ -308,10 +316,12 @@ useEffect(() => {
 
   const clearFilters = () => {
     setSelectedCategory(null);
+    setLocationFilter("");
     setDateRange("all");
   };
 
-  const hasActiveFilters = selectedCategory || dateRange !== "all";
+  const hasActiveFilters =
+    selectedCategory || locationFilter.trim() !== "" || dateRange !== "all";
 
   // useCallback so the prop reference is stable across renders — otherwise
   // PostCard's React.memo can't skip re-renders of the search results list.
@@ -328,11 +338,11 @@ useEffect(() => {
   }, []);
 
   return (
-    <PullToRefresh onRefresh={async () => { await performSearch(); }}>
-    <div className="min-h-screen pb-20 lg:pb-0">
+    <div className="min-h-screen">
       <Header onCreateClick={() => router.push("/create")} />
 
-      <main className="pt-app-header-pill">
+      <PullToRefresh onRefresh={async () => { await performSearch(); }}>
+      <main className="hide-scrollbar pt-app-header-pill pb-app-bottom-nav lg:pb-0">
         <div className="max-w-2xl mx-auto px-4 py-4">
           {/* Search Input */}
           <div className="relative mb-4">
@@ -355,134 +365,21 @@ useEffect(() => {
                 </button>
               )}
               <button
-                onClick={() => setShowFilters(!showFilters)}
+                type="button"
+                onClick={() => setShowFilters(true)}
                 className={`p-2 rounded-lg transition-colors ${
-                  showFilters || hasActiveFilters
+                  hasActiveFilters
                     ? "bg-primary-600/20 text-primary-400"
                     : "hover:bg-white/10 text-dark-400"
                 }`}
+                aria-label="Open filters"
               >
                 <SlidersHorizontal className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Filters Panel */}
-          {showFilters && (
-            <div className="glass-card mb-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-medium text-dark-100">Filters</h3>
-                {hasActiveFilters && (
-                  <button
-                    onClick={clearFilters}
-                    className="text-sm text-primary-400"
-                  >
-                    Clear all
-                  </button>
-                )}
-              </div>
-
-              {/* Category Filter */}
-              <div>
-                <label className="text-sm text-dark-400 block mb-2">Category</label>
-                <div className="flex flex-wrap gap-2">
-                  {CATEGORIES.slice(0, 8).map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() =>
-                        setSelectedCategory(selectedCategory === cat.id ? null : cat.id)
-                      }
-                      className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                        selectedCategory === cat.id
-                          ? "bg-primary-600 text-white"
-                          : "glass-sm text-dark-300 hover:bg-white/10"
-                      }`}
-                    >
-                      {cat.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Date Range */}
-              <div>
-                <label className="text-sm text-dark-400 block mb-2">Time Period</label>
-                <div className="flex gap-2">
-                  {[
-                    { value: "today", label: "Today" },
-                    { value: "week", label: "This Week" },
-                    { value: "month", label: "This Month" },
-                    { value: "all", label: "All Time" },
-                  ].map((option) => (
-                    <button
-                      key={option.value}
-                      onClick={() => setDateRange(option.value as any)}
-                      className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                        dateRange === option.value
-                          ? "bg-primary-600 text-white"
-                          : "glass-sm text-dark-300 hover:bg-white/10"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Quick Search Suggestions */}
-          {!query && (
-            <div className="mb-4 space-y-4">
-              <div>
-                <p className="text-sm text-dark-400 mb-2">Popular tags</p>
-                <div className="flex flex-wrap gap-2">
-                  {["traffic", "robbery", "fire", "accident", "flooding"].map((tag) => (
-                    <button
-                      key={tag}
-                      onClick={() => setQuery(`#${tag}`)}
-                      className="px-3 py-1.5 glass-sm rounded-lg text-sm text-primary-400"
-                    >
-                      #{tag}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm text-dark-400 mb-2">Categories</p>
-                <div className="flex flex-wrap gap-2">
-                  {CATEGORIES.slice(0, 6).map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => setQuery(cat.name)}
-                      className="px-3 py-1.5 glass-sm rounded-lg text-sm text-dark-300"
-                    >
-                      {cat.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm text-dark-400 mb-2">Popular locations</p>
-                <div className="flex flex-wrap gap-2">
-                  {["Lagos", "Lekki", "Victoria Island", "Ikeja", "Yaba"].map((loc) => (
-                    <button
-                      key={loc}
-                      onClick={() => setQuery(loc)}
-                      className="px-3 py-1.5 glass-sm rounded-lg text-sm text-dark-300 flex items-center gap-1"
-                    >
-                      <MapPin className="w-3 h-3" />
-                      {loc}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-{/* Results */}
+          {/* Results */}
           {posts.length === 0 && !loading ? (
             <div className="text-center py-12 text-dark-400">No posts yet.</div>
           ) : posts.length === 0 && loading ? (
@@ -490,31 +387,54 @@ useEffect(() => {
               <PejaSpinner className="w-6 h-6" />
             </div>
           ) : (
-            <div className="space-y-4">
+            <>
               {loading && (
                 <div className="flex justify-center py-2">
                   <PejaSpinner className="w-5 h-5" />
                 </div>
               )}
-              <p className="text-sm text-dark-400">
-                {posts.length} result{posts.length !== 1 ? "s" : ""} {query && `for "${query}"`}
+              <p className="text-sm text-dark-400 mb-3">
+                {posts.length} result{posts.length !== 1 ? "s" : ""}
+                {query && ` for "${query}"`}
+                {locationFilter.trim() && !query && ` in ${locationFilter.trim()}`}
+                {locationFilter.trim() && query && ` · ${locationFilter.trim()}`}
               </p>
-              {posts.map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  onShare={handleSharePost}
-                  sourceKey={feedKey}
-                />
-              ))}
-            </div>
+            </>
           )}
         </div>
+
+        {posts.length > 0 && (
+          <div className="max-w-2xl mx-auto divide-y divide-[var(--border-subtle)]">
+            {posts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                onShare={handleSharePost}
+                sourceKey={feedKey}
+              />
+            ))}
+            <div className="feed-end-spacer" aria-hidden />
+          </div>
+        )}
       </main>
+      </PullToRefresh>
 
       <BottomNav />
-</div>
-    </PullToRefresh>
+
+      <SearchFiltersSheet
+        isOpen={showFilters}
+        onClose={() => setShowFilters(false)}
+        selectedCategory={selectedCategory}
+        onCategoryChange={setSelectedCategory}
+        locationFilter={locationFilter}
+        onLocationFilterChange={setLocationFilter}
+        dateRange={dateRange}
+        onDateRangeChange={setDateRange}
+        onClearAll={clearFilters}
+        hasActiveFilters={!!hasActiveFilters}
+        resultCount={posts.length}
+      />
+    </div>
   );
 }
 

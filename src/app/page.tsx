@@ -125,6 +125,12 @@ export default function Home() {
   const [isSwiping, setIsSwiping] = useState(false);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("[data-no-feed-swipe='true']")) {
+      swipeStartRef.current = null;
+      setIsSwiping(false);
+      return;
+    }
     swipeStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: Date.now() };
     setIsSwiping(false);
   }, []);
@@ -701,12 +707,9 @@ posts.forEach((p: any) => {
 
   if (!mounted || (posts.length === 0 && (authLoading || (!user && !authCheckDone)))) {
     return (
-      <div className="min-h-screen pb-20">
+      <div className="min-h-screen">
         <Header onCreateClick={() => {}} />
-        <main
-          className="max-w-2xl mx-auto px-4 py-4 space-y-4"
-          style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 60px)" }}
-        >
+        <main className="max-w-2xl mx-auto divide-y divide-[var(--border-subtle)] pt-app-header-pill pb-app-bottom-nav">
           {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
         </main>
         <BottomNav />
@@ -716,12 +719,9 @@ posts.forEach((p: any) => {
 
   if (posts.length === 0 && !user) {
     return (
-      <div className="min-h-screen pb-20">
+      <div className="min-h-screen">
         <Header onCreateClick={() => {}} />
-        <main
-          className="max-w-2xl mx-auto px-4 py-4 space-y-4"
-          style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 60px)" }}
-        >
+        <main className="max-w-2xl mx-auto divide-y divide-[var(--border-subtle)] pt-app-header-pill pb-app-bottom-nav">
           {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
         </main>
         <BottomNav />
@@ -729,32 +729,12 @@ posts.forEach((p: any) => {
     );
   }
 
-  // Calculate tab blend ratio for swipe animation (0 = nearby active, 1 = trending active)
-  const swipeProgress = (() => {
-    const base = activeTab === "trending" ? 1 : 0;
-    if (!isSwiping || swipeOffset === 0) return base;
-    const screenW = typeof window !== "undefined" ? window.innerWidth : 400;
-    const delta = -swipeOffset / (screenW * 0.5); // negative because swipe left = go right
-    return Math.max(0, Math.min(1, base + delta));
-  })();
-
-// Active = rich solid purple. Inactive = theme-aware surface (white in light, glass in dark).
-const nearbyBg = swipeProgress < 0.5
-    ? `rgb(124, 58, 237)`
-    : `var(--glass-card-bg)`;
-  const trendingBg = swipeProgress > 0.5
-    ? `rgb(124, 58, 237)`
-    : `var(--glass-card-bg)`;
-
   return (
-    <div className="min-h-screen pb-20 lg:pb-0">
+    <div className="min-h-screen">
       <Header onCreateClick={() => router.push("/create")} />
 
       <PullToRefresh onRefresh={handleRefresh}>
-      <main
-        className="hide-scrollbar"
-        style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 60px)" }}
-      >
+      <main className="hide-scrollbar pt-app-header-pill pb-app-bottom-nav lg:pb-0">
         {user && !profileCompletion(user as any).complete && (
           <div className="max-w-2xl mx-auto px-4 pt-4">
             <div className="glass-card p-4 flex items-center gap-3">
@@ -777,41 +757,42 @@ const nearbyBg = swipeProgress < 0.5
         )}
 
 <div
-          className="max-w-2xl mx-auto py-4"
+          className="max-w-2xl mx-auto"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           style={{ touchAction: isSwiping ? "none" : "pan-y" }}
         >
-<div className="flex items-center justify-center gap-1 mb-4 relative px-4" data-tutorial="home-nearby">
-          <button
+<div
+            className="home-feed-tabs flex max-w-2xl mx-auto w-full"
+            data-tutorial="home-nearby"
+          >
+            <button
+              type="button"
               onClick={() => {
                 setActiveTab("nearby");
                 applyCachedFeed("home:nearby");
               }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-             style={{
-                background: nearbyBg,
-                color: activeTab === "nearby" ? "white" : "var(--color-dark-200)",
-                border: `1px solid rgba(124, 58, 237, ${0.15 + (1 - swipeProgress) * 0.2})`,
-                transition: isSwiping ? "none" : "all 0.35s ease",
-              }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+                activeTab === "nearby"
+                  ? "border-primary-600 text-dark-100"
+                  : "border-transparent text-dark-400"
+              }`}
             >
               <MapPin className="w-4 h-4" />
               Nearby
             </button>
             <button
+              type="button"
               onClick={() => {
                 setActiveTab("trending");
                 applyCachedFeed("home:trending");
               }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{
-                background: trendingBg,
-                color: activeTab === "trending" ? "white" : "var(--color-dark-200)",
-                border: `1px solid rgba(124, 58, 237, ${0.15 + swipeProgress * 0.2})`,
-                transition: isSwiping ? "none" : "all 0.35s ease",
-              }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-semibold transition-colors border-b-2 -mb-px ${
+                activeTab === "trending"
+                  ? "border-primary-600 text-dark-100"
+                  : "border-transparent text-dark-400"
+              }`}
             >
               <TrendingUp className="w-4 h-4" />
               Trending
@@ -830,7 +811,7 @@ const nearbyBg = swipeProgress < 0.5
               {/* Nearby feed */}
               <div className="w-1/2 min-w-0 px-0">
                 {loading && nearbyPosts.length === 0 && activeTab === "nearby" ? (
-                  <div className="space-y-4" data-tutorial="home-feed">
+                  <div className="divide-y divide-[var(--border-subtle)]" data-tutorial="home-feed">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <PostCardSkeleton key={`nearby-skel-${i}`} />
                     ))}
@@ -838,7 +819,7 @@ const nearbyBg = swipeProgress < 0.5
                 ) : nearbyPosts.length === 0 ? (
                   <div className="text-center py-12 text-dark-400">No nearby posts yet.</div>
                 ) : (
-                  <div className="space-y-4" data-tutorial="home-feed">
+                  <div className="divide-y divide-[var(--border-subtle)]" data-tutorial="home-feed">
                     {refreshing && activeTab === "nearby" && (
                       <div className="flex justify-center py-2">
                         <PejaSpinner className="w-5 h-5" />
@@ -851,6 +832,7 @@ const nearbyBg = swipeProgress < 0.5
                         sourceKey="home:nearby"
                       />
                     ))}
+                    <div className="feed-end-spacer" aria-hidden />
                   </div>
                 )}
               </div>
@@ -858,7 +840,7 @@ const nearbyBg = swipeProgress < 0.5
               {/* Trending feed */}
               <div className="w-1/2 min-w-0 px-0">
                 {loading && trendingPosts.length === 0 && activeTab === "trending" ? (
-                  <div className="space-y-4">
+                  <div className="divide-y divide-[var(--border-subtle)]">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <PostCardSkeleton key={`trend-skel-${i}`} />
                     ))}
@@ -866,7 +848,7 @@ const nearbyBg = swipeProgress < 0.5
                 ) : trendingPosts.length === 0 ? (
                   <div className="text-center py-12 text-dark-400">No trending posts yet.</div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="divide-y divide-[var(--border-subtle)]">
                     {refreshing && activeTab === "trending" && (
                       <div className="flex justify-center py-2">
                         <PejaSpinner className="w-5 h-5" />
@@ -879,6 +861,7 @@ const nearbyBg = swipeProgress < 0.5
                         sourceKey="home:trending"
                       />
                     ))}
+                    <div className="feed-end-spacer" aria-hidden />
                   </div>
                 )}
               </div>

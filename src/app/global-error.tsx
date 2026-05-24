@@ -24,7 +24,7 @@ export default function GlobalError({
 
   const palette = isLight
     ? { bg: "#ffffff", fg: "#0c0a14", sub: "#52525b", border: "rgba(0,0,0,0.1)" }
-    : { bg: "#0c0818", fg: "#ffffff", sub: "#94a3b8", border: "rgba(255,255,255,0.1)" };
+    : { bg: "#000000", fg: "#ffffff", sub: "#94a3b8", border: "rgba(255,255,255,0.1)" };
 
   return (
     <html>
@@ -47,8 +47,8 @@ export default function GlobalError({
               width: 64,
               height: 64,
               borderRadius: 16,
-              background: "rgba(124, 58, 237, 0.15)",
-              border: "2px solid rgba(139, 92, 246, 0.3)",
+              background: isLight ? "rgba(0,0,0,0.05)" : "rgba(255,255,255,0.06)",
+              border: `2px solid ${palette.border}`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",

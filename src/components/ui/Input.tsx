@@ -16,11 +16,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     
     return (
       <div className="w-full">
-        {label && (
-          <label className="block text-sm font-medium text-dark-200 mb-1.5">
-            {label}
-          </label>
-        )}
+        {label && <label className="peja-field-label">{label}</label>}
         <div className="relative">
           {leftIcon && (
             <div className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-400 pointer-events-none z-10">
@@ -31,10 +27,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             ref={ref}
             type={type}
             className={`
-              glass-input
-              ${leftIcon ? "pl-12" : "pl-4"}
-              ${rightIcon || isDateOrTime ? "pr-12" : "pr-4"}
-              ${error ? "border-red-500/50" : ""}
+              peja-input
+              ${leftIcon ? "pl-12" : ""}
+              ${rightIcon || isDateOrTime ? "pr-12" : ""}
+              ${error ? "border-red-500/50 focus:border-red-500/50" : ""}
               ${className}
             `}
             {...props}
@@ -45,9 +41,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             </div>
           )}
         </div>
-        {error && (
-          <p className="mt-1.5 text-sm text-red-400">{error}</p>
-        )}
+        {error && <p className="peja-field-error">{error}</p>}
       </div>
     );
   }

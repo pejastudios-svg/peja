@@ -4,7 +4,7 @@ export default function Loading() {
   return (
     <div className="min-h-screen pb-8">
       <div className="fixed top-0 left-0 right-0 z-40 glass-header">
-        <div className="max-w-2xl mx-auto px-4 h-12 flex items-center justify-between">
+        <div className="max-w-2xl mx-auto px-4 h-11 flex items-center justify-between">
           <Skeleton className="h-9 w-9 rounded-lg" />
           <Skeleton className="h-4 w-32" />
           <Skeleton className="h-9 w-9 rounded-lg" />

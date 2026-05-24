@@ -396,7 +396,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
             ? "0 4px 15px rgba(220, 38, 38, 0.4)"
             : isActive
             ? "0 4px 15px rgba(34, 197, 94, 0.4)"
-            : "0 4px 15px rgba(124, 58, 237, 0.4)",
+            : "0 4px 12px rgba(0, 0, 0, 0.25)",
         }}
       >
         {/* Pulse ring */}
@@ -408,7 +408,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                 ? "rgba(220, 38, 38, 0.3)"
                 : isActive
                 ? "rgba(34, 197, 94, 0.3)"
-                : "rgba(124, 58, 237, 0.3)",
+                : "var(--border-default)",
               animationDuration: "2s",
             }}
           />
@@ -446,7 +446,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
               maxWidth: "100%",
               background: "var(--glass-strong-bg)",
               border: "1px solid rgba(255,255,255,0.1)",
-              boxShadow: "0 -10px 40px rgba(0,0,0,0.6), 0 0 20px rgba(124,58,237,0.1)",
+              boxShadow: "0 -10px 40px rgba(0,0,0,0.6)",
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -721,7 +721,7 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                   disabled={starting || selectedContacts.length === 0}
                   className="w-full py-3.5 rounded-xl font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
                   style={{
-                    boxShadow: "0 4px 20px rgba(124, 58, 237, 0.3)",
+                    boxShadow: "0 4px 16px rgba(0, 0, 0, 0.25)",
                   }}
                 >
                   {starting ? <PejaSpinner className="w-5 h-5" /> : <Shield className="w-5 h-5" />}

@@ -147,15 +147,15 @@ function WelcomeScreen({ onStart, onSkip }: { onStart: () => void; onSkip: () =>
         className="relative w-full max-w-sm rounded-3xl overflow-hidden"
         style={{
           background: "var(--glass-strong-bg)",
-          border: "1px solid rgba(139, 92, 246, 0.2)",
-          boxShadow: "0 0 80px rgba(139, 92, 246, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
+          border: "1px solid var(--border-subtle)",
+          boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
         }}
       >
         {/* Illustration area */}
         <div
           className="relative h-44 flex items-center justify-center overflow-hidden"
           style={{
-            background: "linear-gradient(135deg, rgba(124,58,237,0.2) 0%, rgba(139,92,246,0.1) 50%, rgba(59,130,246,0.1) 100%)",
+            background: "var(--surface-raised)",
           }}
         >
           <div className="absolute inset-0 opacity-30">
@@ -168,9 +168,9 @@ function WelcomeScreen({ onStart, onSkip }: { onStart: () => void; onSkip: () =>
           <div
               className="w-20 h-20 rounded-2xl flex items-center justify-center mb-3"
               style={{
-                background: "rgba(124, 58, 237, 0.2)",
-                border: "2px solid rgba(139, 92, 246, 0.3)",
-                boxShadow: "0 0 30px rgba(139, 92, 246, 0.2)",
+                background: "var(--soft-surface)",
+                border: "2px solid var(--border-default)",
+                boxShadow: "none",
               }}
             >
               <img
@@ -198,7 +198,7 @@ function WelcomeScreen({ onStart, onSkip }: { onStart: () => void; onSkip: () =>
             className="w-full py-3.5 rounded-xl font-semibold text-white transition-all active:scale-[0.98] mb-3"
             style={{
               background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-              boxShadow: "0 4px 20px rgba(124, 58, 237, 0.4)",
+              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.25)",
             }}
           >
             Show Me Around
@@ -355,8 +355,8 @@ function SpotlightOverlay({
             left: spotlight.left - 2,
             width: spotlight.width + 4,
             height: spotlight.height + 4,
-            border: "2px solid rgba(139, 92, 246, 0.5)",
-            boxShadow: "0 0 20px rgba(139, 92, 246, 0.3), inset 0 0 20px rgba(139, 92, 246, 0.1)",
+            border: "2px solid var(--nav-active)",
+            boxShadow: "0 0 12px rgba(124, 58, 237, 0.25)",
             transition: "all 0.2s ease-out",
           }}
         />
@@ -384,8 +384,8 @@ function SpotlightOverlay({
           className="rounded-2xl p-5 relative overflow-hidden"
           style={{
             background: "var(--glass-strong-bg)",
-            border: "1px solid rgba(139, 92, 246, 0.2)",
-            boxShadow: "0 8px 40px rgba(0,0,0,0.5), 0 0 30px rgba(139, 92, 246, 0.05)",
+            border: "1px solid var(--border-subtle)",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.5)",
           }}
         >
           {/* Header */}
@@ -394,8 +394,8 @@ function SpotlightOverlay({
               <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center"
                 style={{
-                  background: "rgba(139, 92, 246, 0.15)",
-                  border: "1px solid rgba(139, 92, 246, 0.2)",
+                  background: "var(--soft-surface)",
+                  border: "1px solid var(--border-subtle)",
                 }}
               >
                 <span style={{ color: "#a78bfa" }}>{step.icon}</span>
@@ -442,7 +442,7 @@ function SpotlightOverlay({
                   : "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
                 boxShadow: isLast
                   ? "0 4px 15px rgba(34,197,94,0.3)"
-                  : "0 4px 15px rgba(124,58,237,0.3)",
+                  : "0 4px 12px rgba(0,0,0,0.2)",
               }}
             >
               {isLast ? "Got It!" : "Next"}
