@@ -28,7 +28,16 @@ export default function AccountStatusBanner() {
           <p className="text-sm font-semibold text-dark-100">Account Suspended</p>
           <p className="text-xs text-dark-300 mt-0.5 break-words">
             You can still receive alerts, but you cannot post, comment, confirm, or use SOS.
-            If you believe this is a mistake, contact support.
+            If you believe this is a mistake, you can appeal at{" "}
+            <a
+              href="https://peja.life/help"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary-400 hover:underline"
+            >
+              peja.life/help
+            </a>
+            .
           </p>
         </div>
 

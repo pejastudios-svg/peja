@@ -465,13 +465,16 @@ export default function ThreadV2Page() {
       .catch(() => {});
     // Also mark any chat-related notifications as read so the
     // notifications page doesn't sit on a stale unread badge after
-    // the user has clearly seen the chat.
-    markChatNotificationsRead(conversationId, user.id).catch(() => {});
-    // Broadcast a refresh so the bell badge in the header updates
-    // without waiting for its 30s poll.
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("peja-notifications-changed"));
-    }
+    // the user has clearly seen the chat. Broadcast the refresh
+    // AFTER the UPDATE lands — firing it before the round-trip would
+    // make the bell re-poll against stale rows and put the badge back.
+    markChatNotificationsRead(conversationId, user.id)
+      .then(() => {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("peja-notifications-changed"));
+        }
+      })
+      .catch(() => {});
     clearUnread(conversationId);
   }, [user?.id, conversationId, setThread, clearUnread, lastConnectedAt]);
 
@@ -2654,7 +2657,7 @@ export default function ThreadV2Page() {
                     caretColor: "var(--color-dark-100)",
                     background: "transparent",
                   }}
-                  className="w-full max-h-32 resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder-dark-500 focus:outline-none relative z-10"
+                  className="w-full max-h-32 resize-none bg-transparent px-3 pt-3 pb-1 text-base placeholder-dark-500 focus:outline-none relative z-10"
                 />
                 {/* Styled mirror — sits BEHIND the textarea (z-0)
                     and renders the draft with @mentions in purple.
@@ -2663,7 +2666,7 @@ export default function ThreadV2Page() {
                 <div
                   ref={overlayRef}
                   aria-hidden
-                  className="absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-sm text-dark-100 whitespace-pre-wrap break-words pointer-events-none z-0"
+                  className="absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-base text-dark-100 whitespace-pre-wrap break-words pointer-events-none z-0"
                 >
                   {(() => {
                     const re = /(^|\s)(@everyone|@all|@[A-Za-z][A-Za-z0-9_'-]*)/g;

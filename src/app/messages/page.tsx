@@ -537,6 +537,7 @@ export default function MessagesV2Page() {
                   isMine={isFromMe}
                   selectMode={selectMode}
                   isSelected={selectedIds.has(conv.id)}
+                  selectedCount={selectedIds.size}
                   onTap={() => {
                     if (selectMode) {
                       toggleSelect(conv.id);
@@ -545,7 +546,14 @@ export default function MessagesV2Page() {
                     router.push(`/messages/${conv.id}`);
                   }}
                   onEnterSelectMode={() => enterSelectMode(conv.id)}
-                  onKebabAction={(action) => handleSingleAction(conv, action)}
+                  onKebabAction={(action) => {
+                    // Picking a per-row action from the kebab while in
+                    // single-select means the user committed to that
+                    // one chat — drop select mode so they're not stuck
+                    // tapping X afterward.
+                    if (selectMode) exitSelectMode();
+                    handleSingleAction(conv, action);
+                  }}
                 />
               );
             })}

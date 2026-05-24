@@ -76,22 +76,28 @@ export async function POST(req: NextRequest) {
       .update({ report_count: totalReports })
       .eq("id", commentId);
 
-    // 7) Auto-delete if 5+ reports
-    let deleted = false;
-    if (totalReports >= 5) {
-
-      await supabaseAdmin.from("comment_likes").delete().eq("comment_id", commentId);
-      await supabaseAdmin.from("comment_media").delete().eq("comment_id", commentId);
-      await supabaseAdmin.from("comment_reports").delete().eq("comment_id", commentId);
-      await supabaseAdmin.from("flagged_content").delete().eq("comment_id", commentId);
-
-      const { error: deleteErr } = await supabaseAdmin
+    // 7) Auto-archive when 10 distinct users have reported. The row stays
+    //    in the table for admin review and audit trail; user-facing reads
+    //    filter on status='live'. Resolve any pending flag entries so the
+    //    moderation queue doesn't show the same item twice.
+    let archived = false;
+    if (totalReports >= 10) {
+      const { error: archiveErr } = await supabaseAdmin
         .from("post_comments")
-        .delete()
+        .update({ status: "archived" })
         .eq("id", commentId);
 
-      if (!deleteErr) {
-        deleted = true;
+      if (!archiveErr) {
+        archived = true;
+
+        await supabaseAdmin
+          .from("flagged_content")
+          .delete()
+          .eq("comment_id", commentId)
+          .eq("status", "pending");
+
+        // Mirror the count decrement that the old hard-delete path did,
+        // since the comment is no longer visible to end users.
         await supabaseAdmin.rpc("decrement_comment_count", { post_id: comment.post_id });
 
         await supabaseAdmin.from("notifications").insert({
@@ -160,7 +166,7 @@ export async function POST(req: NextRequest) {
     }
 
 
-    return NextResponse.json({ ok: true, reportCount: totalReports, deleted });
+    return NextResponse.json({ ok: true, reportCount: totalReports, archived });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });
   }

@@ -52,6 +52,13 @@ interface InviteModalData {
   status: "loading" | "pending" | "accepted" | "declined" | "missing" | "error";
 }
 
+interface AccountStatusModalData {
+  kind: "suspended" | "banned";
+  title: string;
+  body: string;
+  reason?: string;
+}
+
 function NotificationRowSkeleton() {
   return (
     <div className="glass-card p-4">
@@ -92,6 +99,8 @@ export default function NotificationsPage() {
 
   const [inviteModal, setInviteModal] = useState<InviteModalData | null>(null);
   const [responding, setResponding] = useState<"accept" | "decline" | null>(null);
+  const [accountStatusModal, setAccountStatusModal] =
+    useState<AccountStatusModalData | null>(null);
 
   useEffect(() => {
     const save = () => {
@@ -332,6 +341,23 @@ export default function NotificationsPage() {
     // Handle emergency contact response
     if (data.type === "emergency_contact_response") {
       router.push("/emergency-contacts");
+      return;
+    }
+
+    // Account-status notifications — open an in-page modal with the
+    // full message + an appeal CTA. Suspended users are pointed at
+    // /help; banned users get the same modal so they have one
+    // tappable surface to start an appeal too.
+    if (
+      notification.type === "system" &&
+      (data.status === "suspended" || data.status === "banned")
+    ) {
+      setAccountStatusModal({
+        kind: data.status,
+        title: notification.title,
+        body: notification.body ?? "",
+        reason: data.reason,
+      });
       return;
     }
 
@@ -710,6 +736,63 @@ export default function NotificationsPage() {
                   </Button>
                 </div>
               ) : null}
+            </div>
+          )}
+        </Modal>
+
+        {/* Account status modal — opens when the user taps an
+            "Account suspended" / "Account banned" system notification.
+            Surfaces the full message and a single appeal CTA into
+            /help. */}
+        <Modal
+          isOpen={!!accountStatusModal}
+          onClose={() => setAccountStatusModal(null)}
+          title={accountStatusModal?.title || "Account status"}
+        >
+          {accountStatusModal && (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 flex gap-3">
+                <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-orange-200 leading-relaxed">
+                  {accountStatusModal.body}
+                </p>
+              </div>
+
+              {accountStatusModal.reason && (
+                <div className="p-3 rounded-lg bg-dark-700/40 border border-white/10">
+                  <p className="text-xs uppercase tracking-wide text-dark-400 mb-1">
+                    Reason
+                  </p>
+                  <p className="text-sm text-dark-200">
+                    {accountStatusModal.reason}
+                  </p>
+                </div>
+              )}
+
+              <p className="text-sm text-dark-300 leading-relaxed">
+                If you believe this was a mistake, you can appeal. Our
+                team will review your case and get back to you.
+              </p>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => setAccountStatusModal(null)}
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  onClick={() => {
+                    setAccountStatusModal(null);
+                    router.push("/help");
+                  }}
+                >
+                  Appeal
+                </Button>
+              </div>
             </div>
           )}
         </Modal>

@@ -8,7 +8,18 @@ import { supabase } from "@/lib/supabase";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import { buildLoginHref } from "@/lib/safeNext";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/terms", "/privacy", "/help", "/offline.html"];
+// Auth-flow and policy pages. /forgot-password is included because
+// users on the password-reset flow are literally mid-auth and the
+// prompt nagging them to "log in" is the opposite of helpful.
+const PUBLIC_PATHS = [
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/terms",
+  "/privacy",
+  "/help",
+  "/offline.html",
+];
 const DISMISSED_KEY = "peja-login-prompt-dismissed";
 
 export function LoginPrompt() {

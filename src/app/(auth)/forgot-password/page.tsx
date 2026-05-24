@@ -1,7 +1,7 @@
 // src/app/(auth)/forgot-password/page.tsx
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, ArrowLeft, Loader2, ShieldCheck, KeyRound } from "lucide-react";
@@ -21,7 +21,18 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
+  // Cooldown for the resend button. Set to 30 after every successful
+  // send/resend so the user can't spam the endpoint past Supabase's
+  // own server-side rate limit. UI countdown only — server enforcement
+  // is Supabase's existing per-email throttle.
+  const [resendCooldown, setResendCooldown] = useState(0);
   const codeInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,6 +61,7 @@ export default function ForgotPasswordPage() {
       }
 
       setStep(2);
+      setResendCooldown(30);
       setTimeout(() => codeInputRef.current?.focus(), 200);
     } catch {
       setError("Connection error. Try again.");
@@ -280,10 +292,10 @@ export default function ForgotPasswordPage() {
               <button
                 type="button"
                 onClick={handleSendCode}
-                disabled={loading}
-                className="text-sm text-primary-400 hover:text-primary-300"
+                disabled={loading || resendCooldown > 0}
+                className="text-sm text-primary-400 hover:text-primary-300 disabled:text-dark-500 disabled:cursor-not-allowed"
               >
-                Resend code
+                {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend code"}
               </button>
             </div>
           </form>

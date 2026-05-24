@@ -177,6 +177,7 @@ export function WatchCommentSheet({
         .from("post_comments")
         .select("*")
         .eq("post_id", post.id)
+        .eq("status", "live")
         .order("created_at", { ascending: false });
 
       if (error || !rawComments) {
@@ -384,9 +385,10 @@ export function WatchCommentSheet({
       setShowOptions(false);
       setReportReason("");
 
-      // If comment was auto-deleted due to 3+ reports
-      if (json.deleted) {
-        // Remove from local state
+      // If comment was auto-archived due to reaching the report threshold
+      if (json.archived) {
+        // Remove from local state — archived comments are no longer
+        // visible to end users.
         setComments((prev) => prev.filter((c) => c.id !== selectedComment.id && c.parent_id !== selectedComment.id));
         toast.success("Comment removed due to reports");
       } else {

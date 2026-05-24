@@ -50,6 +50,12 @@ interface Props {
   isMine: boolean;
   selectMode: boolean;
   isSelected: boolean;
+  // Total rows currently selected. Drives the WhatsApp-style "single-
+  // selection kebab" — when exactly one row is selected, that row's
+  // kebab stays available so per-row actions (pin/mute/clear/block)
+  // are reachable without exiting select mode. Multi-select hides the
+  // kebab because only bulk actions in SelectActionBar apply then.
+  selectedCount: number;
   onTap: () => void;
   onEnterSelectMode: () => void;
   onKebabAction: (action: ChatRowAction) => void;
@@ -62,6 +68,7 @@ export function ChatListRow({
   isMine,
   selectMode,
   isSelected,
+  selectedCount,
   onTap,
   onEnterSelectMode,
   onKebabAction,
@@ -226,7 +233,14 @@ export function ChatListRow({
         </div>
       )}
 
-      {!selectMode && (
+      {/* Per-row kebab.
+          - Out of select mode: desktop hover reveals; mobile sees it
+            only when opened (was the prior behavior).
+          - In select mode AND this row is the lone selection: stay
+            always-visible so the user can tap it for per-row actions
+            (WhatsApp pattern). Selecting more rows hides the kebab
+            because only bulk SelectActionBar actions apply then. */}
+      {(!selectMode || (isSelected && selectedCount === 1)) && (
         <div
           ref={menuRef}
           className="relative shrink-0"
@@ -239,7 +253,7 @@ export function ChatListRow({
               setMenuOpen((v) => !v);
             }}
             className={`w-8 h-8 rounded-full flex items-center justify-center text-dark-300 ${
-              menuOpen
+              menuOpen || (selectMode && isSelected && selectedCount === 1)
                 ? "bg-[var(--chat-input-hover)] opacity-100"
                 : "opacity-0 group-hover:opacity-100"
             } transition-opacity`}

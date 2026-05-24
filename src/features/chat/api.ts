@@ -1212,8 +1212,9 @@ export async function deleteChatForUser(
 /**
  * Mark every notification on the `notifications` table that points
  * at this conversation as read, for the current user. We match by
- * `data->>'conversationId'` (the field notifications.ts writes when
- * recording DM messages / reactions / blocks).
+ * `data->>'conversation_id'` (the snake_case field peja_notify_dm
+ * writes — earlier this filtered on the camelCase variant and silently
+ * matched zero rows, so the bell badge stayed stale forever).
  *
  * Fire-and-forget from the caller — a failure here just leaves the
  * notification badge sitting at a stale count, which the next
@@ -1228,7 +1229,7 @@ export async function markChatNotificationsRead(
     .update({ is_read: true })
     .eq("user_id", currentUserId)
     .eq("is_read", false)
-    .filter("data->>conversationId", "eq", conversationId);
+    .filter("data->>conversation_id", "eq", conversationId);
 }
 
 /**

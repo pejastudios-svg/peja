@@ -490,6 +490,7 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
         .from("post_comments")
         .select("id, post_id, user_id, content, is_anonymous, created_at, parent_id, likes_count, reply_to_id, reply_to_name")
         .eq("post_id", postId)
+        .eq("status", "live")
         .order("created_at", { ascending: true });
 
       if (!isMounted.current) return;
@@ -1131,7 +1132,7 @@ setTimeout(() => setToastMsg(null), 2500);
     setReportReason("");
     setReportDescription("");
 
-    if (json.deleted) {
+    if (json.archived) {
       setAllComments((prev) => prev.filter((c) => c.id !== selectedComment.id && c.parent_id !== selectedComment.id));
       setPost((p) => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
       toastApi.success("Comment removed due to reports");
