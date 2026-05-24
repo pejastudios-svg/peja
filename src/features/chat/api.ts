@@ -1160,9 +1160,35 @@ export async function clearChatForUser(
     message_id: m.id,
     user_id: currentUserId,
   }));
-  await supabase
+  // ignoreDuplicates → ON CONFLICT DO NOTHING (not DO UPDATE). The
+  // table has INSERT + SELECT policies but no UPDATE policy, and
+  // ON CONFLICT DO UPDATE makes Postgres evaluate UPDATE RLS even when
+  // no conflicting row exists — so the whole statement fails with
+  // "new row violates row-level security policy (USING expression)".
+  // Re-inserting an existing deletion row is a no-op anyway: both
+  // columns are part of the conflict key, there's nothing to mutate.
+  const { error: upsertError } = await supabase
     .from("message_deletions")
-    .upsert(rows, { onConflict: "message_id,user_id" });
+    .upsert(rows, { onConflict: "message_id,user_id", ignoreDuplicates: true });
+  if (upsertError) {
+    // Was silently dropped before — meant a denied RLS or constraint
+    // looked like a successful clear to the caller, and on refresh the
+    // unfiltered messages "came back." Surfacing it lets the caller
+    // show "Couldn't clear" so the user can retry / report.
+    // Full error in the console so we can see the Postgres message
+    // (code, hint, details) instead of just an opaque toast.
+    console.error("[clearChatForUser] upsert into message_deletions failed", {
+      code: upsertError.code,
+      message: upsertError.message,
+      details: upsertError.details,
+      hint: upsertError.hint,
+      conversationId,
+      currentUserId,
+      rowCount: rows.length,
+      sampleRow: rows[0],
+    });
+    throw upsertError;
+  }
 }
 
 /**

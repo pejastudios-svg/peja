@@ -980,11 +980,11 @@ export default function ThreadV2Page() {
       run: async () => {
         const store = useChatStore.getState();
         const convId = conv.id;
-        // Wipe the visible thread immediately for snappy feedback.
-        const thread = store.threadsByConversation[convId];
-        if (thread) {
-          store.setThread(convId, []);
-        }
+        // Wipe the visible thread immediately for snappy feedback. Use
+        // clearThread (not setThread([])) — the latter's merge logic
+        // preserves every existing message when the incoming array is
+        // empty, so it would silently no-op the clear.
+        store.clearThread(convId);
         // Drop the conversation-list preview too so the row's last
         // message line goes blank without a manual refresh.
         store.patchConversation(convId, {

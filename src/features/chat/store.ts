@@ -36,6 +36,15 @@ interface ChatStoreState {
   // Per-conversation threads.
   threadsByConversation: Record<string, ChatThread>;
 
+  // Timestamp (ms) of the most recent local clearThread for each
+  // conversation. Used as a horizon: setThread / upsertMessage discard
+  // any incoming message whose created_at predates this, which protects
+  // against in-flight fetches that started before the clear and resolve
+  // after it (their result reflects the pre-delete-row state and would
+  // otherwise repopulate the cleared thread). Session-scoped — the
+  // server-side message_deletions rows take over across reloads.
+  clearedAtByConversation: Record<string, number>;
+
   // Bumped to Date.now() every time the realtime channel transitions to
   // SUBSCRIBED. Components that need to catch up after a disconnect watch
   // this in their deps and refetch when it changes. Supabase Realtime
@@ -123,6 +132,12 @@ interface ChatStoreState {
 
   // === Thread actions ===
   setThread: (conversationId: string, messages: ChatMessage[]) => void;
+  // Replace a thread with empty, bypassing setThread's merge. Used by
+  // "clear chat" — setThread([]) preserves any existing message newer
+  // than the (empty) incoming horizon, which is every existing message.
+  // We still keep pending-delivery sends so an in-flight outbox doesn't
+  // get dropped mid-clear.
+  clearThread: (conversationId: string) => void;
   // Prepend a page of OLDER messages to a thread. Used by the
   // "load older on scroll up" pagination. Deduped on id, sorted on
   // insert. Does NOT touch the `hydrated` / `fetchedAt` flags — the
@@ -280,6 +295,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   conversationsById: {},
   conversationOrder: [],
   threadsByConversation: {},
+  clearedAtByConversation: {},
   lastConnectedAt: null,
   activeConversationId: null,
   recentlyClearedAt: {},
@@ -477,8 +493,19 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
 
   // ---- Threads ----
   setThread: (conversationId, messages) => {
-    const { threadsByConversation } = get();
+    const { threadsByConversation, clearedAtByConversation } = get();
     const existing = threadsByConversation[conversationId] || emptyThread(conversationId);
+
+    // Honor any clearThread that ran while this fetch was in flight.
+    // The fetch may have read messages BEFORE the server-side
+    // message_deletions rows were inserted; without this filter those
+    // pre-clear messages would repopulate the thread on resolve.
+    const clearedAt = clearedAtByConversation[conversationId];
+    if (clearedAt) {
+      messages = messages.filter(
+        (m) => new Date(m.created_at).getTime() > clearedAt,
+      );
+    }
 
     // Merge — don't blindly replace. Two kinds of messages from the
     // existing array can be legitimately "missing" from the incoming
@@ -545,13 +572,43 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     });
   },
 
+  clearThread: (conversationId) => {
+    const { threadsByConversation, clearedAtByConversation } = get();
+    const existing = threadsByConversation[conversationId];
+    const pending = (existing?.messages || []).filter(
+      (m) => m.delivery_status === "pending",
+    );
+    set({
+      threadsByConversation: {
+        ...threadsByConversation,
+        [conversationId]: {
+          conversationId,
+          messages: pending,
+          hydrated: true,
+          fetchedAt: Date.now(),
+        },
+      },
+      clearedAtByConversation: {
+        ...clearedAtByConversation,
+        [conversationId]: Date.now(),
+      },
+    });
+  },
+
   prependOlderMessages: (conversationId, older) => {
     if (older.length === 0) return;
-    const { threadsByConversation } = get();
+    const { threadsByConversation, clearedAtByConversation } = get();
     const existing = threadsByConversation[conversationId];
     if (!existing) return;
+    // Same horizon as setThread / upsertMessage — load-older results
+    // can race past a clear too.
+    const clearedAt = clearedAtByConversation[conversationId];
+    const cutoffOlder = clearedAt
+      ? older.filter((m) => new Date(m.created_at).getTime() > clearedAt)
+      : older;
+    if (cutoffOlder.length === 0) return;
     const existingIds = new Set(existing.messages.map((m) => m.id));
-    const fresh = older.filter((m) => !existingIds.has(m.id));
+    const fresh = cutoffOlder.filter((m) => !existingIds.has(m.id));
     if (fresh.length === 0) return;
     // Combine + chronological sort. fresh comes in already
     // chronological from the API, but a merge-sort with the existing
@@ -569,7 +626,14 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   },
 
   upsertMessage: (conversationId, message) => {
-    const { threadsByConversation } = get();
+    const { threadsByConversation, clearedAtByConversation } = get();
+    // Drop any message that predates a local clearThread for this
+    // conversation. Catches a late-arriving realtime echo or any other
+    // path that would otherwise resurrect a cleared message.
+    const clearedAt = clearedAtByConversation[conversationId];
+    if (clearedAt && new Date(message.created_at).getTime() <= clearedAt) {
+      return;
+    }
     const existing = threadsByConversation[conversationId] || emptyThread(conversationId);
     const idx = existing.messages.findIndex((m) => m.id === message.id);
     let nextMessages: ChatMessage[];
@@ -880,6 +944,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       conversationsById: {},
       conversationOrder: [],
       threadsByConversation: {},
+      clearedAtByConversation: {},
       lastConnectedAt: null,
       activeConversationId: null,
       recentlyClearedAt: {},

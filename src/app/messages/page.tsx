@@ -24,6 +24,7 @@ import {
   deleteGroup,
 } from "@/features/chat/api";
 import { notifyDMBlocked } from "@/lib/notifications";
+import { deleteCachedThread } from "@/features/chat/threadCache";
 import { ChatListRow, type ChatRowAction } from "@/components/messages-v2/ChatListRow";
 import { SelectActionBar } from "@/components/messages-v2/SelectActionBar";
 import { SearchAllChatsSheet } from "@/components/messages-v2/SearchAllChatsSheet";
@@ -312,10 +313,12 @@ export default function MessagesV2Page() {
               last_message_sender_id: null,
               unread_count: 0,
             });
-            const thread = store.threadsByConversation[conv.id];
-            if (thread) {
-              store.setThread(conv.id, []);
-            }
+            // clearThread (not setThread([])) — see comment in the chat
+            // detail page's handleClearChat for why the latter no-ops.
+            store.clearThread(conv.id);
+            // Also drop the IDB snapshot so re-entering the chat doesn't
+            // warm-start with the cleared messages.
+            void deleteCachedThread(user.id, conv.id);
             try {
               await clearChatForUser(conv.id, user.id);
               toast.info("Chat cleared");
