@@ -375,13 +375,8 @@ textarea,
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   border-bottom: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow-header);
-  padding-top: 0;
-  isolation: isolate;
-}
-
-/* Status-bar / notch clearance — only when JS measured a real inset (see CapacitorInit). */
-html.has-top-chrome .glass-header {
   padding-top: var(--app-top-inset, env(safe-area-inset-top, 0px));
+  isolation: isolate;
 }
 
 /* Footer/BottomNav specific */
@@ -1997,10 +1992,10 @@ html.capacitor-native header.absolute.top-0 {
   top: 0 !important;
 }
 html.capacitor-native main.pt-16 {
-  padding-top: calc(var(--header-bar-height) + var(--cap-status-bar-height)) !important;
+  padding-top: calc(3rem + var(--cap-status-bar-height)) !important;
 }
 html.capacitor-native main.pt-14 {
-  padding-top: calc(var(--header-bar-height) + var(--cap-status-bar-height)) !important;
+  padding-top: calc(3rem + var(--cap-status-bar-height)) !important;
 }
 /* Post detail full-screen layout: push scrollable area down */
 html.capacitor-native .fixed.inset-0 > main.pt-14 {
@@ -2411,29 +2406,23 @@ input, textarea, [contenteditable] {
      with the real value from @capacitor/status-bar.
      Web on regular Android Chrome: both fall back to 0 (system bar isn't ours to cover). */
   --app-top-inset: max(env(safe-area-inset-top, 0px), var(--cap-status-bar-height, 0px));
-
-  /* Flat app header content row (Instagram-style ~44px). */
-  --header-bar-height: 2.75rem;
 }
 
-html.capacitor-native,
-html.has-top-chrome {
-  --app-top-inset: max(env(safe-area-inset-top, 0px), var(--cap-status-bar-height, 0px));
+/* In native, status bar height varies wildly by OEM (24-48dp on Android,
+   notch / Dynamic Island on iOS). If StatusBar.getInfo() returned 0 for any
+   reason we still want to clear ~24dp of system chrome. */
+html.capacitor-native {
+  --app-top-inset: max(env(safe-area-inset-top, 0px), var(--cap-status-bar-height, 0px), 24px);
 }
 
-/* Use on the page-level <main> to clear the fixed Header on any device.
-   Web: header bar only (44px). Native: status-bar inset + bar height. */
+/* Use on the page-level <main> to clear the fixed Header pill on any device.
+   48px = h-12 inner row. */
 .pt-app-header {
-  padding-top: var(--header-bar-height);
+  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 48px);
 }
 
 .pt-app-header-pill {
-  padding-top: var(--header-bar-height);
-}
-
-html.has-top-chrome .pt-app-header,
-html.has-top-chrome .pt-app-header-pill {
-  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + var(--header-bar-height));
+  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 48px);
 }
 
 /* Clear fixed BottomNav + raised center Peja button (replaces pb-20). */
@@ -2451,13 +2440,9 @@ html.has-top-chrome .pt-app-header-pill {
 .home-feed-tabs {
   position: sticky;
   z-index: 40;
-  top: var(--header-bar-height);
+  top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 3rem);
   background: var(--page-bg);
   border-bottom: 1px solid var(--border-subtle);
-}
-
-html.has-top-chrome .home-feed-tabs {
-  top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + var(--header-bar-height));
 }
 
 /* Report / create form: sticky Preview / Submit bar above home indicator */
@@ -2474,11 +2459,7 @@ html.has-top-chrome .home-feed-tabs {
 
 .report-page-main {
   padding-bottom: 0.5rem;
-  scroll-padding-top: var(--header-bar-height);
-}
-
-html.has-top-chrome .report-page-main {
-  scroll-padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + var(--header-bar-height));
+  scroll-padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 3rem);
 }
 
 /* Report form sections — flat layout, no heavy cards */

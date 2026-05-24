@@ -108,7 +108,7 @@ export function SearchFiltersSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="shrink-0 glass-header border-b border-[var(--border-subtle)]">
-          <div className="max-w-2xl mx-auto h-11 px-4 flex items-center gap-3">
+          <div className="max-w-2xl mx-auto h-12 px-4 flex items-center gap-3">
             <button
               type="button"
               onClick={onClose}

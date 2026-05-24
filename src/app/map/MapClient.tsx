@@ -615,7 +615,7 @@ export default function MapClient() {
               // Sits below the floating-pill Header bottom edge so the "All"
               // chip doesn't cover the back arrow on notched / status-bar
               // devices.
-              top: "calc(var(--app-top-inset, 0px) + var(--header-bar-height, 2.75rem) + 1.25rem)",
+              top: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 68px)",
             }}
           >
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">

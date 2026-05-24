@@ -111,7 +111,6 @@ export default function RootLayout({
                 var diff = screenH - innerH;
                 var estimated = Math.max(24, Math.min(48, diff));
                 root.style.setProperty("--cap-status-bar-height", estimated + "px");
-                root.classList.add("has-top-chrome");
               };
               if (document.readyState === "loading") {
                 document.addEventListener("DOMContentLoaded", compute);

@@ -9,13 +9,9 @@ export function CapacitorInit() {
 
     const ua = navigator.userAgent || "";
     const isAndroidWebView = /Android/.test(ua) && /wv/.test(ua);
-    const cap = (window as any).Capacitor;
-    const isCapacitorBridge = cap !== undefined;
-    const isNativePlatform =
-      typeof cap?.isNativePlatform === "function" ? cap.isNativePlatform() : false;
+    const isCapacitorBridge = (window as any).Capacitor !== undefined;
 
-    // Desktop dev in a normal browser must not get native insets (avoids header growing after load).
-    if (!isAndroidWebView && (!isCapacitorBridge || !isNativePlatform)) return;
+    if (!isAndroidWebView && !isCapacitorBridge) return;
 
     // Delete stale SW caches from old versions only
     if ("caches" in window) {
@@ -39,46 +35,32 @@ import("@capacitor/splash-screen")
   .then(({ SplashScreen }) => SplashScreen.hide({ fadeOutDuration: 300 }))
   .catch(() => {});
 
-    // Mark native + apply top inset in one step so the header does not jump
-    // (compact first paint → tall after hydration).
-    const applyNativeChrome = async () => {
-      let statusBarPx = 0;
+    document.documentElement.classList.add("capacitor-native");
 
+    const setStatusBarHeight = async () => {
       try {
         const { StatusBar } = await import("@capacitor/status-bar");
         const info = await (StatusBar as any).getInfo();
-        statusBarPx = info?.statusBarHeight || 0;
+        const height = info?.statusBarHeight || 0;
+        if (height > 0) {
+          document.documentElement.style.setProperty(
+            "--cap-status-bar-height",
+            `${height}px`
+          );
+          return;
+        }
       } catch {}
 
-      if (statusBarPx <= 0) {
-        const screenH = window.screen.height;
-        const innerH = window.innerHeight;
-        const gap = screenH - innerH;
-        if (gap > 48) {
-          statusBarPx = Math.min(Math.max(gap - 48, 24), 48);
-        }
-      }
-
-      const root = document.documentElement;
-      root.classList.add("capacitor-native");
-
-      if (statusBarPx > 0) {
-        root.style.setProperty("--cap-status-bar-height", `${statusBarPx}px`);
-        root.classList.add("has-top-chrome");
-      } else {
-        const envProbe = document.createElement("div");
-        envProbe.style.cssText =
-          "position:fixed;top:0;height:env(safe-area-inset-top,0px);width:0;visibility:hidden;";
-        document.body.appendChild(envProbe);
-        const envInset = envProbe.getBoundingClientRect().height;
-        document.body.removeChild(envProbe);
-        if (envInset > 0) {
-          root.classList.add("has-top-chrome");
-        }
-      }
+      const screenH = window.screen.height;
+      const innerH = window.innerHeight;
+      const estimated = Math.min(Math.max(screenH - innerH - 48, 24), 48);
+      document.documentElement.style.setProperty(
+        "--cap-status-bar-height",
+        `${estimated}px`
+      );
     };
 
-    void applyNativeChrome();
+    setTimeout(setStatusBarHeight, 300);
 
     // Set bottom inset for Android gesture navigation
     // env(safe-area-inset-bottom) often returns 0 on Android WebViews,

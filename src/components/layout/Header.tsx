@@ -237,7 +237,7 @@ export function Header({
   if (variant === "back") {
     return (
       <header className={dockClass}>
-        <div className="flex items-center h-11 px-3 gap-1 max-w-2xl mx-auto w-full">
+        <div className="flex items-center h-12 px-3 gap-1 max-w-2xl mx-auto w-full">
           <div className="flex items-center min-w-0 flex-1">{renderBackContent()}</div>
           {actions ? (
             <div className="flex items-center gap-0.5 shrink-0">{actions}</div>
@@ -254,7 +254,7 @@ export function Header({
 
   return (
     <header className={dockClass}>
-      <div className="flex items-center h-11 px-4 max-w-2xl mx-auto w-full">
+      <div className="flex items-center h-12 px-4 max-w-2xl mx-auto w-full">
         <a
           href="https://www.youtube.com/@PejaStudios"
           target="_blank"
