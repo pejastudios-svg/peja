@@ -21,32 +21,46 @@ type FormState = {
   home_address: string;
 };
 
+type DraftState = {
+  data: FormState;
+  touchedFields: Partial<Record<keyof FormState, true>>;
+};
+
 const profileEditDraftKey = (userId: string) => `peja-profile-edit-draft-${userId}`;
 
-function readProfileEditDraft(userId: string): FormState | null {
+function readProfileEditDraft(userId: string): DraftState | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(profileEditDraftKey(userId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as FormState;
+    const parsed = JSON.parse(raw) as Partial<FormState> | Partial<DraftState>;
     if (!parsed || typeof parsed !== "object") return null;
+    const source = "data" in parsed && parsed.data ? parsed.data : parsed;
     return {
-      full_name: parsed.full_name ?? "",
-      phone: parsed.phone ?? "",
-      occupation: parsed.occupation ?? "",
-      date_of_birth: parsed.date_of_birth ?? "",
-      avatar_url: parsed.avatar_url ?? "",
-      home_address: parsed.home_address ?? "",
+      data: {
+        full_name: source.full_name ?? "",
+        phone: source.phone ?? "",
+        occupation: source.occupation ?? "",
+        date_of_birth: source.date_of_birth ?? "",
+        avatar_url: source.avatar_url ?? "",
+        home_address: source.home_address ?? "",
+      },
+      // Legacy drafts had no touched metadata; treat them as stale snapshots.
+      touchedFields: "touchedFields" in parsed && parsed.touchedFields ? parsed.touchedFields : {},
     };
   } catch {
     return null;
   }
 }
 
-function writeProfileEditDraft(userId: string, data: FormState) {
+function writeProfileEditDraft(
+  userId: string,
+  data: FormState,
+  touchedFields: Partial<Record<keyof FormState, true>> = {}
+) {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(profileEditDraftKey(userId), JSON.stringify(data));
+    sessionStorage.setItem(profileEditDraftKey(userId), JSON.stringify({ data, touchedFields }));
   } catch {}
 }
 
@@ -63,15 +77,15 @@ function countFilledFields(data: FormState): number {
   ).length;
 }
 
-/** Prefer non-empty draft values (in-progress edits); fall back to DB for the rest. */
-function mergeFormWithDraft(db: FormState, draft: FormState): FormState {
+/** Prefer touched draft values, including intentional blanks; fall back to DB for untouched fields. */
+function mergeFormWithDraft(db: FormState, draft: DraftState): FormState {
   return {
-    full_name: draft.full_name.trim() || db.full_name,
-    phone: draft.phone.trim() || db.phone,
-    occupation: draft.occupation.trim() || db.occupation,
-    date_of_birth: draft.date_of_birth.trim() || db.date_of_birth,
-    avatar_url: draft.avatar_url.trim() || db.avatar_url,
-    home_address: draft.home_address.trim() || db.home_address,
+    full_name: draft.touchedFields.full_name ? draft.data.full_name : db.full_name,
+    phone: draft.touchedFields.phone ? draft.data.phone : db.phone,
+    occupation: draft.touchedFields.occupation ? draft.data.occupation : db.occupation,
+    date_of_birth: draft.touchedFields.date_of_birth ? draft.data.date_of_birth : db.date_of_birth,
+    avatar_url: draft.touchedFields.avatar_url ? draft.data.avatar_url : db.avatar_url,
+    home_address: draft.touchedFields.home_address ? draft.data.home_address : db.home_address,
   };
 }
 
@@ -124,6 +138,7 @@ export default function EditProfilePage() {
   // Hydrate the form once per user id. Auth refreshes/realtime updates replace the
   // `user` object frequently — re-seeding on every change wiped in-progress edits.
   const hydratedUserIdRef = useRef<string | null>(null);
+  const touchedFieldsRef = useRef<Partial<Record<keyof FormState, true>>>({});
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -187,10 +202,12 @@ export default function EditProfilePage() {
         };
         const next = savedDraft ? mergeFormWithDraft(fromDb, savedDraft) : fromDb;
         setFormData(next);
+        touchedFieldsRef.current = savedDraft?.touchedFields ?? {};
         // Drop stale drafts (e.g. only avatar after picker) so mobile doesn't stick at 1/6.
-        if (savedDraft && countFilledFields(savedDraft) < countFilledFields(fromDb)) {
+        if (savedDraft && countFilledFields(savedDraft.data) < countFilledFields(fromDb)) {
           clearProfileEditDraft(user.id);
-          writeProfileEditDraft(user.id, next);
+          touchedFieldsRef.current = {};
+          writeProfileEditDraft(user.id, next, touchedFieldsRef.current);
         }
         hydratedUserIdRef.current = user.id;
       } catch {
@@ -198,6 +215,7 @@ export default function EditProfilePage() {
           const fromDb = fromAuth();
           const next = savedDraft ? mergeFormWithDraft(fromDb, savedDraft) : fromDb;
           setFormData(next);
+          touchedFieldsRef.current = savedDraft?.touchedFields ?? {};
           hydratedUserIdRef.current = user.id;
         }
       }
@@ -211,11 +229,14 @@ export default function EditProfilePage() {
   // Persist in-progress edits so avatar picker / app backgrounding can't wipe them.
   useEffect(() => {
     if (!user?.id || !formData) return;
-    writeProfileEditDraft(user.id, formData);
+    writeProfileEditDraft(user.id, formData, touchedFieldsRef.current);
   }, [formData, user?.id]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData((prev) => (prev ? { ...prev, [e.target.name]: e.target.value } : prev));
+    const fieldName = e.target.name as keyof FormState;
+    const value = e.target.value;
+    touchedFieldsRef.current = { ...touchedFieldsRef.current, [fieldName]: true };
+    setFormData((prev) => (prev ? { ...prev, [fieldName]: value } : prev));
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -252,7 +273,8 @@ export default function EditProfilePage() {
       setFormData((prev) => {
         if (!prev) return prev;
         const next = { ...prev, avatar_url: publicUrl.publicUrl };
-        writeProfileEditDraft(user.id, next);
+        touchedFieldsRef.current = { ...touchedFieldsRef.current, avatar_url: true };
+        writeProfileEditDraft(user.id, next, touchedFieldsRef.current);
         return next;
       });
 
@@ -306,6 +328,7 @@ export default function EditProfilePage() {
       }
       
       clearProfileEditDraft(user.id);
+      touchedFieldsRef.current = {};
       hydratedUserIdRef.current = null;
       setAvatarPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
