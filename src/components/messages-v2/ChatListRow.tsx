@@ -243,7 +243,7 @@ export function ChatListRow({
       {(!selectMode || (isSelected && selectedCount === 1)) && (
         <div
           ref={menuRef}
-          className="relative shrink-0"
+          className="relative shrink-0 mr-2"
           onClick={(e) => e.stopPropagation()}
         >
           <button

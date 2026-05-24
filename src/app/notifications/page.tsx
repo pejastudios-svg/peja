@@ -752,8 +752,8 @@ export default function NotificationsPage() {
           {accountStatusModal && (
             <div className="space-y-4">
               <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 flex gap-3">
-                <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
-                <p className="text-sm text-orange-200 leading-relaxed">
+                <AlertTriangle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                <p className="text-sm text-dark-100 leading-relaxed">
                   {accountStatusModal.body}
                 </p>
               </div>

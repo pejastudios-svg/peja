@@ -35,11 +35,15 @@ export async function POST(req: NextRequest) {
 
     const otpauthUrl = totp.toString();
 
-    // Generate QR code as data URL
+    // Generate QR code as data URL. Standard black-on-white: the page
+    // wraps this in a white card, and TOTP scanners (Google
+    // Authenticator, Authy, 1Password) read black-on-white most
+    // reliably. A previous version used white-on-transparent, which
+    // disappeared into the white card.
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl, {
       width: 256,
       margin: 2,
-      color: { dark: "#ffffffFF", light: "#00000000" },
+      color: { dark: "#000000FF", light: "#FFFFFFFF" },
     });
 
     // Generate 10 backup codes
