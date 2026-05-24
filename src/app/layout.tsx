@@ -73,10 +73,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* No-flicker theme bootstrap — runs before paint to set data-theme from localStorage. */}
+        {/* No-flicker theme bootstrap — runs before paint to set data-theme
+            from localStorage. Adds .theme-preload so the global bg/color
+            transition rule is suppressed for first paint (otherwise the
+            transition smoothly fades from the default dark bg to the saved
+            light bg over 300ms = the visible flash users were reporting).
+            Class is removed on the next animation frame so subsequent
+            theme toggles still animate smoothly. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("peja-theme");document.documentElement.setAttribute("data-theme",(t==="light"||t==="dark")?t:"dark");}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`,
+            __html: `(function(){try{var t=localStorage.getItem("peja-theme");var v=(t==="light"||t==="dark")?t:"dark";var d=document.documentElement;d.setAttribute("data-theme",v);d.classList.add("theme-preload");requestAnimationFrame(function(){requestAnimationFrame(function(){d.classList.remove("theme-preload");});});}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`,
           }}
         />
         {/* Status-bar height fallback for PWAs / mobile browsers where

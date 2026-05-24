@@ -269,7 +269,7 @@ export function BottomNav() {
                 // each pull 3px closer to the matching nav edge so the
                 // pill doesn't sit offset against the rounded corner.
                 // Middle items keep the symmetric 4px each side.
-                const leftInset = activeIndex === 0 ? 1 : 4;
+                const leftInset = activeIndex === 0 ? -1 : 4;
                 const rightInset = activeIndex === 3 ? 1 : 4;
                 return (
                   <div

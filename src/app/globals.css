@@ -166,6 +166,18 @@ html {
   transition: background-color 0.3s ease;
 }
 
+/* Suppress all transitions during initial paint so the inline theme
+   bootstrap script doesn't trigger a 300ms cross-fade from the default
+   dark bg to the user's saved light bg. The .theme-preload class is
+   removed on the next animation frame by the bootstrap script in
+   layout.tsx, restoring the smooth toggle animation. */
+.theme-preload,
+.theme-preload *,
+.theme-preload *::before,
+.theme-preload *::after {
+  transition: none !important;
+}
+
 body {
   background: var(--body-bg);
   min-height: 100vh;
