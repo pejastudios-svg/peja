@@ -1,7 +1,8 @@
-// Peja Service Worker v7 - Offline-First Safety App
-const CACHE_NAME = "peja-v7";
-const APP_SHELL_CACHE = "peja-shell-v7";
-const DATA_CACHE = "peja-data-v3";
+// Peja Service Worker v8 - Offline-First Safety App
+const CACHE_NAME = "peja-v8";
+const APP_SHELL_CACHE = "peja-shell-v8";
+// Bumped to v4 to invalidate stale Supabase user rows from prior SWR caching.
+const DATA_CACHE = "peja-data-v4";
 const MEDIA_CACHE = "peja-media-v3";
 const VIDEO_CACHE = "peja-video-v3";
 
@@ -31,11 +32,19 @@ const IMAGE_PATTERNS = [
   /res\.cloudinary\.com.*\/image\//,
 ];
 
+// IMPORTANT: do NOT include `/rest/v1/users` or `/rest/v1/user_settings` here.
+// Those rows are mutated by the signed-in user and stale-while-revalidate caused
+// Edit Profile to show pre-save values on first reopen after Save (needed a
+// second save to "stick"). Treat user-owned data as network-first via the
+// dedicated handler below so a fresh save is always reflected on next read.
 const CACHEABLE_DATA_PATTERNS = [
   /supabase\.co\/rest\/v1\/posts/,
-  /supabase\.co\/rest\/v1\/users/,
   /supabase\.co\/rest\/v1\/messages/,
   /supabase\.co\/rest\/v1\/conversations/,
+];
+
+const NETWORK_FIRST_PATTERNS = [
+  /supabase\.co\/rest\/v1\/users/,
   /supabase\.co\/rest\/v1\/user_settings/,
 ];
 
@@ -108,7 +117,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Supabase data: stale-while-revalidate
+  // Supabase data: stale-while-revalidate (read-heavy collections only)
   if (CACHEABLE_DATA_PATTERNS.some((p) => p.test(request.url))) {
     event.respondWith(
       caches.match(request).then((cached) => {
@@ -118,6 +127,19 @@ self.addEventListener("fetch", (event) => {
         }).catch(() => cached || new Response("[]", { headers: { "Content-Type": "application/json" } }));
         return cached || net;
       })
+    );
+    return;
+  }
+
+  // User-owned Supabase data: network-first to avoid post-save staleness.
+  if (NETWORK_FIRST_PATTERNS.some((p) => p.test(request.url))) {
+    event.respondWith(
+      fetch(request)
+        .then((r) => {
+          if (r.ok) { const cl = r.clone(); caches.open(DATA_CACHE).then((ca) => ca.put(request, cl)); }
+          return r;
+        })
+        .catch(() => caches.match(request).then((c) => c || new Response("[]", { headers: { "Content-Type": "application/json" } })))
     );
     return;
   }
@@ -215,6 +237,14 @@ async function replayQueue() {
 self.addEventListener("message", (event) => {
   if (event.data === "skipWaiting") self.skipWaiting();
   if (event.data === "clearCache") caches.keys().then((k) => k.forEach((key) => caches.delete(key)));
+  if (event.data?.type === "invalidate-data" && typeof event.data.urlContains === "string") {
+    const needle = event.data.urlContains;
+    caches.open(DATA_CACHE).then((cache) =>
+      cache.keys().then((keys) =>
+        Promise.all(keys.filter((req) => req.url.includes(needle)).map((req) => cache.delete(req)))
+      )
+    );
+  }
   if (event.data?.type === "queue-action") queueAction(event.data.action);
   if (event.data === "replay-queue") replayQueue();
 });

@@ -328,7 +328,19 @@ export default function EditProfilePage() {
         setLoading(false);
         return;
       }
-      
+
+      // Drop any cached SW response for the users table so the next read
+      // returns the fresh row instead of the pre-save snapshot. Without this,
+      // a stale SW (v7 SWR cache) would force the user to save twice.
+      try {
+        if (typeof navigator !== "undefined" && navigator.serviceWorker?.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: "invalidate-data",
+            urlContains: "/rest/v1/users",
+          });
+        }
+      } catch {}
+
       clearProfileEditDraft(user.id);
       touchedFieldsRef.current = {};
       hydratedUserIdRef.current = null;
