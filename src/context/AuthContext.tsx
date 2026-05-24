@@ -619,6 +619,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (force) {
+      userProfileCache = null;
+    }
+
     // If already fetching, wait for it to finish rather than skipping
     if (fetchingRef.current) {
       // Wait up to 5 seconds for the current fetch to complete
@@ -626,13 +630,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await new Promise((r) => setTimeout(r, 100));
         if (!fetchingRef.current) break;
       }
-      // If cache was populated by the other fetch, use it
-      if (userProfileCache && userProfileCache.userId === userId) {
+      // Non-forced callers may reuse the cache populated by the in-flight fetch
+      if (!force && userProfileCache && userProfileCache.userId === userId) {
         setUser(userProfileCache.profile);
         return;
       }
-      // If still fetching after 5s, proceed anyway
-      if (fetchingRef.current) return;
+      // Forced refresh must hit the DB — don't return stale cache from before save
+      if (!force && fetchingRef.current) return;
     }
     fetchingRef.current = true;
 
@@ -752,7 +756,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userProfileCache = null;
     const { data: { user: authUser } } = await supabase.auth.getUser();
     if (authUser) {
-      await fetchUserProfile(authUser.id);
+      await fetchUserProfile(authUser.id, true);
     }
   }
 

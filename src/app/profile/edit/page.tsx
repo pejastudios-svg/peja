@@ -137,6 +137,13 @@ export default function EditProfilePage() {
     };
   }, [avatarPreviewUrl]);
 
+  // Allow a fresh DB load next time this screen opens (overlay may stay mounted).
+  useEffect(() => {
+    return () => {
+      hydratedUserIdRef.current = null;
+    };
+  }, []);
+
   // Single source of truth: once auth is settled, fetch the row from Supabase and
   // seed the form. Only runs once per user id so background auth/profile refreshes
   // do not overwrite fields the user is actively typing into.
@@ -299,6 +306,7 @@ export default function EditProfilePage() {
       }
       
       clearProfileEditDraft(user.id);
+      hydratedUserIdRef.current = null;
       setAvatarPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
@@ -307,8 +315,13 @@ export default function EditProfilePage() {
       setSuccess(true);
       setLoading(false);
       setTimeout(() => {
-        router.push("/profile");
-      }, 1500);
+        // Close overlay / return to profile instead of stacking another /profile route
+        if (window.history.length > 1) {
+          router.back();
+        } else {
+          router.replace("/profile");
+        }
+      }, 800);
     } catch (err) {
       setError("Failed to update profile");
       setLoading(false);
