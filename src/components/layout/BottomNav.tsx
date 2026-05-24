@@ -265,12 +265,12 @@ export function BottomNav() {
                   primary tint and animates between tabs. Sits BEHIND the
                   icon/label (z 0) which render at z 10. */}
               {indicator && activeIndex >= 0 && (() => {
-                // Per-side inset. Leftmost (Home) pulls 3px closer to
-                // the nav's left edge so it doesn't feel offset against
-                // the rounded corner; other positions stay at the
-                // symmetric 4px each side.
+                // Per-side inset. Leftmost (Home) and rightmost (Search)
+                // each pull 3px closer to the matching nav edge so the
+                // pill doesn't sit offset against the rounded corner.
+                // Middle items keep the symmetric 4px each side.
                 const leftInset = activeIndex === 0 ? 1 : 4;
-                const rightInset = 4;
+                const rightInset = activeIndex === 3 ? 1 : 4;
                 return (
                   <div
                     aria-hidden
