@@ -1,10 +1,11 @@
 // Peja Service Worker v8 - Offline-First Safety App
 const CACHE_NAME = "peja-v8";
 const APP_SHELL_CACHE = "peja-shell-v8";
-// Bumped to v5 to invalidate stale /rest/v1/posts responses from prior SWR
-// caching. Posts are now network-first (see NETWORK_FIRST_PATTERNS) so that
-// deleted posts don't resurrect on refresh while the SW background-refreshes.
-const DATA_CACHE = "peja-data-v5";
+// Bumped to v6 to invalidate stale /rest/v1/messages and conversations
+// responses. Like posts before them (v5 bump), they're now network-first
+// so user mutations (clear chat, delete message, block) reflect on the
+// next read instead of waiting for SWR to background-refresh.
+const DATA_CACHE = "peja-data-v6";
 const MEDIA_CACHE = "peja-media-v3";
 const VIDEO_CACHE = "peja-video-v3";
 
@@ -34,19 +35,18 @@ const IMAGE_PATTERNS = [
   /res\.cloudinary\.com.*\/image\//,
 ];
 
-// IMPORTANT: do NOT include user-mutated rows (users, user_settings, posts)
-// here. SWR caused deleted posts to resurrect on the first refresh after a
-// delete (the cached response still contained the row; the next refresh got
-// the fresh response). Same class of bug as Edit Profile needing a second
-// save to "stick". Anything the signed-in user can mutate should go through
-// NETWORK_FIRST_PATTERNS below so a refresh always reflects the current DB.
-const CACHEABLE_DATA_PATTERNS = [
-  /supabase\.co\/rest\/v1\/messages/,
-  /supabase\.co\/rest\/v1\/conversations/,
-];
+// IMPORTANT: any rows the signed-in user can mutate must be network-first.
+// SWR caused: deleted posts resurrecting on refresh, "clear chat" not
+// taking effect until a hard reload, and Edit Profile showing pre-save
+// values on first reopen. All same root cause — the cached response still
+// reflected the pre-mutation state and SWR served it before refreshing.
+// Leave this list empty unless adding a truly read-only collection.
+const CACHEABLE_DATA_PATTERNS = [];
 
 const NETWORK_FIRST_PATTERNS = [
   /supabase\.co\/rest\/v1\/posts/,
+  /supabase\.co\/rest\/v1\/messages/,
+  /supabase\.co\/rest\/v1\/conversations/,
   /supabase\.co\/rest\/v1\/users/,
   /supabase\.co\/rest\/v1\/user_settings/,
 ];
