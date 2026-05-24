@@ -35,7 +35,7 @@ function readProfileEditDraft(userId: string): DraftState | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<FormState> | Partial<DraftState>;
     if (!parsed || typeof parsed !== "object") return null;
-    const source = "data" in parsed && parsed.data ? parsed.data : parsed;
+    const source = ("data" in parsed && parsed.data ? parsed.data : parsed) as Partial<FormState>;
     return {
       data: {
         full_name: source.full_name ?? "",
@@ -46,7 +46,9 @@ function readProfileEditDraft(userId: string): DraftState | null {
         home_address: source.home_address ?? "",
       },
       // Legacy drafts had no touched metadata; treat them as stale snapshots.
-      touchedFields: "touchedFields" in parsed && parsed.touchedFields ? parsed.touchedFields : {},
+      touchedFields: ("touchedFields" in parsed && parsed.touchedFields
+        ? parsed.touchedFields
+        : {}) as DraftState["touchedFields"],
     };
   } catch {
     return null;
