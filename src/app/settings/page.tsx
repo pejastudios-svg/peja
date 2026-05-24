@@ -33,7 +33,9 @@ import {
   Copy,
   ShieldCheck,
   Trash2,
+  RefreshCw,
 } from "lucide-react";
+import { refreshApp } from "@/lib/refreshApp";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { Header } from "@/components/layout/Header";
 
@@ -802,6 +804,14 @@ export default function SettingsPage() {
             icon={FileText}
             label="Terms of Service"
             onClick={() => router.push("/terms")}
+          />
+          <SettingRow
+            icon={RefreshCw}
+            label="Refresh App"
+            description="Clear cache and reload"
+            onClick={() => {
+              void refreshApp();
+            }}
           />
                 <button
   onClick={() => {

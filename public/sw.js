@@ -1,8 +1,10 @@
 // Peja Service Worker v8 - Offline-First Safety App
 const CACHE_NAME = "peja-v8";
 const APP_SHELL_CACHE = "peja-shell-v8";
-// Bumped to v4 to invalidate stale Supabase user rows from prior SWR caching.
-const DATA_CACHE = "peja-data-v4";
+// Bumped to v5 to invalidate stale /rest/v1/posts responses from prior SWR
+// caching. Posts are now network-first (see NETWORK_FIRST_PATTERNS) so that
+// deleted posts don't resurrect on refresh while the SW background-refreshes.
+const DATA_CACHE = "peja-data-v5";
 const MEDIA_CACHE = "peja-media-v3";
 const VIDEO_CACHE = "peja-video-v3";
 
@@ -32,18 +34,19 @@ const IMAGE_PATTERNS = [
   /res\.cloudinary\.com.*\/image\//,
 ];
 
-// IMPORTANT: do NOT include `/rest/v1/users` or `/rest/v1/user_settings` here.
-// Those rows are mutated by the signed-in user and stale-while-revalidate caused
-// Edit Profile to show pre-save values on first reopen after Save (needed a
-// second save to "stick"). Treat user-owned data as network-first via the
-// dedicated handler below so a fresh save is always reflected on next read.
+// IMPORTANT: do NOT include user-mutated rows (users, user_settings, posts)
+// here. SWR caused deleted posts to resurrect on the first refresh after a
+// delete (the cached response still contained the row; the next refresh got
+// the fresh response). Same class of bug as Edit Profile needing a second
+// save to "stick". Anything the signed-in user can mutate should go through
+// NETWORK_FIRST_PATTERNS below so a refresh always reflects the current DB.
 const CACHEABLE_DATA_PATTERNS = [
-  /supabase\.co\/rest\/v1\/posts/,
   /supabase\.co\/rest\/v1\/messages/,
   /supabase\.co\/rest\/v1\/conversations/,
 ];
 
 const NETWORK_FIRST_PATTERNS = [
+  /supabase\.co\/rest\/v1\/posts/,
   /supabase\.co\/rest\/v1\/users/,
   /supabase\.co\/rest\/v1\/user_settings/,
 ];
