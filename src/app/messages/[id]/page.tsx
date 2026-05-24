@@ -1472,6 +1472,16 @@ export default function ThreadV2Page() {
         is_deleted: message.is_deleted,
         preview_kind,
       });
+      // Focus the composer so the keyboard pops up immediately — this
+      // is what WhatsApp / iMessage do when you trigger a reply via
+      // swipe or the action menu. The focus call has to happen inside
+      // the user-gesture call stack for iOS WKWebView to actually open
+      // the keyboard. rAF defers one tick so the ReplyPreview above
+      // the composer has mounted, which prevents the textarea from
+      // shifting position right after focus.
+      requestAnimationFrame(() => {
+        composerRef.current?.focus();
+      });
     },
     []
   );

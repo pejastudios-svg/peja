@@ -3,10 +3,9 @@
 import { useState, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, ArrowLeft, User, MessageCircle, Sun, Moon } from "lucide-react";
+import { Bell, ArrowLeft, User, MessageCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useChatStore } from "@/features/chat/store";
-import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "@/lib/supabase";
 
 interface HeaderProps {
@@ -23,7 +22,12 @@ interface HeaderProps {
   // If unset and `showDefaultActions` is false, no right-side pill is rendered
   // (the back pill stretches to fill).
   actions?: ReactNode;
-  // Back variant only. Renders the default bell + theme-toggle pill. Used by
+  // Back variant only. When true, the actions slot renders WITHOUT
+  // the surrounding glass pill — for callers that supply their own
+  // fully-styled button (e.g. Settings' Save) that would otherwise
+  // sit awkwardly inside a wrapper chip.
+  actionsBare?: boolean;
+  // Back variant only. Renders the default bell pill. Used by
   // Map / Notifications which want to expose those even on back-style pages.
   showDefaultActions?: boolean;
   // Back variant only. Small circular avatar rendered between the back arrow
@@ -42,6 +46,28 @@ interface HeaderProps {
   onTitleTap?: () => void;
 }
 
+// Blurred backdrop bounded to the header's own height — anything that
+// scrolls behind the pill blurs softly, with a mask gradient that fades
+// to transparent before the header bottom so it never bleeds onto
+// chips/tabs/titles below. Pointer-events disabled so it doesn't catch
+// taps; negative z keeps it behind the pills.
+function HeaderBlurFade() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 -z-10"
+      style={{
+        backdropFilter: "blur(20px) saturate(180%)",
+        WebkitBackdropFilter: "blur(20px) saturate(180%)",
+        maskImage:
+          "linear-gradient(to bottom, black 0%, black 60%, transparent 100%)",
+        WebkitMaskImage:
+          "linear-gradient(to bottom, black 0%, black 60%, transparent 100%)",
+      }}
+    />
+  );
+}
+
 // Theme-aware liquid glass via CSS variables. blur(20px) is the sweet spot —
 // visually nearly identical to the old blur(50px) but a fraction of the GPU
 // cost, which was triggering Android WebView compositor glitches (black
@@ -52,7 +78,15 @@ const GLASS: React.CSSProperties = {
   WebkitBackdropFilter: "blur(20px) saturate(180%)",
   border: "1px solid var(--glass-border)",
   boxShadow: "var(--glass-shadow-header)",
-  borderRadius: "16px",
+  borderRadius: "9999px",
+};
+
+// Icon-only circular pill. Used by the back button (split out of the
+// title pill so the layout reads as "back chip + title chip" instead
+// of one merged surface), and could host any other single-icon action.
+const GLASS_CIRCLE: React.CSSProperties = {
+  ...GLASS,
+  borderRadius: "9999px",
 };
 
 export function Header({
@@ -63,6 +97,7 @@ export function Header({
   onBack,
   subtitle,
   actions,
+  actionsBare = false,
   showDefaultActions = false,
   avatarUrl,
   onAvatarTap,
@@ -77,7 +112,6 @@ export function Header({
   // can sum unread_count without re-rendering on unrelated store
   // changes.
   const conversationsById = useChatStore((s) => s.conversationsById);
-  const { theme, toggle: toggleTheme } = useTheme();
   const [unreadCount, setUnreadCount] = useState(0);
 
   // Show the message button to anyone who can actually message — that's
@@ -145,7 +179,23 @@ export function Header({
         className="fixed top-0 left-0 right-0 z-50"
         style={{ paddingTop: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 8px)" }}
       >
+        <HeaderBlurFade />
         <div className="flex items-center gap-2 px-3 pt-2">
+          {/* Back button — its own circular pill, separate from the title
+              pill (Slack-style). Doesn't render on the split-targets path
+              since that path inlines the back arrow inside the title pill
+              so avatar/title can each be their own buttons without nesting. */}
+          {!(onAvatarTap || onTitleTap) && (
+            <button
+              type="button"
+              onClick={onBack || (() => router.back())}
+              className="flex items-center justify-center h-11 w-11 shrink-0 active:opacity-70 transition-opacity"
+              style={GLASS_CIRCLE}
+              aria-label="Back"
+            >
+              <ArrowLeft className="w-5 h-5 text-dark-200" strokeWidth={2.5} />
+            </button>
+          )}
           <div className="flex items-center h-11 px-3 flex-1 min-w-0" style={GLASS}>
             {(() => {
               // Two layouts share the back pill:
@@ -193,15 +243,13 @@ export function Header({
               );
 
               if (!splitTargets) {
+                // Back arrow now lives in its own circular pill above —
+                // the title pill is title-only (plus optional avatar).
                 return (
-                  <button
-                    onClick={onBack || (() => router.back())}
-                    className="flex items-center gap-1.5 p-0.5 rounded-lg active:opacity-70 transition-opacity min-w-0 flex-1"
-                  >
-                    <ArrowLeft className="w-5 h-5 text-dark-200 shrink-0" strokeWidth={2.5} />
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
                     {avatarContent}
                     {titleContent}
-                  </button>
+                  </div>
                 );
               }
 
@@ -245,23 +293,16 @@ export function Header({
           </div>
 
           {actions ? (
-            <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
-              {actions}
-            </div>
+            actionsBare ? (
+              // Bare slot — caller provides its own fully-styled button.
+              <div className="flex items-center shrink-0">{actions}</div>
+            ) : (
+              <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
+                {actions}
+              </div>
+            )
           ) : showDefaultActions ? (
             <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
-              <button
-                type="button"
-                onClick={toggleTheme}
-                className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
-                aria-label="Toggle theme"
-              >
-                {theme === "dark" ? (
-                  <Sun className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
-                ) : (
-                  <Moon className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
-                )}
-              </button>
               <Link
                 href="/notifications"
                 className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
@@ -293,6 +334,7 @@ export function Header({
       className="fixed top-0 left-0 right-0 z-50"
       style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 32px)" }}
     >
+      <HeaderBlurFade />
       <div className="flex items-center gap-2 px-3 pt-2">
   {/* ── Logo pill ── */}
 <div className="flex items-center h-11 px-3" style={GLASS}>
@@ -325,20 +367,6 @@ export function Header({
 
         {/* ── Actions pill ── */}
         <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
-          {/* Theme toggle */}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
-            aria-label="Toggle theme"
-          >
-            {theme === "dark" ? (
-              <Sun className="w-5 h-5" style={{ color: "var(--color-dark-300)" }} strokeWidth={2.3} />
-            ) : (
-              <Moon className="w-5 h-5" style={{ color: "var(--color-dark-300)" }} strokeWidth={2.3} />
-            )}
-          </button>
-
           {/* DM entry — gated to VIPs/MVPs/admins (regular users get nothing) */}
           {canMessage && (
             <Link

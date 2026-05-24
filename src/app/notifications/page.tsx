@@ -8,7 +8,6 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { markAllAsRead } from "@/lib/notifications";
 import { Header } from "@/components/layout/Header";
-import { BottomNav } from "@/components/layout/BottomNav";
 import { SOS_TAGS } from "@/lib/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
@@ -603,8 +602,6 @@ export default function NotificationsPage() {
             )}
           </div>
         </main>
-
-        <BottomNav />
 
         {/* Emergency Contact Invite Modal */}
         <Modal

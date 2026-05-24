@@ -34,8 +34,11 @@ import {
   ShieldCheck,
   Trash2,
   RefreshCw,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { refreshApp } from "@/lib/refreshApp";
+import { useTheme } from "@/context/ThemeContext";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { Header } from "@/components/layout/Header";
 
@@ -43,6 +46,7 @@ export default function SettingsPage() {
   useScrollRestore("settings");
   const router = useRouter();
   const { user, session, signOut, loading: authLoading } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -506,11 +510,12 @@ export default function SettingsPage() {
         variant="back"
         title="Settings"
         onBack={() => router.back()}
+        actionsBare
         actions={
           <button
             onClick={saveSettings}
             disabled={saving}
-            className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 text-sm font-medium ${
+            className={`h-11 px-5 rounded-full transition-all flex items-center gap-1.5 text-sm font-semibold ${
               saveSuccess
                 ? "bg-green-500/20 text-green-400"
                 : saveError
@@ -537,6 +542,48 @@ export default function SettingsPage() {
             <p className="text-sm text-red-400 text-center">{saveError}</p>
           </div>
         )}
+
+        {/* Appearance Section — was a Sun/Moon toggle in the header
+            until users said it cluttered the chrome. A Light/Dark
+            segmented control here is more discoverable and matches how
+            iOS/Android handle theme in Settings. */}
+        <section className="py-6 border-b border-white/5">
+          <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Appearance</h2>
+          <SettingRow
+            icon={theme === "dark" ? Moon : Sun}
+            label="Theme"
+            description={theme === "dark" ? "Dark mode" : "Light mode"}
+          >
+            <div className="flex items-center rounded-full bg-dark-700 p-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  if (theme !== "light") toggleTheme();
+                }}
+                className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors ${
+                  theme === "light" ? "bg-primary-600 text-white" : "text-dark-300"
+                }`}
+                aria-label="Light mode"
+                aria-pressed={theme === "light"}
+              >
+                <Sun className="w-4 h-4" strokeWidth={2.3} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (theme !== "dark") toggleTheme();
+                }}
+                className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors ${
+                  theme === "dark" ? "bg-primary-600 text-white" : "text-dark-300"
+                }`}
+                aria-label="Dark mode"
+                aria-pressed={theme === "dark"}
+              >
+                <Moon className="w-4 h-4" strokeWidth={2.3} />
+              </button>
+            </div>
+          </SettingRow>
+        </section>
 
         {/* Notifications Section */}
         <section className="py-6 border-b border-white/5">

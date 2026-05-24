@@ -50,8 +50,10 @@ export function BottomNav() {
     }, 300);
   }, []);
 
-  const isHidden =
-    pathname.startsWith("/post/") || !!pathname.match(/^\/messages\/[^/]+$/);
+  // BottomNav is allowlist-only: just the Home and Search pages. Every
+  // other route (Map, Notifications, Create, Post detail, Chat detail,
+  // Profile, Settings, etc.) renders without it.
+  const isHidden = !(pathname === "/" || pathname.startsWith("/search"));
 
   const activeIndex = useMemo(() => {
     if (pathname === "/" || pathname === "") return 0;
@@ -61,8 +63,9 @@ export function BottomNav() {
     return -1;
   }, [pathname]);
 
-  // Floating indicator position
-  const [indicatorX, setIndicatorX] = useState(0);
+  // Floating pill indicator — left + width of the active item so the
+  // pill fluidly resizes and slides between tabs (Slack-style).
+  const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
 
   const updateIndicator = useCallback(() => {
     const el = itemRefs.current[activeIndex];
@@ -70,7 +73,12 @@ export function BottomNav() {
     if (el && nav) {
       const navRect = nav.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
-      setIndicatorX(elRect.left - navRect.left + elRect.width / 2);
+      setIndicator({
+        left: elRect.left - navRect.left,
+        width: elRect.width,
+      });
+    } else {
+      setIndicator(null);
     }
   }, [activeIndex]);
 
@@ -251,26 +259,37 @@ export function BottomNav() {
             <div
               ref={navRef}
               className="relative flex items-center h-[60px]"
-              style={{ ...GLASS, borderRadius: "22px" }}
+              style={{ ...GLASS, borderRadius: "9999px" }}
             >
-              {/* Sliding active indicator */}
-              {activeIndex >= 0 && (
-                <div
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: indicatorX,
-                    bottom: -2,
-                    width: 20,
-                    height: 3,
-                    borderRadius: "2px",
-                    background: "#a78bfa",
-                    boxShadow: "0 0 8px rgba(167, 139, 250, 0.5)",
-                    transition: "left 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                    transform: "translateX(-50%)",
-                    zIndex: 20,
-                  }}
-                />
-              )}
+              {/* Sliding active pill — fills the active item with a soft
+                  primary tint and animates between tabs. Sits BEHIND the
+                  icon/label (z 0) which render at z 10. */}
+              {indicator && activeIndex >= 0 && (() => {
+                // Per-side inset. Leftmost (Home) pulls 3px closer to
+                // the nav's left edge so it doesn't feel offset against
+                // the rounded corner; other positions stay at the
+                // symmetric 4px each side.
+                const leftInset = activeIndex === 0 ? 1 : 4;
+                const rightInset = 4;
+                return (
+                  <div
+                    aria-hidden
+                    className="absolute pointer-events-none"
+                    style={{
+                      left: indicator.left + leftInset,
+                      width: indicator.width - leftInset - rightInset,
+                      top: 2,
+                      bottom: 2,
+                      borderRadius: "9999px",
+                      background: "rgba(167, 139, 250, 0.18)",
+                      border: "1px solid rgba(167, 139, 250, 0.28)",
+                      transition:
+                        "left 0.35s cubic-bezier(0.4, 0.0, 0.2, 1), width 0.35s cubic-bezier(0.4, 0.0, 0.2, 1)",
+                      zIndex: 0,
+                    }}
+                  />
+                );
+              })()}
 
               {/* Left items: Home, Map */}
               {renderNavItem(navItems[0], 0)}

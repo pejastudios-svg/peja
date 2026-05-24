@@ -34,6 +34,7 @@ import { BackgroundPrefetcher } from "@/components/navigation/BackgroundPrefetch
 import { Analytics } from "@vercel/analytics/next"
 import { OfflineBanner } from "@/components/system/OfflineBanner";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { BottomNav } from "@/components/layout/BottomNav";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -199,6 +200,11 @@ export default function RootLayout({
                         {children}
                         {overlay}
                         {modal}
+                        {/* BottomNav is global so the sliding active-tab
+                            pill survives navigation. The component itself
+                            decides when to hide via its isHidden check
+                            (post / chat detail routes). */}
+                        <BottomNav />
                         </TutorialProvider>
                     </FeedProvider>
                   </PageCacheProvider>

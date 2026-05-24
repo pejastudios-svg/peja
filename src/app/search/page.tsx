@@ -7,7 +7,6 @@ import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
 import { Header } from "@/components/layout/Header";
-import { BottomNav } from "@/components/layout/BottomNav";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { realtimeManager } from "@/lib/realtime";
@@ -15,7 +14,6 @@ import {
   Search,
   X,
   SlidersHorizontal,
-  MapPin,
 } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
@@ -34,8 +32,13 @@ function SearchContent() {
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [dateRange, setDateRange] = useState<"today" | "week" | "month" | "all">("all");
+  // Tag filter — freeform list, mirrors the create page's tag UX (any
+  // user-typed tag; no preset list). A post matches when it carries
+  // ALL of the entered tags (case-insensitive).
+  const [tagFilters, setTagFilters] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
   const feedCache = useFeedCache();
-  const feedKey = `search:q=${query}|cat=${selectedCategory ?? "all"}|range=${dateRange}`;
+  const feedKey = `search:q=${query}|cat=${selectedCategory ?? "all"}|range=${dateRange}|tags=${tagFilters.slice().sort().join(",")}`;
 
   // --- INSTANT CACHE INITIALIZATION ---
   const [posts, setPosts] = useState<Post[]>(() => {
@@ -174,6 +177,16 @@ function SearchContent() {
         tags: tagsMap[post.id] || [],
       }));
 
+      // Tag filter — post must include ALL selected tags (case-insensitive).
+      // Mirrors the create page's freeform tag list: any user-typed tag is
+      // valid, no preset list.
+      if (tagFilters.length > 0) {
+        formattedPosts = formattedPosts.filter((p) => {
+          const tagSet = new Set((p.tags || []).map((t) => (t || "").toLowerCase()));
+          return tagFilters.every((t) => tagSet.has(t));
+        });
+      }
+
       // Client-side filtering for search term
       if (query.trim()) {
         const searchTerm = query.toLowerCase().trim();
@@ -214,7 +227,7 @@ function SearchContent() {
     } finally {
       setLoading(false);
     }
-  }, [query, selectedCategory, dateRange, feedKey, feedCache, confirm]);
+  }, [query, selectedCategory, dateRange, tagFilters, feedKey, feedCache, confirm]);
 
   // Listen for post deleted/archived events
   useEffect(() => {
@@ -300,7 +313,7 @@ useEffect(() => {
     }, 300);
 
     return () => clearTimeout(debounce);
-  }, [query, selectedCategory, dateRange]);
+  }, [query, selectedCategory, dateRange, tagFilters]);
 
   // ============================================================
   // ALL HOOKS ARE DONE
@@ -309,9 +322,22 @@ useEffect(() => {
   const clearFilters = () => {
     setSelectedCategory(null);
     setDateRange("all");
+    setTagFilters([]);
+    setTagInput("");
   };
 
-  const hasActiveFilters = selectedCategory || dateRange !== "all";
+  const hasActiveFilters = selectedCategory || dateRange !== "all" || tagFilters.length > 0;
+
+  const addTagFilter = () => {
+    const raw = tagInput.replace(/^#/, "").trim().toLowerCase();
+    if (!raw) return;
+    setTagFilters((prev) => (prev.includes(raw) ? prev : [...prev, raw]));
+    setTagInput("");
+  };
+
+  const removeTagFilter = (tag: string) => {
+    setTagFilters((prev) => prev.filter((t) => t !== tag));
+  };
 
   // useCallback so the prop reference is stable across renders — otherwise
   // PostCard's React.memo can't skip re-renders of the search results list.
@@ -382,11 +408,13 @@ useEffect(() => {
                 )}
               </div>
 
-              {/* Category Filter */}
+              {/* Category Filter — same list as the create page (kidnapping,
+                  terrorist, general). "crime" and "fire" are intentionally
+                  excluded; mirror the filter in create/page.tsx. */}
               <div>
                 <label className="text-sm text-dark-400 block mb-2">Category</label>
                 <div className="flex flex-wrap gap-2">
-                  {CATEGORIES.slice(0, 8).map((cat) => (
+                  {CATEGORIES.filter((cat) => cat.id !== "crime" && cat.id !== "fire").map((cat) => (
                     <button
                       key={cat.id}
                       onClick={() =>
@@ -402,6 +430,59 @@ useEffect(() => {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Tags — freeform input mirroring the create page's tag
+                  UX. Type any tag, press Enter or Add to apply, tap × to
+                  remove. Filter matches posts that have ALL the tags. */}
+              <div>
+                <label className="text-sm text-dark-400 block mb-2">Tags</label>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addTagFilter();
+                      }
+                    }}
+                    placeholder="Add tag"
+                    className="flex-1 px-3 py-1.5 rounded-lg text-sm bg-[var(--glass-input-bg)] border border-[var(--glass-border)] text-dark-100 placeholder-dark-500 focus:outline-none focus:border-primary-500/40"
+                  />
+                  <button
+                    type="button"
+                    onClick={addTagFilter}
+                    className="px-3 py-1.5 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-500 transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+                {tagFilters.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {tagFilters.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+                        style={{
+                          background: "rgba(124, 58, 237, 0.15)",
+                          border: "1px solid rgba(139, 92, 246, 0.25)",
+                          color: "#c4b5fd",
+                        }}
+                      >
+                        #{tag}
+                        <button
+                          type="button"
+                          onClick={() => removeTagFilter(tag)}
+                          aria-label={`Remove ${tag}`}
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Date Range */}
@@ -424,57 +505,6 @@ useEffect(() => {
                       }`}
                     >
                       {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Quick Search Suggestions */}
-          {!query && (
-            <div className="mb-4 space-y-4">
-              <div>
-                <p className="text-sm text-dark-400 mb-2">Popular tags</p>
-                <div className="flex flex-wrap gap-2">
-                  {["traffic", "robbery", "fire", "accident", "flooding"].map((tag) => (
-                    <button
-                      key={tag}
-                      onClick={() => setQuery(`#${tag}`)}
-                      className="px-3 py-1.5 glass-sm rounded-lg text-sm text-primary-400"
-                    >
-                      #{tag}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm text-dark-400 mb-2">Categories</p>
-                <div className="flex flex-wrap gap-2">
-                  {CATEGORIES.slice(0, 6).map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => setQuery(cat.name)}
-                      className="px-3 py-1.5 glass-sm rounded-lg text-sm text-dark-300"
-                    >
-                      {cat.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="text-sm text-dark-400 mb-2">Popular locations</p>
-                <div className="flex flex-wrap gap-2">
-                  {["Lagos", "Lekki", "Victoria Island", "Ikeja", "Yaba"].map((loc) => (
-                    <button
-                      key={loc}
-                      onClick={() => setQuery(loc)}
-                      className="px-3 py-1.5 glass-sm rounded-lg text-sm text-dark-300 flex items-center gap-1"
-                    >
-                      <MapPin className="w-3 h-3" />
-                      {loc}
                     </button>
                   ))}
                 </div>
@@ -511,8 +541,6 @@ useEffect(() => {
           )}
         </div>
       </main>
-
-      <BottomNav />
 </div>
     </PullToRefresh>
   );

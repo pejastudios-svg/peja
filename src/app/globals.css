@@ -33,7 +33,7 @@
    Tailwind dark- and primary- utilities pick these up automatically. */
 :root {
   --page-bg: #000000;
-  --body-bg: radial-gradient(ellipse 80% 50% at 50% -10%, rgba(124, 58, 237, 0.12), transparent), #000000;
+  --body-bg: #000000;
   --fg-default: #f8fafc;
 
   --glass-bg: rgba(15, 10, 26, 0.85);
@@ -67,6 +67,12 @@
   /* Soft contrast surface for chips/players/badges that need to read on the
      page background (not on a colored bubble). Slightly visible in both themes. */
   --soft-surface: rgba(255, 255, 255, 0.05);
+
+  /* Author label color inside quoted-reply blocks and the composer reply
+     preview. primary-300 alone worked on dark mode but was washed out on
+     the light-mode reply surface; this token flips to a deep purple on
+     light theme via the override at the bottom of this file. */
+  --chat-reply-author: #c4b5fd;
   --soft-surface-strong: rgba(255, 255, 255, 0.1);
 
   /* v2 chat surfaces. The receiver ("theirs") bubble, the composer
@@ -149,6 +155,10 @@
   --color-dark-800: #ececec;
   --color-dark-900: #fafaf7;
   --color-dark-950: #ffffff;
+
+  /* Deep purple so the "You" / author label in quoted-reply blocks
+     reads clearly against the light-mode reply surface. */
+  --chat-reply-author: #6d28d9;
 }
 
 html {

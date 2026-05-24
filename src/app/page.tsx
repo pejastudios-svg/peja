@@ -4,14 +4,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { Header } from "@/components/layout/Header";
-import { BottomNav } from "@/components/layout/BottomNav";
 import { PostCard } from "@/components/posts/PostCard";
 import { Button } from "@/components/ui/Button";
 import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { realtimeManager } from "@/lib/realtime";
-import { TrendingUp, MapPin, Loader2, Search } from "lucide-react";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
@@ -724,7 +722,6 @@ posts.forEach((p: any) => {
         >
           {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
         </main>
-        <BottomNav />
       </div>
     );
   }
@@ -739,28 +736,11 @@ posts.forEach((p: any) => {
         >
           {[1, 2, 3].map((i) => <PostCardSkeleton key={i} />)}
         </main>
-        <BottomNav />
       </div>
     );
   }
 
   // Calculate tab blend ratio for swipe animation (0 = nearby active, 1 = trending active)
-  const swipeProgress = (() => {
-    const base = activeTab === "trending" ? 1 : 0;
-    if (!isSwiping || swipeOffset === 0) return base;
-    const screenW = typeof window !== "undefined" ? window.innerWidth : 400;
-    const delta = -swipeOffset / (screenW * 0.5); // negative because swipe left = go right
-    return Math.max(0, Math.min(1, base + delta));
-  })();
-
-// Active = rich solid purple. Inactive = theme-aware surface (white in light, glass in dark).
-const nearbyBg = swipeProgress < 0.5
-    ? `rgb(124, 58, 237)`
-    : `var(--glass-card-bg)`;
-  const trendingBg = swipeProgress > 0.5
-    ? `rgb(124, 58, 237)`
-    : `var(--glass-card-bg)`;
-
   return (
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header onCreateClick={() => router.push("/create")} />
@@ -798,21 +778,23 @@ const nearbyBg = swipeProgress < 0.5
           onTouchEnd={handleTouchEnd}
           style={{ touchAction: isSwiping ? "none" : "pan-y" }}
         >
-<div className="flex items-center justify-center gap-1 mb-4 relative px-4" data-tutorial="home-nearby">
-          <button
+<div className="px-4 mb-4">
+          <div
+            className="flex border-b"
+            style={{ borderColor: "var(--glass-border)" }}
+            data-tutorial="home-nearby"
+          >
+            <button
               onClick={() => {
                 setActiveTab("nearby");
                 applyCachedFeed("home:nearby");
               }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-             style={{
-                background: nearbyBg,
-                color: activeTab === "nearby" ? "white" : "var(--color-dark-200)",
-                border: `1px solid rgba(124, 58, 237, ${0.15 + (1 - swipeProgress) * 0.2})`,
-                transition: isSwiping ? "none" : "all 0.35s ease",
-              }}
+              className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                activeTab === "nearby"
+                  ? "text-primary-400 border-b-2 border-primary-400"
+                  : "text-dark-400 hover:text-dark-200"
+              }`}
             >
-              <MapPin className="w-4 h-4" />
               Nearby
             </button>
             <button
@@ -820,17 +802,15 @@ const nearbyBg = swipeProgress < 0.5
                 setActiveTab("trending");
                 applyCachedFeed("home:trending");
               }}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{
-                background: trendingBg,
-                color: activeTab === "trending" ? "white" : "var(--color-dark-200)",
-                border: `1px solid rgba(124, 58, 237, ${0.15 + swipeProgress * 0.2})`,
-                transition: isSwiping ? "none" : "all 0.35s ease",
-              }}
+              className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                activeTab === "trending"
+                  ? "text-primary-400 border-b-2 border-primary-400"
+                  : "text-dark-400 hover:text-dark-200"
+              }`}
             >
-              <TrendingUp className="w-4 h-4" />
               Trending
             </button>
+          </div>
           </div>
          <div className="overflow-hidden">
             <div
@@ -902,8 +882,6 @@ const nearbyBg = swipeProgress < 0.5
         </div>
       </main>
       </PullToRefresh>
-
-      <BottomNav />
     </div>
   );
 }

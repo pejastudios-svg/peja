@@ -18,7 +18,6 @@ import {
   Camera,
   Loader2,
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Header } from "@/components/layout/Header";
@@ -442,20 +441,30 @@ export default function ProfilePage() {
           </div>
 
           <div className="mb-4">
-            <div className="flex gap-2 mb-4">
-              <Button variant={activeTab === "posts" ? "primary" : "secondary"} size="sm" onClick={() => setActiveTab("posts")}>
+            <div className="flex border-b border-white/10 mb-4">
+              <button
+                onClick={() => setActiveTab("posts")}
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  activeTab === "posts"
+                    ? "text-primary-400 border-b-2 border-primary-400"
+                    : "text-dark-400 hover:text-dark-200"
+                }`}
+              >
                 My Posts
-              </Button>
-              <Button
-                variant={activeTab === "confirmed" ? "primary" : "secondary"}
-                size="sm"
+              </button>
+              <button
                 onClick={() => {
                   setActiveTab("confirmed");
                   if (confirmedPosts.length === 0) fetchConfirmedPosts();
                 }}
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  activeTab === "confirmed"
+                    ? "text-primary-400 border-b-2 border-primary-400"
+                    : "text-dark-400 hover:text-dark-200"
+                }`}
               >
                 Confirmed
-              </Button>
+              </button>
             </div>
 
             {listLoading && list.length === 0 ? (

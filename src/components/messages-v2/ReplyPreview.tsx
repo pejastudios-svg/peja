@@ -22,7 +22,10 @@ export function ReplyPreview({ target, authorName, onDismiss }: Props) {
   return (
     <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--chat-input-bg)] border-l-2 border-primary-500">
       <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-semibold text-primary-300 truncate">
+        <p
+          className="text-[11px] font-semibold truncate"
+          style={{ color: "var(--chat-reply-author)" }}
+        >
           Replying to {authorName}
         </p>
         <ReplyContentSnippet target={target} />
