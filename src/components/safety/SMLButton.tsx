@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { apiUrl } from "@/lib/api";
 import { Portal } from "@/components/ui/Portal";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { dispatchOrQueue, newOutboxId } from "@/lib/outbox";
 import {
   MapPin,
   X,
@@ -295,17 +296,66 @@ const handleButtonClick = () => {
 
   const handleStart = async () => {
     if (selectedContacts.length === 0) { toast.warning("Select at least one contact"); return; }
+    if (!user?.id) return;
     setStarting(true);
-    setStartPhase("Pinpointing your location...");
-    try {
-      let lat, lng;
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
-        });
-        lat = pos.coords.latitude; lng = pos.coords.longitude;
-      } catch {}
 
+    // Capture location upfront — used by either path. Browser
+    // geolocation can usually return a cached fix even offline.
+    setStartPhase("Pinpointing your location...");
+    let lat: number | undefined, lng: number | undefined;
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+      });
+      lat = pos.coords.latitude; lng = pos.coords.longitude;
+    } catch {}
+    void lat; void lng; // currently sent only by /confirm; /start doesn't take coords
+
+    const triggeredAt = new Date().toISOString();
+    const tempId = newOutboxId();
+    const nextCheckIn = new Date(Date.now() + interval * 60000).toISOString();
+
+    // Optimistic state — make the UI look active right away. If the
+    // online POST succeeds we'll replace this with the server's real
+    // row (real id, server timestamps). If we're offline we keep the
+    // synthetic row and the drain reconciles later.
+    const synthetic: ActiveCheckIn = {
+      id: tempId,
+      status: "active",
+      contact_ids: selectedContacts,
+      check_in_interval_minutes: interval,
+      next_check_in_at: nextCheckIn,
+      last_confirmed_at: triggeredAt,
+      missed_count: 0,
+    };
+
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+
+    if (offline) {
+      setMyCheckIn(synthetic);
+      closeShareModal();
+      setShowMenu(false);
+      void dispatchOrQueue(user.id, {
+        id: tempId,
+        kind: "sml-start",
+        queued_at: Date.now(),
+        attempts: 0,
+        last_error: null,
+        payload: {
+          contactIds: selectedContacts,
+          intervalMinutes: interval,
+          triggered_at: triggeredAt,
+        },
+      });
+      toast.info(
+        "Offline. Check-in will start automatically when you're back online.",
+      );
+      setStarting(false);
+      setStartPhase(null);
+      return;
+    }
+
+    try {
       setStartPhase("Starting location sharing...");
       const res = await fetch(apiUrl("/api/checkin/start/"), {
         method: "POST", headers: headers(),
@@ -322,7 +372,27 @@ const handleButtonClick = () => {
       setShowMenu(false);
       toast.success("Location sharing started!");
     } catch (err: any) {
-      toast.danger(err.message || "Failed to start");
+      // Network spike / server hiccup — queue the start so it lands
+      // on the next drain. Optimistic synthetic state keeps the UI
+      // showing as active during the queued window.
+      setMyCheckIn(synthetic);
+      closeShareModal();
+      setShowMenu(false);
+      void dispatchOrQueue(user.id, {
+        id: tempId,
+        kind: "sml-start",
+        queued_at: Date.now(),
+        attempts: 0,
+        last_error: err?.message ?? null,
+        payload: {
+          contactIds: selectedContacts,
+          intervalMinutes: interval,
+          triggered_at: triggeredAt,
+        },
+      });
+      toast.info(
+        "Couldn't reach the server. Check-in will start automatically when the connection comes back.",
+      );
     } finally {
       setStarting(false);
       setStartPhase(null);
@@ -331,42 +401,60 @@ const handleButtonClick = () => {
 
 const handleConfirm = async () => {
     if (!myCheckIn) return;
+    if (!user?.id) return;
     cancellingRef.current = true;
     const newNext = new Date(Date.now() + myCheckIn.check_in_interval_minutes * 60000).toISOString();
     setMyCheckIn(prev => prev ? { ...prev, status: "active", next_check_in_at: newNext, missed_count: 0 } : null);
     setIsOverdue(false);
     toast.success("Checked in! Timer reset.");
 
+    let lat: number | null = null;
+    let lng: number | null = null;
     try {
-      let lat, lng;
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
-        });
-        lat = pos.coords.latitude; lng = pos.coords.longitude;
-      } catch {}
-await fetch(apiUrl("/api/checkin/confirm/"), {
-        method: "POST", headers: headers(),
-        body: JSON.stringify({ latitude: lat, longitude: lng }),
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
       });
+      lat = pos.coords.latitude; lng = pos.coords.longitude;
     } catch {}
+
+    // dispatchOrQueue: tries online now, queues on offline/failure
+    // so the timer reset eventually lands on the server.
+    void dispatchOrQueue(user.id, {
+      id: newOutboxId(),
+      kind: "sml-confirm",
+      queued_at: Date.now(),
+      attempts: 0,
+      last_error: null,
+      payload: {
+        latitude: lat,
+        longitude: lng,
+        triggered_at: new Date().toISOString(),
+      },
+    });
+
     setTimeout(() => { cancellingRef.current = false; }, 3000);
   };
 
   const handleCancel = async () => {
+    if (!user?.id) return;
     cancellingRef.current = true;
     setMyCheckIn(null);
     setIsOverdue(false);
     closeCancelConfirm();
     closeActiveModal();
     toast.success("Check-in ended.");
-    try {
-      await fetch(apiUrl("/api/checkin/cancel/"), { method: "POST", headers: headers() });
-   } catch {
-      cancellingRef.current = false;
-      fetchData();
-      return;
-    }
+
+    // dispatchOrQueue: tries online now, queues on offline/failure.
+    // Local state already cleared so the user sees the cancel land
+    // instantly regardless of network.
+    void dispatchOrQueue(user.id, {
+      id: newOutboxId(),
+      kind: "sml-cancel",
+      queued_at: Date.now(),
+      attempts: 0,
+      last_error: null,
+      payload: { triggered_at: new Date().toISOString() },
+    });
     setTimeout(() => { cancellingRef.current = false; }, 3000);
   };
 

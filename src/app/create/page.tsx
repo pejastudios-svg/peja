@@ -38,6 +38,8 @@ import { VideoRecorder } from "@/components/media/VideoRecorder";
 import { VideoPlayer } from "@/components/media/VideoPlayer";
 import { useProfileGate } from "@/components/profile/ProfileCompletionGate";
 import { buildLoginHref } from "@/lib/safeNext";
+import { dispatchOrQueue, newOutboxId } from "@/lib/outbox";
+import { putDraftBlob } from "@/lib/postDraftBlobs";
 
 // Category icon mapping
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -730,6 +732,84 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   if (!location) {
     setError("Location is required");
     setSubmitted(false);
+    return;
+  }
+
+  // Offline branch — save the post + media to IDB as a draft and
+  // queue the create for replay when network returns. We DON'T call
+  // supabase.auth.getUser() in this path (that hits the network and
+  // can hang offline); user.id from useAuth is the local session id,
+  // which is what we need. The drain handler runs auth client-side
+  // when it fires, with the same user.
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.onLine === false &&
+    user?.id
+  ) {
+    setIsLoading(true);
+    setUploadProgress(0);
+    try {
+      const draftId = newOutboxId();
+      const triggeredAt = new Date().toISOString();
+
+      // Save each selected file to IDB so the drain can pick it up
+      // when network returns. We persist the RAW blob — compression
+      // is a live-UX optimization, not worth replicating in the
+      // offline path. The handler uploads as-is to Storage.
+      const mediaMeta: Array<{
+        media_id: string;
+        type: "photo" | "video";
+        mime_type: string;
+        file_name: string;
+      }> = [];
+      for (const file of media) {
+        const mediaId = newOutboxId();
+        const type: "photo" | "video" = file.type.startsWith("video/")
+          ? "video"
+          : "photo";
+        await putDraftBlob(draftId, mediaId, file);
+        mediaMeta.push({
+          media_id: mediaId,
+          type,
+          mime_type: file.type,
+          file_name: file.name,
+        });
+      }
+
+      void dispatchOrQueue(user.id, {
+        id: draftId,
+        kind: "post-create",
+        queued_at: Date.now(),
+        attempts: 0,
+        last_error: null,
+        payload: {
+          user_id: user.id,
+          draft_id: draftId,
+          category,
+          comment: comment.trim() || null,
+          address: location?.address || null,
+          latitude: location?.latitude ?? null,
+          longitude: location?.longitude ?? null,
+          country_code: location?.countryCode || null,
+          is_anonymous: false,
+          is_sensitive: isSensitive,
+          tags: [...tags],
+          media: mediaMeta,
+          triggered_at: triggeredAt,
+        },
+      });
+
+      setToast("Saved as draft — will post when you're back online.");
+      setTimeout(() => setToast(null), 4000);
+      // Send the user back to the home feed so they don't see a
+      // frozen create form. The draft is safely in IDB + the outbox.
+      router.push("/");
+    } catch (err: any) {
+      setError(err?.message || "Couldn't save draft. Please try again.");
+      setSubmitted(false);
+    } finally {
+      setIsLoading(false);
+    }
     return;
   }
 

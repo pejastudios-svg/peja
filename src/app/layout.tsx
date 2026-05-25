@@ -35,6 +35,7 @@ import { Analytics } from "@vercel/analytics/next"
 import { OfflineBanner } from "@/components/system/OfflineBanner";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { OutboxBootstrap } from "@/components/system/OutboxBootstrap";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -178,6 +179,7 @@ export default function RootLayout({
                   <PageCacheProvider>
                     <FeedProvider>
                         <ChatBootstrap />
+                        <OutboxBootstrap />
                         <AnalyticsTracker />
                         <RoutePrefetcher />
                         <GlobalScrollManager />

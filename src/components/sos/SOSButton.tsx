@@ -9,6 +9,13 @@ import { apiUrl } from "@/lib/api";
 import SOSLocation from "@/lib/sosLocation";
 import { supabase } from "@/lib/supabase";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import {
+  readEmergencyContactsCache,
+  writeEmergencyContactsCache,
+  type CachedEmergencyContact,
+} from "@/lib/emergencyContactsCache";
+import { openSosSmsIntent } from "@/lib/sosSms";
+import { dispatchOrQueue, newOutboxId } from "@/lib/outbox";
 import { 
   AlertTriangle, X, Phone, Loader2, CheckCircle, Users, 
   ArrowLeft, Scan, MapPin, Radio, Shield, Send,
@@ -314,6 +321,39 @@ export function SOSButton({ className = "" }: { className?: string }) {
     return () => cleanup();
   }, [user]);
 
+  // Refresh the cached emergency-contacts snapshot every time the SOS
+  // button mounts while online. The offline SOS path reads from this
+  // cache to know whose phone numbers to SMS — without it, going
+  // offline with no recent cache means no contacts to message.
+  useEffect(() => {
+    if (!user?.id) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("emergency_contacts")
+          .select("id, name, phone")
+          .eq("user_id", user.id)
+          .not("phone", "is", null);
+        if (cancelled) return;
+        if (error || !data) return;
+        const contacts: CachedEmergencyContact[] = data
+          .filter(
+            (c): c is { id: string; name: string; phone: string } =>
+              typeof c.phone === "string" && c.phone.trim().length > 0,
+          )
+          .map((c) => ({ id: c.id, name: c.name, phone: c.phone }));
+        writeEmergencyContactsCache(user.id, contacts);
+      } catch {
+        // Best-effort cache refresh — failure here doesn't block SOS.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   useEffect(() => {
     sosIdRef.current = sosId;
   }, [sosId]);
@@ -521,12 +561,118 @@ export function SOSButton({ className = "" }: { className?: string }) {
     }
   };
 
+  // Offline SOS path. The user is unreachable on the network, so we
+  // fall back to the device's native SMS app — Messages opens
+  // pre-filled with the SOS body and the cached emergency-contact
+  // phone numbers. The user (or Android auto-send, if we add the
+  // SMS plugin later) sends it via their own carrier.
+  //
+  // We ALSO queue a sos-log outbox item so the matching sos_alerts
+  // row + fan-out land in the DB as soon as network returns. Drain
+  // happens via lib/useOutboxDrain (mounted globally by
+  // OutboxBootstrap).
+  const triggerSOSOffline = async (): Promise<void> => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const contacts = readEmergencyContactsCache(user.id);
+    if (contacts.length === 0) {
+      // No cached contacts means the user has never opened the app
+      // while online with contacts configured. We can't do anything
+      // here — surface the issue and stop.
+      toast.danger(
+        "No emergency contacts available offline. Connect to the internet and try again.",
+      );
+      setLoading(false);
+      return;
+    }
+
+    // Get location. Capacitor / browser geolocation can usually
+    // return a cached fix even without network, so try it; if it
+    // fails, send the SMS without coords (still tells the contact
+    // there's an emergency).
+    let lat: number | null = null;
+    let lng: number | null = null;
+    try {
+      const pos = await new Promise<GeolocationPosition>((res, rej) =>
+        navigator.geolocation.getCurrentPosition(res, rej, {
+          enableHighAccuracy: true,
+          timeout: 8000,
+        }),
+      );
+      lat = pos.coords.latitude;
+      lng = pos.coords.longitude;
+    } catch {
+      // No fix — proceed without coords. Contact still gets the SMS.
+    }
+
+    const triggeredAt = new Date().toISOString();
+    const userName = user.full_name || "Someone";
+
+    // Open Messages app. Body includes name, tag, address (null
+    // offline), and a map link from lat/lng.
+    const opened = openSosSmsIntent({
+      userName,
+      tag: selectedTag,
+      message: textMessage || null,
+      latitude: lat,
+      longitude: lng,
+      address: null,
+      contacts,
+    });
+
+    // Queue the DB write regardless of whether the SMS app opened
+    // — the user might still be in danger and want the alert
+    // recorded once they're back online.
+    void dispatchOrQueue(user.id, {
+      id: newOutboxId(),
+      kind: "sos-log",
+      queued_at: Date.now(),
+      attempts: 0,
+      last_error: null,
+      payload: {
+        user_id: user.id,
+        triggered_at: triggeredAt,
+        latitude: lat,
+        longitude: lng,
+        address: null,
+        tag: selectedTag,
+        message: textMessage || null,
+        voice_note_url: null,
+        contact_ids: contacts.map((c) => c.id),
+      },
+    });
+
+    if (opened) {
+      toast.info(
+        "Offline. Opened SMS app with your emergency contacts. The alert will sync when you're back online.",
+      );
+    } else {
+      toast.warning(
+        "Offline. Couldn't open SMS app. The alert is queued and will sync when you're back online.",
+      );
+    }
+
+    setLoading(false);
+  };
+
   const triggerSOS = async () => {
     if (!user) return;
     setLoading(true);
     setIsHolding(false);
     setShowOptions(false);
-    
+
+    // Offline branch — fire SMS via the device's native Messages
+    // app and queue the DB write for when network returns. Runs
+    // BEFORE the online loading animation so we don't sit on a
+    // loader while there's no chance of hitting the API.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      await triggerSOSOffline();
+      return;
+    }
+
     setShowLoadingAnimation(true);
     setCurrentStep(0);
     setLoadingComplete(false);
