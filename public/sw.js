@@ -21,7 +21,7 @@ const APP_SHELL = [
   "/signup",
   "/settings",
   "/emergency-contacts",
-  "https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png",
+  "/peja-logo.png.png",
 ];
 
 const STATIC_PATTERNS = [
@@ -60,15 +60,45 @@ const NO_CACHE_PATTERNS = [
   /nominatim\.openstreetmap\.org/,
 ];
 
+// Pull <link rel="stylesheet" ...> and <script src="..."> URLs out of
+// an HTML string. Best-effort regex parse — good enough for Next.js
+// app router output where the asset URLs are emitted as plain
+// attributes. Used at install time so we can warm the static cache
+// with the chunks the root page actually depends on, so an offline
+// cold-open after install still renders styled.
+function extractAssetUrls(html) {
+  const urls = [];
+  const linkRe = /<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["']/g;
+  let m;
+  while ((m = linkRe.exec(html))) urls.push(m[1]);
+  const scriptRe = /<script[^>]+src=["']([^"']+)["']/g;
+  while ((m = scriptRe.exec(html))) urls.push(m[1]);
+  return urls;
+}
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil(
-    caches.open(APP_SHELL_CACHE).then((cache) =>
-      Promise.allSettled(
-        APP_SHELL.map((url) => cache.add(url).catch(() => {}))
-      )
-    )
-  );
+  event.waitUntil((async () => {
+    const shell = await caches.open(APP_SHELL_CACHE);
+    await Promise.allSettled(
+      APP_SHELL.map((url) => shell.add(url).catch(() => {}))
+    );
+    // Warm the static cache with the chunks the root HTML references
+    // so an offline-first cold open doesn't render unstyled. Hashed
+    // filenames mean we can't list them statically — fetch them at
+    // install time. Best-effort; failures are silent.
+    try {
+      const rootResp = await fetch("/", { cache: "no-store" });
+      if (rootResp.ok) {
+        const html = await rootResp.text();
+        const urls = extractAssetUrls(html);
+        const staticCache = await caches.open(CACHE_NAME);
+        await Promise.allSettled(
+          urls.map((u) => staticCache.add(u).catch(() => {}))
+        );
+      }
+    } catch {}
+  })());
 });
 
 self.addEventListener("activate", (event) => {
@@ -87,13 +117,34 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   if (NO_CACHE_PATTERNS.some((p) => p.test(request.url))) return;
 
-  // Static assets: cache-first
+  // Static assets: cache-first. On total miss (no cache + no network)
+  // for CSS specifically, return ANY cached CSS file as a last
+  // resort. Wrong-version styling beats a totally unstyled page,
+  // which is what users see when a deploy moves to a new CSS hash
+  // and they go offline before the new chunk gets fetched.
   if (STATIC_PATTERNS.some((p) => p.test(url.pathname))) {
     event.respondWith(
-      caches.match(request).then((c) => c || fetch(request).then((r) => {
-        if (r.ok) { const cl = r.clone(); caches.open(CACHE_NAME).then((ca) => ca.put(request, cl)); }
-        return r;
-      }).catch(() => new Response("", { status: 408 })))
+      caches.match(request).then((c) =>
+        c || fetch(request).then((r) => {
+          if (r.ok) {
+            const cl = r.clone();
+            caches.open(CACHE_NAME).then((ca) => ca.put(request, cl));
+          }
+          return r;
+        }).catch(async () => {
+          if (url.pathname.endsWith(".css")) {
+            const cache = await caches.open(CACHE_NAME);
+            const keys = await cache.keys();
+            for (const key of keys) {
+              if (key.url.endsWith(".css")) {
+                const cached = await cache.match(key);
+                if (cached) return cached;
+              }
+            }
+          }
+          return new Response("", { status: 408 });
+        })
+      )
     );
     return;
   }

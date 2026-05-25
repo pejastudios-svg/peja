@@ -106,7 +106,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   {iconFor(t.type)}
                 </span>
 
-                <p className="text-[13px] font-medium text-dark-100 truncate">
+                <p className="text-[13px] font-medium text-dark-100 leading-snug break-words">
                   {t.message}
                 </p>
 

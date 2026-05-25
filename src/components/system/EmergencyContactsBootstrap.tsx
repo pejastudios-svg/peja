@@ -28,17 +28,37 @@ export function EmergencyContactsBootstrap() {
 
   useEffect(() => {
     if (!userId) return;
-    if (typeof navigator !== "undefined" && navigator.onLine === false) return;
 
     let cancelled = false;
 
-    (async () => {
+    async function populate() {
+      // Skip when the browser is sure we're offline — the supabase
+      // query would just hang. We retry on the 'online' event below.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        console.log("[contacts-cache] skip populate: offline");
+        return;
+      }
       try {
+        console.log("[contacts-cache] fetching for user", userId);
         const { data, error } = await supabase
           .from("emergency_contacts")
           .select("id, name, phone, contact_user_id, status")
           .eq("user_id", userId);
-        if (cancelled || error || !data) return;
+        if (cancelled) return;
+        if (error) {
+          console.warn("[contacts-cache] query failed", error.message);
+          return;
+        }
+        if (!data) {
+          console.warn("[contacts-cache] query returned null data");
+          return;
+        }
+        console.log(
+          "[contacts-cache] got",
+          data.length,
+          "rows from emergency_contacts",
+          data,
+        );
 
         // Best-effort join to users for full_name + avatar_url so
         // SML's share sheet can render rows without a second hop.
@@ -71,15 +91,32 @@ export function EmergencyContactsBootstrap() {
             linked_avatar_url: linked?.avatar_url ?? null,
           };
         });
-        writeEmergencyContactsCache(userId, contacts);
-      } catch {
-        // Best-effort — silent on failure. The offline flows handle
-        // an empty cache with a user-facing toast.
+        writeEmergencyContactsCache(userId!, contacts);
+        console.log(
+          "[contacts-cache] wrote",
+          contacts.length,
+          "contacts to cache",
+          contacts,
+        );
+      } catch (e) {
+        console.warn("[contacts-cache] populate threw", e);
       }
-    })();
+    }
+
+    void populate();
+
+    // Re-populate when the network comes back — handles the
+    // offline-first case where the user opens the app with no
+    // signal and then reconnects.
+    const onOnline = () => {
+      console.log("[contacts-cache] online event, re-populating");
+      void populate();
+    };
+    window.addEventListener("online", onOnline);
 
     return () => {
       cancelled = true;
+      window.removeEventListener("online", onOnline);
     };
   }, [userId]);
 

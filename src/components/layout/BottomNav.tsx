@@ -10,7 +10,12 @@ import { useAuth } from "@/context/AuthContext";
 import { SMLButton } from "../safety/SMLButton";
 import { buildLoginHref } from "@/lib/safeNext";
 
-const PEJA_LOGO = "https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png";
+// Bundled local asset (public/peja-logo.png.png) — the older
+// edgeone CDN URL didn't render offline and made the center BottomNav
+// button look broken on no-network reloads. Serving locally means
+// the service worker caches it with the rest of the static assets
+// and it survives offline.
+const PEJA_LOGO = "/peja-logo.png.png";
 
 const navItems = [
   { href: "/", icon: Home, label: "Home" },
