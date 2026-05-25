@@ -108,6 +108,7 @@ import {
   dateBucket,
 } from "@/components/messages-v2/ThreadDividers";
 import { notifyDMReaction, notifyDMBlocked } from "@/lib/notifications";
+import { clearPushNotificationsForConversation } from "@/lib/pushNotificationsClear";
 import {
   setViewingConversation,
   isUserViewingConversation,
@@ -161,12 +162,14 @@ export default function ThreadV2Page() {
   // by the hook.
   const { sendTyping, sendRecording } = useTypingChannel(
     conversationId,
-    user?.id ?? null
+    user?.id ?? null,
+    user?.full_name ?? null,
   );
-  // What the OTHER user is doing right now (if anything). Drives
-  // the header subtitle + in-thread bubble icon.
+  // What the OTHER user is doing right now (DM case — single typer).
+  // For groups we read the whole inner map below when building the
+  // header subtitle.
   const otherActivity =
-    typing && otherUserId && typing.userId === otherUserId ? typing.kind : null;
+    typing && otherUserId ? typing[otherUserId]?.kind ?? null : null;
   const isOtherTyping = otherActivity === "typing";
   const isOtherRecording = otherActivity === "recording";
 
@@ -475,6 +478,9 @@ export default function ThreadV2Page() {
         }
       })
       .catch(() => {});
+    // Wipe any matching delivered push(es) from the device's
+    // notification tray. Fire-and-forget; web is a no-op.
+    void clearPushNotificationsForConversation(conversationId);
     clearUnread(conversationId);
   }, [user?.id, conversationId, setThread, clearUnread, lastConnectedAt]);
 
@@ -1702,12 +1708,34 @@ export default function ThreadV2Page() {
   // Header subtitle priority: recording > typing > online > last seen.
   // Recording wins over typing because it's the more committed
   // signal — a user typing might trail off, but a user recording is
-  // actively making a voice note for you. Groups don't have a single
-  // "other side" presence so we show the member count instead.
+  // actively making a voice note for you. Groups overlay live typing
+  // on top of the static "N members" string, falling back to the
+  // member count when nobody's typing.
   let headerSubtitle: string | null = null;
   if (conv?.is_group) {
-    const n = conv.member_count ?? 0;
-    headerSubtitle = `${n} member${n === 1 ? "" : "s"}`;
+    const memberCount = conv.member_count ?? 0;
+    const memberStr = `${memberCount} member${memberCount === 1 ? "" : "s"}`;
+
+    // Filter the typer map to exclude the current user — we
+    // shouldn't see our own "typing" header.
+    const typers = typing
+      ? Object.entries(typing)
+          .filter(([uid]) => uid !== user?.id)
+          .map(([, v]) => ({ name: v.userName, kind: v.kind }))
+      : [];
+
+    if (typers.length === 0) {
+      headerSubtitle = memberStr;
+    } else if (typers.length === 1) {
+      const t = typers[0];
+      const verb = t.kind === "recording" ? "recording" : "typing";
+      headerSubtitle = `${t.name || "Someone"} is ${verb}…`;
+    } else if (typers.length === 2) {
+      const [a, b] = typers;
+      headerSubtitle = `${a.name || "Someone"} and ${b.name || "someone"} are typing…`;
+    } else {
+      headerSubtitle = `${typers.length} people are typing…`;
+    }
   } else if (isOtherRecording) {
     headerSubtitle = "recording…";
   } else if (isOtherTyping) {

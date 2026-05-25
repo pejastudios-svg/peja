@@ -577,6 +577,29 @@ export async function markAllAsRead(userId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Mark every notification that points at this post as read, for the
+ * current user. Mirrors markChatNotificationsRead — same fire-and-
+ * forget contract; failure leaves the bell badge a little stale until
+ * the next reconcile.
+ *
+ * Filter is `data->>'post_id'` (snake_case) — matches what the
+ * notify pipelines write into the data jsonb column (see
+ * notifyUsersAboutIncident, notifyPostConfirmed, notifyPostComment,
+ * notifyCommentReply, notifyCommentLiked all use post_id).
+ */
+export async function markPostNotificationsRead(
+  postId: string,
+  currentUserId: string,
+): Promise<void> {
+  await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("user_id", currentUserId)
+    .eq("is_read", false)
+    .filter("data->>post_id", "eq", postId);
+}
+
 export async function cleanupOldSOSNotifications(): Promise<void> {
   try {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

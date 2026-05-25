@@ -3,10 +3,11 @@
 import { useState, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Bell, ArrowLeft, User, MessageCircle } from "lucide-react";
+import { Bell, ArrowLeft, MessageCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useChatStore } from "@/features/chat/store";
 import { supabase } from "@/lib/supabase";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -213,20 +214,10 @@ export function Header({
               const splitTargets = onAvatarTap || onTitleTap;
 
               const avatarContent = avatarUrl !== undefined && (
-                <span className="w-7 h-7 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-[var(--chat-other-bg)]">
-                  {avatarUrl ? (
-                    <img
-                      src={avatarUrl}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User
-                      className="w-3.5 h-3.5"
-                      style={{ color: "var(--color-dark-400)" }}
-                    />
-                  )}
-                </span>
+                <AvatarImage
+                  src={avatarUrl}
+                  wrapperClassName="w-7 h-7 rounded-full overflow-hidden shrink-0 flex items-center justify-center bg-[var(--chat-other-bg)]"
+                />
               );
 
               const titleContent = (
@@ -437,27 +428,19 @@ export function Header({
             }`}
           >
             <div
-              className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center transition-all duration-300"
-              style={{
-                border:
-                  pathname === "/profile"
-                    ? "2px solid rgba(167,139,250,0.7)"
-                    : "2px solid rgba(255,255,255,0.12)",
-                background: "rgba(139,92,246,0.12)",
-              }}
+              className="contents"
             >
-              {user?.avatar_url ? (
-                <img
-                  src={user.avatar_url}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <User
-                  className="w-3.5 h-3.5"
-                  style={{ color: "var(--color-dark-400)" }}
-                />
-              )}
+              <AvatarImage
+                src={user?.avatar_url}
+                wrapperClassName="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center transition-all duration-300"
+                wrapperStyle={{
+                  border:
+                    pathname === "/profile"
+                      ? "2px solid rgba(167,139,250,0.7)"
+                      : "2px solid rgba(255,255,255,0.12)",
+                  background: "rgba(139,92,246,0.12)",
+                }}
+              />
             </div>
           </Link>
         </div>

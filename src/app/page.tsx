@@ -791,7 +791,7 @@ posts.forEach((p: any) => {
               }}
               className={`flex-1 py-3 text-sm font-medium transition-colors ${
                 activeTab === "nearby"
-                  ? "text-primary-400 border-b-2 border-primary-400"
+                  ? "text-primary-600 border-b-2 border-primary-600"
                   : "text-dark-400 hover:text-dark-200"
               }`}
             >
@@ -804,7 +804,7 @@ posts.forEach((p: any) => {
               }}
               className={`flex-1 py-3 text-sm font-medium transition-colors ${
                 activeTab === "trending"
-                  ? "text-primary-400 border-b-2 border-primary-400"
+                  ? "text-primary-600 border-b-2 border-primary-600"
                   : "text-dark-400 hover:text-dark-200"
               }`}
             >

@@ -61,12 +61,14 @@ export function useListTypingChannels(
       ch.on("broadcast", { event: "typing" }, ({ payload }) => {
         const sender = payload?.user_id;
         if (typeof sender !== "string" || sender === userId) return;
-        useChatStore.getState().setTyping(id, sender, "typing");
+        const senderName = typeof payload?.user_name === "string" ? payload.user_name : undefined;
+        useChatStore.getState().setTyping(id, sender, "typing", senderName);
       })
         .on("broadcast", { event: "recording" }, ({ payload }) => {
           const sender = payload?.user_id;
           if (typeof sender !== "string" || sender === userId) return;
-          useChatStore.getState().setTyping(id, sender, "recording");
+          const senderName = typeof payload?.user_name === "string" ? payload.user_name : undefined;
+          useChatStore.getState().setTyping(id, sender, "recording", senderName);
         })
         .subscribe();
       existing.set(id, ch);

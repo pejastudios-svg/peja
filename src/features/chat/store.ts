@@ -92,9 +92,16 @@ interface ChatStoreState {
   // the same channel as typing because the receiver-side UI (header
   // subtitle + in-thread pulsing icon) is the same surface — only the
   // icon swaps.
+  // Per-conversation map of typers, keyed by userId. A DM has at
+  // most one entry; a group can have several at once. Each entry
+  // carries the sender's name so consumers can render
+  // "Jane is typing" / "Jane and Sam are typing" / "3 people typing"
+  // without a separate lookup. Name is optional because old
+  // broadcasts (pre-name) just carried user_id — receivers fall back
+  // to a generic label in that case.
   typingByConversation: Record<
     string,
-    { userId: string; kind: "typing" | "recording"; at: number } | undefined
+    Record<string, { kind: "typing" | "recording"; userName?: string; at: number }>
   >;
 
   // Live upload progress for in-flight media sends, keyed by message
@@ -200,12 +207,18 @@ interface ChatStoreState {
   // conversation shown at a time. The `kind` field drives whether
   // the in-thread bubble shows a chat-bubble icon (typing) or a mic
   // icon (recording), and likewise the header subtitle text.
+  // userName is optional — only newer broadcasts include it. Without
+  // it, group typing falls back to "Someone is typing".
   setTyping: (
     conversationId: string,
     userId: string,
-    kind?: "typing" | "recording"
+    kind?: "typing" | "recording",
+    userName?: string,
   ) => void;
-  clearTyping: (conversationId: string) => void;
+  // userId is optional: omitted = wipe ALL typers for this
+  // conversation (used by channel-unsubscribe paths). Specified =
+  // wipe just that one user (TTL expiry path).
+  clearTyping: (conversationId: string, userId?: string) => void;
 
   // === Upload progress ===
   setUploadProgress: (
@@ -883,32 +896,88 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   },
 
   // ---- Typing / recording ----
-  setTyping: (conversationId, userId, kind = "typing") => {
+  setTyping: (conversationId, userId, kind = "typing", userName) => {
     const key = `${conversationId}|${userId}`;
     if (typingTimers[key]) clearTimeout(typingTimers[key]);
+
     const { typingByConversation } = get();
+    const existingForConv = typingByConversation[conversationId] || {};
+    const existingForUser = existingForConv[userId];
     set({
       typingByConversation: {
         ...typingByConversation,
-        [conversationId]: { userId, kind, at: Date.now() },
+        [conversationId]: {
+          ...existingForConv,
+          [userId]: {
+            kind,
+            // Keep an older known name if the new broadcast didn't
+            // carry one — protects against legacy senders.
+            userName: userName ?? existingForUser?.userName,
+            at: Date.now(),
+          },
+        },
       },
     });
+
     typingTimers[key] = setTimeout(() => {
-      const current = get().typingByConversation[conversationId];
-      if (!current || current.userId !== userId) return;
-      const next = { ...get().typingByConversation };
-      delete next[conversationId];
-      set({ typingByConversation: next });
+      // TTL expired for this one user — drop their entry only. If
+      // they were the last typer in the conversation, drop the
+      // conversation entry too.
+      const { typingByConversation: curMap } = get();
+      const inner = curMap[conversationId];
+      if (!inner || !inner[userId]) return;
+      const { [userId]: _removed, ...rest } = inner;
+      void _removed;
+      const nextMap = { ...curMap };
+      if (Object.keys(rest).length === 0) {
+        delete nextMap[conversationId];
+      } else {
+        nextMap[conversationId] = rest;
+      }
+      set({ typingByConversation: nextMap });
       delete typingTimers[key];
     }, TYPING_TTL_MS);
   },
 
-  clearTyping: (conversationId) => {
+  clearTyping: (conversationId, userId) => {
     const { typingByConversation } = get();
-    if (!typingByConversation[conversationId]) return;
-    const next = { ...typingByConversation };
-    delete next[conversationId];
-    set({ typingByConversation: next });
+    const inner = typingByConversation[conversationId];
+    if (!inner) return;
+
+    // Single-user clear: drop that one entry. If it was the last
+    // typer, drop the conversation entry too.
+    if (userId) {
+      if (!inner[userId]) return;
+      const { [userId]: _removed, ...rest } = inner;
+      void _removed;
+      const nextMap = { ...typingByConversation };
+      if (Object.keys(rest).length === 0) {
+        delete nextMap[conversationId];
+      } else {
+        nextMap[conversationId] = rest;
+      }
+      // Also cancel that user's TTL timer to keep typingTimers clean.
+      const key = `${conversationId}|${userId}`;
+      if (typingTimers[key]) {
+        clearTimeout(typingTimers[key]);
+        delete typingTimers[key];
+      }
+      set({ typingByConversation: nextMap });
+      return;
+    }
+
+    // Full clear (channel unsubscribe path): wipe every typer for
+    // this conversation and cancel their timers.
+    for (const otherUserId of Object.keys(inner)) {
+      const key = `${conversationId}|${otherUserId}`;
+      if (typingTimers[key]) {
+        clearTimeout(typingTimers[key]);
+        delete typingTimers[key];
+      }
+    }
+    const nextMap = { ...typingByConversation };
+    delete nextMap[conversationId];
+    set({ typingByConversation: nextMap });
   },
 
   // ---- Upload progress ----

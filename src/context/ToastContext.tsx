@@ -42,10 +42,11 @@ function consumeFlashToast(): { type: ToastType; message: string; ttlMs?: number
 }
 
 function iconFor(type: ToastType) {
-  if (type === "success") return <CheckCircle2 className="w-5 h-5 text-green-400" />;
-  if (type === "warning") return <AlertTriangle className="w-5 h-5 text-orange-400" />;
-  if (type === "danger") return <AlertTriangle className="w-5 h-5 text-red-400" />;
-  return <Info className="w-5 h-5 text-primary-400" />;
+  // Slim icons so the toast reads as a chip, not a banner.
+  if (type === "success") return <CheckCircle2 className="w-4 h-4 text-green-400" />;
+  if (type === "warning") return <AlertTriangle className="w-4 h-4 text-orange-400" />;
+  if (type === "danger") return <AlertTriangle className="w-4 h-4 text-red-400" />;
+  return <Info className="w-4 h-4 text-primary-400" />;
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -84,33 +85,40 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <Ctx.Provider value={api}>
       {children}
 
-      {/* Toast host */}
+      {/* Toast host. These are action-confirmation pills ("Copied",
+          "Muted", "Reported", etc.) — kept compact on purpose so they
+          read like a status badge rather than a heavy banner.
+          Inbound push toasts use a separate component
+          (components/notifications/InAppNotificationToasts) which
+          retains the larger size. */}
       <div
         className="fixed left-0 right-0 z-[200000] flex justify-center px-3"
         style={{ top: "calc(64px + env(safe-area-inset-top, 0px) + 8px)" }}
       >
-        <div className="w-full max-w-md space-y-2">
+        <div className="flex flex-col items-center gap-2">
           {toasts.map((t) => (
             <div
               key={t.id}
-              className="glass-float rounded-2xl border border-white/10 shadow-xl overflow-hidden animate-[toastIn_180ms_ease-out]"
+              className="inline-flex max-w-[90vw] glass-float rounded-full border border-white/10 shadow-xl overflow-hidden animate-[toastIn_180ms_ease-out]"
             >
-              <div className="p-3 flex items-center gap-3">
-  <div className="p-2 rounded-xl bg-dark-800/60 shrink-0">{iconFor(t.type)}</div>
+              <div className="px-3 py-1.5 flex items-center gap-2">
+                <span className="shrink-0 flex items-center justify-center">
+                  {iconFor(t.type)}
+                </span>
 
-  <div className="min-w-0 flex-1">
-    <p className="text-sm font-semibold text-dark-100">{t.message}</p>
-  </div>
+                <p className="text-[13px] font-medium text-dark-100 truncate">
+                  {t.message}
+                </p>
 
-  <button
-    type="button"
-    onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
-    className="p-2 rounded-lg hover:bg-white/10 text-dark-400"
-    aria-label="Dismiss"
-  >
-    <X className="w-4 h-4" />
-  </button>
-</div>
+                <button
+                  type="button"
+                  onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+                  className="p-1 rounded-full hover:bg-white/10 text-dark-400 shrink-0"
+                  aria-label="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           ))}
         </div>

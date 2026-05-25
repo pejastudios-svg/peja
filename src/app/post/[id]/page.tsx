@@ -12,7 +12,8 @@ import { formatDistanceToNow, differenceInHours } from "date-fns";
 import { useFeedCache } from "@/context/FeedContext";
 import { useAuth } from "@/context/AuthContext";
 import { notifyPostComment, notifyCommentLiked, notifyCommentReply } from "@/lib/notifications";
-import { notifyPostConfirmed } from "@/lib/notifications";
+import { notifyPostConfirmed, markPostNotificationsRead } from "@/lib/notifications";
+import { clearPushNotificationsForPost } from "@/lib/pushNotificationsClear";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useLongPress } from "@/components/hooks/useLongPress";
 import { useSearchParams } from "next/navigation";
@@ -459,7 +460,22 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
 
 // Record unique view
         recordPostView(postId, user?.id);
-        
+
+        // Mark in-app notifications about this post as read so the
+        // bell badge drops, AND clear any matching delivered push
+        // from the device tray (mirrors the chat-thread behavior).
+        // Both fire-and-forget; web ignores the push-clear.
+        if (user?.id) {
+          markPostNotificationsRead(postId, user.id)
+            .then(() => {
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new Event("peja-notifications-changed"));
+              }
+            })
+            .catch(() => {});
+          void clearPushNotificationsForPost(postId);
+        }
+
         setLoading(false);
       } catch (err) {
         if (isMounted.current) {

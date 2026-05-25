@@ -33,6 +33,10 @@ export function BottomNav() {
   const { user } = useAuth();
   const navRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLElement | null)[]>([]);
+  // Separate refs to the icon SVGs themselves — the active-tab line
+  // measures from these so it lines up with the icon, not with the
+  // (wider) item column.
+  const iconRefs = useRef<(SVGSVGElement | null)[]>([]);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuClosing, setMenuClosing] = useState(false);
@@ -68,18 +72,27 @@ export function BottomNav() {
   const [indicator, setIndicator] = useState<{ left: number; width: number } | null>(null);
 
   const updateIndicator = useCallback(() => {
-    const el = itemRefs.current[activeIndex];
+    // Measure the icon SVG so the line tracks the icon, not the
+    // wider item column. Falls back to the item bounds if the icon
+    // ref hasn't mounted yet (first paint, hot reload).
+    const iconEl = iconRefs.current[activeIndex];
+    const itemEl = itemRefs.current[activeIndex];
     const nav = navRef.current;
-    if (el && nav) {
-      const navRect = nav.getBoundingClientRect();
-      const elRect = el.getBoundingClientRect();
-      setIndicator({
-        left: elRect.left - navRect.left,
-        width: elRect.width,
-      });
-    } else {
+    if (!nav) {
       setIndicator(null);
+      return;
     }
+    const targetEl = iconEl ?? itemEl;
+    if (!targetEl) {
+      setIndicator(null);
+      return;
+    }
+    const navRect = nav.getBoundingClientRect();
+    const targetRect = targetEl.getBoundingClientRect();
+    setIndicator({
+      left: targetRect.left - navRect.left,
+      width: targetRect.width,
+    });
   }, [activeIndex]);
 
   useEffect(() => {
@@ -161,6 +174,7 @@ export function BottomNav() {
           }}
         >
           <Icon
+            ref={(el: SVGSVGElement | null) => { iconRefs.current[index] = el; }}
             className="w-[22px] h-[22px]"
             style={{
               color: isActive ? "var(--color-primary-600)" : "var(--color-dark-400)",
@@ -265,27 +279,24 @@ export function BottomNav() {
                   primary tint and animates between tabs. Sits BEHIND the
                   icon/label (z 0) which render at z 10. */}
               {indicator && activeIndex >= 0 && (() => {
-                // Per-side inset. Leftmost (Home) and rightmost (Search)
-                // each pull 3px closer to the matching nav edge so the
-                // pill doesn't sit offset against the rounded corner.
-                // Middle items keep the symmetric 4px each side.
-                const leftInset = activeIndex === 0 ? -1 : 4;
-                const rightInset = activeIndex === 3 ? 1 : 4;
+                // Short active-tab line, centered over the icon. ~28px
+                // wide — close to the icon glyph itself — so it reads
+                // as "this tab" rather than "this whole column".
+                const LINE_WIDTH = 28;
                 return (
                   <div
                     aria-hidden
                     className="absolute pointer-events-none"
                     style={{
-                      left: indicator.left + leftInset,
-                      width: indicator.width - leftInset - rightInset,
-                      top: 2,
-                      bottom: 2,
+                      left: indicator.left + indicator.width / 2 - LINE_WIDTH / 2,
+                      width: LINE_WIDTH,
+                      top: 0,
+                      height: 3,
                       borderRadius: "9999px",
-                      background: "rgba(167, 139, 250, 0.18)",
-                      border: "1px solid rgba(167, 139, 250, 0.28)",
+                      background: "var(--color-primary-600)",
                       transition:
-                        "left 0.35s cubic-bezier(0.4, 0.0, 0.2, 1), width 0.35s cubic-bezier(0.4, 0.0, 0.2, 1)",
-                      zIndex: 0,
+                        "left 0.35s cubic-bezier(0.4, 0.0, 0.2, 1)",
+                      zIndex: 20,
                     }}
                   />
                 );

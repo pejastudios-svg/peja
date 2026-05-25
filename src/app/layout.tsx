@@ -36,6 +36,7 @@ import { OfflineBanner } from "@/components/system/OfflineBanner";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { OutboxBootstrap } from "@/components/system/OutboxBootstrap";
+import { EmergencyContactsBootstrap } from "@/components/system/EmergencyContactsBootstrap";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -180,6 +181,7 @@ export default function RootLayout({
                     <FeedProvider>
                         <ChatBootstrap />
                         <OutboxBootstrap />
+                        <EmergencyContactsBootstrap />
                         <AnalyticsTracker />
                         <RoutePrefetcher />
                         <GlobalScrollManager />

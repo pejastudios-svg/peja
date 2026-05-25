@@ -13,7 +13,7 @@
 // useLongPress hook + kebab open/closed state (you can't call hooks
 // inside a `.map`).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import {
   Check,
@@ -76,13 +76,24 @@ export function ChatListRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  // Typing / recording indicator for THIS conversation only. Populated
-  // by the broadcast listener mounted in the list page
-  // (useListTypingChannels) — entries auto-expire after 3 s in the
-  // store. The listener already drops events sent by the current user,
-  // so any present entry means somebody else is typing/recording.
-  const typingEntry = useChatStore((s) => s.typingByConversation[conv.id]);
-  const typingKind = typingEntry?.kind ?? null;
+  // Typing / recording indicators for THIS conversation. Populated
+  // by useListTypingChannels (entries auto-expire after 3 s in the
+  // store). For DMs the inner map has at most one entry; for groups
+  // it can have several at once and we render a richer string.
+  const typingMap = useChatStore((s) => s.typingByConversation[conv.id]);
+  const typers = useMemo(() => {
+    if (!typingMap) return [] as Array<{ name?: string; kind: "typing" | "recording" }>;
+    return Object.values(typingMap).map((v) => ({ name: v.userName, kind: v.kind }));
+  }, [typingMap]);
+  // Pick a representative kind for the preview line: any "recording"
+  // wins (more committed signal), otherwise "typing" if anybody's
+  // typing.
+  const typingKind: "typing" | "recording" | null =
+    typers.some((t) => t.kind === "recording")
+      ? "recording"
+      : typers.some((t) => t.kind === "typing")
+        ? "typing"
+        : null;
 
   // Long-press = enter multi-select. Suppressed while already in
   // select mode (tap toggles selection there instead).
@@ -192,13 +203,34 @@ export function ChatListRow({
           </span>
         </div>
         <p className="text-sm text-dark-400 truncate">
-          {typingKind === "typing" ? (
+          {typingKind ? (
             // Live activity beats the last-message preview and the
             // draft. Colour matches the chat header subtitle so the
             // signal reads as "live" everywhere it appears.
-            <span className="text-primary-400">typing…</span>
-          ) : typingKind === "recording" ? (
-            <span className="text-red-400">recording…</span>
+            // Groups get a richer string when we know who's typing.
+            (() => {
+              const colorClass =
+                typingKind === "recording" ? "text-red-400" : "text-primary-400";
+              const verb = typingKind === "recording" ? "recording" : "typing";
+
+              // DMs never need a name — the row IS the other user.
+              if (!conv.is_group) {
+                return <span className={colorClass}>{verb}…</span>;
+              }
+
+              if (typers.length === 1) {
+                const name = typers[0].name || "Someone";
+                return <span className={colorClass}>{name} is {verb}…</span>;
+              }
+              if (typers.length === 2) {
+                const a = typers[0].name || "Someone";
+                const b = typers[1].name || "someone";
+                return <span className={colorClass}>{a} and {b} are typing…</span>;
+              }
+              return (
+                <span className={colorClass}>{typers.length} people are typing…</span>
+              );
+            })()
           ) : draft ? (
             <>
               <span className="text-red-400">Draft: </span>
