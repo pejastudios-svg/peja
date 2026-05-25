@@ -323,8 +323,10 @@ export function SOSButton({ className = "" }: { className?: string }) {
 
   // Refresh the cached emergency-contacts snapshot every time the SOS
   // button mounts while online. The offline SOS path reads from this
-  // cache to know whose phone numbers to SMS — without it, going
-  // offline with no recent cache means no contacts to message.
+  // cache to know whose phone numbers to SMS, and SMLButton's share
+  // sheet reads from the same cache to render its contact list while
+  // offline. We fetch ALL contacts (any status, with or without phone)
+  // — each consumer filters to what it needs.
   useEffect(() => {
     if (!user?.id) return;
     if (typeof navigator !== "undefined" && navigator.onLine === false) return;
@@ -333,17 +335,41 @@ export function SOSButton({ className = "" }: { className?: string }) {
       try {
         const { data, error } = await supabase
           .from("emergency_contacts")
-          .select("id, name, phone")
-          .eq("user_id", user.id)
-          .not("phone", "is", null);
-        if (cancelled) return;
-        if (error || !data) return;
-        const contacts: CachedEmergencyContact[] = data
-          .filter(
-            (c): c is { id: string; name: string; phone: string } =>
-              typeof c.phone === "string" && c.phone.trim().length > 0,
-          )
-          .map((c) => ({ id: c.id, name: c.name, phone: c.phone }));
+          .select("id, name, phone, contact_user_id, status")
+          .eq("user_id", user.id);
+        if (cancelled || error || !data) return;
+
+        // Best-effort join to users for full_name + avatar_url —
+        // SML's share sheet needs these to render the row.
+        const linkedIds = data
+          .map((c: any) => c.contact_user_id)
+          .filter((id: unknown): id is string => typeof id === "string");
+        const userMap: Record<string, { full_name: string | null; avatar_url: string | null }> = {};
+        if (linkedIds.length > 0) {
+          const { data: users } = await supabase
+            .from("users")
+            .select("id, full_name, avatar_url")
+            .in("id", linkedIds);
+          for (const u of users || []) {
+            userMap[(u as any).id] = {
+              full_name: (u as any).full_name ?? null,
+              avatar_url: (u as any).avatar_url ?? null,
+            };
+          }
+        }
+
+        const contacts: CachedEmergencyContact[] = data.map((c: any) => {
+          const linked = c.contact_user_id ? userMap[c.contact_user_id] : null;
+          return {
+            id: c.id,
+            name: c.name ?? "",
+            phone: typeof c.phone === "string" ? c.phone : "",
+            contact_user_id: c.contact_user_id ?? null,
+            status: (c.status ?? null) as CachedEmergencyContact["status"],
+            linked_full_name: linked?.full_name ?? null,
+            linked_avatar_url: linked?.avatar_url ?? null,
+          };
+        });
         writeEmergencyContactsCache(user.id, contacts);
       } catch {
         // Best-effort cache refresh — failure here doesn't block SOS.
@@ -577,13 +603,18 @@ export function SOSButton({ className = "" }: { className?: string }) {
       return;
     }
 
-    const contacts = readEmergencyContactsCache(user.id);
-    if (contacts.length === 0) {
-      // No cached contacts means the user has never opened the app
-      // while online with contacts configured. We can't do anything
-      // here — surface the issue and stop.
+    // Cache now stores ALL contacts (any status, with or without
+    // phone) so SML can also use it for its share sheet. For SOS we
+    // only want the ones we can actually SMS — i.e. those with a
+    // non-empty phone number.
+    const smsContacts = readEmergencyContactsCache(user.id).filter(
+      (c) => typeof c.phone === "string" && c.phone.trim().length > 0,
+    );
+    if (smsContacts.length === 0) {
+      // Either the cache was never populated, or every cached
+      // contact lacks a phone number. Either way we can't SMS.
       toast.danger(
-        "No emergency contacts available offline. Connect to the internet and try again.",
+        "No emergency contacts with phone numbers available offline. Connect to the internet and try again.",
       );
       setLoading(false);
       return;
@@ -620,7 +651,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
       latitude: lat,
       longitude: lng,
       address: null,
-      contacts,
+      contacts: smsContacts,
     });
 
     // Queue the DB write regardless of whether the SMS app opened
@@ -641,7 +672,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
         tag: selectedTag,
         message: textMessage || null,
         voice_note_url: null,
-        contact_ids: contacts.map((c) => c.id),
+        contact_ids: smsContacts.map((c) => c.id),
       },
     });
 

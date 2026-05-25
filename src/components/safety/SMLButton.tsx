@@ -9,6 +9,7 @@ import { apiUrl } from "@/lib/api";
 import { Portal } from "@/components/ui/Portal";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import { dispatchOrQueue, newOutboxId } from "@/lib/outbox";
+import { readEmergencyContactsCache } from "@/lib/emergencyContactsCache";
 import {
   MapPin,
   X,
@@ -167,27 +168,59 @@ export function SMLButton() {
     } catch {}
   }, [session?.access_token, user]);
 
-  // Fetch contacts for share flow
+  // Fetch contacts for share flow. Reads from the shared cache
+  // (populated by SOSButton's mount effect — both buttons live in
+  // the home bottom area so one of them mounts on every page) as a
+  // fallback when offline, so the share sheet still renders names
+  // and avatars without network.
   const fetchContacts = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from("emergency_contacts")
-      .select("contact_user_id")
-      .eq("user_id", user.id)
-      .eq("status", "accepted");
 
-    if (data && data.length > 0) {
-      const ids = data.map((c: any) => c.contact_user_id);
-      const { data: users } = await supabase
-        .from("users")
-        .select("id, full_name, avatar_url")
-        .in("id", ids);
+    const readCache = () =>
+      readEmergencyContactsCache(user.id)
+        .filter(
+          (c) => c.status === "accepted" && typeof c.contact_user_id === "string",
+        )
+        .map((c) => ({
+          contact_user_id: c.contact_user_id as string,
+          full_name: c.linked_full_name || c.name || "Unknown",
+          avatar_url: c.linked_avatar_url,
+        }));
 
-      setContacts((users || []).map((u: any) => ({
-        contact_user_id: u.id,
-        full_name: u.full_name || "Unknown",
-        avatar_url: u.avatar_url,
-      })));
+    // Offline: cache is the only source.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      setContacts(readCache());
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("emergency_contacts")
+        .select("contact_user_id")
+        .eq("user_id", user.id)
+        .eq("status", "accepted");
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const ids = data.map((c: any) => c.contact_user_id);
+        const { data: users } = await supabase
+          .from("users")
+          .select("id, full_name, avatar_url")
+          .in("id", ids);
+
+        setContacts((users || []).map((u: any) => ({
+          contact_user_id: u.id,
+          full_name: u.full_name || "Unknown",
+          avatar_url: u.avatar_url,
+        })));
+      } else {
+        setContacts([]);
+      }
+    } catch {
+      // Network said it was online but the query failed — same
+      // outcome as offline. Fall back to cache.
+      setContacts(readCache());
     }
   }, [user]);
 

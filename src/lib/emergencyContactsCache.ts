@@ -10,9 +10,23 @@
 const KEY_PREFIX = "peja:emergency-contacts:v1:";
 
 export interface CachedEmergencyContact {
+  // emergency_contacts.id — the row id, not the linked Peja user id.
   id: string;
+  // emergency_contacts.name + phone — used by the offline SOS SMS
+  // path (phone is the recipient, name is just for display).
   name: string;
   phone: string;
+  // emergency_contacts.contact_user_id — set when the contact is
+  // also a Peja user. Used by SML to target push/in-app notifications.
+  contact_user_id: string | null;
+  // emergency_contacts.status — SML only shows contacts with status
+  // "accepted"; SOS SMS uses everyone with a phone number regardless
+  // of status (it's a one-way carrier SMS, no app handshake needed).
+  status: "pending" | "accepted" | "declined" | null;
+  // Snapshot from the users table, joined at cache time. Used by
+  // SML's share sheet to render the row offline.
+  linked_full_name: string | null;
+  linked_avatar_url: string | null;
 }
 
 interface CachedSnapshot {
@@ -38,9 +52,7 @@ export function readEmergencyContactsCache(
         typeof c === "object" &&
         c !== null &&
         typeof c.id === "string" &&
-        typeof c.name === "string" &&
-        typeof c.phone === "string" &&
-        c.phone.length > 0,
+        typeof c.name === "string",
     );
   } catch {
     return [];
