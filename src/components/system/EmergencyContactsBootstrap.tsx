@@ -31,6 +31,17 @@ export function EmergencyContactsBootstrap() {
 
     let cancelled = false;
 
+    // Record that the bootstrap MOUNTED for this user, even if we
+    // skip the actual populate (offline / etc.). The diagnostic in
+    // SOSButton reads this so we can distinguish "bootstrap never ran"
+    // from "bootstrap ran but found zero contacts."
+    try {
+      sessionStorage.setItem(
+        "peja:contacts-cache:bootstrap-mounted",
+        JSON.stringify({ userId, at: Date.now() }),
+      );
+    } catch {}
+
     async function populate() {
       // Skip when the browser is sure we're offline — the supabase
       // query would just hang. We retry on the 'online' event below.
@@ -40,9 +51,13 @@ export function EmergencyContactsBootstrap() {
       }
       try {
         console.log("[contacts-cache] fetching for user", userId);
+        // emergency_contacts only stores the relationship metadata
+        // (link to the other Peja user + relationship + status). The
+        // contact's name + phone live on the users table — we join
+        // them in below.
         const { data, error } = await supabase
           .from("emergency_contacts")
-          .select("id, name, phone, contact_user_id, status")
+          .select("id, contact_user_id, relationship, status")
           .eq("user_id", userId);
         if (cancelled) return;
         if (error) {
@@ -60,20 +75,25 @@ export function EmergencyContactsBootstrap() {
           data,
         );
 
-        // Best-effort join to users for full_name + avatar_url so
-        // SML's share sheet can render rows without a second hop.
+        // Pull full_name, phone, avatar_url from the linked Peja
+        // users — those are the values SOS (phone) and SML (full_name
+        // + avatar) actually need.
         const linkedIds = data
           .map((c: any) => c.contact_user_id)
           .filter((id: unknown): id is string => typeof id === "string");
-        const userMap: Record<string, { full_name: string | null; avatar_url: string | null }> = {};
+        const userMap: Record<
+          string,
+          { full_name: string | null; phone: string | null; avatar_url: string | null }
+        > = {};
         if (linkedIds.length > 0) {
           const { data: users } = await supabase
             .from("users")
-            .select("id, full_name, avatar_url")
+            .select("id, full_name, phone, avatar_url")
             .in("id", linkedIds);
           for (const u of users || []) {
             userMap[(u as any).id] = {
               full_name: (u as any).full_name ?? null,
+              phone: (u as any).phone ?? null,
               avatar_url: (u as any).avatar_url ?? null,
             };
           }
@@ -83,8 +103,12 @@ export function EmergencyContactsBootstrap() {
           const linked = c.contact_user_id ? userMap[c.contact_user_id] : null;
           return {
             id: c.id,
-            name: c.name ?? "",
-            phone: typeof c.phone === "string" ? c.phone : "",
+            // Cache the linked user's full_name as the contact's
+            // display name. Falls back to empty if unlinked.
+            name: linked?.full_name ?? "",
+            // Cache the linked user's phone for the offline SOS SMS
+            // path. Falls back to empty if the user doesn't have one.
+            phone: linked?.phone ?? "",
             contact_user_id: c.contact_user_id ?? null,
             status: (c.status ?? null) as CachedEmergencyContact["status"],
             linked_full_name: linked?.full_name ?? null,

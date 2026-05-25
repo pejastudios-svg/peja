@@ -135,6 +135,11 @@ export default function EditProfilePage() {
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  // Switches to true if the avatar <img> fires onError (offline / 404 /
+  // broken CDN). Resets whenever shownAvatarUrl changes — see effect
+  // below. Keeps the User-icon fallback from being suppressed by a
+  // truthy-but-broken URL.
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   // Hydrate the form once per user id. Auth refreshes/realtime updates replace the
@@ -397,6 +402,12 @@ export default function EditProfilePage() {
 
   const shownAvatarUrl = avatarPreviewUrl || formData.avatar_url;
 
+  // Clear the "load failed" flag whenever the URL changes so a fresh
+  // upload after a previous failure isn't permanently suppressed.
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [shownAvatarUrl]);
+
   return (
     <div
       ref={containerRef}
@@ -492,11 +503,12 @@ export default function EditProfilePage() {
         <div className="flex justify-center mb-6">
           <div className="relative">
             <div className="w-24 h-24 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden">
-              {shownAvatarUrl ? (
+              {shownAvatarUrl && !avatarFailed ? (
                 <img
                   src={shownAvatarUrl}
                   alt="Profile"
                   className="w-full h-full object-cover"
+                  onError={() => setAvatarFailed(true)}
                 />
               ) : (
                 <User className="w-12 h-12 text-primary-400" />

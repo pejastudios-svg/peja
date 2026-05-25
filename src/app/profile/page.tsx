@@ -8,7 +8,6 @@ import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import { VipBadge } from "@/components/ui/VipBadge";
 import {
-  User,
   Mail,
   Phone,
   Briefcase,
@@ -20,6 +19,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Header } from "@/components/layout/Header";
 import { Post } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
@@ -353,13 +353,12 @@ export default function ProfilePage() {
           <div className="max-w-2xl mx-auto">
             <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="w-20 h-20 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden">
-                  {user.avatar_url ? (
-                    <img src={user.avatar_url} alt={user.full_name} className="w-full h-full object-cover" />
-                  ) : (
-                    <User className="w-10 h-10 text-primary-400" />
-                  )}
-                </div>
+                <AvatarImage
+                  src={user.avatar_url}
+                  alt={user.full_name}
+                  wrapperClassName="w-20 h-20 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden"
+                  fallbackIconClassName="w-10 h-10 text-primary-400"
+                />
                 <button
                   onClick={() => router.push("/profile/edit")}
                   className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center border-2 border-dark-950"

@@ -551,15 +551,24 @@ export function SOSButton({ className = "" }: { className?: string }) {
     // phone) so SML can also use it for its share sheet. For SOS we
     // only want the ones we can actually SMS — i.e. those with a
     // non-empty phone number.
-    const smsContacts = readEmergencyContactsCache(user.id).filter(
+    const allCached = readEmergencyContactsCache(user.id);
+    const smsContacts = allCached.filter(
       (c) => typeof c.phone === "string" && c.phone.trim().length > 0,
     );
     if (smsContacts.length === 0) {
-      // Either the cache was never populated, or every cached
-      // contact lacks a phone number. Either way we can't SMS.
-      toast.danger(
-        "No emergency contacts with phone numbers available offline. Connect to the internet and try again.",
-      );
+      // Diagnostic message — surfaces the real cause so we can fix
+      // whichever step is broken instead of guessing.
+      const reason =
+        allCached.length === 0
+          ? "cache is empty (offline contact list never synced — open the app once online with contacts saved)"
+          : `cache has ${allCached.length} contact(s) but none have phone numbers`;
+      toast.danger(`SOS offline: ${reason}.`);
+      console.log("[sos-offline] cache state", {
+        userId: user.id,
+        totalCached: allCached.length,
+        withPhone: smsContacts.length,
+        allCached,
+      });
       setLoading(false);
       return;
     }
