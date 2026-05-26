@@ -1,6 +1,6 @@
-// Peja Service Worker v15 - Offline-First Safety App
-const CACHE_NAME = "peja-v15";
-const APP_SHELL_CACHE = "peja-shell-v15";
+// Peja Service Worker v16 - Offline-First Safety App
+const CACHE_NAME = "peja-v16";
+const APP_SHELL_CACHE = "peja-shell-v16";
 // Bumped to v6 to invalidate stale /rest/v1/messages and conversations
 // responses. Like posts before them (v5 bump), they're now network-first
 // so user mutations (clear chat, delete message, block) reflect on the
@@ -131,20 +131,42 @@ async function findDynamicRouteShell(pathname) {
   const noTrail = prefix.slice(0, -1);
   if (pathname === prefix || pathname === noTrail) return null;
   try {
-    const shell = await caches.open(APP_SHELL_CACHE);
-    const keys = await shell.keys();
-    for (const key of keys) {
-      let keyPath;
-      try {
-        keyPath = new URL(key.url).pathname;
-      } catch {
-        continue;
+    // Scan EVERY versioned shell cache, newest first. A single-cache
+    // scan was missing the case where the just-activated cache had no
+    // placeholder yet (install hadn't completed, or had been
+    // interrupted) but the previous version's cache still did. The
+    // activate handler keeps MAX_SHELL_CACHES previous shells around
+    // for exactly this reason.
+    const allCaches = await caches.keys();
+    const shellNames = allCaches
+      .filter((k) => SHELL_VERSION_PATTERN.test(k))
+      .map((k) => {
+        const m = k.match(/^peja-shell-v(\d+)$/);
+        return { name: k, n: m ? parseInt(m[1], 10) : 0 };
+      })
+      .sort((a, b) => b.n - a.n)
+      .map((v) => v.name);
+    // Always include APP_SHELL_CACHE first (it's the just-activated
+    // shell — placeholders may live there from this install run).
+    if (!shellNames.includes(APP_SHELL_CACHE)) {
+      shellNames.unshift(APP_SHELL_CACHE);
+    }
+    for (const cacheName of shellNames) {
+      const shell = await caches.open(cacheName);
+      const keys = await shell.keys();
+      for (const key of keys) {
+        let keyPath;
+        try {
+          keyPath = new URL(key.url).pathname;
+        } catch {
+          continue;
+        }
+        if (!keyPath.startsWith(prefix)) continue;
+        if (keyPath === prefix || keyPath === noTrail) continue;
+        // Sibling under the same dynamic prefix — use it as the shell.
+        const resp = await shell.match(key);
+        if (resp) return resp;
       }
-      if (!keyPath.startsWith(prefix)) continue;
-      if (keyPath === prefix || keyPath === noTrail) continue;
-      // Sibling under the same dynamic prefix — use it as the shell.
-      const resp = await shell.match(key);
-      if (resp) return resp;
     }
   } catch {}
   return null;
@@ -226,19 +248,25 @@ const SHELL_VERSION_PATTERN = /^peja-shell-v\d+$/;
 // Keep up to this many old static caches around as fallbacks. Each
 // deploy bumps CACHE_NAME, so this caps long-term storage growth.
 const MAX_STATIC_CACHES = 2;
+// Same idea for shell caches: holding on to one previous version means
+// findDynamicRouteShell can still find a /post/<X>/ or /messages/<X>/
+// shell while a new install is mid-flight (or never finished — e.g.
+// the user closed the app before the placeholder URLs got cached).
+// Without this, every version bump leaves a window where the dynamic
+// shell cache is empty and offline navigation falls through to "/".
+const MAX_SHELL_CACHES = 2;
 
 self.addEventListener("activate", (event) => {
   const KEEP_EXACT = [CACHE_NAME, APP_SHELL_CACHE, DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
   event.waitUntil((async () => {
     const keys = await caches.keys();
     const staticVersions = [];
+    const shellVersions = [];
     for (const key of keys) {
       if (KEEP_EXACT.includes(key)) continue;
-      // Stale APP_SHELL caches reference chunks that no longer exist
-      // on the server (each deploy rebuilds them with new hashes), so
-      // they're safe to drop.
       if (SHELL_VERSION_PATTERN.test(key)) {
-        await caches.delete(key);
+        const m = key.match(/^peja-shell-v(\d+)$/);
+        if (m) shellVersions.push({ name: key, n: parseInt(m[1], 10) });
         continue;
       }
       if (STATIC_VERSION_PATTERN.test(key)) {
@@ -249,11 +277,15 @@ self.addEventListener("activate", (event) => {
       // Anything else we don't recognize is fair game to delete.
       await caches.delete(key);
     }
-    // Prune the oldest static caches, keeping the newest MAX_STATIC_CACHES
-    // (the just-activated CACHE_NAME is already KEEP_EXACT'd so it doesn't
-    // appear in this list).
+    // Prune the oldest static + shell caches, keeping the newest
+    // MAX_* of each (the just-activated CACHE_NAME / APP_SHELL_CACHE
+    // are already KEEP_EXACT'd so they don't appear in these lists).
     staticVersions.sort((a, b) => b.n - a.n);
     for (const v of staticVersions.slice(MAX_STATIC_CACHES)) {
+      await caches.delete(v.name);
+    }
+    shellVersions.sort((a, b) => b.n - a.n);
+    for (const v of shellVersions.slice(MAX_SHELL_CACHES)) {
       await caches.delete(v.name);
     }
     await self.clients.claim();
