@@ -1,6 +1,6 @@
-// Peja Service Worker v9 - Offline-First Safety App
-const CACHE_NAME = "peja-v9";
-const APP_SHELL_CACHE = "peja-shell-v9";
+// Peja Service Worker v10 - Offline-First Safety App
+const CACHE_NAME = "peja-v10";
+const APP_SHELL_CACHE = "peja-shell-v10";
 // Bumped to v6 to invalidate stale /rest/v1/messages and conversations
 // responses. Like posts before them (v5 bump), they're now network-first
 // so user mutations (clear chat, delete message, block) reflect on the
@@ -9,18 +9,30 @@ const DATA_CACHE = "peja-data-v6";
 const MEDIA_CACHE = "peja-media-v3";
 const VIDEO_CACHE = "peja-video-v3";
 
-const APP_SHELL = [
+// HTML routes to pre-cache. Trailing slashes match Next.js's
+// trailingSlash: true canonical form — without them, fetch() follows a
+// 308 redirect and the response comes back with `redirected = true`,
+// which Cache API silently refuses to store (the cause of /map, /search,
+// etc. NOT being available offline on cold start even though APP_SHELL
+// listed them). cacheHtmlPage also stores under the request URL so
+// either form is a cache hit.
+const APP_SHELL_PAGES = [
   "/",
-  "/map",
-  "/search",
-  "/create",
-  "/profile",
-  "/notifications",
-  "/messages",
-  "/login",
-  "/signup",
-  "/settings",
-  "/emergency-contacts",
+  "/map/",
+  "/search/",
+  "/create/",
+  "/profile/",
+  "/notifications/",
+  "/messages/",
+  "/login/",
+  "/signup/",
+  "/settings/",
+  "/emergency-contacts/",
+];
+
+// Static files alongside the HTML pages. These don't redirect so the
+// plain shell.add() path is fine.
+const APP_SHELL_FILES = [
   "/peja-logo.png.png",
 ];
 
@@ -76,39 +88,68 @@ function extractAssetUrls(html) {
   return urls;
 }
 
+// Fetch an HTML page and cache it under both the requested URL and
+// (if the server redirected) the final URL. We can't use cache.add()
+// for redirected responses — Cache API rejects Response objects with
+// the `redirected` flag set, which silently dropped /map, /search,
+// /create, etc. on every install because Next.js redirects them to
+// their trailingSlash form. Reading the body and constructing a fresh
+// Response drops the redirected flag. Returns the asset URLs the HTML
+// references so the caller can warm the static cache in the same pass.
+async function cacheHtmlPage(shell, url) {
+  try {
+    const resp = await fetch(url, { redirect: "follow", cache: "no-store" });
+    if (!resp.ok) return [];
+    const text = await resp.text();
+    const buildResp = () => new Response(text, {
+      status: resp.status,
+      statusText: resp.statusText,
+      headers: resp.headers,
+    });
+    await shell.put(new Request(url), buildResp()).catch(() => {});
+    try {
+      const finalUrl = new URL(resp.url);
+      const finalPath = finalUrl.pathname + finalUrl.search;
+      if (finalPath && finalPath !== url) {
+        await shell.put(new Request(finalPath), buildResp()).catch(() => {});
+      }
+    } catch {}
+    return extractAssetUrls(text);
+  } catch {
+    return [];
+  }
+}
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil((async () => {
     const shell = await caches.open(APP_SHELL_CACHE);
+    const staticCache = await caches.open(CACHE_NAME);
+
+    // Static files (logo) — no redirects involved, plain add() is fine.
     await Promise.allSettled(
-      APP_SHELL.map((url) => shell.add(url).catch(() => {}))
+      APP_SHELL_FILES.map((url) => shell.add(url).catch(() => {}))
     );
-    // Warm the static cache with the chunks the root HTML references
-    // so an offline-first cold open doesn't render unstyled. Hashed
-    // filenames mean we can't list them statically — fetch them at
-    // install time. Also warm /map's chunks (Leaflet CSS moved off the
-    // root, so /map has its own asset set now). Best-effort; failures
-    // are silent.
-    try {
-      const staticCache = await caches.open(CACHE_NAME);
-      const pages = ["/", "/map"];
-      const allUrls = new Set();
-      await Promise.allSettled(pages.map(async (p) => {
-        try {
-          const resp = await fetch(p, { cache: "no-store" });
-          if (!resp.ok) return;
-          const html = await resp.text();
-          extractAssetUrls(html).forEach((u) => allUrls.add(u));
-        } catch {}
-      }));
-      // Leaflet stylesheet is injected at runtime by IncidentMapInner,
-      // so it won't appear in the scraped HTML. Cache it explicitly so
-      // an offline /map still gets its tile-layer styling.
-      allUrls.add("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
-      await Promise.allSettled(
-        Array.from(allUrls).map((u) => staticCache.add(u).catch(() => {}))
-      );
-    } catch {}
+
+    // Pre-cache every page's HTML AND collect their asset URLs in a
+    // single pass. Each route has its own JS chunk under
+    // /_next/static/chunks/app/<route>/page-<hash>.js — without this
+    // warm-up, an offline cold-open could load the HTML but not the
+    // route code, leaving the user stuck on a half-rendered page.
+    const assetUrls = new Set();
+    await Promise.allSettled(APP_SHELL_PAGES.map(async (url) => {
+      const urls = await cacheHtmlPage(shell, url);
+      urls.forEach((u) => assetUrls.add(u));
+    }));
+
+    // Leaflet stylesheet is injected at runtime by IncidentMapInner,
+    // so it won't appear in scraped HTML. Cache it explicitly so an
+    // offline /map still gets its tile-layer styling.
+    assetUrls.add("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
+
+    await Promise.allSettled(
+      Array.from(assetUrls).map((u) => staticCache.add(u).catch(() => {}))
+    );
   })());
 });
 
