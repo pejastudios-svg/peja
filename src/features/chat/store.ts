@@ -418,6 +418,17 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       conversationsHydrated: true,
       lastSeenByUserId: nextLastSeen,
     });
+    // Persist the live list so offline cold-opens of /messages render
+    // the chat list immediately (the useChatInit effect that reads
+    // this cache flips `conversationsHydrated` to true on mount).
+    // Persisting from inside the action rather than at the call site
+    // means every caller — useChatInit's initial fetch, realtime's
+    // post-update refetch, the group creator — keeps the cache fresh
+    // without each having to remember.
+    const userIdForCache = get().currentUserId;
+    if (userIdForCache) {
+      persistConversationsCache(userIdForCache, conversations);
+    }
   },
 
   upsertConversation: (conv) => {

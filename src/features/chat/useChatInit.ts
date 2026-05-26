@@ -23,7 +23,6 @@ import { useAuth } from "@/context/AuthContext";
 import {
   useChatStore,
   readConversationsCache,
-  persistConversationsCache,
 } from "./store";
 import { startChatRealtime, stopChatRealtime } from "./realtime";
 import { startPresence, stopPresence } from "./presence";
@@ -111,8 +110,8 @@ export function useChatInit() {
     fetchConversationList(userId)
       .then((list) => {
         console.log("[chat-v2] fetched conversation list:", list.length);
+        // setConversations persists to localStorage automatically (see store.ts).
         useChatStore.getState().setConversations(list);
-        persistConversationsCache(userId, list);
       })
       .catch((e) => console.error("[chat-v2] fetchConversationList failed", e));
   }, [userId, lastConnectedAt]);

@@ -198,7 +198,18 @@ export default function EditProfilePage() {
           .eq("id", user.id)
           .single();
         if (cancelled) return;
-        const src = data ?? user;
+        // Validate the response BEFORE using it. The service worker's
+        // network-first handler for /rest/v1/users returns a synthetic
+        // `Response("[]")` when offline + no cache (see sw.js
+        // NETWORK_FIRST_PATTERNS). supabase-js parses that as data=[]
+        // (non-nullish), so the previous `data ?? user` fallback never
+        // fired and the form rendered with empty fields. Treat data as
+        // valid only when it looks like an actual user row.
+        const dataIsValidObject =
+          data !== null &&
+          typeof data === "object" &&
+          !Array.isArray(data);
+        const src = dataIsValidObject ? data : user;
         const fromDb: FormState = {
           full_name: src.full_name || "",
           phone: src.phone || "",

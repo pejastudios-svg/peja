@@ -468,6 +468,27 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
           setLoading(false);
           return;
         }
+        // The SW's network-first handler for /rest/v1/posts returns a
+        // synthetic `Response("[]")` on offline + no cache (see sw.js
+        // NETWORK_FIRST_PATTERNS). supabase-js parses that as data=[]
+        // with no error, so we'd fall through to setPost({ id:
+        // data.id, ... }) — every field undefined, including
+        // created_at, which then crashes render at
+        // formatDistanceToNow(new Date(undefined)) → "Invalid time
+        // value" → the segment error.tsx shows "Something went
+        // wrong". Guard with a real-shape check so we route through
+        // the same offline / cached-post branch as a real
+        // fetchError.
+        const dataIsValidPost =
+          data !== null &&
+          typeof data === "object" &&
+          !Array.isArray(data) &&
+          typeof (data as any).id === "string";
+        if (!dataIsValidPost) {
+          if (!post) setError("offline");
+          setLoading(false);
+          return;
+        }
 confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
         setPost({
           id: data.id,
