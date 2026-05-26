@@ -1,6 +1,6 @@
-// Peja Service Worker v14 - Offline-First Safety App
-const CACHE_NAME = "peja-v14";
-const APP_SHELL_CACHE = "peja-shell-v14";
+// Peja Service Worker v15 - Offline-First Safety App
+const CACHE_NAME = "peja-v15";
+const APP_SHELL_CACHE = "peja-shell-v15";
 // Bumped to v6 to invalidate stale /rest/v1/messages and conversations
 // responses. Like posts before them (v5 bump), they're now network-first
 // so user mutations (clear chat, delete message, block) reflect on the
@@ -35,6 +35,19 @@ const APP_SHELL_PAGES = [
   "/help/",
   "/privacy/",
   "/terms/",
+  // Placeholder dynamic-route URLs. Pre-cached so findDynamicRouteShell
+  // always has a "sibling" entry to return when the user navigates to
+  // an unfamiliar /post/<id>, /messages/<id>, /checkin/track/<id>,
+  // etc. offline. The all-zero UUID 404s on the server-side data
+  // lookup, but the HTML shell + chunks are identical for every ID —
+  // Next.js boots from window.location after hydration, so the
+  // requested ID's page renders correctly. Without these, activate's
+  // peja-shell-v* nuke can leave the user with no dynamic-route shell
+  // and the SW falls all the way through to "/" → hard refresh.
+  "/post/00000000-0000-0000-0000-000000000000/",
+  "/messages/00000000-0000-0000-0000-000000000000/",
+  "/checkin/track/00000000-0000-0000-0000-000000000000/",
+  "/watch/00000000-0000-0000-0000-000000000000/",
 ];
 
 // Static files alongside the HTML pages. These don't redirect so the

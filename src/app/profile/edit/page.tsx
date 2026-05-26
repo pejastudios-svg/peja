@@ -239,6 +239,20 @@ export default function EditProfilePage() {
     writeProfileEditDraft(user.id, formData, touchedFieldsRef.current);
   }, [formData, user?.id]);
 
+  // Avatar-load failure tracking. Must live HERE — above the early
+  // returns below — because hooks have to run in the same order on
+  // every render. The previous home for this effect (right next to
+  // `shownAvatarUrl`'s declaration) was after `return <Skeleton/>`
+  // and `if (!user) return null`, so the hook count differed between
+  // the first render (skeleton path) and the second render (form
+  // path). React 19 flags this as "Rendered more hooks than during
+  // the previous render" → the segment error boundary catches it →
+  // users see "Something went wrong".
+  const shownAvatarUrl = (avatarPreviewUrl || formData?.avatar_url) ?? null;
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [shownAvatarUrl]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const fieldName = e.target.name as keyof FormState;
     const value = e.target.value;
@@ -399,14 +413,6 @@ export default function EditProfilePage() {
   if (!user) {
     return null;
   }
-
-  const shownAvatarUrl = avatarPreviewUrl || formData.avatar_url;
-
-  // Clear the "load failed" flag whenever the URL changes so a fresh
-  // upload after a previous failure isn't permanently suppressed.
-  useEffect(() => {
-    setAvatarFailed(false);
-  }, [shownAvatarUrl]);
 
   return (
     <div
