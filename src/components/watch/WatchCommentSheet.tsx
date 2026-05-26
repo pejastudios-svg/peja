@@ -396,8 +396,8 @@ export function WatchCommentSheet({
         toast.success("Report submitted");
       }
 
-    } catch (err: any) {
-      toast.danger(err.message || "Failed to report");
+    } catch {
+      toast.danger("Couldn't submit report. Try again.");
     } finally {
       setSubmittingReport(false);
       setSelectedComment(null);

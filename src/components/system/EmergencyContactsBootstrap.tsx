@@ -111,6 +111,7 @@ export function EmergencyContactsBootstrap() {
             phone: linked?.phone ?? "",
             contact_user_id: c.contact_user_id ?? null,
             status: (c.status ?? null) as CachedEmergencyContact["status"],
+            relationship: c.relationship ?? null,
             linked_full_name: linked?.full_name ?? null,
             linked_avatar_url: linked?.avatar_url ?? null,
           };

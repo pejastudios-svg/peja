@@ -270,8 +270,8 @@ if (diff <= 0) {
       setActiveCheckIn(data.checkin);
       setShowSetup(false);
       toast.success("Safety Check-In started! Your contacts have been notified.");
-    } catch (err: any) {
-      toast.danger(err.message || "Failed to start check-in");
+    } catch {
+      toast.danger("Couldn't start check-in. Try again.");
     } finally {
       setStarting(false);
       setStartPhase(null);

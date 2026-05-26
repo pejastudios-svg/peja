@@ -68,6 +68,72 @@ function SearchContent() {
     return () => window.removeEventListener("scroll", save);
   }, [feedKey, feedCache]);
 
+  // Pull from the home feed caches when the live search query fails
+  // (offline / network hiccup) and the search-specific cache key is
+  // empty too. The home feed is the largest already-on-device corpus
+  // — using it offline means the user sees something to filter through
+  // instead of "No posts yet". Online searches are untouched: this is
+  // only invoked from the catch path below.
+  const seedFromHomeCache = useCallback((): Post[] => {
+    if (typeof window === "undefined") return [];
+    const nearby = feedCache.get("home:nearby")?.posts || [];
+    const trending = feedCache.get("home:trending")?.posts || [];
+    const dedupe = new Map<string, Post>();
+    for (const p of [...nearby, ...trending]) {
+      if (p?.id && !dedupe.has(p.id)) dedupe.set(p.id, p);
+    }
+    let merged = Array.from(dedupe.values());
+
+    if (selectedCategory) {
+      merged = merged.filter((p) => p.category === selectedCategory);
+    }
+    if (dateRange !== "all") {
+      const now = new Date();
+      let startDate: Date;
+      switch (dateRange) {
+        case "today": startDate = new Date(now.setHours(0, 0, 0, 0)); break;
+        case "week": startDate = new Date(now.setDate(now.getDate() - 7)); break;
+        case "month": startDate = new Date(now.setMonth(now.getMonth() - 1)); break;
+        default: startDate = new Date(0);
+      }
+      merged = merged.filter(
+        (p) => new Date(p.created_at).getTime() >= startDate.getTime(),
+      );
+    }
+    if (tagFilters.length > 0) {
+      merged = merged.filter((p) => {
+        const tagSet = new Set((p.tags || []).map((t) => (t || "").toLowerCase()));
+        return tagFilters.every((t) => tagSet.has(t));
+      });
+    }
+    if (query.trim()) {
+      const searchTerm = query.toLowerCase().trim();
+      if (searchTerm.startsWith("#")) {
+        const tagQuery = searchTerm.slice(1);
+        merged = merged.filter((p) =>
+          (p.tags || []).some((t) => (t || "").toLowerCase().includes(tagQuery)),
+        );
+      } else {
+        merged = merged.filter((p) => {
+          const categoryName =
+            CATEGORIES.find((c) => c.id === p.category)?.name || "";
+          const comment = (p.comment ?? "").toLowerCase();
+          const address = (p.address ?? "").toLowerCase();
+          const categoryId = (p.category ?? "").toLowerCase();
+          const tags = (p.tags ?? []).map((t) => (t ?? "").toLowerCase());
+          return (
+            comment.includes(searchTerm) ||
+            address.includes(searchTerm) ||
+            categoryName.toLowerCase().includes(searchTerm) ||
+            categoryId.includes(searchTerm) ||
+            tags.some((t) => t.includes(searchTerm))
+          );
+        });
+      }
+    }
+    return feedCache.applyDeletes(merged).slice(0, 50);
+  }, [feedCache, selectedCategory, dateRange, tagFilters, query]);
+
   const performSearch = useCallback(async () => {
     // Only show loading skeleton if we have NO cached results
     if (posts.length === 0) setLoading(true);
@@ -223,11 +289,26 @@ function SearchContent() {
       setPosts(display);
       feedCache.setPosts(feedKey, display);
     } catch (error) {
-      if (posts.length === 0) setPosts([]);
+      // Network failed (likely offline). If we already have cached
+      // results on screen, leave them alone. Otherwise, seed from the
+      // home feed caches so the user has something to filter through
+      // instead of an empty "No posts yet" state.
+      if (posts.length === 0) {
+        const seeded = seedFromHomeCache();
+        if (seeded.length > 0) {
+          confirm.hydrateCounts(
+            seeded.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })),
+          );
+          confirm.loadConfirmedFor(seeded.map((p) => p.id));
+          setPosts(seeded);
+        } else {
+          setPosts([]);
+        }
+      }
     } finally {
       setLoading(false);
     }
-  }, [query, selectedCategory, dateRange, tagFilters, feedKey, feedCache, confirm]);
+  }, [query, selectedCategory, dateRange, tagFilters, feedKey, feedCache, confirm, seedFromHomeCache]);
 
   // Listen for post deleted/archived events
   useEffect(() => {

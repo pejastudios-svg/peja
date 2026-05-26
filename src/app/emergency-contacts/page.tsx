@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useToast } from "@/context/ToastContext";
 import { SafetyCheckIn } from "@/components/safety/SafetyCheckIn";
+import { readEmergencyContactsCache } from "@/lib/emergencyContactsCache";
 import {
   Plus,
   Trash2,
@@ -70,11 +71,44 @@ export default function EmergencyContactsPage() {
   const toast = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
+  // Hydrate the "My Contacts" tab from the local cache populated by
+  // EmergencyContactsBootstrap. This is the same offline source the SML
+  // share sheet reads from, so the page now matches that behavior:
+  // contacts render immediately on cold offline opens, then the live
+  // supabase fetch replaces them when online. Returns [] when the cache
+  // isn't ready yet (no user, or never populated).
+  const hydrateContactsFromCache = (
+    userId: string | undefined,
+  ): EmergencyContact[] => {
+    if (!userId) return [];
+    return readEmergencyContactsCache(userId).map((c) => ({
+      id: c.id,
+      user_id: userId,
+      contact_user_id: c.contact_user_id ?? "",
+      relationship: c.relationship ?? "",
+      status: (c.status ?? "pending") as EmergencyContact["status"],
+      created_at: "",
+      contact_user: {
+        id: c.contact_user_id ?? "",
+        full_name: c.linked_full_name ?? c.name ?? "Unknown",
+        avatar_url: c.linked_avatar_url ?? undefined,
+        phone: c.phone ?? undefined,
+      },
+    }));
+  };
+
+  const [contacts, setContacts] = useState<EmergencyContact[]>(() =>
+    hydrateContactsFromCache(user?.id),
+  );
   const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [protectingFor, setProtectingFor] = useState<PendingInvite[]>([]);
   const [activeTab, setActiveTab] = useState<"mine" | "protecting">("mine");
-  const [loading, setLoading] = useState(true);
+  // If we already have cached contacts, skip the skeleton — the live
+  // fetch (if it succeeds) will replace them in place. Otherwise show
+  // the skeleton while we wait for the first fetch to land.
+  const [loading, setLoading] = useState(
+    () => hydrateContactsFromCache(user?.id).length === 0,
+  );
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -94,11 +128,20 @@ export default function EmergencyContactsPage() {
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (user) {
-      fetchContacts();
-      fetchPendingInvites();
-      fetchProtectingFor();
+    if (!user) return;
+    // Auth hydrated after first paint — try the cache now that we
+    // know the user id, so we can render contacts before the network
+    // fetch lands (or at all, when offline).
+    if (contacts.length === 0) {
+      const cached = hydrateContactsFromCache(user.id);
+      if (cached.length > 0) {
+        setContacts(cached);
+        setLoading(false);
+      }
     }
+    fetchContacts();
+    fetchPendingInvites();
+    fetchProtectingFor();
   }, [user]);
 
   useEffect(() => {
@@ -136,11 +179,16 @@ export default function EmergencyContactsPage() {
   const fetchContacts = async () => {
     if (!user) return;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("emergency_contacts")
         .select("id, user_id, contact_user_id, relationship, status, created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: true });
+
+      // Offline / query failed: don't clobber the cached list we
+      // already painted. The bootstrap will repopulate the cache next
+      // time we're online.
+      if (error) return;
 
       if (data && data.length > 0) {
         const ids = data.map(c => c.contact_user_id);
@@ -154,7 +202,9 @@ export default function EmergencyContactsPage() {
       } else {
         setContacts([]);
       }
-    } catch {} finally { setLoading(false); }
+    } catch {
+      // Network threw — keep whatever's on screen from the cache.
+    } finally { setLoading(false); }
   };
 
   const fetchPendingInvites = async () => {

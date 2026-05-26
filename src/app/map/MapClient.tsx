@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Component, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -26,6 +26,42 @@ const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
     </div>
   ),
 });
+
+// Catches errors from the dynamic IncidentMap import (e.g. the MapLibre
+// chunk wasn't pre-cached and we're offline) so they don't escalate to
+// the segment-level error.tsx and replace the whole page with
+// "Something went wrong". The rest of the map page (header, controls)
+// still renders; only the map canvas shows the offline message.
+class IncidentMapBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {}
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="h-full flex items-center justify-center bg-dark-800 px-6">
+          <div className="text-center max-w-xs">
+            <div className="w-12 h-12 rounded-full bg-primary-500/15 flex items-center justify-center mx-auto mb-3">
+              <MapIcon className="w-6 h-6 text-primary-300" />
+            </div>
+            <p className="text-sm font-medium text-dark-100 mb-1">
+              Map unavailable offline
+            </p>
+            <p className="text-xs text-dark-400">
+              Connect to the internet to load the map. Posts and alerts will sync when you&apos;re back online.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type SOSUserPublic = { full_name: string; avatar_url?: string };
 
@@ -575,29 +611,31 @@ export default function MapClient() {
               <Skeleton className="h-[70vh] w-[92vw] max-w-5xl rounded-2xl" />
             </div>
           ) : (
-            <IncidentMap
-              posts={filteredPosts}
-              userLocation={userLocation}
-              onPostClick={handlePostClick}
-              sosAlerts={sosAlerts}
-              centerOnUser={shouldCenterOnUser}
-              centerOnCoords={centerOnSOS}
-              openSOSId={openSOSId}
-              compassEnabled={compassEnabled}
-              myUserId={myUserId}
-              previewPostId={previewPostId}
-              onPreviewClose={() => {
-                setPreviewPostId(null);
-                // Remove the post param from the URL so the effect doesn't
-                // reopen the popup, and so a refresh doesn't restore it.
-                if (typeof window !== "undefined" && window.location.search.includes("post=")) {
-                  const params = new URLSearchParams(window.location.search);
-                  params.delete("post");
-                  const next = params.toString();
-                  window.history.replaceState(null, "", `${window.location.pathname}${next ? `?${next}` : ""}`);
-                }
-              }}
-            />
+            <IncidentMapBoundary>
+              <IncidentMap
+                posts={filteredPosts}
+                userLocation={userLocation}
+                onPostClick={handlePostClick}
+                sosAlerts={sosAlerts}
+                centerOnUser={shouldCenterOnUser}
+                centerOnCoords={centerOnSOS}
+                openSOSId={openSOSId}
+                compassEnabled={compassEnabled}
+                myUserId={myUserId}
+                previewPostId={previewPostId}
+                onPreviewClose={() => {
+                  setPreviewPostId(null);
+                  // Remove the post param from the URL so the effect doesn't
+                  // reopen the popup, and so a refresh doesn't restore it.
+                  if (typeof window !== "undefined" && window.location.search.includes("post=")) {
+                    const params = new URLSearchParams(window.location.search);
+                    params.delete("post");
+                    const next = params.toString();
+                    window.history.replaceState(null, "", `${window.location.pathname}${next ? `?${next}` : ""}`);
+                  }
+                }}
+              />
+            </IncidentMapBoundary>
           )}
 
           {sosAlerts.length > 0 && (

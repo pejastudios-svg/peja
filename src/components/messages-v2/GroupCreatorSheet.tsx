@@ -323,8 +323,8 @@ export function GroupCreatorSheet({ currentUserId, onClose }: Props) {
               <p className="text-sm text-dark-200 mb-1">
                 Couldn&rsquo;t load the user list.
               </p>
-              <p className="text-[11px] text-dark-500 font-mono break-words">
-                {loadError}
+              <p className="text-[11px] text-dark-500">
+                Check your connection and try again.
               </p>
             </div>
           ) : people.length === 0 ? (

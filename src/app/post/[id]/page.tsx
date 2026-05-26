@@ -861,11 +861,11 @@ setLikeBusy(prev => {
         notifyCommentReply(postId, replyToUserId, user.full_name || "Someone", commentContent);
       }
 
-    } catch (err: any) {
+    } catch {
       setAllComments(prev => prev.filter(c => c.id !== tempId));
       setPost(p => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
       setNewComment(commentContent);
-      alert(err.message || "Failed to post comment");
+      alert("Couldn't post comment. Check your connection and try again.");
     } finally {
       setSubmittingComment(false);
     }

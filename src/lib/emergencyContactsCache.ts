@@ -23,6 +23,10 @@ export interface CachedEmergencyContact {
   // "accepted"; SOS SMS uses everyone with a phone number regardless
   // of status (it's a one-way carrier SMS, no app handshake needed).
   status: "pending" | "accepted" | "declined" | null;
+  // emergency_contacts.relationship — shown beneath the name on the
+  // Emergency Contacts page. Optional in the cache shape so older
+  // payloads written before this field was tracked still parse.
+  relationship?: string | null;
   // Snapshot from the users table, joined at cache time. Used by
   // SML's share sheet to render the row offline.
   linked_full_name: string | null;

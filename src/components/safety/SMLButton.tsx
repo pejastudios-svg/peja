@@ -192,24 +192,14 @@ export function SMLButton() {
       const all = readEmergencyContactsCache(user.id);
       const usable = readCache();
       setContacts(usable);
-      // Diagnostic — when there are SOME cached contacts but none
-      // pass SML's "accepted + linked user" filter, surface the
-      // count breakdown so we can see what's actually in the cache
-      // instead of just an empty list.
       if (usable.length === 0) {
-        console.log("[sml-offline] cache state", {
-          userId: user.id,
-          totalCached: all.length,
-          acceptedWithLinkedUser: usable.length,
-          allCached: all,
-        });
         if (all.length === 0) {
           toast.warning(
-            "SML offline: cache is empty (open the app once online with accepted contacts first).",
+            "Add emergency contacts when you're online so they're available offline.",
           );
         } else {
           toast.warning(
-            `SML offline: ${all.length} cached contact(s) but none are 'accepted' Peja users.`,
+            "No accepted contacts yet. Ask them to accept your invite when online.",
           );
         }
       }

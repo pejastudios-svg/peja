@@ -176,12 +176,8 @@ export function NewDMSheet({ currentUserId, onClose }: Props) {
             <p className="text-sm text-dark-200 mb-2">
               Couldn&rsquo;t load the user list.
             </p>
-            <p className="text-[11px] text-dark-500 font-mono break-words">
-              {loadError}
-            </p>
-            <p className="text-[11px] text-dark-500 mt-3">
-              If this says &ldquo;function … does not exist&rdquo;, the
-              MVP/VIP migrations haven&rsquo;t been applied yet.
+            <p className="text-[11px] text-dark-500">
+              Check your connection and pull to refresh.
             </p>
           </div>
         ) : people.length === 0 ? (
