@@ -486,6 +486,23 @@ export default function ThreadV2Page() {
 
   const messages = useMemo(() => thread?.messages || [], [thread?.messages]);
 
+  // Re-save the cached thread whenever the messages list changes —
+  // not just after fetchThread. The previous save-after-fetch path
+  // missed the most important case: a message the user just sent
+  // (which lands via optimistic upsertMessage, not via fetch). Without
+  // this, opening a chat offline showed messages up to the last
+  // fetchThread but NOT the user's own outgoing message they sent
+  // moments earlier. Debounced so a burst of realtime updates only
+  // costs one write.
+  useEffect(() => {
+    if (!user?.id || !conversationId) return;
+    if (messages.length === 0) return;
+    const t = setTimeout(() => {
+      void saveCachedThread(user.id!, conversationId, messages);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [user?.id, conversationId, messages]);
+
   // === Scroll-anchoring logic ===
   // Rule: only auto-scroll to the latest message when the user is
   // ALREADY anchored to the bottom of the thread. If they've scrolled

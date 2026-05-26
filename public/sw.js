@@ -1,6 +1,6 @@
-// Peja Service Worker v16 - Offline-First Safety App
-const CACHE_NAME = "peja-v16";
-const APP_SHELL_CACHE = "peja-shell-v16";
+// Peja Service Worker v17 - Offline-First Safety App
+const CACHE_NAME = "peja-v17";
+const APP_SHELL_CACHE = "peja-shell-v17";
 // Bumped to v6 to invalidate stale /rest/v1/messages and conversations
 // responses. Like posts before them (v5 bump), they're now network-first
 // so user mutations (clear chat, delete message, block) reflect on the
@@ -363,6 +363,28 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Offline-failure response for data endpoints. Returning a 503 with a
+  // JSON error body — rather than a synthetic `Response("[]")` — means
+  // supabase-js's normal error path fires (`data: null, error: {...}`)
+  // and every consumer's existing `if (error) return` / try/catch
+  // works the way you'd expect. The previous synthetic-empty fallback
+  // was the root cause of half of the "page rendered with empty
+  // data" / "wiped my cached posts" / "InvalidTime crash" bugs — the
+  // client never knew the fetch had actually failed because the
+  // response looked like a successful empty query.
+  const offlineDataResponse = () =>
+    new Response(
+      JSON.stringify({ error: "offline", offline: true, message: "Network unavailable" }),
+      {
+        status: 503,
+        statusText: "Service Unavailable",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Peja-Offline": "true",
+        },
+      }
+    );
+
   // Supabase data: stale-while-revalidate (read-heavy collections only)
   if (CACHEABLE_DATA_PATTERNS.some((p) => p.test(request.url))) {
     event.respondWith(
@@ -370,7 +392,7 @@ self.addEventListener("fetch", (event) => {
         const net = fetch(request).then((r) => {
           if (r.ok) { const cl = r.clone(); caches.open(DATA_CACHE).then((ca) => ca.put(request, cl)); }
           return r;
-        }).catch(() => cached || new Response("[]", { headers: { "Content-Type": "application/json" } }));
+        }).catch(() => cached || offlineDataResponse());
         return cached || net;
       })
     );
@@ -385,7 +407,7 @@ self.addEventListener("fetch", (event) => {
           if (r.ok) { const cl = r.clone(); caches.open(DATA_CACHE).then((ca) => ca.put(request, cl)); }
           return r;
         })
-        .catch(() => caches.match(request).then((c) => c || new Response("[]", { headers: { "Content-Type": "application/json" } })))
+        .catch(() => caches.match(request).then((c) => c || offlineDataResponse()))
     );
     return;
   }
