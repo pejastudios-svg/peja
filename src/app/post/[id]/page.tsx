@@ -327,9 +327,25 @@ export default function PostDetailPage() {
   // CRITICAL: Track ongoing like operations to prevent double-clicks
   const likingInProgress = useRef<Set<string>>(new Set());
   const likeNotifiedRef = useRef<Set<string>>(new Set());
-  // Post state
-  const [post, setPost] = useState<Post | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Post state. Seeded from the in-memory feed caches so opening a
+  // post offline (or before the network call resolves) paints the
+  // card immediately instead of flashing a skeleton or "Post Not
+  // Found". Falls back to null when nothing matches — same as before.
+  const cachedPost = (() => {
+    if (typeof window === "undefined") return null;
+    const candidateKeys = sourceKey
+      ? [sourceKey, "home:nearby", "home:trending", "profile:posts"]
+      : ["home:nearby", "home:trending", "profile:posts"];
+    for (const k of candidateKeys) {
+      const entry = feedCache.get(k);
+      const found = entry?.posts?.find((p) => p.id === postId);
+      if (found) return found;
+    }
+    return null;
+  })();
+  const [post, setPost] = useState<Post | null>(cachedPost);
+  // Skip the skeleton when we already have a cached card to show.
+  const [loading, setLoading] = useState(cachedPost == null);
   const [error, setError] = useState<string | null>(null);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [showSensitive, setShowSensitive] = useState(false);
@@ -343,6 +359,12 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
   // Comments
   const [allComments, setAllComments] = useState<Comment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
+  // Set when the comments fetch fails (offline / RLS / network).
+  // Disambiguates "we got an empty list" from "we couldn't even ask",
+  // so the empty state can say "Comments unavailable offline" instead
+  // of misleading the user with "No comments yet". Resets on each
+  // refetch attempt.
+  const [commentsError, setCommentsError] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string; parentId: string | null } | null>(null);
@@ -426,14 +448,22 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
         if (!isMounted.current) return;
 
         if (fetchError) {
-          setError("Post not found");
-          setLoading(false);
-          // Only evict from local caches if Postgres confirms the row truly
-          // doesn't exist (PGRST116). RLS denials and transient network errors
-          // must NOT remove a real post from the user's feed cache.
+          // PGRST116 = "row not found"; that's an authoritative answer
+          // and we surface the error UI. RLS denials, transient
+          // network errors, and the offline path all share this
+          // branch — for those we'd rather keep showing whatever the
+          // feed cache already painted than blow the user into a
+          // "Post Not Found" screen.
           if ((fetchError as any)?.code === "PGRST116") {
+            setError("Post not found");
+            setLoading(false);
             feedCache.removePost(postId);
+            return;
           }
+          if (!post) {
+            setError("Post not found");
+          }
+          setLoading(false);
           return;
         }
 confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
@@ -477,9 +507,12 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
         }
 
         setLoading(false);
-      } catch (err) {
+      } catch {
+        // Network threw — offline or aborted. Keep the cached card
+        // on screen when we have one; only show the error UI when
+        // there's truly nothing to render.
         if (isMounted.current) {
-          setError("Failed to load");
+          if (!post) setError("Failed to load");
           setLoading(false);
         }
       }
@@ -500,6 +533,7 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
     if (!postId) return;
 
     setCommentsLoading(true);
+    setCommentsError(false);
 
     try {
       const { data: rawComments, error: commentsErr } = await supabase
@@ -512,6 +546,7 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
       if (!isMounted.current) return;
 
       if (commentsErr || !rawComments) {
+        setCommentsError(true);
         setCommentsLoading(false);
         return;
       }
@@ -589,8 +624,11 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
         setAllComments(comments);
         setCommentsLoading(false);
       }
-    } catch (err) {
-      if (isMounted.current) setCommentsLoading(false);
+    } catch {
+      if (isMounted.current) {
+        setCommentsError(true);
+        setCommentsLoading(false);
+      }
     }
   }, [postId, user]);
 
@@ -1587,11 +1625,19 @@ if (error || !post) {
                 ))}
               </div>
             ) : parentComments.length === 0 ? (
-              <div className="text-center py-8">
-                <MessageCircle className="w-10 h-10 text-dark-600 mx-auto mb-2" />
-                <p className="text-dark-400 text-sm">No comments yet</p>
-                <p className="text-dark-500 text-xs">Be the first to comment</p>
-              </div>
+              commentsError ? (
+                <div className="text-center py-8">
+                  <MessageCircle className="w-10 h-10 text-dark-600 mx-auto mb-2" />
+                  <p className="text-dark-400 text-sm">Comments unavailable offline</p>
+                  <p className="text-dark-500 text-xs">They&apos;ll load once you&apos;re back online.</p>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <MessageCircle className="w-10 h-10 text-dark-600 mx-auto mb-2" />
+                  <p className="text-dark-400 text-sm">No comments yet</p>
+                  <p className="text-dark-500 text-xs">Be the first to comment</p>
+                </div>
+              )
             ) : (
               <div>
                 {parentComments.map(parent => renderThread(parent))}

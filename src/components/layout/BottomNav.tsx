@@ -50,6 +50,12 @@ export function BottomNav() {
   const [smlActive, setSmlActive] = useState(false);
   const [smlSharedCount, setSmlSharedCount] = useState(0);
   const [smlOverdue, setSmlOverdue] = useState(false);
+  // Flips to true if the Peja logo <img> ever errors. We render a
+  // styled "P" mark in its place — so a transient asset failure (which
+  // is what we suspect is happening during the keyboard-hide repaint)
+  // shows a Peja-branded fallback instead of whatever the WebView
+  // would otherwise paint there.
+  const [logoBroken, setLogoBroken] = useState(false);
 
   const closeMenu = useCallback(() => {
     setMenuClosing(true);
@@ -418,16 +424,43 @@ export function BottomNav() {
                   zIndex: 40,
                 }}
               >
-                <img
-                  src={PEJA_LOGO}
-                  alt="Peja"
-                  className="w-8 h-8 object-contain"
-                  style={{
-                    filter: "drop-shadow(0 0 3px rgba(167, 139, 250, 0.3))",
-                    transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-                    transform: menuOpen && !menuClosing ? "rotate(-45deg)" : "rotate(0deg)",
-                  }}
-                />
+                {logoBroken ? (
+                  <div
+                    className="w-8 h-8 flex items-center justify-center"
+                    style={{
+                      borderRadius: "50%",
+                      background:
+                        "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                      color: "#ffffff",
+                      fontWeight: 800,
+                      fontSize: 16,
+                      letterSpacing: "0.5px",
+                      filter:
+                        "drop-shadow(0 0 3px rgba(167, 139, 250, 0.3))",
+                      transition:
+                        "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                      transform:
+                        menuOpen && !menuClosing
+                          ? "rotate(-45deg)"
+                          : "rotate(0deg)",
+                    }}
+                  >
+                    P
+                  </div>
+                ) : (
+                  <img
+                    src={PEJA_LOGO}
+                    alt="Peja"
+                    className="w-8 h-8 object-contain"
+                    decoding="async"
+                    onError={() => setLogoBroken(true)}
+                    style={{
+                      filter: "drop-shadow(0 0 3px rgba(167, 139, 250, 0.3))",
+                      transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                      transform: menuOpen && !menuClosing ? "rotate(-45deg)" : "rotate(0deg)",
+                    }}
+                  />
+                )}
                 {/* Shared count badge */}
                 {smlSharedCount > 0 && !menuOpen && (
                   <div

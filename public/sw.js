@@ -1,6 +1,6 @@
-// Peja Service Worker v10 - Offline-First Safety App
-const CACHE_NAME = "peja-v10";
-const APP_SHELL_CACHE = "peja-shell-v10";
+// Peja Service Worker v11 - Offline-First Safety App
+const CACHE_NAME = "peja-v11";
+const APP_SHELL_CACHE = "peja-shell-v11";
 // Bumped to v6 to invalidate stale /rest/v1/messages and conversations
 // responses. Like posts before them (v5 bump), they're now network-first
 // so user mutations (clear chat, delete message, block) reflect on the
@@ -86,6 +86,48 @@ function extractAssetUrls(html) {
   const scriptRe = /<script[^>]+src=["']([^"']+)["']/g;
   while ((m = scriptRe.exec(html))) urls.push(m[1]);
   return urls;
+}
+
+// Route prefixes whose URLs are interchangeable for offline-shell
+// purposes. A request to /post/<id-A>/ can be served using the HTML
+// previously cached for /post/<id-B>/ — the Next.js bootstrap loads
+// the same chunks regardless of <id> and re-resolves the route via
+// window.location after hydration. The static parent route (e.g.
+// "/messages/" the list) is intentionally NOT returned here, since
+// it's a different page than "/messages/<id>/".
+const DYNAMIC_ROUTE_PREFIXES = [
+  "/post/",
+  "/messages/",
+  "/checkin/track/",
+  "/checkin/shared/",
+  "/watch/",
+];
+
+async function findDynamicRouteShell(pathname) {
+  const prefix = DYNAMIC_ROUTE_PREFIXES.find((p) => pathname.startsWith(p));
+  if (!prefix) return null;
+  // Skip the bare parent route — that's the list page, not a shell
+  // for the dynamic child route.
+  const noTrail = prefix.slice(0, -1);
+  if (pathname === prefix || pathname === noTrail) return null;
+  try {
+    const shell = await caches.open(APP_SHELL_CACHE);
+    const keys = await shell.keys();
+    for (const key of keys) {
+      let keyPath;
+      try {
+        keyPath = new URL(key.url).pathname;
+      } catch {
+        continue;
+      }
+      if (!keyPath.startsWith(prefix)) continue;
+      if (keyPath === prefix || keyPath === noTrail) continue;
+      // Sibling under the same dynamic prefix — use it as the shell.
+      const resp = await shell.match(key);
+      if (resp) return resp;
+    }
+  } catch {}
+  return null;
 }
 
 // Fetch an HTML page and cache it under both the requested URL and
@@ -275,6 +317,17 @@ self.addEventListener("fetch", (event) => {
         .catch(async () => {
           const cached = await caches.match(request);
           if (cached) return cached;
+          // Dynamic-route shell fallback. Tapping a post / chat /
+          // checkin offline used to fall all the way through to the
+          // home page HTML, so the user saw the home feed at a
+          // /post/<id> URL. The HTML shell under any of these
+          // prefixes is interchangeable across IDs — Next.js boots
+          // from window.location after hydration — so returning a
+          // cached sibling lets the page render for the requested ID
+          // (and its own client logic shows the appropriate skeleton
+          // + offline error state).
+          const dynamicShell = await findDynamicRouteShell(url.pathname);
+          if (dynamicShell) return dynamicShell;
           const root = await caches.match("/");
           if (root) return root;
           return new Response(
