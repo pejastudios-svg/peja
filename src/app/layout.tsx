@@ -76,24 +76,15 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         {/* No-flicker theme bootstrap — runs before paint to set data-theme
-            from localStorage. Also writes an inline backgroundColor on
-            <html>/<body> so the WebView paints the correct theme color
-            BEFORE the global CSS chunk has loaded. Without this, light-
-            mode users see a dark flash because the native Capacitor
-            splash background and the CSS-default :root --page-bg are
-            both dark; the inline style short-circuits both since the
-            WebView honors inline element styles without waiting on any
-            stylesheet to arrive.
-
-            Adds .theme-preload so the bg/color transition rule is
-            suppressed for first paint (otherwise the transition smoothly
-            fades from the default dark bg to the saved light bg over
-            300ms = the visible flash users were reporting). Class is
-            removed on the next animation frame so subsequent theme
-            toggles still animate smoothly. */}
+            from localStorage. Adds .theme-preload so the global bg/color
+            transition rule is suppressed for first paint (otherwise the
+            transition smoothly fades from the default dark bg to the saved
+            light bg over 300ms = the visible flash users were reporting).
+            Class is removed on the next animation frame so subsequent
+            theme toggles still animate smoothly. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("peja-theme");var v=(t==="light"||t==="dark")?t:"dark";var bg=v==="light"?"#ffffff":"#0c0818";var fg=v==="light"?"#0c0818":"#f5f3ff";var d=document.documentElement;d.setAttribute("data-theme",v);d.classList.add("theme-preload");d.style.backgroundColor=bg;d.style.color=fg;var apply=function(){if(document.body){document.body.style.backgroundColor=bg;document.body.style.color=fg;}};apply();document.addEventListener("DOMContentLoaded",apply,{once:true});requestAnimationFrame(function(){requestAnimationFrame(function(){d.classList.remove("theme-preload");});});}catch(e){document.documentElement.setAttribute("data-theme","dark");document.documentElement.style.backgroundColor="#0c0818";}})();`,
+            __html: `(function(){try{var t=localStorage.getItem("peja-theme");var v=(t==="light"||t==="dark")?t:"dark";var d=document.documentElement;d.setAttribute("data-theme",v);d.classList.add("theme-preload");requestAnimationFrame(function(){requestAnimationFrame(function(){d.classList.remove("theme-preload");});});}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`,
           }}
         />
         {/* Status-bar height fallback for PWAs / mobile browsers where
@@ -136,20 +127,6 @@ export default function RootLayout({
                 compute();
               }
             }catch(e){}})();`,
-          }}
-        />
-        {/* Inline critical fallback styles — applied directly to the
-            document so a partial CSS-chunk load (cold offline, brief
-            cache miss, SW mid-install) doesn't paint the raw HTML
-            FOUC users have reported (unstyled blue underlined links,
-            default browser buttons, etc.). With this block in place,
-            the worst-case render is a blank theme-colored screen
-            instead of broken markup. The real stylesheet supersedes
-            these rules as soon as it loads — they're scoped tightly
-            so no production component overrides them with !important. */}
-        <style
-          dangerouslySetInnerHTML={{
-            __html: `html,body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-font-smoothing:antialiased}html[data-theme="light"]{background-color:#ffffff;color:#0c0818}html[data-theme="dark"],html:not([data-theme]){background-color:#0c0818;color:#f5f3ff}a{color:inherit;text-decoration:none}button{font-family:inherit;color:inherit;background:transparent;border:0;padding:0;cursor:pointer}img{max-width:100%;display:block}`,
           }}
         />
         <link rel="icon" href="/favicon.ico" sizes="any" />
