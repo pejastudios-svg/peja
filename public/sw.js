@@ -1,6 +1,6 @@
-// Peja Service Worker v12 - Offline-First Safety App
-const CACHE_NAME = "peja-v12";
-const APP_SHELL_CACHE = "peja-shell-v12";
+// Peja Service Worker v13 - Offline-First Safety App
+const CACHE_NAME = "peja-v13";
+const APP_SHELL_CACHE = "peja-shell-v13";
 // Bumped to v6 to invalidate stale /rest/v1/messages and conversations
 // responses. Like posts before them (v5 bump), they're now network-first
 // so user mutations (clear chat, delete message, block) reflect on the
@@ -22,12 +22,19 @@ const APP_SHELL_PAGES = [
   "/search/",
   "/create/",
   "/profile/",
+  "/profile/edit/",
   "/notifications/",
   "/messages/",
   "/login/",
   "/signup/",
+  "/forgot-password/",
   "/settings/",
   "/emergency-contacts/",
+  "/become-guardian/",
+  "/checkin/shared/",
+  "/help/",
+  "/privacy/",
+  "/terms/",
 ];
 
 // Static files alongside the HTML pages. These don't redirect so the
