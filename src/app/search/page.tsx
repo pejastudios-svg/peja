@@ -138,6 +138,31 @@ function SearchContent() {
     // Only show loading skeleton if we have NO cached results
     if (posts.length === 0) setLoading(true);
 
+    // When offline, skip the network call entirely. The service worker
+    // returns a synthetic `Response("[]")` for /rest/v1/posts on fetch
+    // failure (see sw.js NETWORK_FIRST_PATTERNS) — supabase-js parses
+    // that as a successful query with zero rows, which would mask
+    // the "no network" case as "no matching posts" and prevent the
+    // home-cache seed below from ever running. Bypassing supabase
+    // when navigator says offline keeps this clean.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      const seeded = seedFromHomeCache();
+      if (seeded.length > 0) {
+        confirm.hydrateCounts(
+          seeded.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })),
+        );
+        confirm.loadConfirmedFor(seeded.map((p) => p.id));
+        setPosts(seeded);
+      } else if (posts.length === 0) {
+        setPosts([]);
+      }
+      // Don't write the seeded list under the search feedKey — the
+      // user's actual query may match more rows once they're back
+      // online, and we don't want a stale "[]" cached for this key.
+      setLoading(false);
+      return;
+    }
+
     try {
       let queryBuilder = supabase
         .from("posts")

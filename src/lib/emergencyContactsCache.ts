@@ -8,6 +8,14 @@
 // contacts into another's session.
 
 const KEY_PREFIX = "peja:emergency-contacts:v1:";
+// Sibling cache for the "Protecting" tab on the emergency contacts
+// page — the inverse lookup, i.e. people who have added ME as their
+// emergency contact (pending invites + accepted protections). This is
+// a separate cache because the rows have a different meaning (rows
+// owned by *other* users, where contact_user_id = me) — mixing them
+// into the main cache would confuse SOS/SML which only care about
+// outgoing contacts.
+const PROTECTING_KEY_PREFIX = "peja:protecting-cache:v1:";
 
 export interface CachedEmergencyContact {
   // emergency_contacts.id — the row id, not the linked Peja user id.
@@ -84,5 +92,66 @@ export function clearEmergencyContactsCache(userId: string): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(keyFor(userId));
+  } catch {}
+}
+
+// ─── Protecting cache (incoming invites + accepted "I'm their contact") ───
+
+export interface CachedProtectingRow {
+  // emergency_contacts.id (the relationship row).
+  id: string;
+  // emergency_contacts.user_id — the OTHER user, the inviter / owner
+  // of the relationship. We're their contact.
+  user_id: string;
+  // The inviter's snapshot from the users table.
+  full_name: string | null;
+  avatar_url: string | null;
+  // emergency_contacts.relationship — "Parent", "Friend", etc.
+  relationship: string | null;
+  // "pending" → shows in Pending Requests; "accepted" → shows under
+  // people I'm protecting; "declined" → rows we don't render so we
+  // don't cache them.
+  status: "pending" | "accepted";
+}
+
+interface CachedProtectingSnapshot {
+  rows: CachedProtectingRow[];
+  cached_at: number;
+}
+
+function protectingKeyFor(userId: string): string {
+  return `${PROTECTING_KEY_PREFIX}${userId}`;
+}
+
+export function readProtectingCache(userId: string): CachedProtectingRow[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(protectingKeyFor(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as CachedProtectingSnapshot;
+    if (!parsed || !Array.isArray(parsed.rows)) return [];
+    return parsed.rows.filter(
+      (r): r is CachedProtectingRow =>
+        typeof r === "object" &&
+        r !== null &&
+        typeof r.id === "string" &&
+        typeof r.user_id === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function writeProtectingCache(
+  userId: string,
+  rows: CachedProtectingRow[],
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const snapshot: CachedProtectingSnapshot = {
+      rows,
+      cached_at: Date.now(),
+    };
+    window.localStorage.setItem(protectingKeyFor(userId), JSON.stringify(snapshot));
   } catch {}
 }

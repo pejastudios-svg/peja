@@ -8,7 +8,10 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useToast } from "@/context/ToastContext";
 import { SafetyCheckIn } from "@/components/safety/SafetyCheckIn";
-import { readEmergencyContactsCache } from "@/lib/emergencyContactsCache";
+import {
+  readEmergencyContactsCache,
+  readProtectingCache,
+} from "@/lib/emergencyContactsCache";
 import {
   Plus,
   Trash2,
@@ -97,11 +100,39 @@ export default function EmergencyContactsPage() {
     }));
   };
 
+  // Hydrate the "Protecting" tab from the sibling cache (people who
+  // have added ME as their emergency contact). The bootstrap writes
+  // this whenever we're online; offline this is the only source.
+  const hydrateProtectingFromCache = (
+    userId: string | undefined,
+    statusFilter: "pending" | "accepted",
+  ): PendingInvite[] => {
+    if (!userId) return [];
+    return readProtectingCache(userId)
+      .filter((r) => r.status === statusFilter)
+      .map((r) => ({
+        id: r.id,
+        user_id: r.user_id,
+        relationship: r.relationship ?? "",
+        status: r.status,
+        created_at: "",
+        requester: {
+          id: r.user_id,
+          full_name: r.full_name ?? "Unknown",
+          avatar_url: r.avatar_url ?? undefined,
+        },
+      }));
+  };
+
   const [contacts, setContacts] = useState<EmergencyContact[]>(() =>
     hydrateContactsFromCache(user?.id),
   );
-  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
-  const [protectingFor, setProtectingFor] = useState<PendingInvite[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>(() =>
+    hydrateProtectingFromCache(user?.id, "pending"),
+  );
+  const [protectingFor, setProtectingFor] = useState<PendingInvite[]>(() =>
+    hydrateProtectingFromCache(user?.id, "accepted"),
+  );
   const [activeTab, setActiveTab] = useState<"mine" | "protecting">("mine");
   // If we already have cached contacts, skip the skeleton — the live
   // fetch (if it succeeds) will replace them in place. Otherwise show
@@ -129,8 +160,8 @@ export default function EmergencyContactsPage() {
 
   useEffect(() => {
     if (!user) return;
-    // Auth hydrated after first paint — try the cache now that we
-    // know the user id, so we can render contacts before the network
+    // Auth hydrated after first paint — try the caches now that we
+    // know the user id, so we can render rows before the network
     // fetch lands (or at all, when offline).
     if (contacts.length === 0) {
       const cached = hydrateContactsFromCache(user.id);
@@ -138,6 +169,14 @@ export default function EmergencyContactsPage() {
         setContacts(cached);
         setLoading(false);
       }
+    }
+    if (pendingInvites.length === 0) {
+      const cached = hydrateProtectingFromCache(user.id, "pending");
+      if (cached.length > 0) setPendingInvites(cached);
+    }
+    if (protectingFor.length === 0) {
+      const cached = hydrateProtectingFromCache(user.id, "accepted");
+      if (cached.length > 0) setProtectingFor(cached);
     }
     fetchContacts();
     fetchPendingInvites();
@@ -210,12 +249,15 @@ export default function EmergencyContactsPage() {
   const fetchPendingInvites = async () => {
     if (!user) return;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("emergency_contacts")
         .select("id, user_id, relationship, status, created_at")
         .eq("contact_user_id", user.id)
         .eq("status", "pending")
         .order("created_at", { ascending: false });
+
+      // Offline / query failed: don't clobber the cached list.
+      if (error) return;
 
       if (data && data.length > 0) {
         const requesterIds = data.map(d => d.user_id);
@@ -229,18 +271,23 @@ export default function EmergencyContactsPage() {
       } else {
         setPendingInvites([]);
       }
-    } catch {}
+    } catch {
+      // Network threw — keep whatever's on screen from the cache.
+    }
   };
 
   const fetchProtectingFor = async () => {
     if (!user) return;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("emergency_contacts")
         .select("id, user_id, relationship, status, created_at")
         .eq("contact_user_id", user.id)
         .eq("status", "accepted")
         .order("created_at", { ascending: false });
+
+      // Offline / query failed: don't clobber the cached list.
+      if (error) return;
 
       if (data && data.length > 0) {
         const requesterIds = data.map(d => d.user_id);
@@ -254,7 +301,9 @@ export default function EmergencyContactsPage() {
       } else {
         setProtectingFor([]);
       }
-    } catch {}
+    } catch {
+      // Network threw — keep whatever's on screen from the cache.
+    }
   };
 
   const handleAddContact = async () => {

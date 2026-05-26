@@ -19,7 +19,9 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import {
   writeEmergencyContactsCache,
+  writeProtectingCache,
   type CachedEmergencyContact,
+  type CachedProtectingRow,
 } from "@/lib/emergencyContactsCache";
 
 export function EmergencyContactsBootstrap() {
@@ -123,6 +125,60 @@ export function EmergencyContactsBootstrap() {
           "contacts to cache",
           contacts,
         );
+
+        // ── Protecting tab: rows where I am the contact_user_id ──
+        // These are people who have added ME as their emergency
+        // contact. The Emergency Contacts page's "Protecting" tab
+        // renders them (pending requests + accepted protections);
+        // without this populate, that tab is empty offline.
+        try {
+          const { data: protectingData, error: protectingErr } = await supabase
+            .from("emergency_contacts")
+            .select("id, user_id, relationship, status")
+            .eq("contact_user_id", userId)
+            .in("status", ["pending", "accepted"]);
+
+          if (cancelled) return;
+          if (protectingErr || !protectingData) {
+            console.warn(
+              "[contacts-cache] protecting query failed",
+              protectingErr?.message,
+            );
+          } else {
+            const inviterIds = protectingData
+              .map((r: any) => r.user_id)
+              .filter((id: unknown): id is string => typeof id === "string");
+            const inviterMap: Record<
+              string,
+              { full_name: string | null; avatar_url: string | null }
+            > = {};
+            if (inviterIds.length > 0) {
+              const { data: inviters } = await supabase
+                .from("users")
+                .select("id, full_name, avatar_url")
+                .in("id", inviterIds);
+              for (const u of inviters || []) {
+                inviterMap[(u as any).id] = {
+                  full_name: (u as any).full_name ?? null,
+                  avatar_url: (u as any).avatar_url ?? null,
+                };
+              }
+            }
+            const protecting: CachedProtectingRow[] = protectingData.map(
+              (r: any) => ({
+                id: r.id,
+                user_id: r.user_id,
+                full_name: inviterMap[r.user_id]?.full_name ?? null,
+                avatar_url: inviterMap[r.user_id]?.avatar_url ?? null,
+                relationship: r.relationship ?? null,
+                status: r.status as CachedProtectingRow["status"],
+              }),
+            );
+            writeProtectingCache(userId!, protecting);
+          }
+        } catch (e) {
+          console.warn("[contacts-cache] protecting populate threw", e);
+        }
       } catch (e) {
         console.warn("[contacts-cache] populate threw", e);
       }
