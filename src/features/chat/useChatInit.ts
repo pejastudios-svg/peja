@@ -20,7 +20,11 @@
 
 import { useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { useChatStore } from "./store";
+import {
+  useChatStore,
+  readConversationsCache,
+  persistConversationsCache,
+} from "./store";
 import { startChatRealtime, stopChatRealtime } from "./realtime";
 import { startPresence, stopPresence } from "./presence";
 import { startHeartbeat, stopHeartbeat } from "./heartbeat";
@@ -50,6 +54,17 @@ export function useChatInit() {
 
     console.log("[chat-v2] init for user", userId);
     store.setCurrentUserId(userId);
+
+    // Seed the conversation list from localStorage so /messages can
+    // render the chat list immediately, even when offline. Without
+    // this, `conversationsHydrated` only flips to true after a
+    // successful network refetch (see the lastConnectedAt effect
+    // below) — cold offline opens would show skeletons forever. The
+    // network refetch overlays fresh data when it lands.
+    const cached = readConversationsCache(userId);
+    if (cached.length > 0) {
+      store.setConversations(cached);
+    }
 
     // Rehydrate the outbox into the store. Each queued item appears as
     // a "failed" message in its thread so the user immediately sees what
@@ -97,6 +112,7 @@ export function useChatInit() {
       .then((list) => {
         console.log("[chat-v2] fetched conversation list:", list.length);
         useChatStore.getState().setConversations(list);
+        persistConversationsCache(userId, list);
       })
       .catch((e) => console.error("[chat-v2] fetchConversationList failed", e));
   }, [userId, lastConnectedAt]);

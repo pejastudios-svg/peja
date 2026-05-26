@@ -449,19 +449,21 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
 
         if (fetchError) {
           // PGRST116 = "row not found"; that's an authoritative answer
-          // and we surface the error UI. RLS denials, transient
-          // network errors, and the offline path all share this
-          // branch — for those we'd rather keep showing whatever the
-          // feed cache already painted than blow the user into a
-          // "Post Not Found" screen.
+          // and we surface the "Post not found" UI. RLS denials,
+          // transient network errors, and the offline path all share
+          // the OTHER branch — for those we'd rather keep showing
+          // whatever the feed cache already painted, and if there's
+          // nothing painted, show the friendlier "couldn't load"
+          // message that doesn't lie to the user about whether the
+          // post still exists.
           if ((fetchError as any)?.code === "PGRST116") {
-            setError("Post not found");
+            setError("not-found");
             setLoading(false);
             feedCache.removePost(postId);
             return;
           }
           if (!post) {
-            setError("Post not found");
+            setError("offline");
           }
           setLoading(false);
           return;
@@ -512,7 +514,7 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
         // on screen when we have one; only show the error UI when
         // there's truly nothing to render.
         if (isMounted.current) {
-          if (!post) setError("Failed to load");
+          if (!post) setError("offline");
           setLoading(false);
         }
       }
@@ -1323,13 +1325,23 @@ const openSingleLightbox = (url: string, caption?: string | null) => {
 
 // Error
 if (error || !post) {
+  // "offline" means we couldn't reach the server / RLS denial / abort.
+  // Don't lie to the user that the post "may have been removed" —
+  // it's almost certainly still there, we just can't see it right now.
+  const isOffline = error === "offline";
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
       <AlertTriangle className="w-16 h-16 text-red-400 mb-4" />
-      <h1 className="text-xl font-bold text-dark-100 mb-2">Post Not Found</h1>
-      <p className="text-dark-400 mb-4">This post may have been removed.</p>
-      <Button 
-        variant="primary" 
+      <h1 className="text-xl font-bold text-dark-100 mb-2">
+        {isOffline ? "Couldn't load this post" : "Post Not Found"}
+      </h1>
+      <p className="text-dark-400 mb-4">
+        {isOffline
+          ? "You're offline or your connection dropped. Try again when you're back online."
+          : "This post may have been removed."}
+      </p>
+      <Button
+        variant="primary"
         onClick={() => {
           // Close modal if inside one
           if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {

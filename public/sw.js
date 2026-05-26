@@ -1,6 +1,6 @@
-// Peja Service Worker v13 - Offline-First Safety App
-const CACHE_NAME = "peja-v13";
-const APP_SHELL_CACHE = "peja-shell-v13";
+// Peja Service Worker v14 - Offline-First Safety App
+const CACHE_NAME = "peja-v14";
+const APP_SHELL_CACHE = "peja-shell-v14";
 // Bumped to v6 to invalidate stale /rest/v1/messages and conversations
 // responses. Like posts before them (v5 bump), they're now network-first
 // so user mutations (clear chat, delete message, block) reflect on the
@@ -370,6 +370,17 @@ self.addEventListener("fetch", (event) => {
         .catch(async () => {
           const cached = await caches.match(request);
           if (cached) return cached;
+          // Same path, but ignoring the query string. Catches the case
+          // where the user navigated to e.g. `/map?post=X&lat=Y` —
+          // Cache API stores `/map/` (no query string) so an exact
+          // match misses, but the HTML shell is identical regardless
+          // of query params (Next.js reads them client-side via
+          // useSearchParams). Without this the distance badge / any
+          // /static-route?query link fell through to home.
+          const cachedIgnoringSearch = await caches.match(request, {
+            ignoreSearch: true,
+          });
+          if (cachedIgnoringSearch) return cachedIgnoringSearch;
           // Dynamic-route shell fallback. Tapping a post / chat /
           // checkin offline used to fall all the way through to the
           // home page HTML, so the user saw the home feed at a

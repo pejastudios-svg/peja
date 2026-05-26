@@ -60,6 +60,12 @@ export function LoginPrompt() {
     handleClose();
   };
 
+  // Switched to true if the logo <img> fires onError. We then render
+  // a styled "P" placeholder so users never see a broken image icon
+  // (which is what was showing offline, since the prior CDN URL was
+  // unreachable without network).
+  const [logoBroken, setLogoBroken] = useState(false);
+
   useScrollFreeze(show);
   // Hide prompt when user logs in (e.g., after OAuth redirect)
   useEffect(() => {
@@ -118,12 +124,31 @@ export function LoginPrompt() {
                   boxShadow: "0 0 30px rgba(139, 92, 246, 0.2)",
                 }}
               >
-                <img
-                  src="https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png"
-                  alt="Peja"
-                  className="w-10 h-10 object-contain"
-                  style={{ filter: "drop-shadow(0 0 4px rgba(167, 139, 250, 0.3))" }}
-                />
+                {logoBroken ? (
+                  <div
+                    className="w-10 h-10 flex items-center justify-center rounded-full"
+                    style={{
+                      background:
+                        "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                      color: "#ffffff",
+                      fontWeight: 800,
+                      fontSize: 20,
+                      letterSpacing: "0.5px",
+                      filter: "drop-shadow(0 0 4px rgba(167, 139, 250, 0.3))",
+                    }}
+                  >
+                    P
+                  </div>
+                ) : (
+                  <img
+                    src="/peja-logo.png.png"
+                    alt="Peja"
+                    className="w-10 h-10 object-contain"
+                    decoding="async"
+                    onError={() => setLogoBroken(true)}
+                    style={{ filter: "drop-shadow(0 0 4px rgba(167, 139, 250, 0.3))" }}
+                  />
+                )}
               </div>
               <span
                 className="text-xl font-black tracking-[0.2em]"

@@ -294,6 +294,50 @@ function persistDrafts(drafts: Record<string, string>): void {
   } catch {}
 }
 
+// === Conversation list persistence ===
+// Persists the conversation summaries (id, last message preview, unread,
+// other_user info) so the /messages page can render the chat list
+// offline. Without this, opening /messages cold-offline shows skeletons
+// forever — `conversationsHydrated` is only flipped to true on a
+// successful network refetch (see useChatInit), so an offline cold
+// open never reaches that branch.
+//
+// Keyed per-user so a shared device doesn't leak chat lists across
+// accounts.
+const CONVERSATIONS_CACHE_PREFIX = "peja:chat:conversations:v1:";
+
+function conversationsCacheKey(userId: string): string {
+  return `${CONVERSATIONS_CACHE_PREFIX}${userId}`;
+}
+
+export function readConversationsCache(
+  userId: string,
+): ChatConversationSummary[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(conversationsCacheKey(userId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.list)) return [];
+    return parsed.list as ChatConversationSummary[];
+  } catch {
+    return [];
+  }
+}
+
+export function persistConversationsCache(
+  userId: string,
+  list: ChatConversationSummary[],
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      conversationsCacheKey(userId),
+      JSON.stringify({ list, cached_at: Date.now() }),
+    );
+  } catch {}
+}
+
 // === Typing-indicator timers ===
 // Map of "conversationId|userId" → timeout handle. When a typing event
 // fires, we (re)set a 3s timer that wipes the entry. Kept outside the
