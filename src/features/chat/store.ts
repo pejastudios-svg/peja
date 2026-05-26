@@ -310,18 +310,25 @@ function conversationsCacheKey(userId: string): string {
   return `${CONVERSATIONS_CACHE_PREFIX}${userId}`;
 }
 
+// Returns `null` when there's no cached record at all for this user
+// (we've never successfully fetched the list while online). Returns
+// an empty array if the user genuinely has zero conversations — that
+// distinction matters because useChatInit gates the
+// `conversationsHydrated` flip on the cache existing at all, not on
+// it being non-empty: a user with no chats still needs the messages
+// page to render "no conversations" rather than the skeleton.
 export function readConversationsCache(
   userId: string,
-): ChatConversationSummary[] {
-  if (typeof window === "undefined") return [];
+): ChatConversationSummary[] | null {
+  if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(conversationsCacheKey(userId));
-    if (!raw) return [];
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!parsed || !Array.isArray(parsed.list)) return [];
+    if (!parsed || !Array.isArray(parsed.list)) return null;
     return parsed.list as ChatConversationSummary[];
   } catch {
-    return [];
+    return null;
   }
 }
 

@@ -1351,12 +1351,12 @@ if (error || !post) {
   // it's almost certainly still there, we just can't see it right now.
   const isOffline = error === "offline";
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center">
       <AlertTriangle className="w-16 h-16 text-red-400 mb-4" />
       <h1 className="text-xl font-bold text-dark-100 mb-2">
         {isOffline ? "Couldn't load this post" : "Post Not Found"}
       </h1>
-      <p className="text-dark-400 mb-4">
+      <p className="text-dark-400 mb-4 max-w-sm">
         {isOffline
           ? "You're offline or your connection dropped. Try again when you're back online."
           : "This post may have been removed."}

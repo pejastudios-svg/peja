@@ -60,8 +60,14 @@ export function useChatInit() {
     // successful network refetch (see the lastConnectedAt effect
     // below) — cold offline opens would show skeletons forever. The
     // network refetch overlays fresh data when it lands.
+    //
+    // We call setConversations whenever there IS a cache record (even
+    // if it's empty) so the hydrated flag flips to true for users who
+    // genuinely have zero chats — they'd otherwise see the skeleton
+    // forever. Null vs [] from readConversationsCache distinguishes
+    // "never been online with this code" from "online but empty".
     const cached = readConversationsCache(userId);
-    if (cached.length > 0) {
+    if (cached !== null) {
       store.setConversations(cached);
     }
 
