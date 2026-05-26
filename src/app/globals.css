@@ -2454,8 +2454,9 @@ html.capacitor-native {
   padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 48px);
 }
 
+/* For pages using the shared <Header /> floating pill layout */
 .pt-app-header-pill {
-  padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 48px);
+  padding-top: calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 72px);
 }
 
 /* Clear fixed BottomNav + raised center Peja button (replaces pb-20). */
@@ -2473,7 +2474,7 @@ html.capacitor-native {
 .home-feed-tabs {
   position: sticky;
   z-index: 40;
-  top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 3rem);
+  top: calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 72px);
   background: var(--page-bg);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -2492,7 +2493,7 @@ html.capacitor-native {
 
 .report-page-main {
   padding-bottom: 0.5rem;
-  scroll-padding-top: calc(var(--app-top-inset, env(safe-area-inset-top, 0px)) + 3rem);
+  scroll-padding-top: calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 72px);
 }
 
 /* Report form sections — flat layout, no heavy cards */
