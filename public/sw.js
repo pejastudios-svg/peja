@@ -1,6 +1,6 @@
-// Peja Service Worker v11 - Offline-First Safety App
-const CACHE_NAME = "peja-v11";
-const APP_SHELL_CACHE = "peja-shell-v11";
+// Peja Service Worker v12 - Offline-First Safety App
+const CACHE_NAME = "peja-v12";
+const APP_SHELL_CACHE = "peja-shell-v12";
 // Bumped to v6 to invalidate stale /rest/v1/messages and conversations
 // responses. Like posts before them (v5 bump), they're now network-first
 // so user mutations (clear chat, delete message, block) reflect on the
@@ -195,13 +195,49 @@ self.addEventListener("install", (event) => {
   })());
 });
 
+// Matches the versioned static-asset cache names (`peja-v9`, `peja-v10`, ...).
+// We retain these across activations so a partial new install can still
+// serve old CSS/JS chunks as a fallback. Tailwind class names are
+// deterministic, so an older chunk applied to newer HTML is mostly
+// correct — far better than the unstyled FOUC users were reporting when
+// activate wiped the old cache before the new install had populated.
+const STATIC_VERSION_PATTERN = /^peja-v\d+$/;
+const SHELL_VERSION_PATTERN = /^peja-shell-v\d+$/;
+// Keep up to this many old static caches around as fallbacks. Each
+// deploy bumps CACHE_NAME, so this caps long-term storage growth.
+const MAX_STATIC_CACHES = 2;
+
 self.addEventListener("activate", (event) => {
-  const KEEP = [CACHE_NAME, APP_SHELL_CACHE, DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
-  event.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => !KEEP.includes(k)).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  const KEEP_EXACT = [CACHE_NAME, APP_SHELL_CACHE, DATA_CACHE, MEDIA_CACHE, VIDEO_CACHE];
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    const staticVersions = [];
+    for (const key of keys) {
+      if (KEEP_EXACT.includes(key)) continue;
+      // Stale APP_SHELL caches reference chunks that no longer exist
+      // on the server (each deploy rebuilds them with new hashes), so
+      // they're safe to drop.
+      if (SHELL_VERSION_PATTERN.test(key)) {
+        await caches.delete(key);
+        continue;
+      }
+      if (STATIC_VERSION_PATTERN.test(key)) {
+        const m = key.match(/^peja-v(\d+)$/);
+        if (m) staticVersions.push({ name: key, n: parseInt(m[1], 10) });
+        continue;
+      }
+      // Anything else we don't recognize is fair game to delete.
+      await caches.delete(key);
+    }
+    // Prune the oldest static caches, keeping the newest MAX_STATIC_CACHES
+    // (the just-activated CACHE_NAME is already KEEP_EXACT'd so it doesn't
+    // appear in this list).
+    staticVersions.sort((a, b) => b.n - a.n);
+    for (const v of staticVersions.slice(MAX_STATIC_CACHES)) {
+      await caches.delete(v.name);
+    }
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener("fetch", (event) => {
@@ -227,12 +263,22 @@ self.addEventListener("fetch", (event) => {
           return r;
         }).catch(async () => {
           if (url.pathname.endsWith(".css")) {
-            const cache = await caches.open(CACHE_NAME);
-            const keys = await cache.keys();
-            for (const key of keys) {
-              if (key.url.endsWith(".css")) {
-                const cached = await cache.match(key);
-                if (cached) return cached;
+            // Scan ALL versioned static caches (peja-v9, peja-v10, ...)
+            // for any cached CSS file. The current CACHE_NAME may be
+            // empty mid-install on a deploy transition — falling back
+            // across retained old caches keeps Tailwind utilities
+            // applied instead of dropping the user into a totally
+            // unstyled FOUC.
+            const allKeys = await caches.keys();
+            for (const cacheName of allKeys) {
+              if (!STATIC_VERSION_PATTERN.test(cacheName)) continue;
+              const cache = await caches.open(cacheName);
+              const entries = await cache.keys();
+              for (const entry of entries) {
+                if (entry.url.endsWith(".css")) {
+                  const cached = await cache.match(entry);
+                  if (cached) return cached;
+                }
               }
             }
           }
