@@ -1,6 +1,6 @@
-// Peja Service Worker v8 - Offline-First Safety App
-const CACHE_NAME = "peja-v8";
-const APP_SHELL_CACHE = "peja-shell-v8";
+// Peja Service Worker v9 - Offline-First Safety App
+const CACHE_NAME = "peja-v9";
+const APP_SHELL_CACHE = "peja-shell-v9";
 // Bumped to v6 to invalidate stale /rest/v1/messages and conversations
 // responses. Like posts before them (v5 bump), they're now network-first
 // so user mutations (clear chat, delete message, block) reflect on the
@@ -86,17 +86,28 @@ self.addEventListener("install", (event) => {
     // Warm the static cache with the chunks the root HTML references
     // so an offline-first cold open doesn't render unstyled. Hashed
     // filenames mean we can't list them statically — fetch them at
-    // install time. Best-effort; failures are silent.
+    // install time. Also warm /map's chunks (Leaflet CSS moved off the
+    // root, so /map has its own asset set now). Best-effort; failures
+    // are silent.
     try {
-      const rootResp = await fetch("/", { cache: "no-store" });
-      if (rootResp.ok) {
-        const html = await rootResp.text();
-        const urls = extractAssetUrls(html);
-        const staticCache = await caches.open(CACHE_NAME);
-        await Promise.allSettled(
-          urls.map((u) => staticCache.add(u).catch(() => {}))
-        );
-      }
+      const staticCache = await caches.open(CACHE_NAME);
+      const pages = ["/", "/map"];
+      const allUrls = new Set();
+      await Promise.allSettled(pages.map(async (p) => {
+        try {
+          const resp = await fetch(p, { cache: "no-store" });
+          if (!resp.ok) return;
+          const html = await resp.text();
+          extractAssetUrls(html).forEach((u) => allUrls.add(u));
+        } catch {}
+      }));
+      // Leaflet stylesheet is injected at runtime by IncidentMapInner,
+      // so it won't appear in the scraped HTML. Cache it explicitly so
+      // an offline /map still gets its tile-layer styling.
+      allUrls.add("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
+      await Promise.allSettled(
+        Array.from(allUrls).map((u) => staticCache.add(u).catch(() => {}))
+      );
     } catch {}
   })());
 });

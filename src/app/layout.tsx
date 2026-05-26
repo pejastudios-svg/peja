@@ -140,12 +140,12 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://res.cloudinary.com" />
         <link rel="dns-prefetch" href="https://unpkg.com" />
 
-        <link
-          rel="stylesheet"
-          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-          crossOrigin=""
-        />
+        {/* Leaflet CSS is intentionally NOT loaded here. It's a render-blocking
+            external stylesheet from unpkg.com that only the /map route needs.
+            Loading it in the root meant every page's first paint was gated on
+            unpkg reachability — when users opened the app on bad/no data the
+            HTML rendered unstyled while waiting. IncidentMapInner injects it
+            on mount instead. */}
        <script dangerouslySetInnerHTML={{ __html: `
           (function() {
             if (window.location.hash) return;
@@ -153,16 +153,33 @@ export default function RootLayout({
             var APP_VERSION = "${process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "dev"}";
             if (APP_VERSION === "dev") return;
             var stored = localStorage.getItem("peja-app-version");
-            if (stored && stored !== APP_VERSION) {
+            // If offline, do NOT nuke caches + reload — the reload would
+            // fetch nothing and leave the user staring at an unstyled
+            // page. Stamp the version as "pending" so we run the upgrade
+            // the next time the device comes back online.
+            function runUpgrade() {
               localStorage.setItem("peja-app-version", APP_VERSION);
               if ("caches" in window) {
                 caches.keys().then(function(names) {
-                  names.forEach(function(name) { caches.delete(name); });
+                  return Promise.all(names.map(function(name) { return caches.delete(name); }));
                 }).then(function() {
                   window.location.reload();
                 });
               } else {
                 window.location.reload();
+              }
+            }
+            if (stored && stored !== APP_VERSION) {
+              var online = (typeof navigator !== "undefined" && "onLine" in navigator) ? navigator.onLine : true;
+              if (online) {
+                runUpgrade();
+              } else {
+                // Defer until the device reconnects. One-shot.
+                var onOnline = function() {
+                  window.removeEventListener("online", onOnline);
+                  runUpgrade();
+                };
+                window.addEventListener("online", onOnline);
               }
             } else if (!stored) {
               localStorage.setItem("peja-app-version", APP_VERSION);
