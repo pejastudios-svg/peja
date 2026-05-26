@@ -24,10 +24,10 @@ import {
   Play,
   Search,
   MessageCircle,
-  User,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Modal } from "@/components/ui/Modal";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Button } from "@/components/ui/Button";
 import { CATEGORIES } from "@/lib/types";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
@@ -506,13 +506,11 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
                   {selectedItem.flaggedComment.content}
                 </p>
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-red-500/20">
-                  <div className="w-6 h-6 rounded-full bg-dark-800 border border-white/10 overflow-hidden flex items-center justify-center">
-                    {selectedItem.flaggedComment.user?.avatar_url ? (
-                      <img src={selectedItem.flaggedComment.user.avatar_url} className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="w-3 h-3 text-dark-400" />
-                    )}
-                  </div>
+                  <AvatarImage
+                    src={selectedItem.flaggedComment.user?.avatar_url}
+                    wrapperClassName="w-6 h-6 rounded-full bg-dark-800 border border-white/10 overflow-hidden flex items-center justify-center"
+                    fallbackIconClassName="w-3 h-3"
+                  />
                   <span className="text-xs text-dark-400">{selectedItem.flaggedComment.user?.full_name || "Unknown"}</span>
                 </div>
               </div>

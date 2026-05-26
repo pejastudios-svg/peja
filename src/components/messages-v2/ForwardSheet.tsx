@@ -10,8 +10,9 @@
 
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Search, Send, User, Check } from "lucide-react";
+import { ArrowLeft, Search, Send, Check } from "lucide-react";
 import { useChatStore } from "@/features/chat/store";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 
 interface Props {
   excludeConversationId?: string;
@@ -121,17 +122,11 @@ export function ForwardSheet({ excludeConversationId, onClose, onForward }: Prop
                     onClick={() => toggle(c.id)}
                     className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-[var(--chat-input-hover)] text-left"
                   >
-                    <span className="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center">
-                      {c.other_user_avatar_url ? (
-                        <img
-                          src={c.other_user_avatar_url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User className="w-5 h-5 text-dark-400" />
-                      )}
-                    </span>
+                    <AvatarImage
+                      src={c.other_user_avatar_url}
+                      wrapperClassName="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center"
+                      fallbackIconClassName="w-5 h-5"
+                    />
                     <span className="flex-1 min-w-0 text-sm text-dark-100 truncate">
                       {c.other_user_name || "Chat"}
                     </span>

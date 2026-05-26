@@ -14,6 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 import { notifyPostComment, notifyCommentLiked, notifyCommentReply } from "@/lib/notifications";
 import { notifyPostConfirmed, markPostNotificationsRead } from "@/lib/notifications";
 import { clearPushNotificationsForPost } from "@/lib/pushNotificationsClear";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useLongPress } from "@/components/hooks/useLongPress";
 import { useSearchParams } from "next/navigation";
@@ -47,7 +48,6 @@ import {
   ChevronRight,
   Send,
   Trash2,
-  User,
   MoreVertical,
   X,
   Heart,
@@ -199,13 +199,13 @@ const CommentRow = ({
             if (avatarHoldTimer.current) window.clearTimeout(avatarHoldTimer.current);
             avatarHoldTimer.current = null;
           }}
-          className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center shrink-0 overflow-hidden"
+          className="contents"
         >
-          {comment.user_avatar ? (
-            <img src={comment.user_avatar} alt="" className="w-8 h-8 object-cover" />
-          ) : (
-            <User className="w-4 h-4 text-dark-400" />
-          )}
+          <AvatarImage
+            src={comment.user_avatar}
+            wrapperClassName="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center shrink-0 overflow-hidden"
+            fallbackIconClassName="w-4 h-4"
+          />
         </div>
 
         <div className="flex-1 min-w-0">

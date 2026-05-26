@@ -22,9 +22,9 @@ import {
   Eye,
   Shield,
   AlertTriangle,
-  User,
 } from "lucide-react";
 import { PejaSpinner } from "../ui/PejaSpinner";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 
 interface SharedWithMe {
   id: string;
@@ -611,21 +611,15 @@ const handleConfirm = async () => {
                       className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="relative shrink-0">
-                        <div
-                          className="w-9 h-9 rounded-full overflow-hidden"
-                          style={{
+                        <AvatarImage
+                          src={s.avatar_url}
+                          wrapperClassName="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center bg-dark-700"
+                          wrapperStyle={{
                             border: `2.5px solid ${overdue ? "#ef4444" : "#22c55e"}`,
                             boxShadow: `0 0 8px ${overdue ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`,
                           }}
-                        >
-                          {s.avatar_url ? (
-                            <img src={s.avatar_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full bg-dark-700 flex items-center justify-center">
-                              <User className="w-4 h-4 text-dark-400" />
-                            </div>
-                          )}
-                        </div>
+                          fallbackIconClassName="w-4 h-4"
+                        />
                         {overdue && (
                           <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 flex items-center justify-center border border-dark-900">
                             <AlertTriangle className="w-2 h-2 text-white" />
@@ -823,9 +817,11 @@ const handleConfirm = async () => {
                           <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${sel ? "bg-primary-600" : "border border-dark-500"}`}>
                             {sel && <CheckCircle className="w-3.5 h-3.5 text-white" />}
                           </div>
-                          <div className="w-8 h-8 rounded-full bg-primary-600/20 overflow-hidden shrink-0 flex items-center justify-center">
-                            {c.avatar_url ? <img src={c.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-primary-400">{c.full_name[0]}</span>}
-                          </div>
+                          <AvatarImage
+                            src={c.avatar_url}
+                            wrapperClassName="w-8 h-8 rounded-full bg-primary-600/20 overflow-hidden shrink-0 flex items-center justify-center"
+                            fallback={<span className="text-xs font-bold text-primary-400">{c.full_name[0]}</span>}
+                          />
                           <span className="text-sm text-dark-100">{c.full_name}</span>
                         </button>
                       );

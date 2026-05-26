@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { apiUrl } from "@/lib/api";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import HudShell from "@/components/dashboard/HudShell";
@@ -387,14 +388,11 @@ export default function AdminSupportPage() {
                     onClick={() => openTicket(t)}
                     className="flex-1 min-w-0 flex items-start gap-3 p-3.5 text-left"
                   >
-                    <div className="w-9 h-9 rounded-full bg-primary-600/15 flex items-center justify-center shrink-0 overflow-hidden">
-                      {t.user?.avatar_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={t.user.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <User className="w-4 h-4 text-primary-400" />
-                      )}
-                    </div>
+                    <AvatarImage
+                      src={t.user?.avatar_url}
+                      wrapperClassName="w-9 h-9 rounded-full bg-primary-600/15 flex items-center justify-center shrink-0 overflow-hidden"
+                      fallback={<User className="w-4 h-4 text-primary-400" />}
+                    />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <p className="font-medium text-dark-100 truncate">{t.title}</p>
@@ -480,14 +478,11 @@ export default function AdminSupportPage() {
               className="flex items-center gap-3 p-3 rounded-xl"
               style={{ background: "var(--glass-input-bg)", border: "1px solid var(--glass-border)" }}
             >
-              <div className="w-10 h-10 rounded-full bg-primary-600/15 flex items-center justify-center shrink-0 overflow-hidden">
-                {selected.user?.avatar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={selected.user.avatar_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <User className="w-5 h-5 text-primary-400" />
-                )}
-              </div>
+              <AvatarImage
+                src={selected.user?.avatar_url}
+                wrapperClassName="w-10 h-10 rounded-full bg-primary-600/15 flex items-center justify-center shrink-0 overflow-hidden"
+                fallback={<User className="w-5 h-5 text-primary-400" />}
+              />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-dark-100 truncate">
                   {selected.user?.full_name || "Unknown user"}

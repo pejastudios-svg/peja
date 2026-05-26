@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
 import GlowButton from "@/components/dashboard/GlowButton";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
   AlertTriangle,
@@ -360,13 +361,11 @@ export default function AdminOverviewPage() {
                   key={sos.id}
                   className="flex items-center gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/20"
                 >
-                  <div className="w-10 h-10 rounded-full overflow-hidden border border-red-500/40 bg-red-500/10 shrink-0 flex items-center justify-center">
-                    {sos.users?.avatar_url ? (
-                      <img src={sos.users.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-red-300" />
-                    )}
-                  </div>
+                  <AvatarImage
+                    src={sos.users?.avatar_url}
+                    wrapperClassName="w-10 h-10 rounded-full overflow-hidden border border-red-500/40 bg-red-500/10 shrink-0 flex items-center justify-center"
+                    fallback={<AlertTriangle className="w-5 h-5 text-red-300" />}
+                  />
 
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-dark-100 truncate">

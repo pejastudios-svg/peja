@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { usePageCache } from "@/context/PageCacheContext";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
@@ -504,13 +505,11 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
                     )}
 
                     <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded-full bg-dark-800 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center">
-                        {item.user?.avatar_url ? (
-                          <img src={item.user.avatar_url} className="w-full h-full object-cover" />
-                        ) : (
-                          <User className="w-3 h-3 text-dark-400" />
-                        )}
-                      </div>
+                      <AvatarImage
+                        src={item.user?.avatar_url}
+                        wrapperClassName="w-5 h-5 rounded-full bg-dark-800 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center"
+                        fallbackIconClassName="w-3 h-3"
+                      />
                       <p className="text-xs text-dark-400 truncate">{item.user?.full_name || "Unknown"}</p>
                     </div>
                   </div>
@@ -628,13 +627,11 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
                       {/* Reviewer info */}
                       <div className="flex items-center gap-3 pt-2 border-t border-white/5">
                         <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-full bg-dark-800 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
-                            {item.reviewer?.avatar_url ? (
-                              <img src={item.reviewer.avatar_url} className="w-full h-full object-cover" />
-                            ) : (
-                              <Shield className="w-3 h-3 text-primary-400" />
-                            )}
-                          </div>
+                          <AvatarImage
+                            src={item.reviewer?.avatar_url}
+                            wrapperClassName="w-5 h-5 rounded-full bg-dark-800 border border-white/10 overflow-hidden flex items-center justify-center shrink-0"
+                            fallback={<Shield className="w-3 h-3 text-primary-400" />}
+                          />
                           <span className="text-xs text-dark-300">
                             {item.reviewer?.full_name || "Unknown"}
                           </span>
@@ -704,9 +701,11 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
                 </div>
                 <p className="text-sm text-dark-100 wrap-break-word whitespace-pre-wrap">{selected.flaggedComment?.content || "No content."}</p>
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-red-500/20">
-                  <div className="w-6 h-6 rounded-full bg-dark-800 border border-white/10 overflow-hidden flex items-center justify-center">
-                    {selected.user?.avatar_url ? <img src={selected.user.avatar_url} className="w-full h-full object-cover" /> : <User className="w-3 h-3 text-dark-400" />}
-                  </div>
+                  <AvatarImage
+                    src={selected.user?.avatar_url}
+                    wrapperClassName="w-6 h-6 rounded-full bg-dark-800 border border-white/10 overflow-hidden flex items-center justify-center"
+                    fallbackIconClassName="w-3 h-3"
+                  />
                   <span className="text-xs text-dark-400">{selected.user?.full_name || "Unknown"}</span>
                 </div>
               </div>

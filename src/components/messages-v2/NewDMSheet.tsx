@@ -18,7 +18,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Search, User, Star, Crown, X } from "lucide-react";
+import { ArrowLeft, Search, Star, Crown, X } from "lucide-react";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import {
   fetchVisibleElevatedUsers,
   findOrCreateDM,
@@ -209,17 +210,11 @@ export function NewDMSheet({ currentUserId, onClose }: Props) {
                     disabled={!!creatingFor}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[var(--chat-input-hover)] disabled:opacity-50 text-left transition-colors"
                   >
-                    <span className="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center">
-                      {u.avatar_url ? (
-                        <img
-                          src={u.avatar_url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User className="w-5 h-5 text-dark-400" />
-                      )}
-                    </span>
+                    <AvatarImage
+                      src={u.avatar_url}
+                      wrapperClassName="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center"
+                      fallbackIconClassName="w-5 h-5"
+                    />
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm font-medium text-dark-100 truncate">
                         {u.full_name || "User"}

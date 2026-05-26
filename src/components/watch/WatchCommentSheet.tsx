@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { Loader2, Heart, User, Send, X, Trash2, Copy, Flag, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Post, REPORT_REASONS } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { notifyPostComment, notifyCommentLiked, notifyCommentReply } from "@/lib/notifications";
@@ -469,7 +470,11 @@ export function WatchCommentSheet({
               if (t) clearTimeout(t);
            }}
         >
-           {comment.user_avatar ? <img src={comment.user_avatar} className="w-full h-full object-cover" /> : <User className="w-full h-full p-1.5 text-white/50" />}
+           <AvatarImage
+             src={comment.user_avatar}
+             wrapperClassName="w-full h-full flex items-center justify-center"
+             fallback={<User className="w-full h-full p-1.5 text-white/50" />}
+           />
         </div>
         <div className="flex-1">
            <div className="flex items-baseline gap-2">

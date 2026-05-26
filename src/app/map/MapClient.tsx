@@ -16,6 +16,7 @@ import DataAnalyticsPanel from "@/components/map/DataAnalyticsPanel";
 import { ChevronDown } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { isNigeriaPost } from "@/lib/notifications";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
@@ -709,13 +710,11 @@ export default function MapClient() {
                   onClick={() => handleSOSClick(sos)}
                   className="flex gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl mb-2 cursor-pointer hover:bg-red-500/20 transition-colors"
                 >
-                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center overflow-hidden">
-                    {sos.user?.avatar_url ? (
-                      <img src={sos.user.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-red-400" />
-                    )}
-                  </div>
+                  <AvatarImage
+                    src={sos.user?.avatar_url}
+                    wrapperClassName="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center overflow-hidden"
+                    fallback={<AlertTriangle className="w-5 h-5 text-red-400" />}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-red-400 wrap-break-word">
                       {sos.user?.full_name || "Someone"} needs help!

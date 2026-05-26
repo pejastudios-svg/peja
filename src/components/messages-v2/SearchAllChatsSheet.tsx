@@ -12,7 +12,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Search, User, X } from "lucide-react";
+import { ArrowLeft, Search, X } from "lucide-react";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { format, isSameDay } from "date-fns";
 import {
   searchMessagesGlobally,
@@ -154,17 +155,11 @@ export function SearchAllChatsSheet({ currentUserId, onClose }: Props) {
                   }}
                   className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-[var(--chat-input-hover)] text-left"
                 >
-                  <span className="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center">
-                    {r.other_user_avatar_url ? (
-                      <img
-                        src={r.other_user_avatar_url}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <User className="w-5 h-5 text-dark-400" />
-                    )}
-                  </span>
+                  <AvatarImage
+                    src={r.other_user_avatar_url}
+                    wrapperClassName="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center"
+                    fallbackIconClassName="w-5 h-5"
+                  />
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-2 text-[11px] text-dark-400 tabular-nums">
                       <span className="text-dark-200 font-medium truncate max-w-[12rem]">

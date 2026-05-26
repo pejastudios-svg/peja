@@ -34,9 +34,9 @@ import {
   Flag as FlagIcon,
   Pin as PinIcon,
   PinOff,
-  User,
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useAuth } from "@/context/AuthContext";
 import { useChatStore } from "@/features/chat/store";
 import {
@@ -2395,17 +2395,10 @@ export default function ThreadV2Page() {
                 >
                   {showSenderAvatar &&
                     (isFirstInRun ? (
-                      <span className="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center self-end">
-                        {senderInfo?.avatar_url ? (
-                          <img
-                            src={senderInfo.avatar_url}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <User className="w-3.5 h-3.5 text-dark-400" />
-                        )}
-                      </span>
+                      <AvatarImage
+                        src={senderInfo?.avatar_url}
+                        wrapperClassName="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center self-end"
+                      />
                     ) : (
                       <span className="shrink-0 w-7" aria-hidden />
                     ))}
@@ -2504,17 +2497,11 @@ export default function ThreadV2Page() {
           }}
           aria-label={`Scroll to latest, ${unseenCount} new message${unseenCount > 1 ? "s" : ""}`}
         >
-          <span className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-[var(--chat-input-bg)]">
-            {conv?.other_user_avatar_url ? (
-              <img
-                src={conv.other_user_avatar_url}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <ChevronDown className="w-5 h-5 text-dark-200" />
-            )}
-          </span>
+          <AvatarImage
+            src={conv?.other_user_avatar_url}
+            wrapperClassName="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-[var(--chat-input-bg)]"
+            fallback={<ChevronDown className="w-5 h-5 text-dark-200" />}
+          />
           <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold rounded-full bg-primary-600 text-white tabular-nums">
             {unseenCount > 99 ? "99+" : unseenCount}
           </span>

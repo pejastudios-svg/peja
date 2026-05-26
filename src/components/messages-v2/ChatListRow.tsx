@@ -75,6 +75,10 @@ export function ChatListRow({
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // Flips to true if the avatar <img> fires onError — keeps the
+  // group/user icon fallback from being suppressed by a truthy-but-
+  // broken URL (offline / 404 / etc).
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   // Typing / recording indicators for THIS conversation. Populated
   // by useListTypingChannels (entries auto-expire after 3 s in the
@@ -136,11 +140,12 @@ export function ChatListRow({
           state. */}
       <div className="relative shrink-0">
         <div className="w-12 h-12 rounded-full overflow-hidden bg-primary-600/20 border border-white/10 flex items-center justify-center">
-          {conv.other_user_avatar_url ? (
+          {conv.other_user_avatar_url && !avatarFailed ? (
             <img
               src={conv.other_user_avatar_url}
               alt=""
               className="w-full h-full object-cover"
+              onError={() => setAvatarFailed(true)}
             />
           ) : conv.is_group ? (
             <Users className="w-5 h-5 text-primary-300" />

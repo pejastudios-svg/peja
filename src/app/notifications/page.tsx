@@ -1,6 +1,7 @@
 "use client";
 
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useState, useEffect } from "react";
 import { useFeedCache } from "@/context/FeedContext";
 import { useRouter } from "next/navigation";
@@ -614,17 +615,11 @@ export default function NotificationsPage() {
           {inviteModal && (
             <div className="space-y-4">
               <div className="flex items-center gap-4 p-4 glass-sm rounded-xl">
-                <div className="w-14 h-14 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                  {inviteModal.requesterAvatar ? (
-                    <img
-                      src={inviteModal.requesterAvatar}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User className="w-7 h-7 text-yellow-400" />
-                  )}
-                </div>
+                <AvatarImage
+                  src={inviteModal.requesterAvatar}
+                  wrapperClassName="w-14 h-14 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden"
+                  fallback={<User className="w-7 h-7 text-yellow-400" />}
+                />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-dark-100 text-lg">
                     {inviteModal.requesterName}
