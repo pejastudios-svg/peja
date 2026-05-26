@@ -46,13 +46,18 @@ type UseSwipeToReplyResult = {
 const COMMIT_THRESHOLD = 56;
 // Damping factor — the bubble follows at half the finger's pace.
 const DAMPING = 0.5;
-// How much horizontal motion we need before locking into the swipe gesture.
-// Below this we still allow the parent scroller to claim the gesture for a
-// vertical pan.
+// How much horizontal motion we need before locking into the swipe
+// gesture. Below this we still allow the parent scroller to claim the
+// gesture for a vertical pan.
 const HORIZONTAL_ACTIVATION = 5;
-// How much vertical motion before we bail entirely — the user is scrolling,
-// not swiping.
-const VERTICAL_CANCEL = 8;
+// How much vertical motion before we bail entirely — the user is
+// scrolling, not swiping. Tight thresholds (the previous 8px) ate
+// real swipes on Android, where a deliberate sideways drag picks up
+// 10-14 px of vertical drift before the user's finger settles into a
+// horizontal line. We now require BOTH "vertical > 16" AND
+// "vertical dominates horizontal" before bailing, so a swipe that
+// drifted but is still mostly horizontal keeps going.
+const VERTICAL_CANCEL = 16;
 
 export function useSwipeToReply({
   direction,

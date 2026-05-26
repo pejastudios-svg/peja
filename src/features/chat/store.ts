@@ -36,6 +36,15 @@ interface ChatStoreState {
   // Per-conversation threads.
   threadsByConversation: Record<string, ChatThread>;
 
+  // Timestamp (ms) of the most recent local clearThread for each
+  // conversation. Used as a horizon: setThread / upsertMessage discard
+  // any incoming message whose created_at predates this, which protects
+  // against in-flight fetches that started before the clear and resolve
+  // after it (their result reflects the pre-delete-row state and would
+  // otherwise repopulate the cleared thread). Session-scoped — the
+  // server-side message_deletions rows take over across reloads.
+  clearedAtByConversation: Record<string, number>;
+
   // Bumped to Date.now() every time the realtime channel transitions to
   // SUBSCRIBED. Components that need to catch up after a disconnect watch
   // this in their deps and refetch when it changes. Supabase Realtime
@@ -83,9 +92,16 @@ interface ChatStoreState {
   // the same channel as typing because the receiver-side UI (header
   // subtitle + in-thread pulsing icon) is the same surface — only the
   // icon swaps.
+  // Per-conversation map of typers, keyed by userId. A DM has at
+  // most one entry; a group can have several at once. Each entry
+  // carries the sender's name so consumers can render
+  // "Jane is typing" / "Jane and Sam are typing" / "3 people typing"
+  // without a separate lookup. Name is optional because old
+  // broadcasts (pre-name) just carried user_id — receivers fall back
+  // to a generic label in that case.
   typingByConversation: Record<
     string,
-    { userId: string; kind: "typing" | "recording"; at: number } | undefined
+    Record<string, { kind: "typing" | "recording"; userName?: string; at: number }>
   >;
 
   // Live upload progress for in-flight media sends, keyed by message
@@ -123,6 +139,12 @@ interface ChatStoreState {
 
   // === Thread actions ===
   setThread: (conversationId: string, messages: ChatMessage[]) => void;
+  // Replace a thread with empty, bypassing setThread's merge. Used by
+  // "clear chat" — setThread([]) preserves any existing message newer
+  // than the (empty) incoming horizon, which is every existing message.
+  // We still keep pending-delivery sends so an in-flight outbox doesn't
+  // get dropped mid-clear.
+  clearThread: (conversationId: string) => void;
   // Prepend a page of OLDER messages to a thread. Used by the
   // "load older on scroll up" pagination. Deduped on id, sorted on
   // insert. Does NOT touch the `hydrated` / `fetchedAt` flags — the
@@ -185,12 +207,18 @@ interface ChatStoreState {
   // conversation shown at a time. The `kind` field drives whether
   // the in-thread bubble shows a chat-bubble icon (typing) or a mic
   // icon (recording), and likewise the header subtitle text.
+  // userName is optional — only newer broadcasts include it. Without
+  // it, group typing falls back to "Someone is typing".
   setTyping: (
     conversationId: string,
     userId: string,
-    kind?: "typing" | "recording"
+    kind?: "typing" | "recording",
+    userName?: string,
   ) => void;
-  clearTyping: (conversationId: string) => void;
+  // userId is optional: omitted = wipe ALL typers for this
+  // conversation (used by channel-unsubscribe paths). Specified =
+  // wipe just that one user (TTL expiry path).
+  clearTyping: (conversationId: string, userId?: string) => void;
 
   // === Upload progress ===
   setUploadProgress: (
@@ -266,6 +294,57 @@ function persistDrafts(drafts: Record<string, string>): void {
   } catch {}
 }
 
+// === Conversation list persistence ===
+// Persists the conversation summaries (id, last message preview, unread,
+// other_user info) so the /messages page can render the chat list
+// offline. Without this, opening /messages cold-offline shows skeletons
+// forever — `conversationsHydrated` is only flipped to true on a
+// successful network refetch (see useChatInit), so an offline cold
+// open never reaches that branch.
+//
+// Keyed per-user so a shared device doesn't leak chat lists across
+// accounts.
+const CONVERSATIONS_CACHE_PREFIX = "peja:chat:conversations:v1:";
+
+function conversationsCacheKey(userId: string): string {
+  return `${CONVERSATIONS_CACHE_PREFIX}${userId}`;
+}
+
+// Returns `null` when there's no cached record at all for this user
+// (we've never successfully fetched the list while online). Returns
+// an empty array if the user genuinely has zero conversations — that
+// distinction matters because useChatInit gates the
+// `conversationsHydrated` flip on the cache existing at all, not on
+// it being non-empty: a user with no chats still needs the messages
+// page to render "no conversations" rather than the skeleton.
+export function readConversationsCache(
+  userId: string,
+): ChatConversationSummary[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(conversationsCacheKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.list)) return null;
+    return parsed.list as ChatConversationSummary[];
+  } catch {
+    return null;
+  }
+}
+
+export function persistConversationsCache(
+  userId: string,
+  list: ChatConversationSummary[],
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      conversationsCacheKey(userId),
+      JSON.stringify({ list, cached_at: Date.now() }),
+    );
+  } catch {}
+}
+
 // === Typing-indicator timers ===
 // Map of "conversationId|userId" → timeout handle. When a typing event
 // fires, we (re)set a 3s timer that wipes the entry. Kept outside the
@@ -280,6 +359,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   conversationsById: {},
   conversationOrder: [],
   threadsByConversation: {},
+  clearedAtByConversation: {},
   lastConnectedAt: null,
   activeConversationId: null,
   recentlyClearedAt: {},
@@ -345,6 +425,17 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       conversationsHydrated: true,
       lastSeenByUserId: nextLastSeen,
     });
+    // Persist the live list so offline cold-opens of /messages render
+    // the chat list immediately (the useChatInit effect that reads
+    // this cache flips `conversationsHydrated` to true on mount).
+    // Persisting from inside the action rather than at the call site
+    // means every caller — useChatInit's initial fetch, realtime's
+    // post-update refetch, the group creator — keeps the cache fresh
+    // without each having to remember.
+    const userIdForCache = get().currentUserId;
+    if (userIdForCache) {
+      persistConversationsCache(userIdForCache, conversations);
+    }
   },
 
   upsertConversation: (conv) => {
@@ -477,8 +568,19 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
 
   // ---- Threads ----
   setThread: (conversationId, messages) => {
-    const { threadsByConversation } = get();
+    const { threadsByConversation, clearedAtByConversation } = get();
     const existing = threadsByConversation[conversationId] || emptyThread(conversationId);
+
+    // Honor any clearThread that ran while this fetch was in flight.
+    // The fetch may have read messages BEFORE the server-side
+    // message_deletions rows were inserted; without this filter those
+    // pre-clear messages would repopulate the thread on resolve.
+    const clearedAt = clearedAtByConversation[conversationId];
+    if (clearedAt) {
+      messages = messages.filter(
+        (m) => new Date(m.created_at).getTime() > clearedAt,
+      );
+    }
 
     // Merge — don't blindly replace. Two kinds of messages from the
     // existing array can be legitimately "missing" from the incoming
@@ -545,13 +647,43 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
     });
   },
 
+  clearThread: (conversationId) => {
+    const { threadsByConversation, clearedAtByConversation } = get();
+    const existing = threadsByConversation[conversationId];
+    const pending = (existing?.messages || []).filter(
+      (m) => m.delivery_status === "pending",
+    );
+    set({
+      threadsByConversation: {
+        ...threadsByConversation,
+        [conversationId]: {
+          conversationId,
+          messages: pending,
+          hydrated: true,
+          fetchedAt: Date.now(),
+        },
+      },
+      clearedAtByConversation: {
+        ...clearedAtByConversation,
+        [conversationId]: Date.now(),
+      },
+    });
+  },
+
   prependOlderMessages: (conversationId, older) => {
     if (older.length === 0) return;
-    const { threadsByConversation } = get();
+    const { threadsByConversation, clearedAtByConversation } = get();
     const existing = threadsByConversation[conversationId];
     if (!existing) return;
+    // Same horizon as setThread / upsertMessage — load-older results
+    // can race past a clear too.
+    const clearedAt = clearedAtByConversation[conversationId];
+    const cutoffOlder = clearedAt
+      ? older.filter((m) => new Date(m.created_at).getTime() > clearedAt)
+      : older;
+    if (cutoffOlder.length === 0) return;
     const existingIds = new Set(existing.messages.map((m) => m.id));
-    const fresh = older.filter((m) => !existingIds.has(m.id));
+    const fresh = cutoffOlder.filter((m) => !existingIds.has(m.id));
     if (fresh.length === 0) return;
     // Combine + chronological sort. fresh comes in already
     // chronological from the API, but a merge-sort with the existing
@@ -569,7 +701,14 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   },
 
   upsertMessage: (conversationId, message) => {
-    const { threadsByConversation } = get();
+    const { threadsByConversation, clearedAtByConversation } = get();
+    // Drop any message that predates a local clearThread for this
+    // conversation. Catches a late-arriving realtime echo or any other
+    // path that would otherwise resurrect a cleared message.
+    const clearedAt = clearedAtByConversation[conversationId];
+    if (clearedAt && new Date(message.created_at).getTime() <= clearedAt) {
+      return;
+    }
     const existing = threadsByConversation[conversationId] || emptyThread(conversationId);
     const idx = existing.messages.findIndex((m) => m.id === message.id);
     let nextMessages: ChatMessage[];
@@ -819,32 +958,88 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
   },
 
   // ---- Typing / recording ----
-  setTyping: (conversationId, userId, kind = "typing") => {
+  setTyping: (conversationId, userId, kind = "typing", userName) => {
     const key = `${conversationId}|${userId}`;
     if (typingTimers[key]) clearTimeout(typingTimers[key]);
+
     const { typingByConversation } = get();
+    const existingForConv = typingByConversation[conversationId] || {};
+    const existingForUser = existingForConv[userId];
     set({
       typingByConversation: {
         ...typingByConversation,
-        [conversationId]: { userId, kind, at: Date.now() },
+        [conversationId]: {
+          ...existingForConv,
+          [userId]: {
+            kind,
+            // Keep an older known name if the new broadcast didn't
+            // carry one — protects against legacy senders.
+            userName: userName ?? existingForUser?.userName,
+            at: Date.now(),
+          },
+        },
       },
     });
+
     typingTimers[key] = setTimeout(() => {
-      const current = get().typingByConversation[conversationId];
-      if (!current || current.userId !== userId) return;
-      const next = { ...get().typingByConversation };
-      delete next[conversationId];
-      set({ typingByConversation: next });
+      // TTL expired for this one user — drop their entry only. If
+      // they were the last typer in the conversation, drop the
+      // conversation entry too.
+      const { typingByConversation: curMap } = get();
+      const inner = curMap[conversationId];
+      if (!inner || !inner[userId]) return;
+      const { [userId]: _removed, ...rest } = inner;
+      void _removed;
+      const nextMap = { ...curMap };
+      if (Object.keys(rest).length === 0) {
+        delete nextMap[conversationId];
+      } else {
+        nextMap[conversationId] = rest;
+      }
+      set({ typingByConversation: nextMap });
       delete typingTimers[key];
     }, TYPING_TTL_MS);
   },
 
-  clearTyping: (conversationId) => {
+  clearTyping: (conversationId, userId) => {
     const { typingByConversation } = get();
-    if (!typingByConversation[conversationId]) return;
-    const next = { ...typingByConversation };
-    delete next[conversationId];
-    set({ typingByConversation: next });
+    const inner = typingByConversation[conversationId];
+    if (!inner) return;
+
+    // Single-user clear: drop that one entry. If it was the last
+    // typer, drop the conversation entry too.
+    if (userId) {
+      if (!inner[userId]) return;
+      const { [userId]: _removed, ...rest } = inner;
+      void _removed;
+      const nextMap = { ...typingByConversation };
+      if (Object.keys(rest).length === 0) {
+        delete nextMap[conversationId];
+      } else {
+        nextMap[conversationId] = rest;
+      }
+      // Also cancel that user's TTL timer to keep typingTimers clean.
+      const key = `${conversationId}|${userId}`;
+      if (typingTimers[key]) {
+        clearTimeout(typingTimers[key]);
+        delete typingTimers[key];
+      }
+      set({ typingByConversation: nextMap });
+      return;
+    }
+
+    // Full clear (channel unsubscribe path): wipe every typer for
+    // this conversation and cancel their timers.
+    for (const otherUserId of Object.keys(inner)) {
+      const key = `${conversationId}|${otherUserId}`;
+      if (typingTimers[key]) {
+        clearTimeout(typingTimers[key]);
+        delete typingTimers[key];
+      }
+    }
+    const nextMap = { ...typingByConversation };
+    delete nextMap[conversationId];
+    set({ typingByConversation: nextMap });
   },
 
   // ---- Upload progress ----
@@ -880,6 +1075,7 @@ export const useChatStore = create<ChatStoreState>((set, get) => ({
       conversationsById: {},
       conversationOrder: [],
       threadsByConversation: {},
+      clearedAtByConversation: {},
       lastConnectedAt: null,
       activeConversationId: null,
       recentlyClearedAt: {},

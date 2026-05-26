@@ -21,32 +21,48 @@ type FormState = {
   home_address: string;
 };
 
+type DraftState = {
+  data: FormState;
+  touchedFields: Partial<Record<keyof FormState, true>>;
+};
+
 const profileEditDraftKey = (userId: string) => `peja-profile-edit-draft-${userId}`;
 
-function readProfileEditDraft(userId: string): FormState | null {
+function readProfileEditDraft(userId: string): DraftState | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = sessionStorage.getItem(profileEditDraftKey(userId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as FormState;
+    const parsed = JSON.parse(raw) as Partial<FormState> | Partial<DraftState>;
     if (!parsed || typeof parsed !== "object") return null;
+    const source = ("data" in parsed && parsed.data ? parsed.data : parsed) as Partial<FormState>;
     return {
-      full_name: parsed.full_name ?? "",
-      phone: parsed.phone ?? "",
-      occupation: parsed.occupation ?? "",
-      date_of_birth: parsed.date_of_birth ?? "",
-      avatar_url: parsed.avatar_url ?? "",
-      home_address: parsed.home_address ?? "",
+      data: {
+        full_name: source.full_name ?? "",
+        phone: source.phone ?? "",
+        occupation: source.occupation ?? "",
+        date_of_birth: source.date_of_birth ?? "",
+        avatar_url: source.avatar_url ?? "",
+        home_address: source.home_address ?? "",
+      },
+      // Legacy drafts had no touched metadata; treat them as stale snapshots.
+      touchedFields: ("touchedFields" in parsed && parsed.touchedFields
+        ? parsed.touchedFields
+        : {}) as DraftState["touchedFields"],
     };
   } catch {
     return null;
   }
 }
 
-function writeProfileEditDraft(userId: string, data: FormState) {
+function writeProfileEditDraft(
+  userId: string,
+  data: FormState,
+  touchedFields: Partial<Record<keyof FormState, true>> = {}
+) {
   if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem(profileEditDraftKey(userId), JSON.stringify(data));
+    sessionStorage.setItem(profileEditDraftKey(userId), JSON.stringify({ data, touchedFields }));
   } catch {}
 }
 
@@ -55,6 +71,24 @@ function clearProfileEditDraft(userId: string) {
   try {
     sessionStorage.removeItem(profileEditDraftKey(userId));
   } catch {}
+}
+
+function countFilledFields(data: FormState): number {
+  return REQUIRED_PROFILE_FIELDS.filter(
+    (f) => typeof (data as any)[f.key] === "string" && (data as any)[f.key].trim() !== ""
+  ).length;
+}
+
+/** Prefer touched draft values, including intentional blanks; fall back to DB for untouched fields. */
+function mergeFormWithDraft(db: FormState, draft: DraftState): FormState {
+  return {
+    full_name: draft.touchedFields.full_name ? draft.data.full_name : db.full_name,
+    phone: draft.touchedFields.phone ? draft.data.phone : db.phone,
+    occupation: draft.touchedFields.occupation ? draft.data.occupation : db.occupation,
+    date_of_birth: draft.touchedFields.date_of_birth ? draft.data.date_of_birth : db.date_of_birth,
+    avatar_url: draft.touchedFields.avatar_url ? draft.data.avatar_url : db.avatar_url,
+    home_address: draft.touchedFields.home_address ? draft.data.home_address : db.home_address,
+  };
 }
 
 export default function EditProfilePage() {
@@ -101,11 +135,17 @@ export default function EditProfilePage() {
   const [loading, setLoading] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
+  // Switches to true if the avatar <img> fires onError (offline / 404 /
+  // broken CDN). Resets whenever shownAvatarUrl changes — see effect
+  // below. Keeps the User-icon fallback from being suppressed by a
+  // truthy-but-broken URL.
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   // Hydrate the form once per user id. Auth refreshes/realtime updates replace the
   // `user` object frequently — re-seeding on every change wiped in-progress edits.
   const hydratedUserIdRef = useRef<string | null>(null);
+  const touchedFieldsRef = useRef<Partial<Record<keyof FormState, true>>>({});
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -119,6 +159,13 @@ export default function EditProfilePage() {
     };
   }, [avatarPreviewUrl]);
 
+  // Allow a fresh DB load next time this screen opens (overlay may stay mounted).
+  useEffect(() => {
+    return () => {
+      hydratedUserIdRef.current = null;
+    };
+  }, []);
+
   // Single source of truth: once auth is settled, fetch the row from Supabase and
   // seed the form. Only runs once per user id so background auth/profile refreshes
   // do not overwrite fields the user is actively typing into.
@@ -130,19 +177,13 @@ export default function EditProfilePage() {
 
     if (hydratedUserIdRef.current === user.id) return;
 
-    // Restored after image-picker / backgrounding remounts the screen.
     const savedDraft = readProfileEditDraft(user.id);
-    if (savedDraft) {
-      setFormData(savedDraft);
-      hydratedUserIdRef.current = user.id;
-      return;
-    }
 
     let cancelled = false;
     setFormData(null);
 
     (async () => {
-      const fallback = (): FormState => ({
+      const fromAuth = (): FormState => ({
         full_name: user.full_name || "",
         phone: user.phone || "",
         occupation: user.occupation || "",
@@ -157,19 +198,42 @@ export default function EditProfilePage() {
           .eq("id", user.id)
           .single();
         if (cancelled) return;
-        const src = data ?? user;
-        setFormData({
+        // Validate the response BEFORE using it. The service worker's
+        // network-first handler for /rest/v1/users returns a synthetic
+        // `Response("[]")` when offline + no cache (see sw.js
+        // NETWORK_FIRST_PATTERNS). supabase-js parses that as data=[]
+        // (non-nullish), so the previous `data ?? user` fallback never
+        // fired and the form rendered with empty fields. Treat data as
+        // valid only when it looks like an actual user row.
+        const dataIsValidObject =
+          data !== null &&
+          typeof data === "object" &&
+          !Array.isArray(data);
+        const src = dataIsValidObject ? data : user;
+        const fromDb: FormState = {
           full_name: src.full_name || "",
           phone: src.phone || "",
           occupation: src.occupation || "",
           date_of_birth: src.date_of_birth || "",
           avatar_url: src.avatar_url || "",
           home_address: src.home_address || "",
-        });
+        };
+        const next = savedDraft ? mergeFormWithDraft(fromDb, savedDraft) : fromDb;
+        setFormData(next);
+        touchedFieldsRef.current = savedDraft?.touchedFields ?? {};
+        // Drop stale drafts (e.g. only avatar after picker) so mobile doesn't stick at 1/6.
+        if (savedDraft && countFilledFields(savedDraft.data) < countFilledFields(fromDb)) {
+          clearProfileEditDraft(user.id);
+          touchedFieldsRef.current = {};
+          writeProfileEditDraft(user.id, next, touchedFieldsRef.current);
+        }
         hydratedUserIdRef.current = user.id;
       } catch {
         if (!cancelled) {
-          setFormData(fallback());
+          const fromDb = fromAuth();
+          const next = savedDraft ? mergeFormWithDraft(fromDb, savedDraft) : fromDb;
+          setFormData(next);
+          touchedFieldsRef.current = savedDraft?.touchedFields ?? {};
           hydratedUserIdRef.current = user.id;
         }
       }
@@ -183,11 +247,28 @@ export default function EditProfilePage() {
   // Persist in-progress edits so avatar picker / app backgrounding can't wipe them.
   useEffect(() => {
     if (!user?.id || !formData) return;
-    writeProfileEditDraft(user.id, formData);
+    writeProfileEditDraft(user.id, formData, touchedFieldsRef.current);
   }, [formData, user?.id]);
 
+  // Avatar-load failure tracking. Must live HERE — above the early
+  // returns below — because hooks have to run in the same order on
+  // every render. The previous home for this effect (right next to
+  // `shownAvatarUrl`'s declaration) was after `return <Skeleton/>`
+  // and `if (!user) return null`, so the hook count differed between
+  // the first render (skeleton path) and the second render (form
+  // path). React 19 flags this as "Rendered more hooks than during
+  // the previous render" → the segment error boundary catches it →
+  // users see "Something went wrong".
+  const shownAvatarUrl = (avatarPreviewUrl || formData?.avatar_url) ?? null;
+  useEffect(() => {
+    setAvatarFailed(false);
+  }, [shownAvatarUrl]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    setFormData((prev) => (prev ? { ...prev, [e.target.name]: e.target.value } : prev));
+    const fieldName = e.target.name as keyof FormState;
+    const value = e.target.value;
+    touchedFieldsRef.current = { ...touchedFieldsRef.current, [fieldName]: true };
+    setFormData((prev) => (prev ? { ...prev, [fieldName]: value } : prev));
   };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -224,7 +305,8 @@ export default function EditProfilePage() {
       setFormData((prev) => {
         if (!prev) return prev;
         const next = { ...prev, avatar_url: publicUrl.publicUrl };
-        writeProfileEditDraft(user.id, next);
+        touchedFieldsRef.current = { ...touchedFieldsRef.current, avatar_url: true };
+        writeProfileEditDraft(user.id, next, touchedFieldsRef.current);
         return next;
       });
 
@@ -276,8 +358,22 @@ export default function EditProfilePage() {
         setLoading(false);
         return;
       }
-      
+
+      // Drop any cached SW response for the users table so the next read
+      // returns the fresh row instead of the pre-save snapshot. Without this,
+      // a stale SW (v7 SWR cache) would force the user to save twice.
+      try {
+        if (typeof navigator !== "undefined" && navigator.serviceWorker?.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: "invalidate-data",
+            urlContains: "/rest/v1/users",
+          });
+        }
+      } catch {}
+
       clearProfileEditDraft(user.id);
+      touchedFieldsRef.current = {};
+      hydratedUserIdRef.current = null;
       setAvatarPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return null;
@@ -286,8 +382,13 @@ export default function EditProfilePage() {
       setSuccess(true);
       setLoading(false);
       setTimeout(() => {
-        router.push("/profile");
-      }, 1500);
+        // Close overlay / return to profile instead of stacking another /profile route
+        if (window.history.length > 1) {
+          router.back();
+        } else {
+          router.replace("/profile");
+        }
+      }, 800);
     } catch (err) {
       setError("Failed to update profile");
       setLoading(false);
@@ -323,8 +424,6 @@ export default function EditProfilePage() {
   if (!user) {
     return null;
   }
-
-  const shownAvatarUrl = avatarPreviewUrl || formData.avatar_url;
 
   return (
     <div
@@ -421,11 +520,12 @@ export default function EditProfilePage() {
         <div className="flex justify-center mb-6">
           <div className="relative">
             <div className="w-24 h-24 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden">
-              {shownAvatarUrl ? (
+              {shownAvatarUrl && !avatarFailed ? (
                 <img
                   src={shownAvatarUrl}
                   alt="Profile"
                   className="w-full h-full object-cover"
+                  onError={() => setAvatarFailed(true)}
                 />
               ) : (
                 <User className="w-12 h-12 text-primary-400" />

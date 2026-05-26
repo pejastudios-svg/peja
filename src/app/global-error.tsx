@@ -56,7 +56,7 @@ export default function GlobalError({
             }}
           >
             <img
-              src="https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png"
+              src="/peja-logo.png.png"
               alt="Peja"
               style={{ width: 40, height: 40, objectFit: "contain" }}
             />

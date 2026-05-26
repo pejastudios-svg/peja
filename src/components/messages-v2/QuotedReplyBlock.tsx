@@ -31,8 +31,6 @@ export function QuotedReplyBlock({
   const accentBorder = variant === "mine" ? "border-white" : "border-primary-400";
   const surface =
     variant === "mine" ? "bg-white/25" : "bg-[var(--chat-control-other-bg)]";
-  const authorColor =
-    variant === "mine" ? "text-white" : "text-primary-300";
   return (
     <button
       type="button"
@@ -42,7 +40,16 @@ export function QuotedReplyBlock({
       }}
       className={`block w-full text-left rounded-md ${surface} border-l-2 ${accentBorder} px-2 py-1.5 mb-1 active:opacity-80`}
     >
-      <p className={`text-[11px] font-semibold ${authorColor} truncate`}>
+      <p
+        className="text-[11px] font-semibold truncate"
+        style={{
+          // "mine" sits on a colored bubble where white reads cleanly;
+          // "theirs" uses the theme-aware purple token so the label stays
+          // readable on both dark and light reply surfaces.
+          color:
+            variant === "mine" ? "#ffffff" : "var(--chat-reply-author)",
+        }}
+      >
         {authorName}
       </p>
       <ReplyContentSnippet target={target} />

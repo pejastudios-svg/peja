@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Component, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -15,6 +15,8 @@ import { usePageCache } from "@/context/PageCacheContext";
 import DataAnalyticsPanel from "@/components/map/DataAnalyticsPanel";
 import { ChevronDown } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { isNigeriaPost } from "@/lib/notifications";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 
 const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
   ssr: false,
@@ -24,6 +26,42 @@ const IncidentMap = dynamic(() => import("@/components/map/IncidentMap"), {
     </div>
   ),
 });
+
+// Catches errors from the dynamic IncidentMap import (e.g. the MapLibre
+// chunk wasn't pre-cached and we're offline) so they don't escalate to
+// the segment-level error.tsx and replace the whole page with
+// "Something went wrong". The rest of the map page (header, controls)
+// still renders; only the map canvas shows the offline message.
+class IncidentMapBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {}
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="h-full flex items-center justify-center bg-dark-800 px-6">
+          <div className="text-center max-w-xs">
+            <div className="w-12 h-12 rounded-full bg-primary-500/15 flex items-center justify-center mx-auto mb-3">
+              <MapIcon className="w-6 h-6 text-primary-300" />
+            </div>
+            <p className="text-sm font-medium text-dark-100 mb-1">
+              Map unavailable offline
+            </p>
+            <p className="text-xs text-dark-400">
+              Connect to the internet to load the map. Posts and alerts will sync when you&apos;re back online.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type SOSUserPublic = { full_name: string; avatar_url?: string };
 
@@ -232,7 +270,7 @@ export default function MapClient() {
         .from("posts")
         .select(`
           id, user_id, category, comment, address,
-          latitude, longitude,
+          latitude, longitude, country_code,
           is_anonymous, status, is_sensitive,
           confirmations, views, comment_count, report_count, created_at,
           post_media (id, post_id, url, thumbnail_url, media_type, is_sensitive)
@@ -248,12 +286,14 @@ export default function MapClient() {
 
       const formatted: Post[] = (data || [])
         .filter((p: any) => p.latitude && p.longitude)
+        .filter((p: any) => isNigeriaPost(p.country_code, p.latitude, p.longitude))
         .map((p: any) => ({
           id: p.id,
           user_id: p.user_id,
           category: p.category,
           comment: p.comment,
           location: { latitude: p.latitude, longitude: p.longitude },
+          country_code: p.country_code ?? null,
           address: p.address,
           is_anonymous: p.is_anonymous,
           status: p.status,
@@ -571,29 +611,31 @@ export default function MapClient() {
               <Skeleton className="h-[70vh] w-[92vw] max-w-5xl rounded-2xl" />
             </div>
           ) : (
-            <IncidentMap
-              posts={filteredPosts}
-              userLocation={userLocation}
-              onPostClick={handlePostClick}
-              sosAlerts={sosAlerts}
-              centerOnUser={shouldCenterOnUser}
-              centerOnCoords={centerOnSOS}
-              openSOSId={openSOSId}
-              compassEnabled={compassEnabled}
-              myUserId={myUserId}
-              previewPostId={previewPostId}
-              onPreviewClose={() => {
-                setPreviewPostId(null);
-                // Remove the post param from the URL so the effect doesn't
-                // reopen the popup, and so a refresh doesn't restore it.
-                if (typeof window !== "undefined" && window.location.search.includes("post=")) {
-                  const params = new URLSearchParams(window.location.search);
-                  params.delete("post");
-                  const next = params.toString();
-                  window.history.replaceState(null, "", `${window.location.pathname}${next ? `?${next}` : ""}`);
-                }
-              }}
-            />
+            <IncidentMapBoundary>
+              <IncidentMap
+                posts={filteredPosts}
+                userLocation={userLocation}
+                onPostClick={handlePostClick}
+                sosAlerts={sosAlerts}
+                centerOnUser={shouldCenterOnUser}
+                centerOnCoords={centerOnSOS}
+                openSOSId={openSOSId}
+                compassEnabled={compassEnabled}
+                myUserId={myUserId}
+                previewPostId={previewPostId}
+                onPreviewClose={() => {
+                  setPreviewPostId(null);
+                  // Remove the post param from the URL so the effect doesn't
+                  // reopen the popup, and so a refresh doesn't restore it.
+                  if (typeof window !== "undefined" && window.location.search.includes("post=")) {
+                    const params = new URLSearchParams(window.location.search);
+                    params.delete("post");
+                    const next = params.toString();
+                    window.history.replaceState(null, "", `${window.location.pathname}${next ? `?${next}` : ""}`);
+                  }
+                }}
+              />
+            </IncidentMapBoundary>
           )}
 
           {sosAlerts.length > 0 && (
@@ -706,13 +748,11 @@ export default function MapClient() {
                   onClick={() => handleSOSClick(sos)}
                   className="flex gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl mb-2 cursor-pointer hover:bg-red-500/20 transition-colors"
                 >
-                  <div className="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center overflow-hidden">
-                    {sos.user?.avatar_url ? (
-                      <img src={sos.user.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <AlertTriangle className="w-5 h-5 text-red-400" />
-                    )}
-                  </div>
+                  <AvatarImage
+                    src={sos.user?.avatar_url}
+                    wrapperClassName="w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center overflow-hidden"
+                    fallback={<AlertTriangle className="w-5 h-5 text-red-400" />}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-red-400 wrap-break-word">
                       {sos.user?.full_name || "Someone"} needs help!

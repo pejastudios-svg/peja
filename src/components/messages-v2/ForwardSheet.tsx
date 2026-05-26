@@ -9,8 +9,10 @@
 // component just reads from it.
 
 import { useMemo, useState } from "react";
-import { ArrowLeft, Search, Send, User, Check } from "lucide-react";
+import { createPortal } from "react-dom";
+import { ArrowLeft, Search, Send, Check } from "lucide-react";
 import { useChatStore } from "@/features/chat/store";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 
 interface Props {
   excludeConversationId?: string;
@@ -55,9 +57,29 @@ export function ForwardSheet({ excludeConversationId, onClose, onForward }: Prop
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[60] bg-[var(--page-bg)] flex flex-col">
-      <header className="shrink-0 flex items-center gap-3 px-4 h-14 border-b border-[var(--chat-input-border)]">
+  // Portal to <body> so the sheet escapes any ancestor stacking
+  // context the chat thread sets up. Without that, inline post
+  // previews inside chat bubbles (IncidentLinkPreview) ended up
+  // rendering ABOVE this sheet because the bubble's own positioning
+  // context out-ranked the sheet's local z-index.
+  //
+  // z-[10001] sits above FullScreenModalShell's zIndex={9999} used
+  // by the @modal/(.)post/[id] intercepting route. If a forward
+  // gets triggered from a message that links into a post that's
+  // currently open as a modal, the sheet still wins.
+  if (typeof window === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[10001] bg-[var(--page-bg)] flex flex-col">
+      {/* Header respects safe-area top inset so the title row doesn't
+          sit under the notch / status bar on iOS Capacitor builds. */}
+      <header
+        className="shrink-0 border-b border-[var(--chat-input-border)]"
+        style={{
+          paddingTop: "var(--app-top-inset, env(safe-area-inset-top, 0px))",
+        }}
+      >
+       <div className="flex items-center gap-3 px-4 h-14">
         <button
           type="button"
           onClick={onClose}
@@ -69,6 +91,7 @@ export function ForwardSheet({ excludeConversationId, onClose, onForward }: Prop
         <span className="text-base font-semibold text-dark-100">
           Forward to…
         </span>
+       </div>
       </header>
 
       <div className="px-4 pt-3 pb-2 shrink-0">
@@ -99,17 +122,11 @@ export function ForwardSheet({ excludeConversationId, onClose, onForward }: Prop
                     onClick={() => toggle(c.id)}
                     className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-[var(--chat-input-hover)] text-left"
                   >
-                    <span className="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center">
-                      {c.other_user_avatar_url ? (
-                        <img
-                          src={c.other_user_avatar_url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User className="w-5 h-5 text-dark-400" />
-                      )}
-                    </span>
+                    <AvatarImage
+                      src={c.other_user_avatar_url}
+                      wrapperClassName="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center"
+                      fallbackIconClassName="w-5 h-5"
+                    />
                     <span className="flex-1 min-w-0 text-sm text-dark-100 truncate">
                       {c.other_user_name || "Chat"}
                     </span>
@@ -148,6 +165,7 @@ export function ForwardSheet({ excludeConversationId, onClose, onForward }: Prop
           </span>
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

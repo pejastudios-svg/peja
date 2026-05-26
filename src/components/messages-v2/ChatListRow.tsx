@@ -13,7 +13,7 @@
 // useLongPress hook + kebab open/closed state (you can't call hooks
 // inside a `.map`).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import {
   Check,
@@ -50,6 +50,12 @@ interface Props {
   isMine: boolean;
   selectMode: boolean;
   isSelected: boolean;
+  // Total rows currently selected. Drives the WhatsApp-style "single-
+  // selection kebab" — when exactly one row is selected, that row's
+  // kebab stays available so per-row actions (pin/mute/clear/block)
+  // are reachable without exiting select mode. Multi-select hides the
+  // kebab because only bulk actions in SelectActionBar apply then.
+  selectedCount: number;
   onTap: () => void;
   onEnterSelectMode: () => void;
   onKebabAction: (action: ChatRowAction) => void;
@@ -62,20 +68,36 @@ export function ChatListRow({
   isMine,
   selectMode,
   isSelected,
+  selectedCount,
   onTap,
   onEnterSelectMode,
   onKebabAction,
 }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // Flips to true if the avatar <img> fires onError — keeps the
+  // group/user icon fallback from being suppressed by a truthy-but-
+  // broken URL (offline / 404 / etc).
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
-  // Typing / recording indicator for THIS conversation only. Populated
-  // by the broadcast listener mounted in the list page
-  // (useListTypingChannels) — entries auto-expire after 3 s in the
-  // store. The listener already drops events sent by the current user,
-  // so any present entry means somebody else is typing/recording.
-  const typingEntry = useChatStore((s) => s.typingByConversation[conv.id]);
-  const typingKind = typingEntry?.kind ?? null;
+  // Typing / recording indicators for THIS conversation. Populated
+  // by useListTypingChannels (entries auto-expire after 3 s in the
+  // store). For DMs the inner map has at most one entry; for groups
+  // it can have several at once and we render a richer string.
+  const typingMap = useChatStore((s) => s.typingByConversation[conv.id]);
+  const typers = useMemo(() => {
+    if (!typingMap) return [] as Array<{ name?: string; kind: "typing" | "recording" }>;
+    return Object.values(typingMap).map((v) => ({ name: v.userName, kind: v.kind }));
+  }, [typingMap]);
+  // Pick a representative kind for the preview line: any "recording"
+  // wins (more committed signal), otherwise "typing" if anybody's
+  // typing.
+  const typingKind: "typing" | "recording" | null =
+    typers.some((t) => t.kind === "recording")
+      ? "recording"
+      : typers.some((t) => t.kind === "typing")
+        ? "typing"
+        : null;
 
   // Long-press = enter multi-select. Suppressed while already in
   // select mode (tap toggles selection there instead).
@@ -118,11 +140,12 @@ export function ChatListRow({
           state. */}
       <div className="relative shrink-0">
         <div className="w-12 h-12 rounded-full overflow-hidden bg-primary-600/20 border border-white/10 flex items-center justify-center">
-          {conv.other_user_avatar_url ? (
+          {conv.other_user_avatar_url && !avatarFailed ? (
             <img
               src={conv.other_user_avatar_url}
               alt=""
               className="w-full h-full object-cover"
+              onError={() => setAvatarFailed(true)}
             />
           ) : conv.is_group ? (
             <Users className="w-5 h-5 text-primary-300" />
@@ -185,13 +208,34 @@ export function ChatListRow({
           </span>
         </div>
         <p className="text-sm text-dark-400 truncate">
-          {typingKind === "typing" ? (
+          {typingKind ? (
             // Live activity beats the last-message preview and the
             // draft. Colour matches the chat header subtitle so the
             // signal reads as "live" everywhere it appears.
-            <span className="text-primary-400">typing…</span>
-          ) : typingKind === "recording" ? (
-            <span className="text-red-400">recording…</span>
+            // Groups get a richer string when we know who's typing.
+            (() => {
+              const colorClass =
+                typingKind === "recording" ? "text-red-400" : "text-primary-400";
+              const verb = typingKind === "recording" ? "recording" : "typing";
+
+              // DMs never need a name — the row IS the other user.
+              if (!conv.is_group) {
+                return <span className={colorClass}>{verb}…</span>;
+              }
+
+              if (typers.length === 1) {
+                const name = typers[0].name || "Someone";
+                return <span className={colorClass}>{name} is {verb}…</span>;
+              }
+              if (typers.length === 2) {
+                const a = typers[0].name || "Someone";
+                const b = typers[1].name || "someone";
+                return <span className={colorClass}>{a} and {b} are typing…</span>;
+              }
+              return (
+                <span className={colorClass}>{typers.length} people are typing…</span>
+              );
+            })()
           ) : draft ? (
             <>
               <span className="text-red-400">Draft: </span>
@@ -226,10 +270,17 @@ export function ChatListRow({
         </div>
       )}
 
-      {!selectMode && (
+      {/* Per-row kebab.
+          - Out of select mode: desktop hover reveals; mobile sees it
+            only when opened (was the prior behavior).
+          - In select mode AND this row is the lone selection: stay
+            always-visible so the user can tap it for per-row actions
+            (WhatsApp pattern). Selecting more rows hides the kebab
+            because only bulk SelectActionBar actions apply then. */}
+      {(!selectMode || (isSelected && selectedCount === 1)) && (
         <div
           ref={menuRef}
-          className="relative shrink-0"
+          className="relative shrink-0 mr-2"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -239,7 +290,7 @@ export function ChatListRow({
               setMenuOpen((v) => !v);
             }}
             className={`w-8 h-8 rounded-full flex items-center justify-center text-dark-300 ${
-              menuOpen
+              menuOpen || (selectMode && isSelected && selectedCount === 1)
                 ? "bg-[var(--chat-input-hover)] opacity-100"
                 : "opacity-0 group-hover:opacity-100"
             } transition-opacity`}

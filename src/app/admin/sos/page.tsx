@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { usePageCache } from "@/context/PageCacheContext";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useAuth } from "@/context/AuthContext";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -340,15 +341,11 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
                   {sos.status === 'active' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 shadow-[0_0_10px_#ef4444]" />}
                   
                   <div className="flex items-start gap-4 pl-2">
-                     <div className={`w-12 h-12 rounded-full border-2 overflow-hidden shrink-0 ${sos.status === 'active' ? 'border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-white/10'}`}>
-                        {sos.users?.avatar_url ? (
-                           <img src={sos.users.avatar_url} className="w-full h-full object-cover" />
-                        ) : (
-                           <div className="w-full h-full bg-dark-800 flex items-center justify-center">
-                               <User className="w-5 h-5 text-dark-500" />
-                           </div>
-                        )}
-                     </div>
+                     <AvatarImage
+                       src={sos.users?.avatar_url}
+                       wrapperClassName={`w-12 h-12 rounded-full border-2 overflow-hidden shrink-0 bg-dark-800 flex items-center justify-center ${sos.status === 'active' ? 'border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-white/10'}`}
+                       fallbackIconClassName="w-5 h-5"
+                     />
                      
                      <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-3 mb-1">
@@ -391,15 +388,11 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
           <div className="space-y-6">
             {/* Header / User */}
             <div className="flex items-center gap-4 p-5 bg-linear-to-br from-[#2a2735] to-[#1E1B24] rounded-2xl border border-white/10">
-              <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-red-500/50 shadow-lg shrink-0">
-                {selectedSOS.users?.avatar_url ? (
-                  <img src={selectedSOS.users.avatar_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-dark-700 flex items-center justify-center">
-                    <User className="w-8 h-8 text-dark-400" />
-                  </div>
-                )}
-              </div>
+              <AvatarImage
+                src={selectedSOS.users?.avatar_url}
+                wrapperClassName="w-16 h-16 rounded-full overflow-hidden border-2 border-red-500/50 shadow-lg shrink-0 bg-dark-700 flex items-center justify-center"
+                fallbackIconClassName="w-8 h-8"
+              />
               <div className="flex-1">
                 <p className="font-bold text-dark-100 text-xl">{selectedSOS.users?.full_name || "Unknown"}</p>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-1">

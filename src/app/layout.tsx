@@ -34,6 +34,9 @@ import { BackgroundPrefetcher } from "@/components/navigation/BackgroundPrefetch
 import { Analytics } from "@vercel/analytics/next"
 import { OfflineBanner } from "@/components/system/OfflineBanner";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { BottomNav } from "@/components/layout/BottomNav";
+import { OutboxBootstrap } from "@/components/system/OutboxBootstrap";
+import { EmergencyContactsBootstrap } from "@/components/system/EmergencyContactsBootstrap";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -72,10 +75,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* No-flicker theme bootstrap — runs before paint to set data-theme from localStorage. */}
+        {/* No-flicker theme bootstrap — runs before paint to set data-theme
+            from localStorage. Adds .theme-preload so the global bg/color
+            transition rule is suppressed for first paint (otherwise the
+            transition smoothly fades from the default dark bg to the saved
+            light bg over 300ms = the visible flash users were reporting).
+            Class is removed on the next animation frame so subsequent
+            theme toggles still animate smoothly. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("peja-theme");document.documentElement.setAttribute("data-theme",(t==="light"||t==="dark")?t:"dark");}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`,
+            __html: `(function(){try{var t=localStorage.getItem("peja-theme");var v=(t==="light"||t==="dark")?t:"dark";var d=document.documentElement;d.setAttribute("data-theme",v);d.classList.add("theme-preload");requestAnimationFrame(function(){requestAnimationFrame(function(){d.classList.remove("theme-preload");});});}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`,
           }}
         />
         {/* Status-bar height fallback for PWAs / mobile browsers where
@@ -131,12 +140,12 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://res.cloudinary.com" />
         <link rel="dns-prefetch" href="https://unpkg.com" />
 
-        <link
-          rel="stylesheet"
-          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-          crossOrigin=""
-        />
+        {/* Leaflet CSS is intentionally NOT loaded here. It's a render-blocking
+            external stylesheet from unpkg.com that only the /map route needs.
+            Loading it in the root meant every page's first paint was gated on
+            unpkg reachability — when users opened the app on bad/no data the
+            HTML rendered unstyled while waiting. IncidentMapInner injects it
+            on mount instead. */}
        <script dangerouslySetInnerHTML={{ __html: `
           (function() {
             if (window.location.hash) return;
@@ -144,16 +153,33 @@ export default function RootLayout({
             var APP_VERSION = "${process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "dev"}";
             if (APP_VERSION === "dev") return;
             var stored = localStorage.getItem("peja-app-version");
-            if (stored && stored !== APP_VERSION) {
+            // If offline, do NOT nuke caches + reload — the reload would
+            // fetch nothing and leave the user staring at an unstyled
+            // page. Stamp the version as "pending" so we run the upgrade
+            // the next time the device comes back online.
+            function runUpgrade() {
               localStorage.setItem("peja-app-version", APP_VERSION);
               if ("caches" in window) {
                 caches.keys().then(function(names) {
-                  names.forEach(function(name) { caches.delete(name); });
+                  return Promise.all(names.map(function(name) { return caches.delete(name); }));
                 }).then(function() {
                   window.location.reload();
                 });
               } else {
                 window.location.reload();
+              }
+            }
+            if (stored && stored !== APP_VERSION) {
+              var online = (typeof navigator !== "undefined" && "onLine" in navigator) ? navigator.onLine : true;
+              if (online) {
+                runUpgrade();
+              } else {
+                // Defer until the device reconnects. One-shot.
+                var onOnline = function() {
+                  window.removeEventListener("online", onOnline);
+                  runUpgrade();
+                };
+                window.addEventListener("online", onOnline);
               }
             } else if (!stored) {
               localStorage.setItem("peja-app-version", APP_VERSION);
@@ -171,6 +197,8 @@ export default function RootLayout({
                   <PageCacheProvider>
                     <FeedProvider>
                         <ChatBootstrap />
+                        <OutboxBootstrap />
+                        <EmergencyContactsBootstrap />
                         <AnalyticsTracker />
                         <RoutePrefetcher />
                         <GlobalScrollManager />
@@ -199,6 +227,11 @@ export default function RootLayout({
                         {children}
                         {overlay}
                         {modal}
+                        {/* BottomNav is global so the sliding active-tab
+                            pill survives navigation. The component itself
+                            decides when to hide via its isHidden check
+                            (post / chat detail routes). */}
+                        <BottomNav />
                         </TutorialProvider>
                     </FeedProvider>
                   </PageCacheProvider>

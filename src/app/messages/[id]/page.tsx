@@ -34,9 +34,9 @@ import {
   Flag as FlagIcon,
   Pin as PinIcon,
   PinOff,
-  User,
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useAuth } from "@/context/AuthContext";
 import { useChatStore } from "@/features/chat/store";
 import {
@@ -108,6 +108,7 @@ import {
   dateBucket,
 } from "@/components/messages-v2/ThreadDividers";
 import { notifyDMReaction, notifyDMBlocked } from "@/lib/notifications";
+import { clearPushNotificationsForConversation } from "@/lib/pushNotificationsClear";
 import {
   setViewingConversation,
   isUserViewingConversation,
@@ -161,12 +162,14 @@ export default function ThreadV2Page() {
   // by the hook.
   const { sendTyping, sendRecording } = useTypingChannel(
     conversationId,
-    user?.id ?? null
+    user?.id ?? null,
+    user?.full_name ?? null,
   );
-  // What the OTHER user is doing right now (if anything). Drives
-  // the header subtitle + in-thread bubble icon.
+  // What the OTHER user is doing right now (DM case — single typer).
+  // For groups we read the whole inner map below when building the
+  // header subtitle.
   const otherActivity =
-    typing && otherUserId && typing.userId === otherUserId ? typing.kind : null;
+    typing && otherUserId ? typing[otherUserId]?.kind ?? null : null;
   const isOtherTyping = otherActivity === "typing";
   const isOtherRecording = otherActivity === "recording";
 
@@ -465,17 +468,40 @@ export default function ThreadV2Page() {
       .catch(() => {});
     // Also mark any chat-related notifications as read so the
     // notifications page doesn't sit on a stale unread badge after
-    // the user has clearly seen the chat.
-    markChatNotificationsRead(conversationId, user.id).catch(() => {});
-    // Broadcast a refresh so the bell badge in the header updates
-    // without waiting for its 30s poll.
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("peja-notifications-changed"));
-    }
+    // the user has clearly seen the chat. Broadcast the refresh
+    // AFTER the UPDATE lands — firing it before the round-trip would
+    // make the bell re-poll against stale rows and put the badge back.
+    markChatNotificationsRead(conversationId, user.id)
+      .then(() => {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("peja-notifications-changed"));
+        }
+      })
+      .catch(() => {});
+    // Wipe any matching delivered push(es) from the device's
+    // notification tray. Fire-and-forget; web is a no-op.
+    void clearPushNotificationsForConversation(conversationId);
     clearUnread(conversationId);
   }, [user?.id, conversationId, setThread, clearUnread, lastConnectedAt]);
 
   const messages = useMemo(() => thread?.messages || [], [thread?.messages]);
+
+  // Re-save the cached thread whenever the messages list changes —
+  // not just after fetchThread. The previous save-after-fetch path
+  // missed the most important case: a message the user just sent
+  // (which lands via optimistic upsertMessage, not via fetch). Without
+  // this, opening a chat offline showed messages up to the last
+  // fetchThread but NOT the user's own outgoing message they sent
+  // moments earlier. Debounced so a burst of realtime updates only
+  // costs one write.
+  useEffect(() => {
+    if (!user?.id || !conversationId) return;
+    if (messages.length === 0) return;
+    const t = setTimeout(() => {
+      void saveCachedThread(user.id!, conversationId, messages);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [user?.id, conversationId, messages]);
 
   // === Scroll-anchoring logic ===
   // Rule: only auto-scroll to the latest message when the user is
@@ -980,11 +1006,11 @@ export default function ThreadV2Page() {
       run: async () => {
         const store = useChatStore.getState();
         const convId = conv.id;
-        // Wipe the visible thread immediately for snappy feedback.
-        const thread = store.threadsByConversation[convId];
-        if (thread) {
-          store.setThread(convId, []);
-        }
+        // Wipe the visible thread immediately for snappy feedback. Use
+        // clearThread (not setThread([])) — the latter's merge logic
+        // preserves every existing message when the incoming array is
+        // empty, so it would silently no-op the clear.
+        store.clearThread(convId);
         // Drop the conversation-list preview too so the row's last
         // message line goes blank without a manual refresh.
         store.patchConversation(convId, {
@@ -1469,6 +1495,16 @@ export default function ThreadV2Page() {
         is_deleted: message.is_deleted,
         preview_kind,
       });
+      // Focus the composer so the keyboard pops up immediately — this
+      // is what WhatsApp / iMessage do when you trigger a reply via
+      // swipe or the action menu. The focus call has to happen inside
+      // the user-gesture call stack for iOS WKWebView to actually open
+      // the keyboard. rAF defers one tick so the ReplyPreview above
+      // the composer has mounted, which prevents the textarea from
+      // shifting position right after focus.
+      requestAnimationFrame(() => {
+        composerRef.current?.focus();
+      });
     },
     []
   );
@@ -1689,12 +1725,34 @@ export default function ThreadV2Page() {
   // Header subtitle priority: recording > typing > online > last seen.
   // Recording wins over typing because it's the more committed
   // signal — a user typing might trail off, but a user recording is
-  // actively making a voice note for you. Groups don't have a single
-  // "other side" presence so we show the member count instead.
+  // actively making a voice note for you. Groups overlay live typing
+  // on top of the static "N members" string, falling back to the
+  // member count when nobody's typing.
   let headerSubtitle: string | null = null;
   if (conv?.is_group) {
-    const n = conv.member_count ?? 0;
-    headerSubtitle = `${n} member${n === 1 ? "" : "s"}`;
+    const memberCount = conv.member_count ?? 0;
+    const memberStr = `${memberCount} member${memberCount === 1 ? "" : "s"}`;
+
+    // Filter the typer map to exclude the current user — we
+    // shouldn't see our own "typing" header.
+    const typers = typing
+      ? Object.entries(typing)
+          .filter(([uid]) => uid !== user?.id)
+          .map(([, v]) => ({ name: v.userName, kind: v.kind }))
+      : [];
+
+    if (typers.length === 0) {
+      headerSubtitle = memberStr;
+    } else if (typers.length === 1) {
+      const t = typers[0];
+      const verb = t.kind === "recording" ? "recording" : "typing";
+      headerSubtitle = `${t.name || "Someone"} is ${verb}…`;
+    } else if (typers.length === 2) {
+      const [a, b] = typers;
+      headerSubtitle = `${a.name || "Someone"} and ${b.name || "someone"} are typing…`;
+    } else {
+      headerSubtitle = `${typers.length} people are typing…`;
+    }
   } else if (isOtherRecording) {
     headerSubtitle = "recording…";
   } else if (isOtherTyping) {
@@ -2354,17 +2412,10 @@ export default function ThreadV2Page() {
                 >
                   {showSenderAvatar &&
                     (isFirstInRun ? (
-                      <span className="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center self-end">
-                        {senderInfo?.avatar_url ? (
-                          <img
-                            src={senderInfo.avatar_url}
-                            alt=""
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <User className="w-3.5 h-3.5 text-dark-400" />
-                        )}
-                      </span>
+                      <AvatarImage
+                        src={senderInfo?.avatar_url}
+                        wrapperClassName="shrink-0 w-7 h-7 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center self-end"
+                      />
                     ) : (
                       <span className="shrink-0 w-7" aria-hidden />
                     ))}
@@ -2463,17 +2514,11 @@ export default function ThreadV2Page() {
           }}
           aria-label={`Scroll to latest, ${unseenCount} new message${unseenCount > 1 ? "s" : ""}`}
         >
-          <span className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-[var(--chat-input-bg)]">
-            {conv?.other_user_avatar_url ? (
-              <img
-                src={conv.other_user_avatar_url}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <ChevronDown className="w-5 h-5 text-dark-200" />
-            )}
-          </span>
+          <AvatarImage
+            src={conv?.other_user_avatar_url}
+            wrapperClassName="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center bg-[var(--chat-input-bg)]"
+            fallback={<ChevronDown className="w-5 h-5 text-dark-200" />}
+          />
           <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-[10px] font-bold rounded-full bg-primary-600 text-white tabular-nums">
             {unseenCount > 99 ? "99+" : unseenCount}
           </span>
@@ -2654,7 +2699,7 @@ export default function ThreadV2Page() {
                     caretColor: "var(--color-dark-100)",
                     background: "transparent",
                   }}
-                  className="w-full max-h-32 resize-none bg-transparent px-3 pt-3 pb-1 text-sm placeholder-dark-500 focus:outline-none relative z-10"
+                  className="w-full max-h-32 resize-none bg-transparent px-3 pt-3 pb-1 text-base placeholder-dark-500 focus:outline-none relative z-10"
                 />
                 {/* Styled mirror — sits BEHIND the textarea (z-0)
                     and renders the draft with @mentions in purple.
@@ -2663,7 +2708,7 @@ export default function ThreadV2Page() {
                 <div
                   ref={overlayRef}
                   aria-hidden
-                  className="absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-sm text-dark-100 whitespace-pre-wrap break-words pointer-events-none z-0"
+                  className="absolute inset-0 max-h-32 overflow-hidden px-3 pt-3 pb-1 text-base text-dark-100 whitespace-pre-wrap break-words pointer-events-none z-0"
                 >
                   {(() => {
                     const re = /(^|\s)(@everyone|@all|@[A-Za-z][A-Za-z0-9_'-]*)/g;
@@ -3263,6 +3308,15 @@ function MessageBubbleWrapper({
           // the user is actively dragging we want the transform to track
           // their finger 1:1, so no transition.
           transition: dragX === 0 ? "transform 200ms ease" : undefined,
+          // `touch-action: pan-y` tells the browser: "vertical scrolls
+          // are yours, horizontal touches are ours." Without this,
+          // Android Chrome (and Capacitor's Chrome-based WebView)
+          // grabs the horizontal motion for parent scroll/back-swipe
+          // arbitration and cancels our pointer stream mid-gesture —
+          // which is exactly the "about to swipe then stops"
+          // behaviour. Setting it here scopes the override to the
+          // bubble; the surrounding thread can still scroll vertically.
+          touchAction: "pan-y",
         }}
         {...handlers}
       >
@@ -3271,6 +3325,13 @@ function MessageBubbleWrapper({
             corner that opens the same menu the long-press / right-click
             triggers. Hidden by default and surfaced via `group-hover`,
             so touch devices (which don't fire :hover) never see it. */}
+        {/* `pointer-events-none` by default + `group-hover:pointer-events-auto`
+            means touch devices (which never fire :hover) can't trigger
+            this button at all, even if their tap lands on the corner
+            where it would render on desktop. Without that pair the
+            button was invisible on mobile but still tappable — tapping
+            the top-left of your own message or top-right of someone
+            else's message would open the action menu unexpectedly. */}
         <button
           type="button"
           onClick={(e) => {
@@ -3280,7 +3341,7 @@ function MessageBubbleWrapper({
           }}
           className={`absolute top-1.5 ${
             isMine ? "left-1.5" : "right-1.5"
-          } w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${
+          } w-6 h-6 rounded-full flex items-center justify-center opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity ${
             isMine
               ? "bg-white/25 text-white hover:bg-white/35"
               : "bg-black/15 text-dark-200 hover:bg-black/25"

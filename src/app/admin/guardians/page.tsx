@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { usePageCache } from "@/context/PageCacheContext";
 import { Modal } from "@/components/ui/Modal";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { apiUrl } from "@/lib/api";
@@ -605,11 +606,11 @@ const confirmRevokeGuardian = async () => {
                   }}
                   className="hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-all flex items-center gap-4 group"
                 >
-                  <div className="w-12 h-12 rounded-full bg-dark-800 border border-white/10 overflow-hidden relative shrink-0">
-                    {a.user?.avatar_url && (
-                      <img src={a.user.avatar_url} className="w-full h-full object-cover" />
-                    )}
-                  </div>
+                  <AvatarImage
+                    src={a.user?.avatar_url}
+                    wrapperClassName="w-12 h-12 rounded-full bg-dark-800 border border-white/10 overflow-hidden relative shrink-0 flex items-center justify-center"
+                    fallbackIconClassName="w-6 h-6"
+                  />
 
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-dark-100 group-hover:text-primary-300 transition-colors truncate">
@@ -660,15 +661,13 @@ const confirmRevokeGuardian = async () => {
                       setLightboxUrl(g.avatar_url);
                       setLightboxOpen(true);
                     }}
-                    className="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0"
+                    className="contents"
                   >
-                    {g.avatar_url ? (
-                      <img src={g.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <User className="w-6 h-6 text-dark-400" />
-                      </div>
-                    )}
+                    <AvatarImage
+                      src={g.avatar_url}
+                      wrapperClassName="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0 flex items-center justify-center"
+                      fallbackIconClassName="w-6 h-6"
+                    />
                   </button>
 
                   <div className="min-w-0">
@@ -750,15 +749,11 @@ const confirmRevokeGuardian = async () => {
                   className="hud-panel p-4 flex items-start gap-4"
                 >
                   {/* Guardian Avatar */}
-                  <div className="w-10 h-10 rounded-full bg-dark-800 border border-white/10 overflow-hidden shrink-0">
-                    {a.guardian?.avatar_url ? (
-                      <img src={a.guardian.avatar_url} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <User className="w-5 h-5 text-dark-400" />
-                      </div>
-                    )}
-                  </div>
+                  <AvatarImage
+                    src={a.guardian?.avatar_url}
+                    wrapperClassName="w-10 h-10 rounded-full bg-dark-800 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center"
+                    fallbackIconClassName="w-5 h-5"
+                  />
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
@@ -808,11 +803,11 @@ const confirmRevokeGuardian = async () => {
         {selected && (
           <div className="space-y-6">
             <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/5">
-              <div className="w-16 h-16 rounded-full overflow-hidden border border-white/10">
-                {selected.user?.avatar_url && (
-                  <img src={selected.user.avatar_url} className="w-full h-full object-cover" />
-                )}
-              </div>
+              <AvatarImage
+                src={selected.user?.avatar_url}
+                wrapperClassName="w-16 h-16 rounded-full overflow-hidden border border-white/10 flex items-center justify-center"
+                fallbackIconClassName="w-8 h-8"
+              />
               <div>
                 <p className="text-xl font-bold text-dark-100">{selected.user?.full_name}</p>
                 <p className="text-dark-400 text-sm">{selected.user?.email}</p>

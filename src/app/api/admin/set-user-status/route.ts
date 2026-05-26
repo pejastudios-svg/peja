@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
           user_id: userId,
           type: "system",
           title: "Account banned",
-          body: "Your account has been banned. If you believe this is a mistake, contact support.",
+          body: "Your account has been banned. If you believe this is a mistake, contact support at pejastudios@gmail.com.",
           data: { status: "banned", reason: reason || "Policy violation" },
           is_read: false,
         });

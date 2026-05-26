@@ -9,6 +9,9 @@ import { apiUrl } from "@/lib/api";
 import SOSLocation from "@/lib/sosLocation";
 import { supabase } from "@/lib/supabase";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { readEmergencyContactsCache } from "@/lib/emergencyContactsCache";
+import { openSosSmsIntent } from "@/lib/sosSms";
+import { dispatchOrQueue, newOutboxId } from "@/lib/outbox";
 import { 
   AlertTriangle, X, Phone, Loader2, CheckCircle, Users, 
   ArrowLeft, Scan, MapPin, Radio, Shield, Send,
@@ -134,10 +137,16 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
         <button
           type="button"
           onClick={startRecording}
+          // Themed via the same CSS vars the incident-type buttons
+          // (Car Accident / Armed Robbery / etc.) use in their
+          // base state — `--glass-input-bg` for the surface and
+          // `--glass-border` for the outline. Keeps the voice-note
+          // row visually consistent with the rest of the SOS form
+          // in both dark and light mode.
           className="w-full flex items-center gap-3 p-3 rounded-xl transition-all active:scale-[0.97]"
           style={{
-            background: "#ffffff",
-            border: "1px solid #d4d4d8",
+            background: "var(--glass-input-bg)",
+            border: "1px solid var(--glass-border)",
           }}
         >
           <div className="w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center">
@@ -146,8 +155,8 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
               <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
             </svg>
           </div>
-          <span className="text-sm text-zinc-600">Tap to record voice note</span>
-          <span className="text-[10px] text-zinc-500 ml-auto">Max 60s</span>
+          <span className="text-sm text-dark-200">Tap to record a voice note</span>
+          <span className="text-[10px] text-dark-400 ml-auto">Max 60s</span>
         </button>
       )}
 
@@ -307,6 +316,13 @@ export function SOSButton({ className = "" }: { className?: string }) {
     if (user) checkActiveSOS();
     return () => cleanup();
   }, [user]);
+
+  // Emergency-contacts cache hydration was moved to a global
+  // bootstrap (components/system/EmergencyContactsBootstrap) so it
+  // populates on every page, not only when SOSButton is mounted.
+  // Background: BottomNav is allowlisted to home + search, so SOSButton
+  // never mounted on /map or /messages and the cache stayed empty if
+  // the user opened the app on those routes.
 
   useEffect(() => {
     sosIdRef.current = sosId;
@@ -515,12 +531,132 @@ export function SOSButton({ className = "" }: { className?: string }) {
     }
   };
 
+  // Offline SOS path. The user is unreachable on the network, so we
+  // fall back to the device's native SMS app — Messages opens
+  // pre-filled with the SOS body and the cached emergency-contact
+  // phone numbers. The user (or Android auto-send, if we add the
+  // SMS plugin later) sends it via their own carrier.
+  //
+  // We ALSO queue a sos-log outbox item so the matching sos_alerts
+  // row + fan-out land in the DB as soon as network returns. Drain
+  // happens via lib/useOutboxDrain (mounted globally by
+  // OutboxBootstrap).
+  const triggerSOSOffline = async (): Promise<void> => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    // Cache now stores ALL contacts (any status, with or without
+    // phone) so SML can also use it for its share sheet. For SOS we
+    // only want the ones we can actually SMS — i.e. those with a
+    // non-empty phone number.
+    const allCached = readEmergencyContactsCache(user.id);
+    const smsContacts = allCached.filter(
+      (c) => typeof c.phone === "string" && c.phone.trim().length > 0,
+    );
+    if (smsContacts.length === 0) {
+      // Diagnostic message — surfaces the real cause so we can fix
+      // whichever step is broken instead of guessing.
+      const reason =
+        allCached.length === 0
+          ? "cache is empty (offline contact list never synced — open the app once online with contacts saved)"
+          : `cache has ${allCached.length} contact(s) but none have phone numbers`;
+      toast.danger(`SOS offline: ${reason}.`);
+      console.log("[sos-offline] cache state", {
+        userId: user.id,
+        totalCached: allCached.length,
+        withPhone: smsContacts.length,
+        allCached,
+      });
+      setLoading(false);
+      return;
+    }
+
+    // Get location. Capacitor / browser geolocation can usually
+    // return a cached fix even without network, so try it; if it
+    // fails, send the SMS without coords (still tells the contact
+    // there's an emergency).
+    let lat: number | null = null;
+    let lng: number | null = null;
+    try {
+      const pos = await new Promise<GeolocationPosition>((res, rej) =>
+        navigator.geolocation.getCurrentPosition(res, rej, {
+          enableHighAccuracy: true,
+          timeout: 8000,
+        }),
+      );
+      lat = pos.coords.latitude;
+      lng = pos.coords.longitude;
+    } catch {
+      // No fix — proceed without coords. Contact still gets the SMS.
+    }
+
+    const triggeredAt = new Date().toISOString();
+    const userName = user.full_name || "Someone";
+
+    // Open Messages app. Body includes name, tag, address (null
+    // offline), and a map link from lat/lng.
+    const opened = openSosSmsIntent({
+      userName,
+      tag: selectedTag,
+      message: textMessage || null,
+      latitude: lat,
+      longitude: lng,
+      address: null,
+      contacts: smsContacts,
+    });
+
+    // Queue the DB write regardless of whether the SMS app opened
+    // — the user might still be in danger and want the alert
+    // recorded once they're back online.
+    void dispatchOrQueue(user.id, {
+      id: newOutboxId(),
+      kind: "sos-log",
+      queued_at: Date.now(),
+      attempts: 0,
+      last_error: null,
+      payload: {
+        user_id: user.id,
+        triggered_at: triggeredAt,
+        latitude: lat,
+        longitude: lng,
+        address: null,
+        tag: selectedTag,
+        message: textMessage || null,
+        voice_note_url: null,
+        contact_ids: smsContacts.map((c) => c.id),
+      },
+    });
+
+    if (opened) {
+      toast.info(
+        "Offline. Opened SMS app with your emergency contacts. The alert will sync when you're back online.",
+      );
+    } else {
+      toast.warning(
+        "Offline. Couldn't open SMS app. The alert is queued and will sync when you're back online.",
+      );
+    }
+
+    setLoading(false);
+  };
+
   const triggerSOS = async () => {
     if (!user) return;
     setLoading(true);
     setIsHolding(false);
     setShowOptions(false);
-    
+
+    // Offline branch — fire SMS via the device's native Messages
+    // app and queue the DB write for when network returns. Runs
+    // BEFORE the online loading animation so we don't sit on a
+    // loader while there's no chance of hitting the API.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      await triggerSOSOffline();
+      return;
+    }
+
     setShowLoadingAnimation(true);
     setCurrentStep(0);
     setLoadingComplete(false);

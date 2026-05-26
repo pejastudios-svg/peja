@@ -7,6 +7,7 @@ import { usePageCache } from "@/context/PageCacheContext";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { apiUrl } from "@/lib/api";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
@@ -639,15 +640,13 @@ useEffect(() => {
                       setLightboxUrl(v.avatar_url);
                       setLightboxOpen(true);
                     }}
-                    className="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border-2 border-primary-500/40"
+                    className="contents"
                   >
-                    {v.avatar_url ? (
-                      <img src={v.avatar_url} alt="" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <User className="w-6 h-6 text-dark-400" />
-                      </div>
-                    )}
+                    <AvatarImage
+                      src={v.avatar_url}
+                      wrapperClassName="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border-2 border-primary-500/40 flex items-center justify-center"
+                      fallbackIconClassName="w-6 h-6"
+                    />
                   </button>
                   {/* Selection checkbox (select mode) OR VIP crown
                       indicator (default). They occupy the same slot
@@ -890,13 +889,11 @@ useEffect(() => {
                   className="flex items-center justify-between gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0 flex items-center justify-center">
-                      {u.avatar_url ? (
-                        <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <User className="w-5 h-5 text-dark-400" />
-                      )}
-                    </div>
+                    <AvatarImage
+                      src={u.avatar_url}
+                      wrapperClassName="w-10 h-10 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0 flex items-center justify-center"
+                      fallbackIconClassName="w-5 h-5"
+                    />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm font-medium text-dark-100 truncate">
@@ -980,15 +977,11 @@ useEffect(() => {
       >
         <div className="space-y-4">
           <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl">
-            <div className="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0">
-              {revokeTarget?.avatar_url ? (
-                <img src={revokeTarget.avatar_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <User className="w-6 h-6 text-dark-400" />
-                </div>
-              )}
-            </div>
+            <AvatarImage
+              src={revokeTarget?.avatar_url}
+              wrapperClassName="w-12 h-12 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0 flex items-center justify-center"
+              fallbackIconClassName="w-6 h-6"
+            />
             <div>
               <p className="text-dark-100 font-semibold">{revokeTarget?.full_name || "Unknown"}</p>
               <p className="text-xs text-dark-500">{revokeTarget?.email}</p>

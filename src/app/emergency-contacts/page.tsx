@@ -5,8 +5,13 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useToast } from "@/context/ToastContext";
 import { SafetyCheckIn } from "@/components/safety/SafetyCheckIn";
+import {
+  readEmergencyContactsCache,
+  readProtectingCache,
+} from "@/lib/emergencyContactsCache";
 import {
   Plus,
   Trash2,
@@ -69,11 +74,72 @@ export default function EmergencyContactsPage() {
   const toast = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
-  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
-  const [protectingFor, setProtectingFor] = useState<PendingInvite[]>([]);
+  // Hydrate the "My Contacts" tab from the local cache populated by
+  // EmergencyContactsBootstrap. This is the same offline source the SML
+  // share sheet reads from, so the page now matches that behavior:
+  // contacts render immediately on cold offline opens, then the live
+  // supabase fetch replaces them when online. Returns [] when the cache
+  // isn't ready yet (no user, or never populated).
+  const hydrateContactsFromCache = (
+    userId: string | undefined,
+  ): EmergencyContact[] => {
+    if (!userId) return [];
+    return readEmergencyContactsCache(userId).map((c) => ({
+      id: c.id,
+      user_id: userId,
+      contact_user_id: c.contact_user_id ?? "",
+      relationship: c.relationship ?? "",
+      status: (c.status ?? "pending") as EmergencyContact["status"],
+      created_at: "",
+      contact_user: {
+        id: c.contact_user_id ?? "",
+        full_name: c.linked_full_name ?? c.name ?? "Unknown",
+        avatar_url: c.linked_avatar_url ?? undefined,
+        phone: c.phone ?? undefined,
+      },
+    }));
+  };
+
+  // Hydrate the "Protecting" tab from the sibling cache (people who
+  // have added ME as their emergency contact). The bootstrap writes
+  // this whenever we're online; offline this is the only source.
+  const hydrateProtectingFromCache = (
+    userId: string | undefined,
+    statusFilter: "pending" | "accepted",
+  ): PendingInvite[] => {
+    if (!userId) return [];
+    return readProtectingCache(userId)
+      .filter((r) => r.status === statusFilter)
+      .map((r) => ({
+        id: r.id,
+        user_id: r.user_id,
+        relationship: r.relationship ?? "",
+        status: r.status,
+        created_at: "",
+        requester: {
+          id: r.user_id,
+          full_name: r.full_name ?? "Unknown",
+          avatar_url: r.avatar_url ?? undefined,
+        },
+      }));
+  };
+
+  const [contacts, setContacts] = useState<EmergencyContact[]>(() =>
+    hydrateContactsFromCache(user?.id),
+  );
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>(() =>
+    hydrateProtectingFromCache(user?.id, "pending"),
+  );
+  const [protectingFor, setProtectingFor] = useState<PendingInvite[]>(() =>
+    hydrateProtectingFromCache(user?.id, "accepted"),
+  );
   const [activeTab, setActiveTab] = useState<"mine" | "protecting">("mine");
-  const [loading, setLoading] = useState(true);
+  // If we already have cached contacts, skip the skeleton — the live
+  // fetch (if it succeeds) will replace them in place. Otherwise show
+  // the skeleton while we wait for the first fetch to land.
+  const [loading, setLoading] = useState(
+    () => hydrateContactsFromCache(user?.id).length === 0,
+  );
   const [showAddModal, setShowAddModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -93,11 +159,28 @@ export default function EmergencyContactsPage() {
   }, [user, authLoading, router]);
 
   useEffect(() => {
-    if (user) {
-      fetchContacts();
-      fetchPendingInvites();
-      fetchProtectingFor();
+    if (!user) return;
+    // Auth hydrated after first paint — try the caches now that we
+    // know the user id, so we can render rows before the network
+    // fetch lands (or at all, when offline).
+    if (contacts.length === 0) {
+      const cached = hydrateContactsFromCache(user.id);
+      if (cached.length > 0) {
+        setContacts(cached);
+        setLoading(false);
+      }
     }
+    if (pendingInvites.length === 0) {
+      const cached = hydrateProtectingFromCache(user.id, "pending");
+      if (cached.length > 0) setPendingInvites(cached);
+    }
+    if (protectingFor.length === 0) {
+      const cached = hydrateProtectingFromCache(user.id, "accepted");
+      if (cached.length > 0) setProtectingFor(cached);
+    }
+    fetchContacts();
+    fetchPendingInvites();
+    fetchProtectingFor();
   }, [user]);
 
   useEffect(() => {
@@ -135,11 +218,16 @@ export default function EmergencyContactsPage() {
   const fetchContacts = async () => {
     if (!user) return;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("emergency_contacts")
         .select("id, user_id, contact_user_id, relationship, status, created_at")
         .eq("user_id", user.id)
         .order("created_at", { ascending: true });
+
+      // Offline / query failed: don't clobber the cached list we
+      // already painted. The bootstrap will repopulate the cache next
+      // time we're online.
+      if (error) return;
 
       if (data && data.length > 0) {
         const ids = data.map(c => c.contact_user_id);
@@ -153,18 +241,23 @@ export default function EmergencyContactsPage() {
       } else {
         setContacts([]);
       }
-    } catch {} finally { setLoading(false); }
+    } catch {
+      // Network threw — keep whatever's on screen from the cache.
+    } finally { setLoading(false); }
   };
 
   const fetchPendingInvites = async () => {
     if (!user) return;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("emergency_contacts")
         .select("id, user_id, relationship, status, created_at")
         .eq("contact_user_id", user.id)
         .eq("status", "pending")
         .order("created_at", { ascending: false });
+
+      // Offline / query failed: don't clobber the cached list.
+      if (error) return;
 
       if (data && data.length > 0) {
         const requesterIds = data.map(d => d.user_id);
@@ -178,18 +271,23 @@ export default function EmergencyContactsPage() {
       } else {
         setPendingInvites([]);
       }
-    } catch {}
+    } catch {
+      // Network threw — keep whatever's on screen from the cache.
+    }
   };
 
   const fetchProtectingFor = async () => {
     if (!user) return;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("emergency_contacts")
         .select("id, user_id, relationship, status, created_at")
         .eq("contact_user_id", user.id)
         .eq("status", "accepted")
         .order("created_at", { ascending: false });
+
+      // Offline / query failed: don't clobber the cached list.
+      if (error) return;
 
       if (data && data.length > 0) {
         const requesterIds = data.map(d => d.user_id);
@@ -203,7 +301,9 @@ export default function EmergencyContactsPage() {
       } else {
         setProtectingFor([]);
       }
-    } catch {}
+    } catch {
+      // Network threw — keep whatever's on screen from the cache.
+    }
   };
 
   const handleAddContact = async () => {
@@ -473,13 +573,11 @@ export default function EmergencyContactsPage() {
               ) : (
                 contacts.map(contact => (
                   <div key={contact.id} className="glass-card flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                      {contact.contact_user?.avatar_url ? (
-                        <img src={contact.contact_user.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <User className="w-6 h-6 text-primary-400" />
-                      )}
-                    </div>
+                    <AvatarImage
+                      src={contact.contact_user?.avatar_url}
+                      wrapperClassName="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden"
+                      fallback={<User className="w-6 h-6 text-primary-400" />}
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-dark-100">{contact.contact_user?.full_name || "Unknown"}</p>
                       <div className="flex items-center gap-2">
@@ -521,13 +619,11 @@ export default function EmergencyContactsPage() {
                 <div className="space-y-3">
                   {pendingInvites.map(invite => (
                     <div key={invite.id} className="glass-card flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                        {invite.requester?.avatar_url ? (
-                          <img src={invite.requester.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <User className="w-6 h-6 text-yellow-400" />
-                        )}
-                      </div>
+                      <AvatarImage
+                        src={invite.requester?.avatar_url}
+                        wrapperClassName="w-12 h-12 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden"
+                        fallback={<User className="w-6 h-6 text-yellow-400" />}
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-dark-100 text-sm">{invite.requester?.full_name || "Unknown"}</p>
                         <p className="text-xs text-dark-500">Wants you as: {invite.relationship}</p>
@@ -565,13 +661,11 @@ export default function EmergencyContactsPage() {
               ) : (
                 protectingFor.map(row => (
                   <div key={row.id} className="glass-card flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                      {row.requester?.avatar_url ? (
-                        <img src={row.requester.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <User className="w-6 h-6 text-primary-400" />
-                      )}
-                    </div>
+                    <AvatarImage
+                      src={row.requester?.avatar_url}
+                      wrapperClassName="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden"
+                      fallback={<User className="w-6 h-6 text-primary-400" />}
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-dark-100">{row.requester?.full_name || "Unknown"}</p>
                       <div className="flex items-center gap-2">
@@ -620,9 +714,11 @@ export default function EmergencyContactsPage() {
                   {searchResults.map(r => (
                     <button key={r.id} onClick={() => setSelectedUser(r)}
                       className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/10 transition-colors text-left">
-                      <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                        {r.avatar_url ? <img src={r.avatar_url} alt="" className="w-full h-full object-cover" /> : <User className="w-5 h-5 text-primary-400" />}
-                      </div>
+                      <AvatarImage
+                        src={r.avatar_url}
+                        wrapperClassName="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden"
+                        fallback={<User className="w-5 h-5 text-primary-400" />}
+                      />
                       <div><p className="font-medium text-dark-100">{r.full_name}</p><p className="text-xs text-dark-500">Peja User</p></div>
                     </button>
                   ))}
@@ -641,9 +737,11 @@ export default function EmergencyContactsPage() {
             <div>
               <label className="block text-sm font-medium text-dark-200 mb-2">Selected Contact</label>
               <div className="flex items-center gap-3 p-3 glass-sm rounded-xl mb-4">
-                <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                  {selectedUser.avatar_url ? <img src={selectedUser.avatar_url} alt="" className="w-full h-full object-cover" /> : <User className="w-5 h-5 text-primary-400" />}
-                </div>
+                <AvatarImage
+                  src={selectedUser.avatar_url}
+                  wrapperClassName="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden"
+                  fallback={<User className="w-5 h-5 text-primary-400" />}
+                />
                 <div className="flex-1"><p className="font-medium text-dark-100">{selectedUser.full_name}</p></div>
                 <button onClick={() => setSelectedUser(null)} className="p-1 hover:bg-white/10 rounded text-dark-400"><X className="w-4 h-4" /></button>
               </div>

@@ -27,7 +27,7 @@ export default function Error({
           }}
         >
           <img
-            src="https://plastic-lime-elzghqehop.edgeone.app/peja%20logo%20SINGLE.png"
+            src="/peja-logo.png.png"
             alt="Peja"
             className="w-10 h-10 object-contain"
           />

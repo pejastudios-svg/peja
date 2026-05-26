@@ -31,6 +31,10 @@ export interface Post {
     longitude: number;
   };
 
+  // ISO 3166-1 alpha-2, lowercase (e.g. "ng"). Null on legacy rows
+  // — consumers fall back to a lat/lng bounding-box check.
+  country_code?: string | null;
+
   address?: string | null;
   is_anonymous: boolean;
 

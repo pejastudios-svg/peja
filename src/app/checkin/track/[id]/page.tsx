@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { apiUrl } from "@/lib/api";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import {
@@ -247,13 +248,11 @@ useEffect(() => {
         <div className="p-4">
           {/* User info */}
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden border-2 border-primary-500/30">
-              {owner?.avatar_url ? (
-                <img src={owner.avatar_url} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-6 h-6 text-primary-400" />
-              )}
-            </div>
+            <AvatarImage
+              src={owner?.avatar_url}
+              wrapperClassName="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden border-2 border-primary-500/30"
+              fallback={<User className="w-6 h-6 text-primary-400" />}
+            />
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-dark-100">{owner?.full_name || "User"}</p>
               <p className="text-xs text-dark-400">

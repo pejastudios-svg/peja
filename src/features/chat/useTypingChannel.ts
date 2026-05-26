@@ -33,7 +33,12 @@ const TYPING_THROTTLE_MS = 1_500;
 
 export function useTypingChannel(
   conversationId: string | null,
-  userId: string | null
+  userId: string | null,
+  // Caller's display name. Sent in the broadcast payload so the
+  // receiver can render "Jane is typing" without a separate user
+  // lookup. Optional — older clients that don't supply it will
+  // appear as "Someone" on the receiving side.
+  userName?: string | null,
 ): { sendTyping: () => void; sendRecording: () => void } {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const lastSentRef = useRef(0);
@@ -51,12 +56,14 @@ export function useTypingChannel(
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         const sender = payload?.user_id;
         if (typeof sender !== "string" || sender === userId) return;
-        useChatStore.getState().setTyping(conversationId, sender, "typing");
+        const senderName = typeof payload?.user_name === "string" ? payload.user_name : undefined;
+        useChatStore.getState().setTyping(conversationId, sender, "typing", senderName);
       })
       .on("broadcast", { event: "recording" }, ({ payload }) => {
         const sender = payload?.user_id;
         if (typeof sender !== "string" || sender === userId) return;
-        useChatStore.getState().setTyping(conversationId, sender, "recording");
+        const senderName = typeof payload?.user_name === "string" ? payload.user_name : undefined;
+        useChatStore.getState().setTyping(conversationId, sender, "recording", senderName);
       })
       .subscribe();
 
@@ -78,10 +85,13 @@ export function useTypingChannel(
       channelRef.current.send({
         type: "broadcast",
         event,
-        payload: { user_id: userId },
+        payload: {
+          user_id: userId,
+          user_name: userName || undefined,
+        },
       });
     },
-    [userId]
+    [userId, userName],
   );
 
   // Pre-bound stable callbacks so callers can pass them to event

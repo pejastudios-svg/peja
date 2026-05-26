@@ -38,6 +38,10 @@ const STORAGE_KEY = "peja-feed-v2";
 const PENDING_KEY = "peja-feed-pending-v1";
 const MAX_AGE = 10 * 60 * 1000; // 10 minutes for cached feeds
 const PENDING_TTL = 2 * 60 * 1000; // 2 minutes — server should have caught up by then (creates only)
+// Pending deletes outlast SW/HTTP caches and any in-flight realtime gap. Long
+// enough that a delete cannot get "uncovered" by a stale response before
+// realtime confirms. Realtime DELETE still clears entries eagerly.
+const PENDING_DELETE_TTL = 15 * 60 * 1000; // 15 minutes
 
 function isCapacitorNative(): boolean {
   if (typeof window === "undefined") return false;
@@ -84,12 +88,14 @@ function loadPending(): PendingState {
     Object.entries(parsed.creates || {}).forEach(([id, v]) => {
       if (v?.createdAt && now - v.createdAt < PENDING_TTL) creates[id] = v;
     });
-    // Deletes are kept until the server/reconcile confirms removal — do not
-    // TTL-expire them, or a stale localStorage feed can resurrect deleted posts
-    // after the Android WebView resumes from background.
+    // Deletes are kept for PENDING_DELETE_TTL so they outlast any stale
+    // /rest/v1/posts response served from SW or HTTP cache. Realtime DELETE
+    // events clear entries eagerly when they arrive.
     const deletes: Record<string, number> = {};
     Object.entries(parsed.deletes || {}).forEach(([id, ts]) => {
-      if (typeof ts === "number") deletes[id] = ts;
+      if (typeof ts === "number" && now - ts < PENDING_DELETE_TTL) {
+        deletes[id] = ts;
+      }
     });
     return { creates, deletes };
   } catch {}
@@ -363,9 +369,17 @@ export function FeedProvider({ children }: { children: React.ReactNode }) {
         Object.keys(p.creates).forEach((id) => {
           if (fetchedIds.has(id)) { delete p.creates[id]; changed = true; }
         });
-        // Hard-deleted posts never appear in server responses — clear overlay.
+        // Do NOT drop pending deletes on absence from `fetched` — a stale
+        // SW/HTTP-cached response can omit a post and let an older snapshot
+        // resurrect it on a later read. Deletes expire via PENDING_DELETE_TTL
+        // (on next load) or get cleared eagerly by the realtime DELETE
+        // subscriber, whichever comes first.
+        const now = Date.now();
         Object.keys(p.deletes).forEach((id) => {
-          if (!fetchedIds.has(id)) { delete p.deletes[id]; changed = true; }
+          if (now - p.deletes[id] >= PENDING_DELETE_TTL) {
+            delete p.deletes[id];
+            changed = true;
+          }
         });
         if (changed) persistPending(p);
       },

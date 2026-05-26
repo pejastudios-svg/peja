@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Flag, User, Ban, Clock, ShieldOff, X, MessageCircle, Star } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -335,18 +336,11 @@ function UserPill({
 }) {
   return (
     <div className="flex items-center gap-2 min-w-0">
-      <span className="w-9 h-9 rounded-full overflow-hidden bg-primary-600/20 flex items-center justify-center shrink-0">
-        {user?.avatar_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={user.avatar_url}
-            alt=""
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <User className="w-4 h-4 text-primary-300" />
-        )}
-      </span>
+      <AvatarImage
+        src={user?.avatar_url}
+        wrapperClassName="w-9 h-9 rounded-full overflow-hidden bg-primary-600/20 flex items-center justify-center shrink-0"
+        fallback={<User className="w-4 h-4 text-primary-300" />}
+      />
       <div className="min-w-0">
         <p className="text-[10px] uppercase tracking-wider text-dark-500">
           {label}

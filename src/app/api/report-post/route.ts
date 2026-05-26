@@ -76,9 +76,11 @@ export async function POST(req: NextRequest) {
       .update({ report_count: totalReports })
       .eq("id", postId);
 
-    // 7) Auto-archive if 5+ reports
+    // 7) Auto-archive when 10 distinct users have reported.
+    //    Unique (post_id, user_id) constraint means totalReports already
+    //    equals distinct reporters.
     let archived = false;
-    if (totalReports >= 5) {
+    if (totalReports >= 10) {
 
       await supabaseAdmin
         .from("posts")

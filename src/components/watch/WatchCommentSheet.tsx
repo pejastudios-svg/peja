@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { Loader2, Heart, User, Send, X, Trash2, Copy, Flag, ChevronDown, ChevronUp } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Post, REPORT_REASONS } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { notifyPostComment, notifyCommentLiked, notifyCommentReply } from "@/lib/notifications";
@@ -177,6 +178,7 @@ export function WatchCommentSheet({
         .from("post_comments")
         .select("*")
         .eq("post_id", post.id)
+        .eq("status", "live")
         .order("created_at", { ascending: false });
 
       if (error || !rawComments) {
@@ -384,17 +386,18 @@ export function WatchCommentSheet({
       setShowOptions(false);
       setReportReason("");
 
-      // If comment was auto-deleted due to 3+ reports
-      if (json.deleted) {
-        // Remove from local state
+      // If comment was auto-archived due to reaching the report threshold
+      if (json.archived) {
+        // Remove from local state — archived comments are no longer
+        // visible to end users.
         setComments((prev) => prev.filter((c) => c.id !== selectedComment.id && c.parent_id !== selectedComment.id));
         toast.success("Comment removed due to reports");
       } else {
         toast.success("Report submitted");
       }
 
-    } catch (err: any) {
-      toast.danger(err.message || "Failed to report");
+    } catch {
+      toast.danger("Couldn't submit report. Try again.");
     } finally {
       setSubmittingReport(false);
       setSelectedComment(null);
@@ -467,7 +470,11 @@ export function WatchCommentSheet({
               if (t) clearTimeout(t);
            }}
         >
-           {comment.user_avatar ? <img src={comment.user_avatar} className="w-full h-full object-cover" /> : <User className="w-full h-full p-1.5 text-white/50" />}
+           <AvatarImage
+             src={comment.user_avatar}
+             wrapperClassName="w-full h-full flex items-center justify-center"
+             fallback={<User className="w-full h-full p-1.5 text-white/50" />}
+           />
         </div>
         <div className="flex-1">
            <div className="flex items-baseline gap-2">

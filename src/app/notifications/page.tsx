@@ -1,6 +1,7 @@
 "use client";
 
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useState, useEffect } from "react";
 import { useFeedCache } from "@/context/FeedContext";
 import { useRouter } from "next/navigation";
@@ -8,7 +9,6 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { markAllAsRead } from "@/lib/notifications";
 import { Header } from "@/components/layout/Header";
-import { BottomNav } from "@/components/layout/BottomNav";
 import { SOS_TAGS } from "@/lib/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
@@ -52,6 +52,13 @@ interface InviteModalData {
   status: "loading" | "pending" | "accepted" | "declined" | "missing" | "error";
 }
 
+interface AccountStatusModalData {
+  kind: "suspended" | "banned";
+  title: string;
+  body: string;
+  reason?: string;
+}
+
 function NotificationRowSkeleton() {
   return (
     <div className="glass-card p-4">
@@ -92,6 +99,8 @@ export default function NotificationsPage() {
 
   const [inviteModal, setInviteModal] = useState<InviteModalData | null>(null);
   const [responding, setResponding] = useState<"accept" | "decline" | null>(null);
+  const [accountStatusModal, setAccountStatusModal] =
+    useState<AccountStatusModalData | null>(null);
 
   useEffect(() => {
     const save = () => {
@@ -332,6 +341,23 @@ export default function NotificationsPage() {
     // Handle emergency contact response
     if (data.type === "emergency_contact_response") {
       router.push("/emergency-contacts");
+      return;
+    }
+
+    // Account-status notifications — open an in-page modal with the
+    // full message + an appeal CTA. Suspended users are pointed at
+    // /help; banned users get the same modal so they have one
+    // tappable surface to start an appeal too.
+    if (
+      notification.type === "system" &&
+      (data.status === "suspended" || data.status === "banned")
+    ) {
+      setAccountStatusModal({
+        kind: data.status,
+        title: notification.title,
+        body: notification.body ?? "",
+        reason: data.reason,
+      });
       return;
     }
 
@@ -578,8 +604,6 @@ export default function NotificationsPage() {
           </div>
         </main>
 
-        <BottomNav />
-
         {/* Emergency Contact Invite Modal */}
         <Modal
           isOpen={!!inviteModal}
@@ -591,17 +615,11 @@ export default function NotificationsPage() {
           {inviteModal && (
             <div className="space-y-4">
               <div className="flex items-center gap-4 p-4 glass-sm rounded-xl">
-                <div className="w-14 h-14 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                  {inviteModal.requesterAvatar ? (
-                    <img
-                      src={inviteModal.requesterAvatar}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User className="w-7 h-7 text-yellow-400" />
-                  )}
-                </div>
+                <AvatarImage
+                  src={inviteModal.requesterAvatar}
+                  wrapperClassName="w-14 h-14 rounded-full bg-yellow-600/20 flex items-center justify-center shrink-0 overflow-hidden"
+                  fallback={<User className="w-7 h-7 text-yellow-400" />}
+                />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-dark-100 text-lg">
                     {inviteModal.requesterName}
@@ -710,6 +728,63 @@ export default function NotificationsPage() {
                   </Button>
                 </div>
               ) : null}
+            </div>
+          )}
+        </Modal>
+
+        {/* Account status modal — opens when the user taps an
+            "Account suspended" / "Account banned" system notification.
+            Surfaces the full message and a single appeal CTA into
+            /help. */}
+        <Modal
+          isOpen={!!accountStatusModal}
+          onClose={() => setAccountStatusModal(null)}
+          title={accountStatusModal?.title || "Account status"}
+        >
+          {accountStatusModal && (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/20 flex gap-3">
+                <AlertTriangle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                <p className="text-sm text-dark-100 leading-relaxed">
+                  {accountStatusModal.body}
+                </p>
+              </div>
+
+              {accountStatusModal.reason && (
+                <div className="p-3 rounded-lg bg-dark-700/40 border border-white/10">
+                  <p className="text-xs uppercase tracking-wide text-dark-400 mb-1">
+                    Reason
+                  </p>
+                  <p className="text-sm text-dark-200">
+                    {accountStatusModal.reason}
+                  </p>
+                </div>
+              )}
+
+              <p className="text-sm text-dark-300 leading-relaxed">
+                If you believe this was a mistake, you can appeal. Our
+                team will review your case and get back to you.
+              </p>
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => setAccountStatusModal(null)}
+                >
+                  Close
+                </Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  onClick={() => {
+                    setAccountStatusModal(null);
+                    router.push("/help");
+                  }}
+                >
+                  Appeal
+                </Button>
+              </div>
             </div>
           )}
         </Modal>

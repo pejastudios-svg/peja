@@ -56,7 +56,7 @@ export async function startChatRealtime(userId: string): Promise<void> {
         await handleMessageInsert(row, userId);
       }
     )
-    // ---- Existing message updated (edit, delete) ----
+    // ---- Existing message updated (edit, delete, pin) ----
     .on(
       "postgres_changes",
       { event: "UPDATE", schema: "public", table: "messages" },
@@ -69,6 +69,14 @@ export async function startChatRealtime(userId: string): Promise<void> {
           edited_at: row.edited_at,
           is_deleted: row.is_deleted,
           content_type: row.content_type,
+          // Pin state must sync across devices. Without these the
+          // store would stay at the old is_pinned value even after
+          // another device pinned / unpinned the message, and the
+          // pinned-message banner / per-bubble pin icon would never
+          // update. pinned_by is on the DB row but not in the
+          // ChatMessage type — the UI never reads it.
+          is_pinned: row.is_pinned,
+          pinned_at: row.pinned_at,
         });
       }
     )

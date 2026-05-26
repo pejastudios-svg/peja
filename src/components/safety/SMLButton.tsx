@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase";
 import { apiUrl } from "@/lib/api";
 import { Portal } from "@/components/ui/Portal";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
+import { dispatchOrQueue, newOutboxId } from "@/lib/outbox";
+import { readEmergencyContactsCache } from "@/lib/emergencyContactsCache";
 import {
   MapPin,
   X,
@@ -20,9 +22,9 @@ import {
   Eye,
   Shield,
   AlertTriangle,
-  User,
 } from "lucide-react";
 import { PejaSpinner } from "../ui/PejaSpinner";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 
 interface SharedWithMe {
   id: string;
@@ -166,27 +168,72 @@ export function SMLButton() {
     } catch {}
   }, [session?.access_token, user]);
 
-  // Fetch contacts for share flow
+  // Fetch contacts for share flow. Reads from the shared cache
+  // (populated by SOSButton's mount effect — both buttons live in
+  // the home bottom area so one of them mounts on every page) as a
+  // fallback when offline, so the share sheet still renders names
+  // and avatars without network.
   const fetchContacts = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from("emergency_contacts")
-      .select("contact_user_id")
-      .eq("user_id", user.id)
-      .eq("status", "accepted");
 
-    if (data && data.length > 0) {
-      const ids = data.map((c: any) => c.contact_user_id);
-      const { data: users } = await supabase
-        .from("users")
-        .select("id, full_name, avatar_url")
-        .in("id", ids);
+    const readCache = () =>
+      readEmergencyContactsCache(user.id)
+        .filter(
+          (c) => c.status === "accepted" && typeof c.contact_user_id === "string",
+        )
+        .map((c) => ({
+          contact_user_id: c.contact_user_id as string,
+          full_name: c.linked_full_name || c.name || "Unknown",
+          avatar_url: c.linked_avatar_url,
+        }));
 
-      setContacts((users || []).map((u: any) => ({
-        contact_user_id: u.id,
-        full_name: u.full_name || "Unknown",
-        avatar_url: u.avatar_url,
-      })));
+    // Offline: cache is the only source.
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      const all = readEmergencyContactsCache(user.id);
+      const usable = readCache();
+      setContacts(usable);
+      if (usable.length === 0) {
+        if (all.length === 0) {
+          toast.warning(
+            "Add emergency contacts when you're online so they're available offline.",
+          );
+        } else {
+          toast.warning(
+            "No accepted contacts yet. Ask them to accept your invite when online.",
+          );
+        }
+      }
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("emergency_contacts")
+        .select("contact_user_id")
+        .eq("user_id", user.id)
+        .eq("status", "accepted");
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const ids = data.map((c: any) => c.contact_user_id);
+        const { data: users } = await supabase
+          .from("users")
+          .select("id, full_name, avatar_url")
+          .in("id", ids);
+
+        setContacts((users || []).map((u: any) => ({
+          contact_user_id: u.id,
+          full_name: u.full_name || "Unknown",
+          avatar_url: u.avatar_url,
+        })));
+      } else {
+        setContacts([]);
+      }
+    } catch {
+      // Network said it was online but the query failed — same
+      // outcome as offline. Fall back to cache.
+      setContacts(readCache());
     }
   }, [user]);
 
@@ -295,17 +342,66 @@ const handleButtonClick = () => {
 
   const handleStart = async () => {
     if (selectedContacts.length === 0) { toast.warning("Select at least one contact"); return; }
+    if (!user?.id) return;
     setStarting(true);
-    setStartPhase("Pinpointing your location...");
-    try {
-      let lat, lng;
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
-        });
-        lat = pos.coords.latitude; lng = pos.coords.longitude;
-      } catch {}
 
+    // Capture location upfront — used by either path. Browser
+    // geolocation can usually return a cached fix even offline.
+    setStartPhase("Pinpointing your location...");
+    let lat: number | undefined, lng: number | undefined;
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+      });
+      lat = pos.coords.latitude; lng = pos.coords.longitude;
+    } catch {}
+    void lat; void lng; // currently sent only by /confirm; /start doesn't take coords
+
+    const triggeredAt = new Date().toISOString();
+    const tempId = newOutboxId();
+    const nextCheckIn = new Date(Date.now() + interval * 60000).toISOString();
+
+    // Optimistic state — make the UI look active right away. If the
+    // online POST succeeds we'll replace this with the server's real
+    // row (real id, server timestamps). If we're offline we keep the
+    // synthetic row and the drain reconciles later.
+    const synthetic: ActiveCheckIn = {
+      id: tempId,
+      status: "active",
+      contact_ids: selectedContacts,
+      check_in_interval_minutes: interval,
+      next_check_in_at: nextCheckIn,
+      last_confirmed_at: triggeredAt,
+      missed_count: 0,
+    };
+
+    const offline = typeof navigator !== "undefined" && navigator.onLine === false;
+
+    if (offline) {
+      setMyCheckIn(synthetic);
+      closeShareModal();
+      setShowMenu(false);
+      void dispatchOrQueue(user.id, {
+        id: tempId,
+        kind: "sml-start",
+        queued_at: Date.now(),
+        attempts: 0,
+        last_error: null,
+        payload: {
+          contactIds: selectedContacts,
+          intervalMinutes: interval,
+          triggered_at: triggeredAt,
+        },
+      });
+      toast.info(
+        "Offline. Check-in will start automatically when you're back online.",
+      );
+      setStarting(false);
+      setStartPhase(null);
+      return;
+    }
+
+    try {
       setStartPhase("Starting location sharing...");
       const res = await fetch(apiUrl("/api/checkin/start/"), {
         method: "POST", headers: headers(),
@@ -322,7 +418,27 @@ const handleButtonClick = () => {
       setShowMenu(false);
       toast.success("Location sharing started!");
     } catch (err: any) {
-      toast.danger(err.message || "Failed to start");
+      // Network spike / server hiccup — queue the start so it lands
+      // on the next drain. Optimistic synthetic state keeps the UI
+      // showing as active during the queued window.
+      setMyCheckIn(synthetic);
+      closeShareModal();
+      setShowMenu(false);
+      void dispatchOrQueue(user.id, {
+        id: tempId,
+        kind: "sml-start",
+        queued_at: Date.now(),
+        attempts: 0,
+        last_error: err?.message ?? null,
+        payload: {
+          contactIds: selectedContacts,
+          intervalMinutes: interval,
+          triggered_at: triggeredAt,
+        },
+      });
+      toast.info(
+        "Couldn't reach the server. Check-in will start automatically when the connection comes back.",
+      );
     } finally {
       setStarting(false);
       setStartPhase(null);
@@ -331,42 +447,60 @@ const handleButtonClick = () => {
 
 const handleConfirm = async () => {
     if (!myCheckIn) return;
+    if (!user?.id) return;
     cancellingRef.current = true;
     const newNext = new Date(Date.now() + myCheckIn.check_in_interval_minutes * 60000).toISOString();
     setMyCheckIn(prev => prev ? { ...prev, status: "active", next_check_in_at: newNext, missed_count: 0 } : null);
     setIsOverdue(false);
     toast.success("Checked in! Timer reset.");
 
+    let lat: number | null = null;
+    let lng: number | null = null;
     try {
-      let lat, lng;
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
-        });
-        lat = pos.coords.latitude; lng = pos.coords.longitude;
-      } catch {}
-await fetch(apiUrl("/api/checkin/confirm/"), {
-        method: "POST", headers: headers(),
-        body: JSON.stringify({ latitude: lat, longitude: lng }),
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
       });
+      lat = pos.coords.latitude; lng = pos.coords.longitude;
     } catch {}
+
+    // dispatchOrQueue: tries online now, queues on offline/failure
+    // so the timer reset eventually lands on the server.
+    void dispatchOrQueue(user.id, {
+      id: newOutboxId(),
+      kind: "sml-confirm",
+      queued_at: Date.now(),
+      attempts: 0,
+      last_error: null,
+      payload: {
+        latitude: lat,
+        longitude: lng,
+        triggered_at: new Date().toISOString(),
+      },
+    });
+
     setTimeout(() => { cancellingRef.current = false; }, 3000);
   };
 
   const handleCancel = async () => {
+    if (!user?.id) return;
     cancellingRef.current = true;
     setMyCheckIn(null);
     setIsOverdue(false);
     closeCancelConfirm();
     closeActiveModal();
     toast.success("Check-in ended.");
-    try {
-      await fetch(apiUrl("/api/checkin/cancel/"), { method: "POST", headers: headers() });
-   } catch {
-      cancellingRef.current = false;
-      fetchData();
-      return;
-    }
+
+    // dispatchOrQueue: tries online now, queues on offline/failure.
+    // Local state already cleared so the user sees the cancel land
+    // instantly regardless of network.
+    void dispatchOrQueue(user.id, {
+      id: newOutboxId(),
+      kind: "sml-cancel",
+      queued_at: Date.now(),
+      attempts: 0,
+      last_error: null,
+      payload: { triggered_at: new Date().toISOString() },
+    });
     setTimeout(() => { cancellingRef.current = false; }, 3000);
   };
 
@@ -467,21 +601,15 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                       className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/5 transition-colors"
                     >
                       <div className="relative shrink-0">
-                        <div
-                          className="w-9 h-9 rounded-full overflow-hidden"
-                          style={{
+                        <AvatarImage
+                          src={s.avatar_url}
+                          wrapperClassName="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center bg-dark-700"
+                          wrapperStyle={{
                             border: `2.5px solid ${overdue ? "#ef4444" : "#22c55e"}`,
                             boxShadow: `0 0 8px ${overdue ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`,
                           }}
-                        >
-                          {s.avatar_url ? (
-                            <img src={s.avatar_url} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full bg-dark-700 flex items-center justify-center">
-                              <User className="w-4 h-4 text-dark-400" />
-                            </div>
-                          )}
-                        </div>
+                          fallbackIconClassName="w-4 h-4"
+                        />
                         {overdue && (
                           <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 flex items-center justify-center border border-dark-900">
                             <AlertTriangle className="w-2 h-2 text-white" />
@@ -679,9 +807,11 @@ await fetch(apiUrl("/api/checkin/confirm/"), {
                           <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${sel ? "bg-primary-600" : "border border-dark-500"}`}>
                             {sel && <CheckCircle className="w-3.5 h-3.5 text-white" />}
                           </div>
-                          <div className="w-8 h-8 rounded-full bg-primary-600/20 overflow-hidden shrink-0 flex items-center justify-center">
-                            {c.avatar_url ? <img src={c.avatar_url} alt="" className="w-full h-full object-cover" /> : <span className="text-xs font-bold text-primary-400">{c.full_name[0]}</span>}
-                          </div>
+                          <AvatarImage
+                            src={c.avatar_url}
+                            wrapperClassName="w-8 h-8 rounded-full bg-primary-600/20 overflow-hidden shrink-0 flex items-center justify-center"
+                            fallback={<span className="text-xs font-bold text-primary-400">{c.full_name[0]}</span>}
+                          />
                           <span className="text-sm text-dark-100">{c.full_name}</span>
                         </button>
                       );

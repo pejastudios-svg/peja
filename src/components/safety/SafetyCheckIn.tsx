@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import {
   MapPin,
   Clock,
@@ -269,8 +270,8 @@ if (diff <= 0) {
       setActiveCheckIn(data.checkin);
       setShowSetup(false);
       toast.success("Safety Check-In started! Your contacts have been notified.");
-    } catch (err: any) {
-      toast.danger(err.message || "Failed to start check-in");
+    } catch {
+      toast.danger("Couldn't start check-in. Try again.");
     } finally {
       setStarting(false);
       setStartPhase(null);
@@ -565,13 +566,11 @@ if (checkingStatus) {
                           }`}>
                             {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
                           </div>
-                          <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden">
-                            {contact.avatar_url ? (
-                              <img src={contact.avatar_url} alt="" className="w-full h-full object-cover" />
-                            ) : (
-                              <span className="text-xs font-bold text-primary-400">{contact.full_name[0]}</span>
-                            )}
-                          </div>
+                          <AvatarImage
+                            src={contact.avatar_url}
+                            wrapperClassName="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden"
+                            fallback={<span className="text-xs font-bold text-primary-400">{contact.full_name[0]}</span>}
+                          />
                           <span className="text-sm text-dark-100">{contact.full_name}</span>
                         </button>
                       );

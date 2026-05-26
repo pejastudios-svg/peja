@@ -18,7 +18,7 @@
 // the skeleton — playback still works fine via the <audio> element.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, Loader2 } from "lucide-react";
 import { UploadRing } from "./UploadRing";
 
 interface Props {
@@ -89,6 +89,13 @@ export function AudioBubble({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  // True while the browser is fetching / buffering audio data. Set
+  // optimistically when the user taps play (covers the "I clicked but
+  // nothing's happening yet" gap), and re-asserted by the audio
+  // element's own `waiting` event when playback stalls mid-track to
+  // refill the buffer. Cleared by `playing` (real audio actually
+  // started) or `pause`.
+  const [isLoading, setIsLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(initialDuration ?? 0);
   const [speedIdx, setSpeedIdx] = useState(0);
@@ -146,9 +153,21 @@ export function AudioBubble({
   useEffect(() => {
     const el = audioRef.current;
     if (!el) return;
+    // iOS WebKit dislikes the "seek to 1e10 to force end-of-file
+    // duration discovery" trick — it can leave the audio element in a
+    // perpetual seeking state where canplay never fires and play()
+    // hangs (which surfaced as "loading forever" for VNs the user
+    // sent and played on their own iPhone). On iOS we accept a
+    // possibly-Infinity duration; the scrubber dot will be inert but
+    // playback works. Detection is a one-shot UA sniff because
+    // WebKit's quirk applies to every iOS browser (they all wrap
+    // WKWebView), not just Safari.
+    const isIOS =
+      typeof navigator !== "undefined" &&
+      /iPad|iPhone|iPod/.test(navigator.userAgent);
     let durationFixApplied = false;
     const tryFixDuration = () => {
-      if (durationFixApplied) return;
+      if (durationFixApplied || isIOS) return;
       if (!Number.isFinite(el.duration)) {
         durationFixApplied = true;
         try {
@@ -186,10 +205,40 @@ export function AudioBubble({
       // the element actually starts.
       pauseOtherAudios(el);
     };
-    const onPause = () => setIsPlaying(false);
+    const onPause = () => {
+      setIsPlaying(false);
+      setIsLoading(false);
+    };
+    // Fires when actual audio playback starts or resumes after buffer
+    // starvation. Distinct from `play` which fires the instant play()
+    // is called, well before sound comes out. Using `playing` as the
+    // signal lets the loading spinner stay up for the entire "I
+    // clicked play but audio hasn't actually started yet" window.
+    const onPlaying = () => setIsLoading(false);
+    // Browser is stalled waiting for more buffered data. Mid-playback
+    // buffer starvation shows the spinner again so the user knows the
+    // pause isn't intentional.
+    const onWaiting = () => setIsLoading(true);
+    // canplay = the first chunk is ready; if we were optimistically
+    // showing the spinner and the play() promise hasn't fired yet,
+    // we can safely clear loading here too as a backstop.
+    const onCanPlay = () => {
+      if (!el.paused) setIsLoading(false);
+    };
     const onEnd = () => {
       setIsPlaying(false);
       setCurrentTime(0);
+    };
+    // Surface decode / network failures. Without this listener,
+    // `el.play()` rejects silently (caught by togglePlay's
+    // console.warn) and the user sees zero feedback when a file
+    // can't be loaded. Logs the underlying MediaError code so we
+    // can tell decode-failed (4) apart from network-failed (2),
+    // aborted (1) or src-not-supported (3).
+    const onError = () => {
+      const code = el.error?.code;
+      const msg = el.error?.message;
+      console.warn("[audio] element error", { code, msg, src: el.currentSrc });
     };
     audioRegistry.add(el);
     el.addEventListener("loadedmetadata", onLoaded);
@@ -198,6 +247,10 @@ export function AudioBubble({
     el.addEventListener("play", onPlay);
     el.addEventListener("pause", onPause);
     el.addEventListener("ended", onEnd);
+    el.addEventListener("error", onError);
+    el.addEventListener("playing", onPlaying);
+    el.addEventListener("waiting", onWaiting);
+    el.addEventListener("canplay", onCanPlay);
     return () => {
       audioRegistry.delete(el);
       el.removeEventListener("loadedmetadata", onLoaded);
@@ -206,6 +259,10 @@ export function AudioBubble({
       el.removeEventListener("play", onPlay);
       el.removeEventListener("pause", onPause);
       el.removeEventListener("ended", onEnd);
+      el.removeEventListener("error", onError);
+      el.removeEventListener("playing", onPlaying);
+      el.removeEventListener("waiting", onWaiting);
+      el.removeEventListener("canplay", onCanPlay);
     };
   }, []);
 
@@ -247,12 +304,34 @@ export function AudioBubble({
     if (!el) return;
     try {
       if (el.paused) {
+        // Optimistic loading flag — the `play()` promise resolves
+        // when playback STARTS, which on a fresh src can take a
+        // second or two while the browser fetches data. Showing the
+        // spinner immediately covers that gap so the user sees the
+        // click was registered.
+        setIsLoading(true);
         await el.play();
       } else {
         el.pause();
       }
     } catch (e) {
-      console.warn("[audio] play failed", e);
+      // If play() rejected, the audio is back in the paused state
+      // and we never crossed `playing` — clear the optimistic flag
+      // so the button doesn't stay stuck on the spinner.
+      setIsLoading(false);
+      // Surface the actual DOMException name so the cause is
+      // diagnosable: "NotSupportedError" = browser can't decode the
+      // format, "NotAllowedError" = autoplay policy (shouldn't happen
+      // from a user click), "AbortError" = src changed mid-load. Plus
+      // the element's own MediaError code if one is set.
+      const err = e as Error & { name?: string };
+      console.warn("[audio] play failed", {
+        name: err?.name,
+        message: err?.message,
+        elementErrorCode: el.error?.code,
+        elementErrorMessage: el.error?.message,
+        src: el.currentSrc,
+      });
     }
   }, []);
 
@@ -362,11 +441,39 @@ export function AudioBubble({
   // anchored to the waveform's left edge.
   return (
     <div className="flex items-center gap-3 min-w-[230px]">
-      {/* Hide the audio element completely — without `controls` it
-          renders as a 0×0 inline element by default, but
-          `display:none` is the explicit guarantee that it never
-          contributes any layout. */}
-      <audio ref={audioRef} src={url} preload="metadata" className="hidden" />
+      {/* Audio playback engine. Several iOS WebKit quirks at once:
+          - Parked offscreen rather than `display:none`. iOS silently
+            drops the audio track from elements that aren't laid out.
+          - `playsInline` matters even for <audio> in Capacitor's
+            WKWebView (the wrapper otherwise tries to hand audio to the
+            full-screen AVPlayer, which doesn't expose a JS play()).
+          - `preload="auto"` instead of `"metadata"`. Metadata-only
+            preload on iOS frequently stalls — the request goes out and
+            never resolves canplay, so play() hangs ("loading forever"
+            on the user's own VNs). Auto fetches enough of the file to
+            actually start playing immediately on tap.
+          - `aria-hidden` so screen readers don't see this twice; the
+            visible play / pause UI below is the real surface.
+          - `crossOrigin` left UNSET on purpose — adding "anonymous"
+            triggers a CORS preflight on iOS that Supabase Storage's
+            public bucket sometimes fails to satisfy, blocking the
+            audio entirely. */}
+      <audio
+        ref={audioRef}
+        src={url}
+        preload="auto"
+        playsInline
+        aria-hidden
+        style={{
+          position: "absolute",
+          width: 1,
+          height: 1,
+          left: -9999,
+          top: -9999,
+          pointerEvents: "none",
+          opacity: 0,
+        }}
+      />
 
       {isPending ? (
         // Upload in flight — swap the play button for the same
@@ -386,9 +493,18 @@ export function AudioBubble({
           type="button"
           onClick={togglePlay}
           className={`shrink-0 w-11 h-11 rounded-full ${playBg} ${playFg} flex items-center justify-center active:scale-90 transition-transform`}
-          aria-label={isPlaying ? "Pause" : "Play"}
+          aria-label={
+            isLoading ? "Loading" : isPlaying ? "Pause" : "Play"
+          }
+          aria-busy={isLoading || undefined}
         >
-          {isPlaying ? (
+          {/* Priority order: loading > playing > paused. Loading
+              spinner takes precedence so the user always knows
+              something is in progress, even if isPlaying briefly
+              flips true while audio is still buffering. */}
+          {isLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : isPlaying ? (
             <Pause className="w-4 h-4" />
           ) : (
             // Play triangle is right-heavy; 1 px nudge optically

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { usePageCache } from "@/context/PageCacheContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -322,13 +323,13 @@ useEffect(() => {
               setLightboxUrl(u.avatar_url);
               setLightboxOpen(true);
             }}
-            className="w-16 h-16 rounded-full overflow-hidden bg-dark-800 border border-white/10 flex items-center justify-center shrink-0"
+            className="contents"
           >
-            {u.avatar_url ? (
-              <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <User className="w-8 h-8 text-dark-400" />
-            )}
+            <AvatarImage
+              src={u.avatar_url}
+              wrapperClassName="w-16 h-16 rounded-full overflow-hidden bg-dark-800 border border-white/10 flex items-center justify-center shrink-0"
+              fallback={<User className="w-8 h-8 text-dark-400" />}
+            />
           </button>
 
           <div className="min-w-0 flex-1">
@@ -393,13 +394,11 @@ useEffect(() => {
               }}
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-11 h-11 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0 flex items-center justify-center">
-                  {c.contact_user?.avatar_url ? (
-                    <img src={c.contact_user.avatar_url} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    <User className="w-5 h-5 text-dark-400" />
-                  )}
-                </div>
+                <AvatarImage
+                  src={c.contact_user?.avatar_url}
+                  wrapperClassName="w-11 h-11 rounded-full overflow-hidden bg-dark-800 border border-white/10 shrink-0 flex items-center justify-center"
+                  fallbackIconClassName="w-5 h-5"
+                />
 
                 <div className="min-w-0">
                   <p className="text-dark-100 font-medium truncate">

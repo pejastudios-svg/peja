@@ -12,7 +12,9 @@ import { formatDistanceToNow, differenceInHours } from "date-fns";
 import { useFeedCache } from "@/context/FeedContext";
 import { useAuth } from "@/context/AuthContext";
 import { notifyPostComment, notifyCommentLiked, notifyCommentReply } from "@/lib/notifications";
-import { notifyPostConfirmed } from "@/lib/notifications";
+import { notifyPostConfirmed, markPostNotificationsRead } from "@/lib/notifications";
+import { clearPushNotificationsForPost } from "@/lib/pushNotificationsClear";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useLongPress } from "@/components/hooks/useLongPress";
 import { useSearchParams } from "next/navigation";
@@ -46,7 +48,6 @@ import {
   ChevronRight,
   Send,
   Trash2,
-  User,
   MoreVertical,
   X,
   Heart,
@@ -198,13 +199,13 @@ const CommentRow = ({
             if (avatarHoldTimer.current) window.clearTimeout(avatarHoldTimer.current);
             avatarHoldTimer.current = null;
           }}
-          className="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center shrink-0 overflow-hidden"
+          className="contents"
         >
-          {comment.user_avatar ? (
-            <img src={comment.user_avatar} alt="" className="w-8 h-8 object-cover" />
-          ) : (
-            <User className="w-4 h-4 text-dark-400" />
-          )}
+          <AvatarImage
+            src={comment.user_avatar}
+            wrapperClassName="w-8 h-8 rounded-full bg-dark-700 flex items-center justify-center shrink-0 overflow-hidden"
+            fallbackIconClassName="w-4 h-4"
+          />
         </div>
 
         <div className="flex-1 min-w-0">
@@ -326,9 +327,25 @@ export default function PostDetailPage() {
   // CRITICAL: Track ongoing like operations to prevent double-clicks
   const likingInProgress = useRef<Set<string>>(new Set());
   const likeNotifiedRef = useRef<Set<string>>(new Set());
-  // Post state
-  const [post, setPost] = useState<Post | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Post state. Seeded from the in-memory feed caches so opening a
+  // post offline (or before the network call resolves) paints the
+  // card immediately instead of flashing a skeleton or "Post Not
+  // Found". Falls back to null when nothing matches — same as before.
+  const cachedPost = (() => {
+    if (typeof window === "undefined") return null;
+    const candidateKeys = sourceKey
+      ? [sourceKey, "home:nearby", "home:trending", "profile:posts"]
+      : ["home:nearby", "home:trending", "profile:posts"];
+    for (const k of candidateKeys) {
+      const entry = feedCache.get(k);
+      const found = entry?.posts?.find((p) => p.id === postId);
+      if (found) return found;
+    }
+    return null;
+  })();
+  const [post, setPost] = useState<Post | null>(cachedPost);
+  // Skip the skeleton when we already have a cached card to show.
+  const [loading, setLoading] = useState(cachedPost == null);
   const [error, setError] = useState<string | null>(null);
   const [currentMediaIndex, setCurrentMediaIndex] = useState(0);
   const [showSensitive, setShowSensitive] = useState(false);
@@ -342,6 +359,12 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
   // Comments
   const [allComments, setAllComments] = useState<Comment[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(true);
+  // Set when the comments fetch fails (offline / RLS / network).
+  // Disambiguates "we got an empty list" from "we couldn't even ask",
+  // so the empty state can say "Comments unavailable offline" instead
+  // of misleading the user with "No comments yet". Resets on each
+  // refetch attempt.
+  const [commentsError, setCommentsError] = useState(false);
   const [newComment, setNewComment] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
   const [replyingTo, setReplyingTo] = useState<{ id: string; name: string; parentId: string | null } | null>(null);
@@ -425,14 +448,45 @@ const [confettiTrigger, setConfettiTrigger] = useState(false);
         if (!isMounted.current) return;
 
         if (fetchError) {
-          setError("Post not found");
-          setLoading(false);
-          // Only evict from local caches if Postgres confirms the row truly
-          // doesn't exist (PGRST116). RLS denials and transient network errors
-          // must NOT remove a real post from the user's feed cache.
+          // PGRST116 = "row not found"; that's an authoritative answer
+          // and we surface the "Post not found" UI. RLS denials,
+          // transient network errors, and the offline path all share
+          // the OTHER branch — for those we'd rather keep showing
+          // whatever the feed cache already painted, and if there's
+          // nothing painted, show the friendlier "couldn't load"
+          // message that doesn't lie to the user about whether the
+          // post still exists.
           if ((fetchError as any)?.code === "PGRST116") {
+            setError("not-found");
+            setLoading(false);
             feedCache.removePost(postId);
+            return;
           }
+          if (!post) {
+            setError("offline");
+          }
+          setLoading(false);
+          return;
+        }
+        // The SW's network-first handler for /rest/v1/posts returns a
+        // synthetic `Response("[]")` on offline + no cache (see sw.js
+        // NETWORK_FIRST_PATTERNS). supabase-js parses that as data=[]
+        // with no error, so we'd fall through to setPost({ id:
+        // data.id, ... }) — every field undefined, including
+        // created_at, which then crashes render at
+        // formatDistanceToNow(new Date(undefined)) → "Invalid time
+        // value" → the segment error.tsx shows "Something went
+        // wrong". Guard with a real-shape check so we route through
+        // the same offline / cached-post branch as a real
+        // fetchError.
+        const dataIsValidPost =
+          data !== null &&
+          typeof data === "object" &&
+          !Array.isArray(data) &&
+          typeof (data as any).id === "string";
+        if (!dataIsValidPost) {
+          if (!post) setError("offline");
+          setLoading(false);
           return;
         }
 confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
@@ -459,11 +513,29 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
 
 // Record unique view
         recordPostView(postId, user?.id);
-        
+
+        // Mark in-app notifications about this post as read so the
+        // bell badge drops, AND clear any matching delivered push
+        // from the device tray (mirrors the chat-thread behavior).
+        // Both fire-and-forget; web ignores the push-clear.
+        if (user?.id) {
+          markPostNotificationsRead(postId, user.id)
+            .then(() => {
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new Event("peja-notifications-changed"));
+              }
+            })
+            .catch(() => {});
+          void clearPushNotificationsForPost(postId);
+        }
+
         setLoading(false);
-      } catch (err) {
+      } catch {
+        // Network threw — offline or aborted. Keep the cached card
+        // on screen when we have one; only show the error UI when
+        // there's truly nothing to render.
         if (isMounted.current) {
-          setError("Failed to load");
+          if (!post) setError("offline");
           setLoading(false);
         }
       }
@@ -484,17 +556,20 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
     if (!postId) return;
 
     setCommentsLoading(true);
+    setCommentsError(false);
 
     try {
       const { data: rawComments, error: commentsErr } = await supabase
         .from("post_comments")
         .select("id, post_id, user_id, content, is_anonymous, created_at, parent_id, likes_count, reply_to_id, reply_to_name")
         .eq("post_id", postId)
+        .eq("status", "live")
         .order("created_at", { ascending: true });
 
       if (!isMounted.current) return;
 
       if (commentsErr || !rawComments) {
+        setCommentsError(true);
         setCommentsLoading(false);
         return;
       }
@@ -572,8 +647,11 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
         setAllComments(comments);
         setCommentsLoading(false);
       }
-    } catch (err) {
-      if (isMounted.current) setCommentsLoading(false);
+    } catch {
+      if (isMounted.current) {
+        setCommentsError(true);
+        setCommentsLoading(false);
+      }
     }
   }, [postId, user]);
 
@@ -844,11 +922,11 @@ setLikeBusy(prev => {
         notifyCommentReply(postId, replyToUserId, user.full_name || "Someone", commentContent);
       }
 
-    } catch (err: any) {
+    } catch {
       setAllComments(prev => prev.filter(c => c.id !== tempId));
       setPost(p => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
       setNewComment(commentContent);
-      alert(err.message || "Failed to post comment");
+      alert("Couldn't post comment. Check your connection and try again.");
     } finally {
       setSubmittingComment(false);
     }
@@ -1131,7 +1209,7 @@ setTimeout(() => setToastMsg(null), 2500);
     setReportReason("");
     setReportDescription("");
 
-    if (json.deleted) {
+    if (json.archived) {
       setAllComments((prev) => prev.filter((c) => c.id !== selectedComment.id && c.parent_id !== selectedComment.id));
       setPost((p) => p ? { ...p, comment_count: Math.max(0, (p.comment_count || 0) - 1) } : null);
       toastApi.success("Comment removed due to reports");
@@ -1268,13 +1346,23 @@ const openSingleLightbox = (url: string, caption?: string | null) => {
 
 // Error
 if (error || !post) {
+  // "offline" means we couldn't reach the server / RLS denial / abort.
+  // Don't lie to the user that the post "may have been removed" —
+  // it's almost certainly still there, we just can't see it right now.
+  const isOffline = error === "offline";
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center">
       <AlertTriangle className="w-16 h-16 text-red-400 mb-4" />
-      <h1 className="text-xl font-bold text-dark-100 mb-2">Post Not Found</h1>
-      <p className="text-dark-400 mb-4">This post may have been removed.</p>
-      <Button 
-        variant="primary" 
+      <h1 className="text-xl font-bold text-dark-100 mb-2">
+        {isOffline ? "Couldn't load this post" : "Post Not Found"}
+      </h1>
+      <p className="text-dark-400 mb-4 max-w-sm">
+        {isOffline
+          ? "You're offline or your connection dropped. Try again when you're back online."
+          : "This post may have been removed."}
+      </p>
+      <Button
+        variant="primary"
         onClick={() => {
           // Close modal if inside one
           if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
@@ -1570,11 +1658,19 @@ if (error || !post) {
                 ))}
               </div>
             ) : parentComments.length === 0 ? (
-              <div className="text-center py-8">
-                <MessageCircle className="w-10 h-10 text-dark-600 mx-auto mb-2" />
-                <p className="text-dark-400 text-sm">No comments yet</p>
-                <p className="text-dark-500 text-xs">Be the first to comment</p>
-              </div>
+              commentsError ? (
+                <div className="text-center py-8">
+                  <MessageCircle className="w-10 h-10 text-dark-600 mx-auto mb-2" />
+                  <p className="text-dark-400 text-sm">Comments unavailable offline</p>
+                  <p className="text-dark-500 text-xs">They&apos;ll load once you&apos;re back online.</p>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <MessageCircle className="w-10 h-10 text-dark-600 mx-auto mb-2" />
+                  <p className="text-dark-400 text-sm">No comments yet</p>
+                  <p className="text-dark-500 text-xs">Be the first to comment</p>
+                </div>
+              )
             ) : (
               <div>
                 {parentComments.map(parent => renderThread(parent))}

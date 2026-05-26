@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAdminCache } from "@/hooks/useAdminCache";
 import { supabase } from "@/lib/supabase";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Loader2, Search, Phone, Mail, Shield, Ban, CheckCircle, Trash2, X, Home } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
@@ -295,13 +296,11 @@ const deleteUser = async (userId: string, userName: string) => {
                 >
                   <div className="flex items-center gap-3">
                     {/* Avatar */}
-                    <div className="w-10 h-10 rounded-full bg-[#1E1B24] border border-white/10 overflow-hidden shrink-0 flex items-center justify-center">
-                        {user.avatar_url ? (
-                        <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                        <span className="text-dark-500 font-bold text-sm">{user.full_name?.[0] || "U"}</span>
-                        )}
-                    </div>
+                    <AvatarImage
+                      src={user.avatar_url}
+                      wrapperClassName="w-10 h-10 rounded-full bg-[#1E1B24] border border-white/10 overflow-hidden shrink-0 flex items-center justify-center"
+                      fallback={<span className="text-dark-500 font-bold text-sm">{user.full_name?.[0] || "U"}</span>}
+                    />
 
                     <div>
                         <div className="flex items-center gap-2">

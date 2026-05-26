@@ -15,7 +15,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Search, Send, User, Check } from "lucide-react";
+import { ArrowLeft, Search, Send, Check } from "lucide-react";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { v4 as uuidv4 } from "uuid";
 import { fetchConversationList, sendTextMessage } from "@/features/chat/api";
 import type { ChatConversationSummary } from "@/features/chat/types";
@@ -124,22 +125,36 @@ export function IncidentForwardSheet({
   return createPortal(
     <div
       onClick={(e) => e.stopPropagation()}
-      className={`fixed inset-0 z-[1000] bg-[var(--page-bg)] flex flex-col overflow-hidden ${
+      // z-[10001] sits above FullScreenModalShell's zIndex={9999}
+      // used by the @modal/(.)post/[id] intercepting route. Without
+      // that, opening the forward sheet from a post that was itself
+      // opened as a modal (chat link, map pin, etc.) renders the
+      // sheet BEHIND the post modal — visually nothing happens.
+      className={`fixed inset-0 z-[10001] bg-[var(--page-bg)] flex flex-col overflow-hidden ${
         closing ? "peja-slide-out-to-right" : "peja-slide-in-from-right"
       }`}
     >
-      <header className="shrink-0 flex items-center gap-3 px-4 h-14 border-b border-[var(--chat-input-border)]">
-        <button
-          type="button"
-          onClick={handleClose}
-          className="w-9 h-9 rounded-full bg-[var(--chat-input-bg)] flex items-center justify-center"
-          aria-label="Close"
-        >
-          <ArrowLeft className="w-5 h-5 text-dark-200" />
-        </button>
-        <span className="text-base font-semibold text-dark-100">
-          Send incident to…
-        </span>
+      {/* Header respects safe-area top inset so the title row doesn't
+          sit under the notch / status bar on iOS Capacitor builds. */}
+      <header
+        className="shrink-0 border-b border-[var(--chat-input-border)]"
+        style={{
+          paddingTop: "var(--app-top-inset, env(safe-area-inset-top, 0px))",
+        }}
+      >
+        <div className="flex items-center gap-3 px-4 h-14">
+          <button
+            type="button"
+            onClick={handleClose}
+            className="w-9 h-9 rounded-full bg-[var(--chat-input-bg)] flex items-center justify-center"
+            aria-label="Close"
+          >
+            <ArrowLeft className="w-5 h-5 text-dark-200" />
+          </button>
+          <span className="text-base font-semibold text-dark-100">
+            Send incident to…
+          </span>
+        </div>
       </header>
 
       <div className="px-4 pt-3 pb-2 shrink-0">
@@ -182,17 +197,11 @@ export function IncidentForwardSheet({
                     onClick={() => toggle(c.id)}
                     className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-[var(--chat-input-hover)] text-left"
                   >
-                    <span className="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center">
-                      {c.other_user_avatar_url ? (
-                        <img
-                          src={c.other_user_avatar_url}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <User className="w-5 h-5 text-dark-400" />
-                      )}
-                    </span>
+                    <AvatarImage
+                      src={c.other_user_avatar_url}
+                      wrapperClassName="shrink-0 w-10 h-10 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center"
+                      fallbackIconClassName="w-5 h-5"
+                    />
                     <span className="flex-1 min-w-0 text-sm text-dark-100 truncate">
                       {c.other_user_name || "Chat"}
                     </span>

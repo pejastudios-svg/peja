@@ -403,11 +403,16 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
                   const intensity = count / maxCount;
                   return (
                     <div key={day} className="text-center">
-                      <div 
-                        className={`w-full aspect-square rounded-lg flex items-center justify-center text-xs font-medium mb-1 ${
-                          intensity > 0.7 ? "bg-red-500/40 text-red-300" :
-                          intensity > 0.4 ? "bg-orange-500/30 text-orange-300" :
-                          intensity > 0.1 ? "bg-yellow-500/20 text-yellow-300" :
+                      <div
+                        className={`w-full aspect-square rounded-lg flex items-center justify-center text-xs font-bold mb-1 ${
+                          // Darker text shades (-700) so the count reads
+                          // against the light-tinted cell on light mode
+                          // (was -300 = nearly invisible "red on red").
+                          // Still legible on dark mode where the bg is a
+                          // darker tint of the same hue.
+                          intensity > 0.7 ? "bg-red-500/40 text-red-600" :
+                          intensity > 0.4 ? "bg-orange-500/30 text-orange-600" :
+                          intensity > 0.1 ? "bg-yellow-500/20 text-yellow-600" :
                           "bg-dark-700 text-dark-500"
                         }`}
                       >

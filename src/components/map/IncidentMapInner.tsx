@@ -9,6 +9,26 @@ import { createNotification } from "@/lib/notifications";
 import { useAuth } from "@/context/AuthContext";
 import { VoiceNotePlayer } from "@/components/ui/VoiceNotePlayer";
 
+const LEAFLET_CSS_HREF = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+const LEAFLET_CSS_INTEGRITY =
+  "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
+
+// Inject Leaflet's stylesheet once, on first mount of any map. Lives here
+// (not in the root layout) so that pages without a map don't pay the cost
+// of a render-blocking external stylesheet — that was making offline cold
+// opens render unstyled while waiting for unpkg.com to time out.
+function ensureLeafletCss() {
+  if (typeof document === "undefined") return;
+  if (document.querySelector(`link[data-leaflet-css="1"]`)) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = LEAFLET_CSS_HREF;
+  link.integrity = LEAFLET_CSS_INTEGRITY;
+  link.crossOrigin = "";
+  link.setAttribute("data-leaflet-css", "1");
+  document.head.appendChild(link);
+}
+
 if (typeof window !== "undefined") {
   delete (L.Icon.Default.prototype as any)._getIconUrl;
   L.Icon.Default.mergeOptions({
@@ -300,6 +320,8 @@ export default function IncidentMapInner({
   // Initialize map
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
+
+    ensureLeafletCss();
 
     const map = L.map(mapContainerRef.current, {
       center: center,

@@ -8,7 +8,6 @@ import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
 import { VipBadge } from "@/components/ui/VipBadge";
 import {
-  User,
   Mail,
   Phone,
   Briefcase,
@@ -18,9 +17,9 @@ import {
   Camera,
   Loader2,
 } from "lucide-react";
-import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Header } from "@/components/layout/Header";
 import { Post } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
@@ -354,13 +353,12 @@ export default function ProfilePage() {
           <div className="max-w-2xl mx-auto">
             <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="w-20 h-20 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden">
-                  {user.avatar_url ? (
-                    <img src={user.avatar_url} alt={user.full_name} className="w-full h-full object-cover" />
-                  ) : (
-                    <User className="w-10 h-10 text-primary-400" />
-                  )}
-                </div>
+                <AvatarImage
+                  src={user.avatar_url}
+                  alt={user.full_name}
+                  wrapperClassName="w-20 h-20 rounded-full bg-primary-600/20 border-2 border-primary-500/50 flex items-center justify-center overflow-hidden"
+                  fallbackIconClassName="w-10 h-10 text-primary-400"
+                />
                 <button
                   onClick={() => router.push("/profile/edit")}
                   className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center border-2 border-dark-950"
@@ -442,20 +440,30 @@ export default function ProfilePage() {
           </div>
 
           <div className="mb-4">
-            <div className="flex gap-2 mb-4">
-              <Button variant={activeTab === "posts" ? "primary" : "secondary"} size="sm" onClick={() => setActiveTab("posts")}>
+            <div className="flex border-b border-white/10 mb-4">
+              <button
+                onClick={() => setActiveTab("posts")}
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  activeTab === "posts"
+                    ? "text-primary-400 border-b-2 border-primary-400"
+                    : "text-dark-400 hover:text-dark-200"
+                }`}
+              >
                 My Posts
-              </Button>
-              <Button
-                variant={activeTab === "confirmed" ? "primary" : "secondary"}
-                size="sm"
+              </button>
+              <button
                 onClick={() => {
                   setActiveTab("confirmed");
                   if (confirmedPosts.length === 0) fetchConfirmedPosts();
                 }}
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  activeTab === "confirmed"
+                    ? "text-primary-400 border-b-2 border-primary-400"
+                    : "text-dark-400 hover:text-dark-200"
+                }`}
               >
                 Confirmed
-              </Button>
+              </button>
             </div>
 
             {listLoading && list.length === 0 ? (

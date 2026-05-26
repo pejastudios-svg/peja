@@ -32,6 +32,8 @@ import { ReportThreatPicker } from "@/components/create/ReportThreatPicker";
 import { ReportDescriptionField } from "@/components/create/ReportDescriptionField";
 import { ReportTagsField } from "@/components/create/ReportTagsField";
 import { ReportSensitiveRow } from "@/components/create/ReportSensitiveRow";
+import { dispatchOrQueue, newOutboxId } from "@/lib/outbox";
+import { putDraftBlob } from "@/lib/postDraftBlobs";
 
 // Image compression utility
 async function compressImage(file: File, maxWidth = 1920, quality = 0.8): Promise<File> {
@@ -113,7 +115,20 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const [isSensitive, setIsSensitive] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
-  const [location, setLocation] = useState<{ latitude: number; longitude: number; address?: string; state?: string | null } | null>(null);
+  const [location, setLocation] = useState<{
+    latitude: number;
+    longitude: number;
+    address?: string;
+    state?: string | null;
+    // ISO 3166-1 alpha-2 (lowercase, matches Nominatim). Used by the
+    // notification fan-out and the Nearby feed so non-Nigeria posts
+    // don't get pushed to Nigerian users.
+    countryCode?: string | null;
+    // GPS accuracy in meters from the device. Surfaced under the
+    // address so the user can re-tap "Use my location" if the fix is
+    // poor (indoor / no sky view typically returns 50m+).
+    accuracy?: number | null;
+  } | null>(null);
   const [error, setError] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -218,7 +233,14 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   // fan-out can filter by state without re-parsing the address text.
   // "Federal Capital Territory" is normalized to "FCT" to match how the
   // settings page exposes states in its picker.
-  const getAddressFromCoords = async (lat: number, lng: number): Promise<{ address: string; state: string | null }> => {
+  const getAddressFromCoords = async (
+    lat: number,
+    lng: number
+  ): Promise<{
+    address: string;
+    state: string | null;
+    countryCode: string | null;
+  }> => {
     const fallback = `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
     try {
       const response = await fetch(
@@ -228,22 +250,38 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       const data = await response.json();
       if (data?.address) {
         const addr = data.address;
+        // Include house_number when Nominatim returns one — without it
+        // the address used to collapse to just "road, area, city",
+        // hiding precisely where the user is. "12 Lasu-Isheri Road,
+        // Iba" is actionable; "Lasu-Isheri Road" alone could mean
+        // anywhere along the road.
         const parts = [];
-        if (addr.road) parts.push(addr.road);
+        const houseNumber: string | undefined = addr.house_number;
+        if (addr.road) {
+          parts.push(houseNumber ? `${houseNumber} ${addr.road}` : addr.road);
+        } else if (houseNumber) {
+          parts.push(houseNumber);
+        }
         if (addr.neighbourhood) parts.push(addr.neighbourhood);
-        if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
+        if (addr.suburb && addr.suburb !== addr.neighbourhood)
+          parts.push(addr.suburb);
+        if (addr.city || addr.town || addr.village)
+          parts.push(addr.city || addr.town || addr.village);
         if (addr.state) parts.push(addr.state);
         const rawState: string | undefined = addr.state;
         let state: string | null = rawState ? rawState.trim() : null;
         if (state && /federal capital territory/i.test(state)) state = "FCT";
+        const rawCountry: string | undefined = addr.country_code;
+        const countryCode = rawCountry ? rawCountry.toLowerCase() : null;
         return {
           address: parts.length > 0 ? parts.join(", ") : fallback,
           state,
+          countryCode,
         };
       }
-      return { address: fallback, state: null };
+      return { address: fallback, state: null, countryCode: null };
     } catch {
-      return { address: fallback, state: null };
+      return { address: fallback, state: null, countryCode: null };
     }
   };
 
@@ -438,10 +476,20 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         if (!isMounted.current) return;
-        const { latitude, longitude } = position.coords;
-        const { address, state } = await getAddressFromCoords(latitude, longitude);
+        const { latitude, longitude, accuracy } = position.coords;
+        const { address, state, countryCode } = await getAddressFromCoords(
+          latitude,
+          longitude
+        );
         if (isMounted.current) {
-          setLocation({ latitude, longitude, address, state });
+          setLocation({
+            latitude,
+            longitude,
+            address,
+            state,
+            countryCode,
+            accuracy: typeof accuracy === "number" ? accuracy : null,
+          });
           setLocationLoading(false);
         }
       },
@@ -451,7 +499,13 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
           setLocationLoading(false);
         }
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      // maximumAge: 0 forces a fresh GPS fix every time. The previous
+      // 60s window let the device hand back an old position from up
+      // to a minute ago, which is how reports ended up pinned at "the
+      // bus stop I walked past" instead of where the user actually
+      // is. Higher timeout (15s vs 10s) gives cold-fix devices a
+      // chance to acquire satellites indoors / under cover.
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
@@ -657,6 +711,84 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     return;
   }
 
+  // Offline branch — save the post + media to IDB as a draft and
+  // queue the create for replay when network returns. We DON'T call
+  // supabase.auth.getUser() in this path (that hits the network and
+  // can hang offline); user.id from useAuth is the local session id,
+  // which is what we need. The drain handler runs auth client-side
+  // when it fires, with the same user.
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.onLine === false &&
+    user?.id
+  ) {
+    setIsLoading(true);
+    setUploadProgress(0);
+    try {
+      const draftId = newOutboxId();
+      const triggeredAt = new Date().toISOString();
+
+      // Save each selected file to IDB so the drain can pick it up
+      // when network returns. We persist the RAW blob — compression
+      // is a live-UX optimization, not worth replicating in the
+      // offline path. The handler uploads as-is to Storage.
+      const mediaMeta: Array<{
+        media_id: string;
+        type: "photo" | "video";
+        mime_type: string;
+        file_name: string;
+      }> = [];
+      for (const file of media) {
+        const mediaId = newOutboxId();
+        const type: "photo" | "video" = file.type.startsWith("video/")
+          ? "video"
+          : "photo";
+        await putDraftBlob(draftId, mediaId, file);
+        mediaMeta.push({
+          media_id: mediaId,
+          type,
+          mime_type: file.type,
+          file_name: file.name,
+        });
+      }
+
+      void dispatchOrQueue(user.id, {
+        id: draftId,
+        kind: "post-create",
+        queued_at: Date.now(),
+        attempts: 0,
+        last_error: null,
+        payload: {
+          user_id: user.id,
+          draft_id: draftId,
+          category,
+          comment: comment.trim() || null,
+          address: location?.address || null,
+          latitude: location?.latitude ?? null,
+          longitude: location?.longitude ?? null,
+          country_code: location?.countryCode || null,
+          is_anonymous: false,
+          is_sensitive: isSensitive,
+          tags: [...tags],
+          media: mediaMeta,
+          triggered_at: triggeredAt,
+        },
+      });
+
+      setToast("Saved as draft — will post when you're back online.");
+      setTimeout(() => setToast(null), 4000);
+      // Send the user back to the home feed so they don't see a
+      // frozen create form. The draft is safely in IDB + the outbox.
+      router.push("/");
+    } catch (err: any) {
+      setError(err?.message || "Couldn't save draft. Please try again.");
+      setSubmitted(false);
+    } finally {
+      setIsLoading(false);
+    }
+    return;
+  }
+
   const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
   if (authError || !authUser) {
@@ -859,6 +991,11 @@ setToast("Processing video...");
         longitude: location.longitude,
         address: location.address || null,
         state: location.state || null,
+        // Country gate. Used downstream by notification fan-out and
+        // the Nearby feed so a post outside Nigeria doesn't surface
+        // for Nigerian users. Legacy rows (created before this column
+        // existed) fall back to the lat/lng bounding-box check.
+        country_code: location.countryCode || null,
         is_anonymous: false,
         is_sensitive: isSensitive,
         status: "live",
@@ -917,9 +1054,12 @@ setToast("Processing video...");
       location.address || null,
       location.latitude,
       location.longitude,
-      location.state || null
+      location.state || null,
+      location.countryCode || null
     ).then(count => {
+      void count;
     }).catch(err => {
+      void err;
     });
 
     setUploadProgress(100);
