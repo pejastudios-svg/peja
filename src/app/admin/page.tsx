@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
-import GlowButton from "@/components/dashboard/GlowButton";
+import RefreshButton from "@/components/dashboard/RefreshButton";
+import EmptyState from "@/components/dashboard/EmptyState";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Skeleton } from "@/components/ui/Skeleton";
 import {
   AlertTriangle,
-  BarChart3,
   Clock,
+  FileText,
   Flag,
   Shield,
   TrendingUp,
@@ -42,16 +43,6 @@ function dayLabel(d: Date) {
   return d.toLocaleDateString(undefined, { weekday: "short" });
 }
 
-function CornerGlow() {
-  return (
-    <>
-      <div className="pointer-events-none absolute -top-20 -left-20 w-44 h-44 rounded-full bg-primary-600/25 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-24 -right-24 w-48 h-48 rounded-full bg-primary-600/20 blur-3xl" />
-      <div className="pointer-events-none absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-primary-500/35 to-transparent" />
-    </>
-  );
-}
-
 function KpiTile({
   label,
   value,
@@ -66,21 +57,17 @@ function KpiTile({
   sub?: string;
 }) {
   const toneMap = {
-    purple: "border-primary-500/25 bg-primary-600/10 text-primary-200",
-    red: "border-red-500/25 bg-red-500/10 text-red-200",
-    orange: "border-orange-500/25 bg-orange-500/10 text-orange-200",
-    green: "border-green-500/25 bg-green-500/10 text-green-200",
-    blue: "border-blue-500/25 bg-blue-500/10 text-blue-200",
+    purple: "border-white/10 bg-white/5 text-dark-100",
+    red: "border-white/10 bg-white/5 text-dark-100",
+    orange: "border-white/10 bg-white/5 text-dark-100",
+    green: "border-white/10 bg-white/5 text-dark-100",
+    blue: "border-white/10 bg-white/5 text-dark-100",
   };
 
   return (
-    <div className="hud-panel p-4 relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 opacity-40">
-        <div className="absolute -top-16 -right-20 w-40 h-40 rounded-full bg-white/5 blur-2xl" />
-      </div>
-
+    <div className="hud-panel p-4">
       <div className="flex items-center gap-3">
-        <div className={`p-3 rounded-xl border ${toneMap[tone]} shadow-[0_0_18px_rgba(124,58,237,0.25)]`}>
+        <div className={`p-3 rounded-xl border ${toneMap[tone]}`}>
           {icon}
         </div>
 
@@ -88,10 +75,6 @@ function KpiTile({
           <p className="text-[11px] uppercase tracking-wide text-dark-500">{label}</p>
           <p className="text-2xl font-bold text-dark-100 leading-tight">{value}</p>
           {sub && <p className="text-xs text-dark-500 mt-0.5">{sub}</p>}
-        </div>
-
-        <div className="ml-auto">
-          <div className="pill pill-purple">Live</div>
         </div>
       </div>
     </div>
@@ -209,35 +192,35 @@ export default function AdminOverviewPage() {
         label: "Active SOS",
         value: stats.activeSOS,
         tone: "red" as const,
-        icon: <AlertTriangle className="w-5 h-5 text-red-300" />,
+        icon: <AlertTriangle className="w-5 h-5 text-dark-100" />,
         sub: "Critical alerts live now",
       },
       {
         label: "Pending Flags",
         value: stats.flaggedContent,
         tone: "orange" as const,
-        icon: <Flag className="w-5 h-5 text-orange-300" />,
+        icon: <Flag className="w-5 h-5 text-dark-100" />,
         sub: "Needs review",
       },
       {
         label: "Users (Active)",
         value: stats.activeUsers,
         tone: "green" as const,
-        icon: <Users className="w-5 h-5 text-green-300" />,
+        icon: <Users className="w-5 h-5 text-dark-100" />,
         sub: `Total: ${stats.totalUsers}`,
       },
       {
         label: "Posts (Live)",
         value: stats.livePosts,
         tone: "purple" as const,
-        icon: <TrendingUp className="w-5 h-5 text-primary-200" />,
+        icon: <TrendingUp className="w-5 h-5 text-dark-100" />,
         sub: `Total: ${stats.totalPosts}`,
       },
       {
         label: "Guardians",
         value: stats.totalGuardians,
         tone: "blue" as const,
-        icon: <Shield className="w-5 h-5 text-blue-300" />,
+        icon: <Shield className="w-5 h-5 text-dark-100" />,
         sub: `Pending apps: ${stats.pendingApplications}`,
       },
     ],
@@ -246,7 +229,7 @@ export default function AdminOverviewPage() {
 
   if (loading) {
     return (
-      <div className="p-6">
+      <div className="px-6 pb-6 pt-32">
         <div className="mb-6">
           <Skeleton className="h-8 w-60 mb-2" />
           <Skeleton className="h-4 w-80" />
@@ -288,14 +271,7 @@ export default function AdminOverviewPage() {
 
   return (
     <HudShell
-      title="Peja Admin - Ops Center"
-      subtitle="Live safety signals, incident flow, and moderation pressure (NG)"
-      right={
-        <div className="flex items-center gap-2">
-          <div className="pill pill-purple">Realtime</div>
-          <GlowButton onClick={fetchData}>Refresh</GlowButton>
-        </div>
-      }
+      right={<RefreshButton onClick={fetchData} loading={loading} />}
     >
       {/* KPI strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
@@ -311,9 +287,7 @@ export default function AdminOverviewPage() {
           className="relative overflow-hidden lg:col-span-2"
           title="Threat Activity (7 days)"
           subtitle="Posts vs SOS vs Flags - trend pressure"
-          right={<div className="pill pill-purple">Signal</div>}
         >
-          <CornerGlow />
           <div className="h-[260px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={series}>
@@ -322,8 +296,8 @@ export default function AdminOverviewPage() {
                 <YAxis stroke="rgba(255,255,255,0.35)" tick={{ fontSize: 12 }} />
                 <Tooltip
                   contentStyle={{
-                    background: "rgba(18,10,30,0.95)",
-                    border: "1px solid rgba(139,92,246,0.25)",
+                    background: "#18181b",
+                    border: "1px solid rgba(255,255,255,0.1)",
                     borderRadius: 12,
                   }}
                   labelStyle={{ color: "#e2e8f0" }}
@@ -351,9 +325,8 @@ export default function AdminOverviewPage() {
           subtitle="Requires immediate attention"
           right={<span className="pill pill-red">{stats.activeSOS} live</span>}
         >
-          <CornerGlow />
           {activeSOS.length === 0 ? (
-            <p className="text-sm text-dark-400">No active SOS alerts</p>
+            <EmptyState icon={AlertTriangle} title="No active SOS alerts" className="py-8" />
           ) : (
             <div className="space-y-2">
               {activeSOS.map((sos) => (
@@ -364,7 +337,7 @@ export default function AdminOverviewPage() {
                   <AvatarImage
                     src={sos.users?.avatar_url}
                     wrapperClassName="w-10 h-10 rounded-full overflow-hidden border border-red-500/40 bg-red-500/10 shrink-0 flex items-center justify-center"
-                    fallback={<AlertTriangle className="w-5 h-5 text-red-300" />}
+                    fallback={<AlertTriangle className="w-5 h-5 text-dark-200" />}
                   />
 
                   <div className="min-w-0 flex-1">
@@ -391,11 +364,9 @@ export default function AdminOverviewPage() {
           className="relative overflow-hidden"
           title="Recent Incidents"
           subtitle="Latest posts entering the system"
-          right={<span className="pill pill-purple">Feed</span>}
         >
-          <CornerGlow />
           {recentPosts.length === 0 ? (
-            <p className="text-sm text-dark-400">No posts yet</p>
+            <EmptyState icon={FileText} title="No posts yet" className="py-8" />
           ) : (
             <div className="space-y-2">
               {recentPosts.map((p) => (
@@ -425,9 +396,7 @@ export default function AdminOverviewPage() {
           className="relative overflow-hidden"
           title="System Pressure"
           subtitle="Moderation + response posture"
-          right={<span className="pill pill-purple">Status</span>}
         >
-          <CornerGlow />
 
           <div className="grid grid-cols-2 gap-3">
             <div className="hud-panel p-4">
@@ -452,16 +421,6 @@ export default function AdminOverviewPage() {
               <p className="text-xs text-dark-500 uppercase tracking-wide">Users</p>
               <p className="text-2xl font-bold text-dark-100 mt-1">{stats.activeUsers}</p>
               <p className="text-xs text-dark-500 mt-1">Active accounts</p>
-            </div>
-          </div>
-
-          <div className="mt-4 p-3 rounded-xl bg-primary-600/10 border border-primary-500/20 text-xs text-dark-300 flex items-start gap-2">
-            <BarChart3 className="w-4 h-4 text-primary-300 mt-0.5" />
-            <div>
-              <p className="text-dark-100 font-semibold">Tip</p>
-              <p className="text-dark-400 mt-0.5">
-                If flagged content rises rapidly, assign more Guardians.
-              </p>
             </div>
           </div>
         </HudPanel>

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Base application theme. -->
     <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
@@ -21,6 +21,18 @@
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+    </style>
+
+    <!-- Light-mode launch/splash theme. Selected at runtime in
+         MainActivity.onCreate (before super.onCreate) when the user's saved
+         theme is "light". The splash logo (@drawable/splash) sits on a
+         transparent background, so the window color is what flashed dark for
+         light-mode users on every cold start. White backgrounds here paint the
+         splash light instead. -->
+    <style name="AppTheme.NoActionBarLaunch.Light" parent="Theme.SplashScreen">
+        <item name="android:background">@drawable/splash</item>
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowSplashScreenBackground" tools:targetApi="31">@android:color/white</item>
     </style>
 
 </resources>

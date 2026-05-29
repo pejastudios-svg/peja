@@ -8,6 +8,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
+import RefreshButton from "@/components/dashboard/RefreshButton";
+import EmptyState from "@/components/dashboard/EmptyState";
 import { ChevronDown } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
@@ -83,6 +85,10 @@ const [posts, setPosts] = useState<PostData[]>([]);
   
   const isSearchMode = searchQuery.trim().length > 0;
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Monotonic request id: each fetch/search claims one, and only the latest
+  // applies its results. Stops a slower earlier query from overwriting newer
+  // results — the cause of the search "flash".
+  const reqRef = useRef(0);
   const pageSize = 20;
   const pageCache = usePageCache();
   const cacheKey = `admin:posts:${statusFilter}:${categoryFilter}:${page}`;
@@ -171,21 +177,27 @@ const [posts, setPosts] = useState<PostData[]>([]);
     setSelectedIds(new Set());
   }, [page, statusFilter, categoryFilter]);
 useEffect(() => {
-    if (isSearchMode) {
-      handleSearch();
-    } else {
-      // Check cache first
-      const cached = pageCache.get<{ posts: PostData[]; count: number }>(cacheKey);
-      if (cached) {
-        setPosts(cached.posts);
-        setTotalCount(cached.count);
-        setLoading(false);
-        // Revalidate in background
-        fetchPosts(true);
+    const run = () => {
+      if (isSearchMode) {
+        handleSearch();
       } else {
-        fetchPosts();
+        // Check cache first
+        const cached = pageCache.get<{ posts: PostData[]; count: number }>(cacheKey);
+        if (cached) {
+          setPosts(cached.posts);
+          setTotalCount(cached.count);
+          setLoading(false);
+          // Revalidate in background
+          fetchPosts(true);
+        } else {
+          fetchPosts();
+        }
       }
-    }
+    };
+    // Debounce while typing a search so intermediate keystrokes don't each
+    // fire a query and flash. Filter/page changes run immediately.
+    const t = setTimeout(run, isSearchMode ? 300 : 0);
+    return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, statusFilter, categoryFilter, searchQuery]);
   useEffect(() => {
@@ -223,6 +235,7 @@ t = setTimeout(() => {
     );
   }
 const fetchPosts = async (silent = false) => {
+    const myReq = ++reqRef.current;
     if (!silent) setLoading(true);
     try {
       let query = supabase
@@ -237,8 +250,10 @@ const fetchPosts = async (silent = false) => {
       if (categoryFilter !== "all") query = query.eq("category", categoryFilter);
       const { data: postsData, count, error } = await query;
       if (error) {
-        setPosts([]);
-        setTotalCount(0);
+        if (myReq === reqRef.current) {
+          setPosts([]);
+          setTotalCount(0);
+        }
         return;
       }
       const rows = (postsData || []) as any[];
@@ -264,13 +279,14 @@ const fetchPosts = async (silent = false) => {
         users: usersMap[p.user_id] || undefined,
         post_media: mediaMap[p.id] || [],
       }));
-setPosts(merged);
+if (myReq !== reqRef.current) return;
+      setPosts(merged);
       setTotalCount(count || 0);
       pageCache.set(cacheKey, { posts: merged, count: count || 0 });
     } catch (e) {
-      setPosts([]);
+      if (myReq === reqRef.current) setPosts([]);
     } finally {
-      setLoading(false);
+      if (myReq === reqRef.current) setLoading(false);
     }
   };
   
@@ -280,6 +296,7 @@ setPosts(merged);
       fetchPosts();
       return;
     }
+    const myReq = ++reqRef.current;
     setLoading(true);
     try {
       const like = `%${q}%`;
@@ -328,12 +345,13 @@ setPosts(merged);
         users: usersMap[p.user_id] || undefined,
         post_media: mediaMap[p.id] || [],
       }));
+      if (myReq !== reqRef.current) return;
       setPosts(merged);
       setTotalCount(merged.length);
     } catch (error) {
-      setPosts([]);
+      if (myReq === reqRef.current) setPosts([]);
     } finally {
-      setLoading(false);
+      if (myReq === reqRef.current) setLoading(false);
     }
   };
   // =====================================================
@@ -479,7 +497,6 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
   const getCategoryInfo = (categoryId: string) => CATEGORIES.find(c => c.id === categoryId);
   return (
     <HudShell
-      title="Post Intelligence"
       subtitle="Live feed of community incident reports"
       right={
         <div className="flex items-center gap-2">
@@ -503,8 +520,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
       }
     >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 mb-6">
-        <div className="lg:col-span-5 relative group">
-          <div className="absolute inset-0 bg-primary-500/5 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+        <div className="lg:col-span-5 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500 z-10" />
           <input
             ref={searchInputRef}
@@ -513,19 +529,19 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             placeholder="Search content or location..."
-            className="w-full h-11 pl-10 pr-4 bg-[#1E1B24] border border-white/10 rounded-xl text-sm text-white placeholder:text-dark-500 focus:outline-none focus:border-primary-500/50 focus:shadow-[0_0_15px_rgba(124,58,237,0.15)] transition-all relative z-0"
+            className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-white placeholder:text-dark-500 focus:outline-none focus:border-primary-500/50 transition-all relative z-0"
           />
         </div>
         <div className="lg:col-span-3 relative">
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-            className="w-full h-11 pl-4 pr-10 bg-[#1E1B24] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-all hover:bg-white/5"
+            className="w-full h-11 pl-4 pr-10 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-all hover:bg-white/5"
           >
-            <option value="all" className="bg-[#1E1B24] text-white">All Status</option>
-            <option value="live" className="bg-[#1E1B24] text-white">Live</option>
-            <option value="resolved" className="bg-[#1E1B24] text-white">Resolved</option>
-            <option value="archived" className="bg-[#1E1B24] text-white">Archived</option>
+            <option value="all" className="bg-[#1c1c1f] text-white">All Status</option>
+            <option value="live" className="bg-[#1c1c1f] text-white">Live</option>
+            <option value="resolved" className="bg-[#1c1c1f] text-white">Resolved</option>
+            <option value="archived" className="bg-[#1c1c1f] text-white">Archived</option>
           </select>
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500 pointer-events-none" />
         </div>
@@ -533,19 +549,17 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
           <select
             value={categoryFilter}
             onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-            className="w-full h-11 pl-4 pr-10 bg-[#1E1B24] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-all hover:bg-white/5"
+            className="w-full h-11 pl-4 pr-10 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-all hover:bg-white/5"
           >
-            <option value="all" className="bg-[#1E1B24] text-white">All Categories</option>
-            {CATEGORIES.map(cat => (
-              <option key={cat.id} value={cat.id} className="bg-[#1E1B24] text-white">{cat.name}</option>
+            <option value="all" className="bg-[#1c1c1f] text-white">All Categories</option>
+            {CATEGORIES.filter(cat => ["kidnapping", "terrorist", "general"].includes(cat.id)).map(cat => (
+              <option key={cat.id} value={cat.id} className="bg-[#1c1c1f] text-white">{cat.name}</option>
             ))}
           </select>
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500 pointer-events-none" />
         </div>
-        <div className="lg:col-span-1">
-          <Button variant="primary" onClick={handleSearch} className="w-full h-11 bg-primary-600 hover:bg-primary-500 shadow-lg border-none">
-            Reload
-          </Button>
+        <div className="lg:col-span-1 flex items-center justify-center">
+          <RefreshButton onClick={handleSearch} loading={loading} />
         </div>
       </div>
       {/* Select All Bar */}
@@ -556,9 +570,9 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
             className="flex items-center gap-2 text-sm font-medium text-primary-300 hover:text-primary-200 transition-colors"
           >
             {isAllSelected ? (
-              <CheckSquare className="w-[18px] h-[18px] text-primary-400" />
+              <CheckSquare className="w-[18px] h-[18px] text-dark-200" />
             ) : isSomeSelected ? (
-              <MinusSquare className="w-[18px] h-[18px] text-primary-400" />
+              <MinusSquare className="w-[18px] h-[18px] text-dark-200" />
             ) : (
               <Square className="w-[18px] h-[18px] text-dark-400" />
             )}
@@ -570,17 +584,12 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
         </div>
       )}
       {loading && posts.length === 0 ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {Array.from({ length: 6 }).map((_, i) => <AdminPostCardSkeleton key={i} />)}
         </div>
       ) : posts.length === 0 ? (
         <HudPanel className="py-20 min-h-[400px]">
-          <div className="flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 rounded-full bg-dark-800 flex items-center justify-center mb-4 border border-white/5">
-              <FileText className="w-8 h-8 text-dark-600" />
-            </div>
-            <p className="text-dark-300 font-medium text-lg">No posts found</p>
-          </div>
+          <EmptyState icon={FileText} title="No posts found" />
         </HudPanel>
       ) : (
         <>
@@ -589,7 +598,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
               <PejaSpinner className="w-6 h-6" />
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
             {posts.map((post) => {
               const category = getCategoryInfo(post.category);
               const ageMs = Date.now() - new Date(post.created_at).getTime();
@@ -611,8 +620,8 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                   }}
                   className={`hud-panel p-0 relative group overflow-hidden cursor-pointer transition-all flex flex-col h-full ${
                     isSelected
-                      ? "ring-2 ring-primary-500 shadow-[0_0_20px_rgba(124,58,237,0.15)]"
-                      : "hover:border-primary-500/40 hover:shadow-[0_0_30px_rgba(0,0,0,0.3)]"
+                      ? "ring-2 ring-primary-500"
+                      : "hover:border-primary-500/40"
                   }`}
                 >
                   {/* Checkbox */}
@@ -624,7 +633,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                       }}
                       className={`absolute top-3 right-3 z-20 w-7 h-7 rounded-lg flex items-center justify-center transition-all border ${
                         isSelected
-                          ? "bg-primary-600 border-primary-500 shadow-[0_0_10px_rgba(124,58,237,0.4)]"
+                          ? "bg-primary-600 border-primary-500"
                           : "bg-black/50 border-white/20 backdrop-blur-md hover:bg-black/70"
                       }`}
                     >
@@ -660,7 +669,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                                 />
                               )}
                               <div className="absolute inset-0 flex items-center justify-center">
-                                <Play className="w-10 h-10 text-white/90 p-2.5 bg-black/45 backdrop-blur-sm rounded-full" />
+                                <Play className="w-9 h-9 text-white/90 p-2 bg-black/45 backdrop-blur-sm rounded-full" />
                               </div>
                             </div>
                           );
@@ -684,7 +693,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                        </span>
                     </div>
                   </div>
-                  <div className="p-4 flex-1 flex flex-col bg-linear-to-b from-transparent to-black/20">
+                  <div className="p-3 flex-1 flex flex-col bg-linear-to-b from-transparent to-black/20">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-primary-300">
                         {category?.name || post.category}
@@ -693,7 +702,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                         {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
                       </span>
                     </div>
-                    <p className="text-sm text-dark-100 line-clamp-2 mb-4 leading-relaxed font-medium flex-1">
+                    <p className="text-[13px] text-dark-100 line-clamp-2 mb-3 leading-relaxed font-medium flex-1">
                       {post.comment || "No description provided."}
                     </p>
                     <div className="pt-3 border-t border-white/5 flex items-center justify-between mt-auto">
@@ -725,7 +734,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
             style={{
               background: "rgba(12, 8, 24, 0.95)",
               border: "1px solid rgba(139, 92, 246, 0.25)",
-              boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 30px rgba(124,58,237,0.1)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6)",
               backdropFilter: "blur(16px)",
             }}
           >
@@ -734,7 +743,6 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                 className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
                 style={{
                   background: "linear-gradient(135deg, #7c3aed, #6d28d9)",
-                  boxShadow: "0 0 12px rgba(124,58,237,0.4)",
                 }}
               >
                 {selectedIds.size}
@@ -776,6 +784,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
         onClose={() => { setShowPostModal(false); setSelectedPost(null); }}
         title="Post Details"
         size="xl"
+        neutral
       >
         {selectedPost && (
           <div className="space-y-5">
@@ -885,26 +894,14 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
             style={{
               background: "rgba(12, 8, 24, 0.98)",
               border: "1px solid rgba(239, 68, 68, 0.2)",
-              boxShadow: "0 0 60px rgba(239, 68, 68, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
+              boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
             }}
           >
-            <div
-              className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl"
-              style={{
-                background: "linear-gradient(90deg, transparent, #ef4444, transparent)",
-                boxShadow: "0 0 20px rgba(239,68,68,0.5)",
-              }}
-            />
             <div className="flex justify-center mb-4">
               <div
-                className="w-14 h-14 rounded-full flex items-center justify-center"
-                style={{
-                  background: "rgba(239, 68, 68, 0.15)",
-                  border: "2px solid rgba(239, 68, 68, 0.3)",
-                  boxShadow: "0 0 20px rgba(239, 68, 68, 0.15)",
-                }}
+                className="w-14 h-14 rounded-full flex items-center justify-center bg-white/5 border border-white/10"
               >
-                <Trash2 className="w-7 h-7 text-red-400" />
+                <Trash2 className="w-7 h-7 text-dark-100" />
               </div>
             </div>
             <h3 className="text-lg font-bold text-white text-center mb-2">Delete Post?</h3>
@@ -956,26 +953,14 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
             style={{
               background: "rgba(12, 8, 24, 0.98)",
               border: "1px solid rgba(239, 68, 68, 0.2)",
-              boxShadow: "0 0 60px rgba(239, 68, 68, 0.08), 0 25px 60px rgba(0,0,0,0.6)",
+              boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
             }}
           >
-            <div
-              className="absolute top-0 left-0 right-0 h-[2px] rounded-t-2xl"
-              style={{
-                background: "linear-gradient(90deg, transparent, #ef4444, transparent)",
-                boxShadow: "0 0 20px rgba(239,68,68,0.5)",
-              }}
-            />
             <div className="flex justify-center mb-4">
               <div
-                className="w-14 h-14 rounded-full flex items-center justify-center"
-                style={{
-                  background: "rgba(239, 68, 68, 0.15)",
-                  border: "2px solid rgba(239, 68, 68, 0.3)",
-                  boxShadow: "0 0 20px rgba(239, 68, 68, 0.15)",
-                }}
+                className="w-14 h-14 rounded-full flex items-center justify-center bg-white/5 border border-white/10"
               >
-                <Trash2 className="w-7 h-7 text-red-400" />
+                <Trash2 className="w-7 h-7 text-dark-100" />
               </div>
             </div>
             <h3 className="text-lg font-bold text-white text-center mb-2">

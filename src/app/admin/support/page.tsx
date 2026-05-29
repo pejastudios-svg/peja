@@ -8,14 +8,13 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
-import GlowButton from "@/components/dashboard/GlowButton";
+import EmptyState from "@/components/dashboard/EmptyState";
+import RefreshButton from "@/components/dashboard/RefreshButton";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { formatDistanceToNow } from "date-fns";
 import {
-  MessageSquare,
-  RefreshCw,
   Inbox,
   CheckCircle2,
   Clock,
@@ -310,44 +309,27 @@ export default function AdminSupportPage() {
 
   return (
     <HudShell
-      title="Support Tickets"
       subtitle="User-submitted help requests from the in-app form"
-      right={
-        <GlowButton
-          onClick={() => fetchTickets(true)}
-          disabled={refreshing || loading}
-          className="h-9 text-xs flex items-center justify-center gap-2"
-        >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </GlowButton>
-      }
+      right={<RefreshButton onClick={() => fetchTickets(true)} loading={refreshing} />}
     >
-      {/* Filter chips */}
-      <div className="flex gap-2 mb-6 flex-wrap">
+      {/* Filter tabs */}
+      <div className="flex gap-1 mb-6 flex-wrap border-b border-white/10">
         {FILTERS.map((f) => {
-          const Icon = f.icon;
           const isActive = filter === f.key;
           const count = counts[f.key];
           return (
             <button
               key={f.key}
+              type="button"
               onClick={() => setFilter(f.key)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+              className={`relative px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 isActive
-                  ? "bg-primary-600 text-white shadow-lg shadow-primary-900/30"
-                  : "glass-sm text-dark-300 hover:bg-white/10"
+                  ? "text-primary-400 border-primary-500"
+                  : "text-dark-400 border-transparent hover:text-dark-200"
               }`}
             >
-              <Icon className="w-4 h-4" />
               {f.label}
-              <span
-                className={`min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center ${
-                  isActive ? "bg-white/20 text-white" : "bg-dark-700 text-dark-200"
-                }`}
-              >
-                {count}
-              </span>
+              <span className="ml-1.5 text-[11px] text-dark-400">({count})</span>
             </button>
           );
         })}
@@ -361,15 +343,15 @@ export default function AdminSupportPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="py-16 text-center">
-            <MessageSquare className="w-10 h-10 text-dark-500 mx-auto mb-3" />
-            <p className="text-dark-300 font-medium mb-1">No tickets here</p>
-            <p className="text-sm text-dark-500">
-              {filter === "all"
+          <EmptyState
+            icon={Inbox}
+            title="No tickets"
+            description={
+              filter === "all"
                 ? "Nothing has been submitted yet."
-                : `No ${filter.replace("_", " ")} tickets right now.`}
-            </p>
-          </div>
+                : `No ${filter.replace("_", " ")} tickets right now.`
+            }
+          />
         ) : (
           <ul className="space-y-2.5">
             {filtered.map((t) => {
@@ -391,7 +373,7 @@ export default function AdminSupportPage() {
                     <AvatarImage
                       src={t.user?.avatar_url}
                       wrapperClassName="w-9 h-9 rounded-full bg-primary-600/15 flex items-center justify-center shrink-0 overflow-hidden"
-                      fallback={<User className="w-4 h-4 text-primary-400" />}
+                      fallback={<User className="w-4 h-4 text-dark-200" />}
                     />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
@@ -467,7 +449,7 @@ export default function AdminSupportPage() {
       </HudPanel>
 
       {selected && (
-        <Modal isOpen={!!selected} onClose={closeTicket} title="Support ticket" size="lg">
+        <Modal isOpen={!!selected} onClose={closeTicket} title="Support ticket" size="lg" neutral>
           <div className="space-y-4">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-dark-500 mb-1">Ticket</p>
@@ -481,7 +463,7 @@ export default function AdminSupportPage() {
               <AvatarImage
                 src={selected.user?.avatar_url}
                 wrapperClassName="w-10 h-10 rounded-full bg-primary-600/15 flex items-center justify-center shrink-0 overflow-hidden"
-                fallback={<User className="w-5 h-5 text-primary-400" />}
+                fallback={<User className="w-5 h-5 text-dark-200" />}
               />
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-dark-100 truncate">
@@ -534,7 +516,7 @@ export default function AdminSupportPage() {
                         >
                           <div className="flex items-center gap-2 mb-1.5">
                             {isReply ? (
-                              <Send className="w-3.5 h-3.5 text-primary-400 shrink-0" />
+                              <Send className="w-3.5 h-3.5 text-dark-200 shrink-0" />
                             ) : (
                               <StickyNote className="w-3.5 h-3.5 text-dark-400 shrink-0" />
                             )}
@@ -645,6 +627,7 @@ export default function AdminSupportPage() {
           }}
           title="Delete ticket"
           size="sm"
+          neutral
         >
           <div className="space-y-4">
             <div
@@ -654,8 +637,8 @@ export default function AdminSupportPage() {
                 border: "1px solid rgba(239, 68, 68, 0.25)",
               }}
             >
-              <div className="w-9 h-9 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
-                <Trash2 className="w-4 h-4 text-red-400" />
+              <div className="w-9 h-9 rounded-full bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                <Trash2 className="w-4 h-4 text-dark-100" />
               </div>
               <div className="min-w-0">
                 <p className="text-dark-100 text-sm">

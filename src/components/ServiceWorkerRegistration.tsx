@@ -42,6 +42,26 @@ export function ServiceWorkerRegistration() {
           scope: "/",
         });
 
+        // On a new deploy, ask the active SW to re-warm its precache so the
+        // new build's CSS/JS chunks are cached proactively. The SW only
+        // reinstalls when sw.js's own bytes change, so a web-only deploy
+        // (new asset hashes, same sw.js) would otherwise leave the new CSS
+        // uncached — the cause of offline cold-opens rendering as raw,
+        // unstyled HTML. No reload involved; the re-warm runs in the SW.
+        try {
+          const version =
+            process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA || "dev";
+          const PRECACHE_KEY = "sw-precache-version";
+          if (version !== "dev" && localStorage.getItem(PRECACHE_KEY) !== version) {
+            const ready = await navigator.serviceWorker.ready;
+            const active = ready.active || registration.active;
+            if (active) {
+              active.postMessage({ type: "reprecache" });
+              localStorage.setItem(PRECACHE_KEY, version);
+            }
+          }
+        } catch {}
+
         // Check for updates periodically (every 30 minutes)
         setInterval(() => {
           registration.update().catch(() => {});

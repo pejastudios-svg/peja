@@ -8,7 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Skeleton } from "@/components/ui/Skeleton";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
-import GlowButton from "@/components/dashboard/GlowButton";
+import EmptyState from "@/components/dashboard/EmptyState";
 import { Trash2, Flag, Bell, Users, AlertTriangle } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
@@ -63,10 +63,10 @@ const pageCache = usePageCache();
   };
 
   const getIcon = (t: string) => {
-    if (t === "flagged_post" || t === "flagged_comment") return <Flag className="w-4 h-4 text-red-400" />;
-    if (t === "escalated_post" || t === "escalated_comment") return <AlertTriangle className="w-4 h-4 text-orange-400" />;
-    if (t === "guardian_application") return <Users className="w-4 h-4 text-primary-400" />;
-    return <Bell className="w-4 h-4 text-primary-400" />;
+    if (t === "flagged_post" || t === "flagged_comment") return <Flag className="w-4 h-4 text-dark-100" />;
+    if (t === "escalated_post" || t === "escalated_comment") return <AlertTriangle className="w-4 h-4 text-dark-100" />;
+    if (t === "guardian_application") return <Users className="w-4 h-4 text-dark-100" />;
+    return <Bell className="w-4 h-4 text-dark-100" />;
   };
 
   const refreshBadge = () => {
@@ -178,12 +178,19 @@ const pageCache = usePageCache();
 
   return (
     <HudShell
-      title="Admin Notifications"
       subtitle="Operational alerts for moderation and guardian intake"
       right={
         <div className="flex items-center gap-2">
           {unreadCount > 0 && <span className="pill pill-purple">{unreadCount} unread</span>}
-          {unreadCount > 0 && <GlowButton onClick={markAllRead}>Mark all read</GlowButton>}
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={markAllRead}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-white/[0.07] text-dark-300 text-xs font-medium hover:text-white hover:bg-white/5 transition-colors"
+            >
+              Mark all read
+            </button>
+          )}
         </div>
       }
     >
@@ -192,7 +199,6 @@ const pageCache = usePageCache();
           <HudPanel
             title="Stream"
             subtitle="Unread first. Tap a row to open the relevant admin screen."
-            right={<span className="pill pill-purple">{loading ? "Loading" : "Live"}</span>}
           >
             {loading && items.length === 0 ? (
               <div className="space-y-2">
@@ -201,9 +207,7 @@ const pageCache = usePageCache();
                 ))}
               </div>
             ) : items.length === 0 ? (
-              <div className="text-center py-10">
-                <p className="text-dark-400">No notifications yet</p>
-              </div>
+              <EmptyState icon={Bell} title="No notifications yet" />
             ) : (
               <div className="space-y-2">
                 {unread.map((n) => (

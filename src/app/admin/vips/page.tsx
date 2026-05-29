@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { usePageCache } from "@/context/PageCacheContext";
@@ -26,6 +26,7 @@ import { formatDistanceToNow } from "date-fns";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import HudShell from "@/components/dashboard/HudShell";
+import EmptyState from "@/components/dashboard/EmptyState";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 // Combined MVP + VIP management. The original page only handled VIP;
@@ -95,6 +96,8 @@ const pageCache = usePageCache();
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchTimer, setSearchTimer] = useState<NodeJS.Timeout | null>(null);
+  // Only the latest modal search applies its results (out-of-order guard).
+  const searchReqRef = useRef(0);
 
   // Action states
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -199,6 +202,7 @@ useEffect(() => {
     }
 
     const timer = setTimeout(async () => {
+      const myReq = ++searchReqRef.current;
       setSearchLoading(true);
       try {
         const q = query.trim().toLowerCase();
@@ -214,11 +218,12 @@ useEffect(() => {
           .limit(20);
 
         if (error) throw error;
+        if (myReq !== searchReqRef.current) return;
         setSearchResults((data || []) as SearchUser[]);
       } catch (e) {
-        setSearchResults([]);
+        if (myReq === searchReqRef.current) setSearchResults([]);
       } finally {
-        setSearchLoading(false);
+        if (myReq === searchReqRef.current) setSearchLoading(false);
       }
     }, 300);
 
@@ -488,7 +493,6 @@ useEffect(() => {
 
   return (
     <HudShell
-      title="MVP & VIP Management"
       subtitle="Grant elevated tiers. MVPs see MVPs+VIPs; VIPs see only VIPs"
       right={
         selectMode ? (
@@ -518,15 +522,17 @@ useEffect(() => {
               Select
             </button>
             <button
+              type="button"
               onClick={() => {
                 setAddModalOpen(true);
                 setSearchQuery("");
                 setSearchResults([]);
               }}
-              className="btn-glow px-5 py-2.5 rounded-xl text-white font-medium flex items-center gap-2"
+              aria-label="Add MVP / VIP"
+              title="Add MVP / VIP"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-white/[0.07] text-dark-300 hover:text-white hover:bg-white/5 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Add MVP / VIP
             </button>
           </div>
         )
@@ -563,7 +569,7 @@ useEffect(() => {
           value={vipSearch}
           onChange={(e) => setVipSearch(e.target.value)}
           placeholder="Search VIPs..."
-          className="w-full h-11 pl-10 pr-4 bg-[#1E1B24] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 focus:shadow-[0_0_15px_rgba(124,58,237,0.15)] transition-all"
+          className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-all"
         />
       </div>
 
@@ -599,15 +605,11 @@ useEffect(() => {
         {vipsLoading && vips.length === 0 ? (
           Array.from({ length: 6 }).map((_, i) => <VIPRowSkeleton key={i} />)
         ) : filteredVips.length === 0 ? (
-          <div className="text-center py-16">
-            <Crown className="w-12 h-12 text-dark-600 mx-auto mb-3" />
-            <p className="text-dark-400 text-lg font-medium">
-              {vipSearch ? "No VIPs match your search" : "No VIPs yet"}
-            </p>
-            <p className="text-dark-500 text-sm mt-1">
-              {!vipSearch && 'Click "Add VIP" to grant someone access'}
-            </p>
-          </div>
+          <EmptyState
+            icon={Crown}
+            title={vipSearch ? "No VIPs match your search" : "No VIPs yet"}
+            description={!vipSearch ? 'Click "Add VIP" to grant someone access' : undefined}
+          />
         ) : (
           filteredVips.map((v) => {
             const isSelected = selectedIds.has(v.id);
@@ -667,7 +669,7 @@ useEffect(() => {
                     </div>
                   ) : (
                     <div className="absolute -top-1.5 -right-1 w-5 h-5 rounded-full bg-primary-600 flex items-center justify-center border-2 border-[#120a1e] z-10 pointer-events-none">
-                      <Crown className="w-3 h-3 text-yellow-300" />
+                      <Crown className="w-3 h-3 text-dark-200" />
                     </div>
                   )}
                 </div>
@@ -787,7 +789,7 @@ useEffect(() => {
           className="fixed left-0 right-0 z-40 px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-3"
           style={{ bottom: 0 }}
         >
-          <div className="max-w-4xl mx-auto rounded-2xl bg-[#1E1B24]/95 backdrop-blur border border-white/15 shadow-2xl p-3 flex items-center gap-2 flex-wrap">
+          <div className="max-w-4xl mx-auto rounded-2xl bg-[#1c1c1f]/95 backdrop-blur border border-white/15 shadow-2xl p-3 flex items-center gap-2 flex-wrap">
             <div className="flex-1 min-w-0 text-sm text-dark-200">
               <span className="font-semibold text-white">
                 {selectedIds.size}
@@ -846,6 +848,7 @@ useEffect(() => {
         onClose={() => setAddModalOpen(false)}
         title="Grant MVP / VIP Access"
         size="lg"
+        neutral
       >
         <div className="space-y-4">
           <p className="text-sm text-dark-400">
@@ -860,7 +863,7 @@ useEffect(() => {
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               placeholder="Search by name, email, or phone..."
-              className="w-full h-11 pl-10 pr-4 bg-[#1E1B24] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-all"
+              className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-all"
               autoFocus
             />
           </div>
@@ -878,10 +881,7 @@ useEffect(() => {
                 <p className="text-sm text-dark-500">Type at least 2 characters to search</p>
               </div>
             ) : searchResults.length === 0 ? (
-              <div className="text-center py-8">
-                <User className="w-8 h-8 text-dark-600 mx-auto mb-2" />
-                <p className="text-sm text-dark-500">No users found</p>
-              </div>
+              <EmptyState icon={User} title="No users found" className="py-6" />
             ) : (
               searchResults.map((u) => (
                 <div
@@ -974,6 +974,7 @@ useEffect(() => {
         onClose={() => setRevokeModalOpen(false)}
         title="Revoke VIP Access"
         size="md"
+        neutral
       >
         <div className="space-y-4">
           <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl">

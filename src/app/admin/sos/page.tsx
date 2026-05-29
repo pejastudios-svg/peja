@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { usePageCache } from "@/context/PageCacheContext";
 import { AvatarImage } from "@/components/ui/AvatarImage";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useRouter } from "next/navigation";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
+import EmptyState from "@/components/dashboard/EmptyState";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
 import { SOS_TAGS } from "@/lib/types";
@@ -60,6 +61,9 @@ export default function AdminSOSPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [sosContacts, setSosContacts] = useState<any[]>([]);
   const [sosContactsLoading, setSosContactsLoading] = useState(false);
+  // Only the latest fetch applies its results (filter change + realtime can
+  // overlap and resolve out of order).
+  const reqRef = useRef(0);
   useScrollFreeze(showModal);
 
   const fetchSOSUserContacts = async (userId: string) => {
@@ -124,6 +128,7 @@ useEffect(() => {
 }
 
   const fetchSOS = async () => {
+  const myReq = ++reqRef.current;
   setLoading(true);
   try {
     // Auto-resolve active SOS older than 24 hours
@@ -160,12 +165,13 @@ useEffect(() => {
     (usersData || []).forEach((u: any) => (usersMap[u.id] = u));
 
  const merged = rows.map((s) => ({ ...s, users: usersMap[s.user_id] }));
+    if (myReq !== reqRef.current) return;
     setSOSAlerts(merged);
     pageCache.set("admin:sos", merged);
   } catch (e) {
-    setSOSAlerts([]);
+    if (myReq === reqRef.current) setSOSAlerts([]);
   } finally {
-    setLoading(false);
+    if (myReq === reqRef.current) setLoading(false);
   }
 };
 
@@ -279,21 +285,20 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
 
   return (
     <HudShell
-      title="SOS Monitor"
       subtitle="Critical emergency alerts and response coordination"
       right={
-   <div className="flex gap-1 bg-[#1E1B24] p-1 rounded-xl border border-white/10 w-fit">
+   <div className="flex gap-1 mb-4 border-b border-white/10">
       {["all", "active", "resolved"].map((status) => (
                <button
                   key={status}
                   onClick={() => setStatusFilter(status)}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase transition-all ${
-                     statusFilter === status 
-                     ? "bg-primary-600 text-white shadow-lg shadow-primary-500/20" 
-                     : "text-dark-400 hover:text-white hover:bg-white/5"
+                  className={`relative px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                     statusFilter === status
+                     ? "text-primary-400 border-primary-500"
+                     : "text-dark-400 border-transparent hover:text-dark-200"
                   }`}
                >
-                  {status}
+                  {status.charAt(0).toUpperCase() + status.slice(1)}
                </button>
             ))}
          </div>
@@ -303,9 +308,8 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
       {activeCount > 0 && (
         <div className="mb-6 p-1 rounded-2xl bg-linear-to-r from-red-500/40 via-red-500/20 to-transparent">
             <div className="p-4 rounded-xl bg-[#1a0505] border border-red-500/30 flex items-center gap-4 relative overflow-hidden">
-                <div className="absolute inset-0 bg-red-500/5 animate-pulse" />
-                <div className="relative z-10 p-3 bg-red-500/20 rounded-full border border-red-500/30">
-                    <AlertTriangle className="w-6 h-6 text-red-400 animate-pulse" />
+                <div className="relative z-10 p-3 bg-white/5 rounded-full border border-white/10">
+                    <AlertTriangle className="w-6 h-6 text-dark-100" />
                 </div>
                 <div className="relative z-10">
                     <p className="text-xl font-bold text-red-100">{activeCount} Active Emergenc{activeCount > 1 ? 'ies' : 'y'}</p>
@@ -321,14 +325,11 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
             Array.from({ length: 6 }).map((_, i) => <AdminSOSRowSkeleton key={i} />)
          ) : sosAlerts.length === 0 ? (
             <HudPanel className="py-20">
-   <div className="flex flex-col items-center justify-center text-center">
-     <div className="w-20 h-20 rounded-full bg-green-500/5 border border-green-500/10 flex items-center justify-center mb-4">
-       <CheckCircle className="w-10 h-10 text-green-500/50" />
-     </div>
-     <p className="text-dark-300 font-medium">System Secure</p>
-     <p className="text-dark-500 text-sm mt-1">No SOS alerts matching your criteria.</p>
-   </div>
-</HudPanel>
+              <EmptyState
+                icon={AlertTriangle}
+                title={statusFilter === "all" ? "No SOS alerts" : `No ${statusFilter} SOS alerts`}
+              />
+            </HudPanel>
          ) : (
             sosAlerts.map((sos) => (
                <div
@@ -338,12 +339,12 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
                      sos.status === "active" ? "border-red-500/40 bg-red-500/5" : ""
                   }`}
                >
-                  {sos.status === 'active' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500 shadow-[0_0_10px_#ef4444]" />}
+                  {sos.status === 'active' && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500" />}
                   
                   <div className="flex items-start gap-4 pl-2">
                      <AvatarImage
                        src={sos.users?.avatar_url}
-                       wrapperClassName={`w-12 h-12 rounded-full border-2 overflow-hidden shrink-0 bg-dark-800 flex items-center justify-center ${sos.status === 'active' ? 'border-red-500/50 shadow-[0_0_10px_rgba(239,68,68,0.3)]' : 'border-white/10'}`}
+                       wrapperClassName={`w-12 h-12 rounded-full border-2 overflow-hidden shrink-0 bg-dark-800 flex items-center justify-center ${sos.status === 'active' ? 'border-red-500/50' : 'border-white/10'}`}
                        fallbackIconClassName="w-5 h-5"
                      />
                      
@@ -367,8 +368,8 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
                      </div>
 
                      <div className="self-center pl-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="w-10 h-10 rounded-xl bg-primary-600/20 text-primary-300 flex items-center justify-center border border-primary-500/20">
-                           <Eye className="w-5 h-5" />
+                        <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/10">
+                           <Eye className="w-5 h-5 text-dark-100" />
                         </div>
                      </div>
                   </div>
@@ -383,6 +384,7 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
         onClose={() => { setShowModal(false); setSelectedSOS(null); setSosContacts([]); }}
         title="Emergency Detail"
         size="lg"
+        neutral
       >
         {selectedSOS && (
           <div className="space-y-6">
@@ -390,7 +392,7 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
             <div className="flex items-center gap-4 p-5 bg-linear-to-br from-[#2a2735] to-[#1E1B24] rounded-2xl border border-white/10">
               <AvatarImage
                 src={selectedSOS.users?.avatar_url}
-                wrapperClassName="w-16 h-16 rounded-full overflow-hidden border-2 border-red-500/50 shadow-lg shrink-0 bg-dark-700 flex items-center justify-center"
+                wrapperClassName="w-16 h-16 rounded-full overflow-hidden border-2 border-red-500/50 shrink-0 bg-dark-700 flex items-center justify-center"
                 fallbackIconClassName="w-8 h-8"
               />
               <div className="flex-1">
@@ -518,7 +520,7 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
               <div className="p-4 rounded-xl bg-white/5 border border-white/10 flex flex-wrap gap-3 items-center justify-between">
                 <p className="text-sm font-bold text-dark-300">Resolution:</p>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="primary" size="sm" onClick={() => handleStatusChange(selectedSOS.id, "resolved")} disabled={actionLoading} className="bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20">
+                  <Button variant="primary" size="sm" onClick={() => handleStatusChange(selectedSOS.id, "resolved")} disabled={actionLoading} className="bg-green-600 hover:bg-green-500 border-none">
                     <CheckCircle className="w-4 h-4 mr-2" /> Mark Resolved
                   </Button>
                   <Button variant="secondary" size="sm" onClick={() => handleStatusChange(selectedSOS.id, "false_alarm")} disabled={actionLoading}>

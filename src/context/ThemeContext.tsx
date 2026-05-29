@@ -27,9 +27,13 @@ function readStored(): Theme {
   return "dark";
 }
 
-// Push the theme to the native Android/iOS status bar so the system chrome
-// (clock, signal, battery icons) stays readable when the user toggles light/dark.
-function syncNativeStatusBar(theme: Theme) {
+// Push the theme to the native layer:
+//  - status bar chrome (clock, signal, battery) stays readable on toggle
+//  - persist to native Preferences so the NEXT cold launch can paint the
+//    splash + WebView background in the user's theme before the web layer
+//    boots. Without this, light-mode users see the hard-coded dark splash
+//    flash on every open. MainActivity reads STORAGE_KEY from native storage.
+function syncNativeTheme(theme: Theme) {
   if (typeof window === "undefined") return;
   if ((window as any).Capacitor === undefined) return;
   import("@capacitor/status-bar")
@@ -37,6 +41,11 @@ function syncNativeStatusBar(theme: Theme) {
       const bg = theme === "light" ? "#ffffff" : "#0c0818";
       StatusBar.setBackgroundColor({ color: bg }).catch(() => {});
       StatusBar.setStyle({ style: theme === "light" ? Style.Light : Style.Dark }).catch(() => {});
+    })
+    .catch(() => {});
+  import("@capacitor/preferences")
+    .then(({ Preferences }) => {
+      Preferences.set({ key: STORAGE_KEY, value: theme }).catch(() => {});
     })
     .catch(() => {});
 }
@@ -48,7 +57,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const initial = readStored();
     setThemeState(initial);
     document.documentElement.setAttribute("data-theme", initial);
-    syncNativeStatusBar(initial);
+    syncNativeTheme(initial);
   }, []);
 
   const setTheme = (next: Theme) => {
@@ -57,7 +66,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {}
     document.documentElement.setAttribute("data-theme", next);
-    syncNativeStatusBar(next);
+    syncNativeTheme(next);
   };
 
   const toggle = () => setTheme(theme === "dark" ? "light" : "dark");

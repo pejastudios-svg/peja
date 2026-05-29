@@ -77,8 +77,8 @@
   /* Skeleton placeholder + shimmer colors. Default = dark mode (light
      tint on dark bg). Light-mode override at the bottom of this file
      swaps to a dark tint on light bg so skeletons aren't invisible. */
-  --skeleton-bg: rgba(255, 255, 255, 0.06);
-  --skeleton-shimmer: rgba(167, 139, 250, 0.14);
+  --skeleton-bg: rgba(255, 255, 255, 0.05);
+  --skeleton-shimmer: rgba(255, 255, 255, 0.1);
   --soft-surface-strong: rgba(255, 255, 255, 0.1);
 
   /* v2 chat surfaces. The receiver ("theirs") bubble, the composer
@@ -769,13 +769,84 @@ input, textarea, select {
    PEJA HUD / SECURITY DASHBOARD SYSTEM
    ========================================= */
 
+:root {
+  /* Admin background: pure black base with a subtle lighter-dark gradient.
+     One token, used by the layout root and every page surface so the whole
+     admin area matches. Neutral (no purple/red tint). */
+  --admin-bg:
+    radial-gradient(1200px 700px at 50% -5%, rgba(255, 255, 255, 0.05), transparent 55%),
+    linear-gradient(180deg, #141418 0%, #000000 65%);
+}
+
+.admin-bg {
+  background: var(--admin-bg);
+  /* The dark palette's dark-900 is a purple (#0a0612). Neutralize it within
+     the admin area so bg-dark-900 surfaces (security cards, modals,
+     thumbnails) read neutral dark instead of purple. */
+  --color-dark-900: #101013;
+  /* Floating map controls (Hotspots / Pins / data-points pill) use .glass-float.
+     Keep them opaque (readable over the map) but neutral dark, not purple. */
+  --glass-float-bg: rgba(20, 20, 24, 0.92);
+  --glass-border-float: rgba(255, 255, 255, 0.1);
+}
+
+/* Admin map zoom controls (maplibre +/-): neutral dark, not purple. Scoped to
+   admin so the main app map keeps its own styling. !important beats the
+   library's own !important rules. */
+.admin-bg .maplibregl-ctrl-group {
+  background: rgba(20, 20, 24, 0.92) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+.admin-bg .maplibregl-ctrl-group button:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+.admin-bg .maplibregl-ctrl-group button + button {
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Admin skeleton loaders are ALWAYS neutral, never the light theme's purple
+   shimmer. We override the .skeleton colors directly (specificity 0,2,0 /
+   0,2,1 beats the base .skeleton rule) instead of via custom properties, so
+   this holds regardless of the global theme or the layout's post-mount
+   force-dark. The base ::after still supplies the animation/position; we only
+   swap the gradient color. */
+.admin-bg .skeleton {
+  background: rgba(255, 255, 255, 0.08);
+}
+.admin-bg .skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.14),
+    transparent
+  );
+}
+
+/* The app's glass surfaces are purple-tinted (--glass-card-bg: #0a0612,
+   --glass-sm-bg: rgba(15,10,26,...)). Admin uses the same neutral hairline
+   surface as .hud-panel, so override the glass backgrounds within the admin
+   area only. This is what made the skeleton rows (wrapped in .glass-card) and
+   cards like guardians' "Active Force" read purple. Direct + theme-independent
+   so it wins over the var-based base rules. */
+.admin-bg .glass-card,
+.admin-bg .glass-sm,
+.admin-bg .glass,
+.admin-bg .glass-strong,
+.admin-bg .glass-input {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: none;
+}
+/* Neutral focus ring on admin inputs (base .glass-input:focus uses purple). */
+.admin-bg .glass-input:focus {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: none;
+}
+
 .peja-hud {
   position: relative;
   isolation: isolate;
-  background: radial-gradient(1000px 600px at 30% 10%, rgba(124,58,237,0.22), transparent 60%),
-              radial-gradient(800px 500px at 80% 20%, rgba(239,68,68,0.10), transparent 55%),
-              radial-gradient(900px 550px at 50% 90%, rgba(124,58,237,0.18), transparent 62%),
-              linear-gradient(135deg, #020617 0%, #0b1224 50%, #130a22 100%);
+  background: var(--admin-bg);
 }
 
 .peja-hud::after{
@@ -784,10 +855,10 @@ input, textarea, select {
   inset:0;
   z-index:-1;
   pointer-events:none;
-  opacity:0.18;
+  opacity:0.07;
   background-image:
-    linear-gradient(rgba(167,139,250,0.35) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(167,139,250,0.35) 1px, transparent 1px);
+    linear-gradient(rgba(255,255,255,0.4) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.4) 1px, transparent 1px);
   background-size: 44px 44px;
   mask-image: radial-gradient(circle at 50% 20%, black 0%, transparent 70%);
 }
@@ -803,22 +874,17 @@ input, textarea, select {
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
 }
 
-/* Panel */
+/* Panel — the shared admin card surface. A hair above black (not grey),
+   hairline border, no glow. One token, reused across every admin page. */
 .hud-panel{
-  background: rgba(18, 10, 30, 0.88);
-  border: 1px solid rgba(139, 92, 246, 0.22);
-  box-shadow:
-    0 18px 50px rgba(0,0,0,0.55),
-    0 0 0 1px rgba(255,255,255,0.04) inset;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 16px;
 }
 
-/* Panel hover */
+/* Panel hover — just a slightly brighter hairline, no shadow/glow. */
 .hud-panel:hover{
-  border-color: rgba(167, 139, 250, 0.36);
-  box-shadow:
-    0 20px 60px rgba(0,0,0,0.60),
-    0 0 30px rgba(124,58,237,0.20);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 /* Header strip inside panels */
@@ -2004,7 +2070,7 @@ body.modal-open {
 }
 
 html.capacitor-native .fixed.top-0:not(header),
-html.capacitor-native header.fixed {
+html.capacitor-native header.fixed:not([data-admin-nav]) {
   top: 0 !important;
 }
 html.capacitor-native header.absolute.top-0 {
@@ -2452,6 +2518,13 @@ html.capacitor-native {
    so page content doesn't sit flush against the pill. */
 .pt-app-header-pill {
   padding-top: calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 16px) + 72px);
+}
+
+/* Admin floating pill: pin it to the top, clearing the status-bar inset so it
+   is never tucked under system chrome on native. On a regular browser the
+   inset resolves to 0, so it sits 12px from the top of the viewport. */
+[data-admin-nav] {
+  top: calc(var(--app-top-inset, 0px) + 0.75rem);
 }
 
 /* Android-specific overrides */

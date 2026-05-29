@@ -1,17 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { Shield, ShieldCheck, ShieldOff, Copy, Check, Loader2, AlertTriangle, Smartphone, X } from "lucide-react";
+import { Shield, ShieldCheck, ShieldOff, Copy, Check, Loader2, AlertTriangle, Smartphone, X, ScanFace, ChevronRight, LogOut } from "lucide-react";
+import Link from "next/link";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
 export default function AdminSecurityPage() {
-  const { session } = useAuth();
+  const router = useRouter();
+  const { session, signOut } = useAuth();
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [backupCodesRemaining, setBackupCodesRemaining] = useState(0);
+  const [faceEnrollmentCount, setFaceEnrollmentCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // Setup flow
@@ -43,10 +47,15 @@ export default function AdminSecurityPage() {
 
   const checkStatus = async () => {
     try {
-      const res = await fetch("/api/admin/totp/status/", { headers });
-      const data = await res.json();
-      setTotpEnabled(data.enabled);
-      setBackupCodesRemaining(data.backupCodesRemaining || 0);
+      const [totpRes, faceRes] = await Promise.all([
+        fetch("/api/admin/totp/status/", { headers }),
+        fetch("/api/admin/face/status/", { headers }),
+      ]);
+      const totpData = await totpRes.json();
+      const faceData = await faceRes.json();
+      setTotpEnabled(totpData.enabled);
+      setBackupCodesRemaining(totpData.backupCodesRemaining || 0);
+      setFaceEnrollmentCount(faceData.enrollmentCount || 0);
     } catch {}
     setLoading(false);
   };
@@ -128,7 +137,7 @@ export default function AdminSecurityPage() {
 
   if (loading) {
     return (
-      <HudShell title="Security" subtitle="Two-factor authentication settings">
+      <HudShell subtitle="Two-factor authentication settings">
         <div className="flex justify-center py-12">
           <PejaSpinner className="w-8 h-8" />
         </div>
@@ -137,18 +146,18 @@ export default function AdminSecurityPage() {
   }
 
   return (
-    <HudShell title="Security" subtitle="Two-factor authentication settings">
+    <HudShell subtitle="Two-factor authentication settings">
       <div className="max-w-xl mx-auto space-y-6">
         {/* Status Card */}
         <HudPanel>
           <div className="flex items-center gap-4 p-2">
             <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${
-              totpEnabled ? "bg-green-500/15 border border-green-500/30" : "bg-dark-700 border border-white/10"
+              totpEnabled ? "bg-white/5 border border-white/10" : "bg-dark-700 border border-white/10"
             }`}>
               {totpEnabled ? (
-                <ShieldCheck className="w-7 h-7 text-green-400" />
+                <ShieldCheck className="w-7 h-7 text-dark-100" />
               ) : (
-                <Shield className="w-7 h-7 text-dark-400" />
+                <Shield className="w-7 h-7 text-dark-100" />
               )}
             </div>
             <div className="flex-1">
@@ -180,6 +189,28 @@ export default function AdminSecurityPage() {
             )}
           </div>
         </HudPanel>
+
+        {/* Face Recognition Card */}
+        <Link href="/admin/security/faces" className="block">
+          <HudPanel>
+            <div className="flex items-center gap-4 p-2">
+              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${
+                faceEnrollmentCount > 0 ? "bg-white/5 border border-white/10" : "bg-dark-700 border border-white/10"
+              }`}>
+                <ScanFace className="w-7 h-7 text-dark-100" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-white">Face Recognition</h3>
+                <p className="text-sm text-dark-400 mt-0.5">
+                  {faceEnrollmentCount > 0
+                    ? `Active. ${faceEnrollmentCount} face${faceEnrollmentCount === 1 ? "" : "s"} enrolled.`
+                    : "Not enabled. Issue an enrollment link to add a face."}
+                </p>
+              </div>
+              <ChevronRight className="w-5 h-5 text-dark-400" />
+            </div>
+          </HudPanel>
+        </Link>
 
         {/* Setup Error */}
         {setupError && setupPhase === "idle" && (
@@ -216,7 +247,7 @@ export default function AdminSecurityPage() {
                       onClick={() => copyToClipboard(secretKey, "secret")}
                       className="p-1.5 rounded-lg hover:bg-white/10 shrink-0"
                     >
-                      {copiedSecret ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4 text-dark-400" />}
+                      {copiedSecret ? <Check className="w-4 h-4 text-dark-200" /> : <Copy className="w-4 h-4 text-dark-400" />}
                     </button>
                   </div>
                 </div>
@@ -259,7 +290,7 @@ export default function AdminSecurityPage() {
 
               {setupError && (
                 <div className="flex items-center gap-2 text-sm text-red-400 justify-center">
-                  <AlertTriangle className="w-4 h-4" />
+                  <AlertTriangle className="w-4 h-4 text-dark-200" />
                   <p>{setupError}</p>
                 </div>
               )}
@@ -296,7 +327,7 @@ export default function AdminSecurityPage() {
 
               <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                  <AlertTriangle className="w-4 h-4 text-dark-200 mt-0.5 shrink-0" />
                   <p className="text-xs text-red-400">
                     These codes will NOT be shown again. Save them now or you may lose access to your admin dashboard.
                   </p>
@@ -315,7 +346,7 @@ export default function AdminSecurityPage() {
                 onClick={() => copyToClipboard(backupCodes.join("\n"), "backup")}
                 className="w-full py-2 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-white/10 flex items-center justify-center gap-2"
               >
-                {copiedBackup ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                {copiedBackup ? <Check className="w-4 h-4 text-dark-200" /> : <Copy className="w-4 h-4" />}
                 {copiedBackup ? "Copied!" : "Copy All Codes"}
               </button>
 
@@ -333,7 +364,7 @@ export default function AdminSecurityPage() {
         {setupPhase === "done" && (
           <HudPanel>
             <div className="p-6 text-center">
-              <ShieldCheck className="w-14 h-14 text-green-400 mx-auto mb-3" />
+              <ShieldCheck className="w-14 h-14 text-dark-200 mx-auto mb-3" />
               <h3 className="text-lg font-bold text-white">2FA Enabled!</h3>
               <p className="text-sm text-dark-400 mt-1">Your admin dashboard is now protected with two-factor authentication.</p>
             </div>
@@ -362,6 +393,18 @@ export default function AdminSecurityPage() {
             </div>
           </HudPanel>
         )}
+
+        {/* Session */}
+        <button
+          onClick={async () => {
+            await signOut();
+            router.push("/login");
+          }}
+          className="w-full flex items-center gap-3 px-5 py-4 rounded-2xl text-sm font-medium text-red-300 hover:text-red-200 bg-red-500/[0.06] hover:bg-red-500/[0.10] border border-red-500/15 transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Log out of admin</span>
+        </button>
       </div>
 
       {/* Disable Modal */}
@@ -380,7 +423,7 @@ export default function AdminSecurityPage() {
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                  <ShieldOff className="w-5 h-5 text-red-400" />
+                  <ShieldOff className="w-5 h-5 text-dark-200" />
                   Disable 2FA
                 </h3>
                 <button onClick={() => { setShowDisable(false); setDisableCode(""); setDisableError(""); }} className="p-1.5 rounded-lg hover:bg-white/10">
@@ -404,7 +447,7 @@ export default function AdminSecurityPage() {
 
               {disableError && (
                 <div className="flex items-center gap-2 text-sm text-red-400 mb-4 justify-center">
-                  <AlertTriangle className="w-4 h-4" />
+                  <AlertTriangle className="w-4 h-4 text-dark-200" />
                   <p>{disableError}</p>
                 </div>
               )}

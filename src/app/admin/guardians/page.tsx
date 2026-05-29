@@ -18,7 +18,7 @@ import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
-import GlowButton from "@/components/dashboard/GlowButton";
+import EmptyState from "@/components/dashboard/EmptyState";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 
 type Application = {
@@ -84,15 +84,15 @@ function statusPill(status: string) {
 function actionIcon(action: string) {
   switch (action) {
     case "approve":
-      return <ThumbsUp className="w-4 h-4 text-green-400" />;
+      return <ThumbsUp className="w-4 h-4 text-dark-200" />;
     case "remove":
-      return <Trash2 className="w-4 h-4 text-red-400" />;
+      return <Trash2 className="w-4 h-4 text-dark-200" />;
     case "blur":
-      return <Eye className="w-4 h-4 text-yellow-400" />;
+      return <Eye className="w-4 h-4 text-dark-200" />;
     case "escalate":
-      return <AlertTriangle className="w-4 h-4 text-orange-400" />;
+      return <AlertTriangle className="w-4 h-4 text-dark-200" />;
     default:
-      return <Activity className="w-4 h-4 text-primary-400" />;
+      return <Activity className="w-4 h-4 text-dark-200" />;
   }
 }
 
@@ -535,36 +535,35 @@ const confirmRevokeGuardian = async () => {
 
   return (
     <HudShell
-  title="Guardian Network"
   subtitle="Moderation force and application management"
   right={
-    <div className="flex bg-[#121016] p-1.5 rounded-xl border border-white/10 gap-1 mt-4 md:mt-0">
+    <div className="flex gap-1 mb-4 border-b border-white/10">
       <button
             onClick={() => setTab("applications")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`relative px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === "applications"
-                ? "bg-primary-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.3)]"
-                : "text-dark-400 hover:text-white hover:bg-white/5"
+                ? "text-primary-400 border-primary-500"
+                : "text-dark-400 border-transparent hover:text-dark-200"
             }`}
           >
             Applications
           </button>
           <button
             onClick={() => setTab("guardians")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`relative px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === "guardians"
-                ? "bg-primary-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.3)]"
-                : "text-dark-400 hover:text-white hover:bg-white/5"
+                ? "text-primary-400 border-primary-500"
+                : "text-dark-400 border-transparent hover:text-dark-200"
             }`}
           >
             Active Force
           </button>
           <button
             onClick={() => setTab("activity")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`relative px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === "activity"
-                ? "bg-primary-600 text-white shadow-[0_0_10px_rgba(124,58,237,0.3)]"
-                : "text-dark-400 hover:text-white hover:bg-white/5"
+                ? "text-primary-400 border-primary-500"
+                : "text-dark-400 border-transparent hover:text-dark-200"
             }`}
           >
             Activity
@@ -595,7 +594,11 @@ const confirmRevokeGuardian = async () => {
             {loading && items.length === 0 ? (
               Array.from({ length: 5 }).map((_, i) => <GuardianAppRowSkeleton key={i} />)
             ) : items.length === 0 ? (
-              <div className="text-center py-12 text-dark-500">No applications found.</div>
+              <EmptyState
+                icon={Shield}
+                title="No applications"
+                description={`No ${appFilter} applications right now.`}
+              />
             ) : (
               items.map((a) => (
                 <div
@@ -646,10 +649,21 @@ const confirmRevokeGuardian = async () => {
               value={guardianSearch}
               onChange={(e) => setGuardianSearch(e.target.value)}
               placeholder="Search active guardians..."
-              className="w-full h-11 pl-10 pr-4 bg-[#1E1B24] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 focus:shadow-[0_0_15px_rgba(124,58,237,0.15)] transition-all"
+              className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-all"
             />
           </div>
 
+          {filteredGuardians.length === 0 ? (
+            <EmptyState
+              icon={Shield}
+              title={guardianSearch.trim() ? "No guardians match" : "No guardians yet"}
+              description={
+                guardianSearch.trim()
+                  ? "Try a different search."
+                  : "Approved guardians will appear here."
+              }
+            />
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {filteredGuardians.map((g) => (
               <div key={g.id} className="glass-card flex items-center justify-between gap-4 group">
@@ -689,6 +703,7 @@ const confirmRevokeGuardian = async () => {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 
@@ -741,7 +756,15 @@ const confirmRevokeGuardian = async () => {
             {actionsLoading && actions.length === 0 ? (
               Array.from({ length: 6 }).map((_, i) => <ActivityRowSkeleton key={i} />)
             ) : actions.length === 0 ? (
-              <div className="text-center py-12 text-dark-500">No guardian actions found.</div>
+              <EmptyState
+                icon={Activity}
+                title="No activity yet"
+                description={
+                  actionFilter === "all"
+                    ? "Guardian moderation actions will appear here."
+                    : `No ${actionFilter} actions yet.`
+                }
+              />
             ) : (
               actions.map((a) => (
                 <div
@@ -799,7 +822,7 @@ const confirmRevokeGuardian = async () => {
       )}
 
       {/* Modals */}
-      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Application Details" size="xl">
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="Application Details" size="xl" neutral>
         {selected && (
           <div className="space-y-6">
             <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl border border-white/5">
@@ -829,7 +852,7 @@ const confirmRevokeGuardian = async () => {
             {selected.status === "pending" && (
               <div className="flex gap-3 pt-4 border-t border-white/10">
                 <Button
-                  className="flex-1 bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20 py-6"
+                  className="flex-1 bg-green-600 hover:bg-green-500 border-none py-6"
                   onClick={() => handleDecision("approve")}
                 >
                   <CheckCircle className="w-5 h-5 mr-2" /> Approve Application
@@ -850,7 +873,7 @@ const confirmRevokeGuardian = async () => {
         caption={selected?.user?.full_name || null}
       />
 
-      <Modal isOpen={revokeModalOpen} onClose={() => setRevokeModalOpen(false)} title="Revoke Access" size="md">
+      <Modal isOpen={revokeModalOpen} onClose={() => setRevokeModalOpen(false)} title="Revoke Access" size="md" neutral>
         <div className="space-y-4">
           <p className="text-dark-200">
             Are you sure you want to remove{" "}

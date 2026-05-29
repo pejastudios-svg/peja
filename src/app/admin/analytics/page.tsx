@@ -9,7 +9,8 @@ import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
-import GlowButton from "@/components/dashboard/GlowButton";
+import RefreshButton from "@/components/dashboard/RefreshButton";
+import EmptyState from "@/components/dashboard/EmptyState";
 import type { MapHelper } from "@/components/admin/AdminLiveMap";
 import { useRouter } from "next/navigation";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
@@ -39,7 +40,6 @@ import {
   Radio,
   Activity,
   Zap,
-  Map as MapIcon,
   Eye,
   UserPlus,
   ChevronDown,
@@ -186,26 +186,23 @@ function KpiTile({
   sub?: string;
 }) {
   const toneMap: Record<string, string> = {
-    purple: "border-primary-500/25 bg-primary-600/10 text-primary-200",
-    red: "border-red-500/25 bg-red-500/10 text-red-200",
-    orange: "border-orange-500/25 bg-orange-500/10 text-orange-200",
-    green: "border-green-500/25 bg-green-500/10 text-green-200",
-    blue: "border-blue-500/25 bg-blue-500/10 text-blue-200",
+    purple: "border-white/10 bg-white/5 text-dark-100",
+    red: "border-white/10 bg-white/5 text-dark-100",
+    orange: "border-white/10 bg-white/5 text-dark-100",
+    green: "border-white/10 bg-white/5 text-dark-100",
+    blue: "border-white/10 bg-white/5 text-dark-100",
   };
   return (
     <div
-      className={`hud-panel p-4 relative overflow-hidden transition-all duration-300 ${
+      className={`hud-panel p-4 transition-all duration-300 ${
         flash ? "ring-2 ring-primary-400/60 scale-[1.02]" : ""
       }`}
     >
-      <div className="pointer-events-none absolute inset-0 opacity-30">
-        <div className="absolute -top-12 -right-12 w-32 h-32 rounded-full bg-primary-500/15 blur-3xl" />
-      </div>
-      <div className="flex items-center gap-3 relative z-10">
+      <div className="flex items-center gap-3">
         <div
           className={`p-3 rounded-xl border ${
             toneMap[tone] || toneMap.purple
-          } shadow-[0_0_12px_rgba(124,58,237,0.15)]`}
+          }`}
         >
           <Icon className="w-5 h-5" />
         </div>
@@ -354,7 +351,6 @@ peakHours: "No data yet",
   /* ── helper dispatch ── */
   const [mapHelpers, setMapHelpers] = useState<MapHelper[]>([]);
   const [dispatches, setDispatches] = useState<SOSDispatch[]>([]);
-  const helperPollRef = useRef<NodeJS.Timeout | null>(null);
 
   const router = useRouter();
 
@@ -576,14 +572,14 @@ peakHours: "No data yet",
       const fromISO = fromDate.toISOString();
       const toISO = toDate.toISOString();
 
-      // Fetch all data for the range
+      // Fetch all data for the range (detailed columns for a full report).
       const [postsRes, sosRes, helpersRes, flagsRes, newUsersRes] = await Promise.all([
         supabase.from("posts")
-          .select("id, user_id, category, comment, address, status, created_at")
+          .select("id, user_id, category, comment, address, status, confirmations, views, comment_count, report_count, is_sensitive, created_at")
           .gte("created_at", fromISO).lte("created_at", toISO)
           .order("created_at", { ascending: false }).limit(5000),
         supabase.from("sos_alerts")
-          .select("id, user_id, status, tag, address, created_at")
+          .select("id, user_id, status, tag, address, created_at, resolved_at")
           .gte("created_at", fromISO).lte("created_at", toISO)
           .order("created_at", { ascending: false }).limit(2000),
         supabase.from("sos_helpers")
@@ -591,16 +587,16 @@ peakHours: "No data yet",
           .gte("created_at", fromISO).lte("created_at", toISO)
           .order("created_at", { ascending: false }).limit(2000),
         supabase.from("flagged_content")
-          .select("id, reporter_id, content_type, reason, status, created_at")
+          .select("id, reporter_id, content_type, reason, status, priority, created_at, reviewed_at")
           .gte("created_at", fromISO).lte("created_at", toISO)
           .order("created_at", { ascending: false }).limit(2000),
         supabase.from("users")
-          .select("id, full_name, created_at")
+          .select("id, full_name, email, status, created_at")
           .gte("created_at", fromISO).lte("created_at", toISO)
           .order("created_at", { ascending: false }).limit(1000),
       ]);
 
-      // Resolve user names
+      // Resolve user names + emails
       const userIds = new Set<string>();
       (postsRes.data || []).forEach((p: any) => userIds.add(p.user_id));
       (sosRes.data || []).forEach((s: any) => userIds.add(s.user_id));
@@ -608,77 +604,114 @@ peakHours: "No data yet",
       (flagsRes.data || []).forEach((f: any) => userIds.add(f.reporter_id));
 
       const { data: allUsers } = userIds.size > 0
-        ? await supabase.from("users").select("id, full_name").in("id", Array.from(userIds))
+        ? await supabase.from("users").select("id, full_name, email").in("id", Array.from(userIds))
         : { data: [] };
 
-      const uMap: Record<string, string> = {};
-      (allUsers || []).forEach((u: any) => { uMap[u.id] = u.full_name || "Unknown"; });
+      const uMap: Record<string, { name: string; email: string }> = {};
+      (allUsers || []).forEach((u: any) => { uMap[u.id] = { name: u.full_name || "Unknown", email: u.email || "" }; });
 
-      // Build table rows
-      const rows: { time: string; type: string; user: string; detail: string; extra: string }[] = [];
+      // Helpers for safe HTML, timestamps, status badges, and deep links.
+      const origin = typeof window !== "undefined" ? window.location.origin : "";
+      const esc = (v: any) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const fmt = (t: any) => (t ? new Date(t).toLocaleString() : "-");
+      const statusColor = (s: any) => {
+        const k = String(s || "").toLowerCase();
+        if (["live", "active", "approved"].includes(k)) return "#16a34a";
+        if (["resolved", "actioned", "reviewed"].includes(k)) return "#2563eb";
+        if (["archived", "dismissed", "cancelled", "expired", "closed"].includes(k)) return "#6b7280";
+        if (["deleted", "banned", "escalated", "suspended"].includes(k)) return "#dc2626";
+        if (["pending"].includes(k)) return "#d97706";
+        return "#6b7280";
+      };
+      const badge = (s: any, color?: string) => {
+        const c = color || statusColor(s);
+        return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:${c}1a;color:${c};border:1px solid ${c}40">${esc(s || "unknown")}</span>`;
+      };
 
-      (postsRes.data || []).forEach((p: any) => {
+      const posts = (postsRes.data || []) as any[];
+      const sos = (sosRes.data || []) as any[];
+      const helpers = (helpersRes.data || []) as any[];
+      const flags = (flagsRes.data || []) as any[];
+      const newUsers = (newUsersRes.data || []) as any[];
+
+      // ── Incident reports (detailed + one-click link to the admin record) ──
+      const incidentRows = posts.map((p) => {
         const cat = CATEGORIES.find((c) => c.id === p.category);
-        rows.push({
-          time: new Date(p.created_at).toLocaleString(),
-          type: "Incident Report",
-          user: uMap[p.user_id] || "Unknown",
-          detail: cat?.name || p.category,
-          extra: `${p.address || "No location"} • ${p.status}`,
-        });
-      });
+        const u = uMap[p.user_id];
+        const link = `${origin}/post/${p.id}`;
+        return `<tr>
+          <td class="c">${fmt(p.created_at)}</td>
+          <td class="c">${esc(cat?.name || p.category || "-")}</td>
+          <td class="c">${badge(p.status)}${p.is_sensitive ? " " + badge("sensitive", "#dc2626") : ""}</td>
+          <td class="c">${esc(u?.name || "Unknown")}${u?.email ? `<div class="sub">${esc(u.email)}</div>` : ""}</td>
+          <td class="c">${esc(p.address || "No location")}</td>
+          <td class="c num">${p.views ?? 0} views · ${p.confirmations ?? 0} confirms · ${p.comment_count ?? 0} comments · ${p.report_count ?? 0} reports</td>
+          <td class="c">${esc((p.comment || "").slice(0, 180)) || "-"}</td>
+          <td class="c">${origin ? `<a href="${link}" target="_blank" rel="noopener">Open &rarr;</a>` : esc(p.id)}</td>
+        </tr>`;
+      }).join("");
 
-      (sosRes.data || []).forEach((s: any) => {
+      // ── SOS alerts ──
+      const sosRows = sos.map((s) => {
+        const u = uMap[s.user_id];
         const tagInfo = s.tag ? SOS_TAGS.find((t) => t.id === s.tag) : null;
-        rows.push({
-          time: new Date(s.created_at).toLocaleString(),
-          type: `SOS (${s.status})`,
-          user: uMap[s.user_id] || "Unknown",
-          detail: tagInfo ? `${tagInfo.icon} ${tagInfo.label}` : "Emergency",
-          extra: s.address || "No location",
-        });
-      });
+        return `<tr>
+          <td class="c">${fmt(s.created_at)}</td>
+          <td class="c">${badge(s.status)}</td>
+          <td class="c">${esc(tagInfo ? tagInfo.label : s.tag || "Emergency")}</td>
+          <td class="c">${esc(u?.name || "Unknown")}${u?.email ? `<div class="sub">${esc(u.email)}</div>` : ""}</td>
+          <td class="c">${esc(s.address || "No location")}</td>
+          <td class="c">${fmt(s.resolved_at)}</td>
+        </tr>`;
+      }).join("");
 
-      (helpersRes.data || []).forEach((h: any) => {
-        rows.push({
-          time: new Date(h.created_at).toLocaleString(),
-          type: h.milestone === "arrived" ? "Helper Arrived" : "Helper Dispatched",
-          user: uMap[h.user_id] || "Unknown",
-          detail: h.milestone === "arrived" ? "Arrived at SOS" : `ETA ${h.eta || "?"} min`,
-          extra: `SOS: ${h.sos_id?.slice(0, 8) || "-"}`,
-        });
-      });
+      // ── Content flags ──
+      const flagRows = flags.map((f) => {
+        const u = uMap[f.reporter_id];
+        return `<tr>
+          <td class="c">${fmt(f.created_at)}</td>
+          <td class="c">${badge(f.status)}</td>
+          <td class="c">${esc(f.priority || "-")}</td>
+          <td class="c">${esc(f.content_type || "-")}</td>
+          <td class="c">${esc(f.reason || "No reason")}</td>
+          <td class="c">${esc(u?.name || "Unknown")}</td>
+          <td class="c">${f.reviewed_at ? fmt(f.reviewed_at) : "Not reviewed"}</td>
+        </tr>`;
+      }).join("");
 
-      (flagsRes.data || []).forEach((f: any) => {
-        rows.push({
-          time: new Date(f.created_at).toLocaleString(),
-          type: "Content Flagged",
-          user: uMap[f.reporter_id] || "Unknown",
-          detail: f.reason || "No reason",
-          extra: `${f.content_type} • ${f.status}`,
-        });
-      });
+      // ── Helper dispatches ──
+      const helperRows = helpers.map((h) => {
+        const u = uMap[h.user_id];
+        return `<tr>
+          <td class="c">${fmt(h.created_at)}</td>
+          <td class="c">${esc(h.milestone || "dispatched")}</td>
+          <td class="c">${esc(u?.name || "Unknown")}</td>
+          <td class="c">${h.eta != null ? esc(h.eta) + " min" : "-"}</td>
+          <td class="c">${esc(String(h.sos_id || "-").slice(0, 8))}</td>
+        </tr>`;
+      }).join("");
 
-      (newUsersRes.data || []).forEach((u: any) => {
-        rows.push({
-          time: new Date(u.created_at).toLocaleString(),
-          type: "New User",
-          user: u.full_name || "Anonymous",
-          detail: "Account created",
-          extra: "",
-        });
-      });
+      // ── New users ──
+      const userRows = newUsers.map((u) => `<tr>
+          <td class="c">${fmt(u.created_at)}</td>
+          <td class="c">${esc(u.full_name || "Anonymous")}</td>
+          <td class="c">${esc(u.email || "-")}</td>
+          <td class="c">${badge(u.status || "active")}</td>
+        </tr>`).join("");
 
-      rows.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+      // Status breakdowns (so "archived / resolved / dismissed / etc." is explicit).
+      const countBy = (arr: any[], key: string) =>
+        arr.reduce((m: Record<string, number>, x) => { const k = String(x[key] || "unknown"); m[k] = (m[k] || 0) + 1; return m; }, {});
+      const breakdown = (obj: Record<string, number>) =>
+        Object.entries(obj).map(([k, v]) => `${esc(k)}: ${v}`).join(" · ") || "none";
 
-      // Summary counts
       const summary = {
-        incidents: (postsRes.data || []).length,
-        sos: (sosRes.data || []).length,
-        helpers: (helpersRes.data || []).length,
-        flags: (flagsRes.data || []).length,
-        newUsers: (newUsersRes.data || []).length,
-        total: rows.length,
+        incidents: posts.length,
+        sos: sos.length,
+        helpers: helpers.length,
+        flags: flags.length,
+        newUsers: newUsers.length,
+        total: posts.length + sos.length + helpers.length + flags.length + newUsers.length,
       };
 
       const rangeLabel = reportRange === "custom"
@@ -688,60 +721,68 @@ peakHours: "No data yet",
         : reportRange === "month" ? "Last 30 Days"
         : "All Time";
 
-      // Generate HTML
-      const tableRows = rows.map((r) => `
-        <tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;white-space:nowrap">${r.time}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;font-weight:600">${r.type}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px">${r.user}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px">${r.detail}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#6b7280">${r.extra}</td>
-        </tr>
-      `).join("");
+      const section = (title: string, headers: string[], bodyRows: string, empty: string) =>
+        `<h2 class="sec">${title}</h2>` +
+        (bodyRows
+          ? `<table><thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${bodyRows}</tbody></table>`
+          : `<p class="empty">${empty}</p>`);
 
-      const html = `<!DOCTYPE html><html><head><title>PEJA Report - ${rangeLabel}</title>
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>PEJA Report - ${esc(rangeLabel)}</title>
         <style>
           * { margin:0; padding:0; box-sizing:border-box; }
           body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; color:#111827; padding:40px; }
-          @media print { body { padding:20px; } .no-print { display:none; } }
-          .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:32px; padding-bottom:16px; border-bottom:2px solid #111827; }
+          @media print { body { padding:20px; } .no-print { display:none; } tr { page-break-inside:avoid; } }
+          .header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:24px; padding-bottom:16px; border-bottom:2px solid #111827; }
           .header h1 { font-size:24px; font-weight:800; letter-spacing:-0.5px; }
           .header p { font-size:13px; color:#6b7280; }
-          .summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:32px; }
-          .summary-card { padding:16px; border:1px solid #e5e7eb; border-radius:8px; text-align:center; }
-          .summary-card .num { font-size:28px; font-weight:800; color:#111827; }
-          .summary-card .label { font-size:11px; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; margin-top:4px; }
-          table { width:100%; border-collapse:collapse; font-size:12px; }
-          th { padding:10px 12px; text-align:left; background:#f9fafb; border-bottom:2px solid #e5e7eb; font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; }
-          tr:hover { background:#f9fafb; }
+          .summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:12px; margin-bottom:16px; }
+          .summary-card { padding:14px; border:1px solid #e5e7eb; border-radius:8px; text-align:center; }
+          .summary-card .num { font-size:26px; font-weight:800; color:#111827; }
+          .summary-card .label { font-size:10px; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; margin-top:4px; }
+          .breakdowns { font-size:11px; color:#6b7280; margin-bottom:8px; line-height:1.9; }
+          .breakdowns b { color:#374151; }
+          h2.sec { font-size:15px; font-weight:700; margin:28px 0 10px; padding-bottom:6px; border-bottom:1px solid #e5e7eb; }
+          table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:8px; }
+          th { padding:8px 10px; text-align:left; background:#f9fafb; border-bottom:2px solid #e5e7eb; font-size:10px; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; }
+          td.c { padding:8px 10px; border-bottom:1px solid #eef0f2; font-size:12px; vertical-align:top; }
+          td.num { color:#6b7280; white-space:nowrap; }
+          td .sub { font-size:10px; color:#9ca3af; margin-top:2px; }
+          a { color:#7c3aed; text-decoration:none; font-weight:600; }
+          a:hover { text-decoration:underline; }
+          .empty { font-size:12px; color:#9ca3af; padding:8px 0 16px; }
           .footer { margin-top:32px; padding-top:16px; border-top:1px solid #e5e7eb; font-size:11px; color:#9ca3af; text-align:center; }
-          .print-btn { position:fixed; bottom:24px; right:24px; padding:12px 24px; background:#7c3aed; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; box-shadow:0 4px 12px rgba(124,58,237,0.3); }
-          .print-btn:hover { background:#6d28d9; }
+          .print-btn { position:fixed; bottom:24px; right:24px; padding:12px 24px; background:#111827; color:#fff; border:none; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; }
         </style>
       </head><body>
         <button class="print-btn no-print" onclick="window.print()">Save as PDF</button>
         <div class="header">
           <div>
             <h1>PEJA Analytics Report</h1>
-            <p>Period: ${rangeLabel}</p>
+            <p>Period: ${esc(rangeLabel)}</p>
           </div>
           <div style="text-align:right">
-            <p style="font-size:11px;color:#9ca3af">Generated ${new Date().toLocaleString()}</p>
-            <p style="font-size:11px;color:#9ca3af">${summary.total} total events</p>
+            <p style="font-size:11px;color:#9ca3af">Generated ${esc(new Date().toLocaleString())}</p>
+            <p style="font-size:11px;color:#9ca3af">${summary.total} total records</p>
           </div>
         </div>
         <div class="summary">
-          <div class="summary-card"><div class="num">${summary.incidents}</div><div class="label">Incident Reports</div></div>
+          <div class="summary-card"><div class="num">${summary.incidents}</div><div class="label">Incidents</div></div>
           <div class="summary-card"><div class="num">${summary.sos}</div><div class="label">SOS Alerts</div></div>
-          <div class="summary-card"><div class="num">${summary.helpers}</div><div class="label">Helpers Dispatched</div></div>
-          <div class="summary-card"><div class="num">${summary.flags}</div><div class="label">Content Flagged</div></div>
+          <div class="summary-card"><div class="num">${summary.helpers}</div><div class="label">Helpers</div></div>
+          <div class="summary-card"><div class="num">${summary.flags}</div><div class="label">Flags</div></div>
           <div class="summary-card"><div class="num">${summary.newUsers}</div><div class="label">New Users</div></div>
         </div>
-        <table>
-          <thead><tr><th>Time</th><th>Event Type</th><th>User</th><th>Details</th><th>Extra</th></tr></thead>
-          <tbody>${tableRows}</tbody>
-        </table>
-        <div class="footer">PEJA (Your Brother's Keeper) - Confidential Report</div>
+        <div class="breakdowns">
+          <div><b>Incident status:</b> ${breakdown(countBy(posts, "status"))}</div>
+          <div><b>SOS status:</b> ${breakdown(countBy(sos, "status"))}</div>
+          <div><b>Flag status:</b> ${breakdown(countBy(flags, "status"))}</div>
+        </div>
+        ${section("Incident Reports", ["Time", "Category", "Status", "Reporter", "Location", "Engagement", "Comment", "Link"], incidentRows, "No incidents in this period.")}
+        ${section("SOS Alerts", ["Time", "Status", "Type", "User", "Location", "Resolved"], sosRows, "No SOS alerts in this period.")}
+        ${section("Content Flags", ["Time", "Status", "Priority", "Type", "Reason", "Reporter", "Reviewed"], flagRows, "No flags in this period.")}
+        ${section("Helper Dispatches", ["Time", "Milestone", "Helper", "ETA", "SOS"], helperRows, "No helper activity in this period.")}
+        ${section("New Users", ["Time", "Name", "Email", "Status"], userRows, "No new users in this period.")}
+        <div class="footer">PEJA (Your Brother's Keeper) - Confidential Report - Status reflects the current record state at generation time.</div>
       </body></html>`;
 
       // Download as a .html file. Safari blocks window.open() that follows
@@ -846,12 +887,11 @@ const res = await fetch("/api/sos-helpers", {
     return () => window.removeEventListener("peja-expand-admin-map", handleExpand);
   }, []);
 
+  // Initial helper load. Live updates now come from the realtime channels
+  // below (sos_alerts lifecycle + type=sos_alert helper-progress
+  // notifications), so there's no polling interval here anymore.
   useEffect(() => {
     fetchHelpers();
-    helperPollRef.current = setInterval(fetchHelpers, 15000);
-    return () => {
-      if (helperPollRef.current) clearInterval(helperPollRef.current);
-    };
   }, [fetchHelpers]);
 
   /* ══════════════════════════════════════════════
@@ -1391,7 +1431,25 @@ const res = await fetch("/api/sos-helpers", {
       )
       .subscribe();
 
-    channelsRef.current = [postsCh, sosCh, flagsCh, usersCh];
+    // Helper-progress updates (ETA / milestone / a new helper joining an
+    // active SOS) arrive as type=sos_alert notifications. sosCh above already
+    // covers SOS lifecycle; this covers live helper movement, replacing the
+    // old 15s poll. Debounced so a burst of movements is one refetch.
+    let helperDebounce: ReturnType<typeof setTimeout> | null = null;
+    const pingHelpers = () => {
+      if (helperDebounce) clearTimeout(helperDebounce);
+      helperDebounce = setTimeout(fetchHelpers, 400);
+    };
+    const helpersCh = supabase
+      .channel("ax-rt-sos-helpers")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notifications", filter: "type=eq.sos_alert" },
+        pingHelpers
+      )
+      .subscribe();
+
+    channelsRef.current = [postsCh, sosCh, flagsCh, usersCh, helpersCh];
 
     shiftRef.current = setInterval(() => {
       setStreamData((prev) => [
@@ -1404,6 +1462,7 @@ const res = await fetch("/api/sos-helpers", {
       channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
       channelsRef.current = [];
       if (shiftRef.current) clearInterval(shiftRef.current);
+      if (helperDebounce) clearTimeout(helperDebounce);
     };
   }, [loading, flash, addLiveEvent, fetchHelpers]);
 
@@ -1413,7 +1472,7 @@ const res = await fetch("/api/sos-helpers", {
 
   if (loading) {
     return (
-      <div className="p-6">
+      <div className="px-6 pb-6 pt-32">
         <div className="mb-6">
           <Skeleton className="h-8 w-52 mb-2" />
           <Skeleton className="h-4 w-72" />
@@ -1451,21 +1510,9 @@ const res = await fetch("/api/sos-helpers", {
   return (
     <>
     <HudShell
-      title="System Analytics"
       subtitle="Real-time platform intelligence and live monitoring"
       right={
-        <div className="flex items-center gap-2">
-          <div className="pill pill-green flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-            Live
-          </div>
-          <GlowButton
-            onClick={() => window.location.reload()}
-            className="h-9 text-xs"
-          >
-            <PejaSpinner className="w-3 h-3 mr-1.5 inline" /> Refresh
-          </GlowButton>
-        </div>
+        <RefreshButton onClick={() => window.location.reload()} loading={loading} />
       }
     >
       {/* ═══════════ LIVE KPI STRIP ═══════════ */}
@@ -1517,12 +1564,6 @@ const res = await fetch("/api/sos-helpers", {
           className="relative overflow-hidden"
           title="Real-Time Activity"
           subtitle="Live event stream - last 60 minutes"
-          right={
-            <div className="pill pill-green flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-              Streaming
-            </div>
-          }
         >
           <div className="h-[280px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -1562,7 +1603,7 @@ const res = await fetch("/api/sos-helpers", {
                 />
                 <Tooltip
                   contentStyle={{
-                    background: "#13111C",
+                    background: "#18181b",
                     border: "1px solid rgba(255,255,255,0.1)",
                     borderRadius: 12,
                     boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
@@ -1644,12 +1685,6 @@ const res = await fetch("/api/sos-helpers", {
           className="relative overflow-hidden"
           title="Live Incident Map"
           subtitle="Incidents, SOS, helpers & hotspot heatmap"
-          right={
-            <div className="pill pill-red flex items-center gap-1.5">
-              <MapIcon className="w-3 h-3" />
-              Live
-            </div>
-          }
         >
           <div className="h-[320px] -mx-4 -mb-4 rounded-b-2xl overflow-hidden">
             <AdminLiveMap helpers={mapHelpers} />
@@ -1666,25 +1701,15 @@ const res = await fetch("/api/sos-helpers", {
           subtitle={`${dispatches.length} active SOS • ${totalHelpers} helper${
             totalHelpers !== 1 ? "s" : ""
           } dispatched`}
-          right={
-            <div className="flex items-center gap-2">
-        
-              <div className="pill pill-green flex items-center gap-1.5">
-                <Navigation className="w-3 h-3" />
-                Track
-              </div>
-            </div>
-          }
         >
           <div className="max-h-[340px] overflow-y-auto scrollbar-hide space-y-3">
             {dispatches.length === 0 ? (
-              <div className="text-center py-8 text-dark-500">
-                <Shield className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                <p className="text-sm">No active SOS alerts</p>
-                <p className="text-xs mt-1">
-                  Helper dispatch info will appear here when SOS is active
-                </p>
-              </div>
+              <EmptyState
+                icon={Shield}
+                title="No active SOS alerts"
+                description="Helper dispatch info will appear here when SOS is active"
+                className="py-8"
+              />
             ) : (
               dispatches.map((d) => {
                 const tagInfo = d.tag
@@ -1802,12 +1827,6 @@ const res = await fetch("/api/sos-helpers", {
           className="relative overflow-hidden"
           title="Live Activity"
           subtitle="Events as they happen"
-          right={
-            <div className="pill pill-green flex items-center gap-1.5">
-              <Activity className="w-3 h-3" />
-              Feed
-            </div>
-          }
         >
           <div className="h-[340px] overflow-y-auto scrollbar-hide space-y-2">
             {liveEvents.length === 0 ? (
@@ -1832,7 +1851,6 @@ const res = await fetch("/api/sos-helpers", {
         className="relative overflow-hidden mb-6"
         title="Threat Activity (7 Days)"
         subtitle="Posts vs SOS vs Flags - trend pressure"
-        right={<div className="pill pill-purple">Signal</div>}
       >
         <div className="h-[220px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -1857,7 +1875,7 @@ const res = await fetch("/api/sos-helpers", {
               />
               <Tooltip
                 contentStyle={{
-                  background: "#13111C",
+                  background: "#18181b",
                   border: "1px solid rgba(255,255,255,0.1)",
                   borderRadius: 12,
                 }}
@@ -1942,8 +1960,8 @@ const res = await fetch("/api/sos-helpers", {
         >
           <div className="h-[220px]">
             {categoryData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-dark-500 text-sm">
-                No posts yet
+              <div className="h-full flex items-center justify-center">
+                <EmptyState icon={FileText} title="No posts yet" className="py-0" />
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -1970,7 +1988,7 @@ const res = await fetch("/api/sos-helpers", {
                   />
 <Tooltip
                     contentStyle={{
-                      background: "#1a111c",
+                      background: "#18181b",
                       border: "1px solid rgba(255,255,255,0.1)",
                       borderRadius: 12,
                     }}
@@ -1997,12 +2015,6 @@ const res = await fetch("/api/sos-helpers", {
           className="relative overflow-hidden"
           title="Export Reports"
           subtitle="Download platform data as PDF"
-          right={
-            <div className="pill pill-purple flex items-center gap-1.5">
-              <Download className="w-3 h-3" />
-              PDF
-            </div>
-          }
         >
           <div className="space-y-4">
             {/* Range selector */}
@@ -2068,17 +2080,13 @@ const res = await fetch("/api/sos-helpers", {
             <button
               onClick={generateReport}
               disabled={reportLoading}
-              className="w-full py-3 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-              style={{
-                background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                boxShadow: "0 4px 15px rgba(124,58,237,0.3)",
-              }}
+              className="inline-flex items-center gap-1.5 h-9 px-3 rounded-full border border-white/[0.07] text-dark-300 text-xs font-medium hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
             >
               {reportLoading ? (
                 <PejaSpinner className="w-4 h-4" />
               ) : (
                 <>
-                  <Download className="w-4 h-4" />
+                  <Download className="w-3.5 h-3.5" />
                   Generate & Download PDF
                 </>
               )}
@@ -2171,21 +2179,18 @@ const res = await fetch("/api/sos-helpers", {
 
             if (filtered.length === 0) {
               return (
-                <div className="text-center py-12 text-dark-500">
-                  <Activity className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No events found</p>
-                </div>
+                <EmptyState icon={Activity} title="No events found" className="py-10" />
               );
             }
 
             const typeConfig: Record<string, { icon: any; color: string; bg: string }> = {
-              incident: { icon: Zap, color: "text-purple-400", bg: "bg-purple-500/15 border-purple-500/25" },
-              sos: { icon: AlertTriangle, color: "text-red-400", bg: "bg-red-500/15 border-red-500/25" },
-              sos_resolved: { icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/15 border-green-500/25" },
-              helper_dispatched: { icon: Navigation, color: "text-blue-400", bg: "bg-blue-500/15 border-blue-500/25" },
-              helper_arrived: { icon: CheckCircle2, color: "text-green-400", bg: "bg-green-500/15 border-green-500/25" },
-              flag: { icon: Flag, color: "text-orange-400", bg: "bg-orange-500/15 border-orange-500/25" },
-              new_user: { icon: UserPlus, color: "text-emerald-400", bg: "bg-emerald-500/15 border-emerald-500/25" },
+              incident: { icon: Zap, color: "text-purple-400", bg: "bg-white/5 border-white/10" },
+              sos: { icon: AlertTriangle, color: "text-red-400", bg: "bg-white/5 border-white/10" },
+              sos_resolved: { icon: CheckCircle2, color: "text-green-400", bg: "bg-white/5 border-white/10" },
+              helper_dispatched: { icon: Navigation, color: "text-blue-400", bg: "bg-white/5 border-white/10" },
+              helper_arrived: { icon: CheckCircle2, color: "text-green-400", bg: "bg-white/5 border-white/10" },
+              flag: { icon: Flag, color: "text-orange-400", bg: "bg-white/5 border-white/10" },
+              new_user: { icon: UserPlus, color: "text-emerald-400", bg: "bg-white/5 border-white/10" },
             };
 
             return (
@@ -2202,7 +2207,7 @@ const res = await fetch("/api/sos-helpers", {
                     >
                       {/* Type icon */}
                       <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${config.bg}`}>
-                        <Icon className={`w-3.5 h-3.5 ${config.color}`} />
+                        <Icon className="w-3.5 h-3.5 text-dark-100" />
                       </div>
 
                       {/* Content */}
@@ -2395,7 +2400,6 @@ const res = await fetch("/api/sos-helpers", {
         className="relative overflow-hidden mt-4"
         title="Platform Health & Engagement"
         subtitle="User adoption, content outcomes & feature usage"
-        right={<div className="pill pill-green">Health</div>}
       >
         <div className="space-y-6">
           {/* ── Engagement Funnel ── */}
@@ -2460,7 +2464,6 @@ const res = await fetch("/api/sos-helpers", {
                         width: `${Math.max(item.pct, item.value > 0 ? 3 : 0)}%`,
                         background: item.color,
                         opacity: 0.75,
-                        boxShadow: `0 0 8px ${item.color}40`,
                       }}
                     />
                   </div>
@@ -2585,12 +2588,12 @@ const res = await fetch("/api/sos-helpers", {
        <div className="absolute top-14 left-3 z-10">
           <button
             onClick={() => setMapFullscreen(false)}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 text-white text-sm font-medium hover:bg-white/15 transition-colors"
+            className="p-2 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 text-white hover:bg-black/80 transition-colors"
+            title="Minimize map"
           >
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" />
             </svg>
-            Minimize
           </button>
           </div>
         <div className="w-full h-full">

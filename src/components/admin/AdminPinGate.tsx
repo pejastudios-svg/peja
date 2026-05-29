@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Lock, Eye, EyeOff, ShieldAlert, AlertTriangle, Smartphone, KeyRound } from "lucide-react";
+import { Lock, Eye, EyeOff, ShieldAlert, AlertTriangle, Smartphone, KeyRound, Camera, CameraOff, ScanFace } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import FaceLivenessCapture, { type FaceCaptureResult } from "./FaceLivenessCapture";
 
 const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes of inactivity
 
 export default function AdminPinGate({ children }: { children: React.ReactNode }) {
   const { session, user } = useAuth();
-  const [phase, setPhase] = useState<"checking" | "pin" | "totp" | "unlocked">("checking");
+  const [phase, setPhase] = useState<"checking" | "pin" | "face" | "totp" | "unlocked">("checking");
   const [pin, setPin] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [useBackupCode, setUseBackupCode] = useState(false);
@@ -18,62 +19,107 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
   const [attemptsRemaining, setAttemptsRemaining] = useState(5);
   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
   const [totpEnabled, setTotpEnabled] = useState(false);
+  const [faceEnabled, setFaceEnabled] = useState(false);
+  const [faceError, setFaceError] = useState("");
+  const [faceVerifying, setFaceVerifying] = useState(false);
   const [backupWarning, setBackupWarning] = useState<string | null>(null);
+  const [cameraStatus, setCameraStatus] = useState<"checking" | "granted" | "denied" | "needsRequest">("checking");
+  const [requestingCamera, setRequestingCamera] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const totpInputRef = useRef<HTMLInputElement>(null);
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Pre-request camera on mount (silent)
+  // Attach stream to a hidden video element
+  const attachStream = useCallback((stream: MediaStream) => {
+    streamRef.current = stream;
+    const video = document.createElement("video");
+    video.srcObject = stream;
+    video.setAttribute("playsinline", "true");
+    video.muted = true;
+    video.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none";
+    document.body.appendChild(video);
+    video.play().catch(() => {});
+    videoRef.current = video;
+  }, []);
+
+  // Request camera (called either silently on mount when previously granted, or via button click)
+  const requestCamera = useCallback(async (): Promise<boolean> => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("denied");
+      return false;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+      attachStream(stream);
+      setCameraStatus("granted");
+      return true;
+    } catch {
+      setCameraStatus("denied");
+      return false;
+    }
+  }, [attachStream]);
+
+  // Detect camera permission state on mount
   useEffect(() => {
     let mounted = true;
-    const initCamera = async () => {
-      try {
-        if (!navigator.mediaDevices?.getUserMedia) return;
-        const permStatus = await navigator.permissions
-          .query({ name: "camera" as PermissionName })
-          .catch(() => null);
-        if (permStatus?.state === "denied") return;
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
-        });
-        if (!mounted) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
-        const video = document.createElement("video");
-        video.srcObject = stream;
-        video.setAttribute("playsinline", "true");
-        video.muted = true;
-        video.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none";
-        document.body.appendChild(video);
-        await video.play();
-        videoRef.current = video;
-      } catch {}
-    };
-    initCamera();
+    (async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        if (mounted) setCameraStatus("denied");
+        return;
+      }
+      const permStatus = await navigator.permissions
+        .query({ name: "camera" as PermissionName })
+        .catch(() => null);
+      if (!mounted) return;
+      if (permStatus?.state === "granted") {
+        await requestCamera();
+      } else if (permStatus?.state === "denied") {
+        setCameraStatus("denied");
+      } else {
+        // "prompt" or Permissions API unsupported (e.g. iOS Safari) — require an explicit user gesture
+        setCameraStatus("needsRequest");
+      }
+    })();
     return () => {
       mounted = false;
       if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
       if (videoRef.current) { videoRef.current.remove(); videoRef.current = null; }
     };
-  }, []);
+  }, [requestCamera]);
 
-  // Stop camera when unlocked
+  const handleEnableCamera = async () => {
+    setRequestingCamera(true);
+    await requestCamera();
+    setRequestingCamera(false);
+  };
+
+  // Release the hidden pre-loaded camera stream when entering the face
+  // phase (FaceLivenessCapture needs to claim the device — most browsers
+  // serialise camera access to one consumer at a time), and on unlock.
   useEffect(() => {
-    if (phase === "unlocked") {
+    if (phase === "face" || phase === "unlocked") {
       if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
       if (videoRef.current) { videoRef.current.remove(); videoRef.current = null; }
     }
   }, [phase]);
 
-  // Check existing session + TOTP status on mount
+  // Check existing session + TOTP status + face enrollment status on mount
   useEffect(() => {
     (async () => {
       try {
-        const [sessionRes, totpRes] = await Promise.all([
+        const [sessionRes, totpRes, faceRes] = await Promise.all([
           fetch("/api/admin/check-session/", { credentials: "include" }),
           session?.access_token
             ? fetch("/api/admin/totp/status/", {
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              })
+            : Promise.resolve(null),
+          session?.access_token
+            ? fetch("/api/admin/face/status/", {
                 headers: { Authorization: `Bearer ${session.access_token}` },
               })
             : Promise.resolve(null),
@@ -81,13 +127,17 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
 
         const sessionData = await sessionRes.json();
         const totpData = totpRes ? await totpRes.json() : null;
+        const faceData = faceRes ? await faceRes.json() : null;
 
         if (totpData?.enabled) setTotpEnabled(true);
+        if (faceData?.enabled) setFaceEnabled(true);
 
         if (sessionData.valid) {
-          // Check if TOTP was verified in this session
+          const faceVerified = sessionStorage.getItem("peja-admin-face-verified");
           const totpVerified = sessionStorage.getItem("peja-admin-totp-verified");
-          if (totpData?.enabled && totpVerified !== "true") {
+          if (faceData?.enabled && faceVerified !== "true") {
+            setPhase("face");
+          } else if (totpData?.enabled && totpVerified !== "true") {
             setPhase("totp");
           } else {
             setPhase("unlocked");
@@ -111,7 +161,9 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
         setPhase("pin");
         setPin("");
         setTotpCode("");
+        setFaceError("");
         sessionStorage.removeItem("peja-admin-totp-verified");
+        sessionStorage.removeItem("peja-admin-face-verified");
         try {
           await fetch("/api/admin/logout-session/", { method: "POST", credentials: "include" });
         } catch {}
@@ -235,11 +287,14 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
       const data = await res.json();
 
       if (data.ok) {
-        if (totpEnabled) {
+        setError("");
+        if (faceEnabled) {
+          setPhase("face");
+        } else if (totpEnabled) {
           setPhase("totp");
-          setError("");
         } else {
           sessionStorage.setItem("peja-admin-totp-verified", "true");
+          sessionStorage.setItem("peja-admin-face-verified", "true");
           setPhase("unlocked");
         }
         return;
@@ -260,6 +315,55 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
     } finally {
       setLoading(false);
     }
+  };
+
+  // Submit face descriptor
+  const handleFaceComplete = async (result: FaceCaptureResult) => {
+    setFaceVerifying(true);
+    setFaceError("");
+    try {
+      const res = await fetch("/api/admin/face/verify/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || ""}`,
+        },
+        body: JSON.stringify({ descriptor: result.descriptor }),
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        sessionStorage.setItem("peja-admin-face-verified", "true");
+        if (totpEnabled) {
+          setPhase("totp");
+        } else {
+          sessionStorage.setItem("peja-admin-totp-verified", "true");
+          setPhase("unlocked");
+        }
+        return;
+      }
+
+      setFaceError(
+        data.reason === "no_enrollments"
+          ? "No faces are enrolled yet."
+          : `No match (distance ${typeof data.distance === "number" ? data.distance.toFixed(3) : "?"}). Try again or use a backup code.`
+      );
+
+      // Failed face = same intruder-capture flow as failed PIN/TOTP
+      capturePhoto().then((photo) => sendIntruderAlert(photo));
+    } catch {
+      setFaceError("Connection error. Try again.");
+    } finally {
+      setFaceVerifying(false);
+    }
+  };
+
+  const skipFaceToBackupCode = () => {
+    if (!totpEnabled) return;
+    setUseBackupCode(true);
+    setTotpCode("");
+    setFaceError("");
+    setPhase("totp");
   };
 
   // Submit TOTP
@@ -316,6 +420,61 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
 
   if (phase === "unlocked") return <>{children}</>;
 
+  // Camera gate — must be cleared before PIN entry
+  if (cameraStatus !== "granted") {
+    const blocked = cameraStatus === "denied";
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-dark-950 px-4">
+        <div className="w-full max-w-sm text-center">
+          <div className={`w-16 h-16 rounded-2xl border flex items-center justify-center mx-auto mb-4 ${blocked ? "bg-red-600/20 border-red-500/30" : "bg-primary-600/20 border-primary-500/30"}`}>
+            {blocked ? (
+              <CameraOff className="w-8 h-8 text-red-400" />
+            ) : (
+              <Camera className="w-8 h-8 text-primary-400" />
+            )}
+          </div>
+          <h1 className="text-2xl font-bold text-dark-50">
+            {blocked ? "Camera Access Blocked" : "Camera Access Required"}
+          </h1>
+          <p className="text-sm text-dark-400 mt-2 mb-6">
+            {blocked
+              ? "Admin login is unavailable without camera access. Enable the camera for this site in your browser settings, then reload."
+              : "Admin access requires camera permission."}
+          </p>
+
+          {cameraStatus === "checking" && (
+            <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          )}
+
+          {cameraStatus === "needsRequest" && (
+            <button
+              onClick={handleEnableCamera}
+              disabled={requestingCamera}
+              className="w-full py-4 bg-primary-600 text-white rounded-xl font-semibold disabled:opacity-50 hover:bg-primary-500 transition-colors flex items-center justify-center gap-2"
+            >
+              {requestingCamera ? (
+                <><div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Requesting...</>
+              ) : (
+                <><Camera className="w-5 h-5" /> Enable Camera & Continue</>
+              )}
+            </button>
+          )}
+
+          {blocked && (
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-4 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-500 transition-colors"
+            >
+              Reload
+            </button>
+          )}
+
+        
+        </div>
+      </div>
+    );
+  }
+
   const remaining = lockedUntil ? Math.max(0, Math.ceil((lockedUntil - Date.now()) / 1000)) : 0;
 
   return (
@@ -326,16 +485,24 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
           <div className="w-16 h-16 rounded-2xl bg-primary-600/20 border border-primary-500/30 flex items-center justify-center mx-auto mb-4">
             {phase === "pin" ? (
               <ShieldAlert className="w-8 h-8 text-primary-400" />
+            ) : phase === "face" ? (
+              <ScanFace className="w-8 h-8 text-primary-400" />
             ) : (
               <Smartphone className="w-8 h-8 text-primary-400" />
             )}
           </div>
           <h1 className="text-2xl font-bold text-dark-50">
-            {phase === "pin" ? "Admin Access" : "Two-Factor Authentication"}
+            {phase === "pin"
+              ? "Admin Access"
+              : phase === "face"
+              ? "Face Verification"
+              : "Two-Factor Authentication"}
           </h1>
           <p className="text-sm text-dark-400 mt-2">
             {phase === "pin"
               ? "Enter your admin PIN to continue"
+              : phase === "face"
+              ? "Verify your face to continue"
               : useBackupCode
               ? "Enter a backup recovery code"
               : "Enter the 6-digit code from your authenticator app"}
@@ -392,6 +559,37 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
               )}
             </button>
           </form>
+        )}
+
+        {/* Face Verification */}
+        {phase === "face" && (
+          <div className="space-y-4">
+            {faceVerifying ? (
+              <div className="bg-dark-900 border border-dark-700 rounded-xl p-8 text-center">
+                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                <p className="text-sm text-dark-300">Matching face…</p>
+              </div>
+            ) : (
+              <FaceLivenessCapture mode="verify" onComplete={handleFaceComplete} />
+            )}
+
+            {faceError && (
+              <div className="flex items-start gap-2 text-sm text-red-400 justify-center">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                <p className="text-center">{faceError}</p>
+              </div>
+            )}
+
+            {totpEnabled && (
+              <button
+                type="button"
+                onClick={skipFaceToBackupCode}
+                className="w-full text-sm text-dark-500 hover:text-dark-300 py-2 transition-colors"
+              >
+                Can&apos;t use the camera? Use a backup code
+              </button>
+            )}
+          </div>
         )}
 
         {/* TOTP Form */}
@@ -452,9 +650,7 @@ export default function AdminPinGate({ children }: { children: React.ReactNode }
           </form>
         )}
 
-        <p className="text-xs text-dark-600 text-center mt-6">
-          All access attempts are monitored and logged
-        </p>
+       
       </div>
     </div>
   );

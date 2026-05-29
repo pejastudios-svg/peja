@@ -4,14 +4,15 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAdminCache } from "@/hooks/useAdminCache";
 import { supabase } from "@/lib/supabase";
 import { AvatarImage } from "@/components/ui/AvatarImage";
-import { Loader2, Search, Phone, Mail, Shield, Ban, CheckCircle, Trash2, X, Home } from "lucide-react";
+import { Loader2, Search, Phone, Mail, Shield, Ban, CheckCircle, Trash2, X, Home, Users } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "next/navigation";
 import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
-import GlowButton from "@/components/dashboard/GlowButton";
+import RefreshButton from "@/components/dashboard/RefreshButton";
+import EmptyState from "@/components/dashboard/EmptyState";
 import { ChevronDown } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
@@ -223,12 +224,11 @@ const deleteUser = async (userId: string, userName: string) => {
 
   return (
     <HudShell
-      title="User Registry"
       subtitle="Manage accounts, permissions, and status"
       right={
         <div className="flex items-center gap-2">
-          <span className="pill pill-purple">{filteredUsers.length} Users</span>
-          <GlowButton onClick={refreshUsers}>Refresh</GlowButton>
+          <span className="pill text-dark-300">{filteredUsers.length} Users</span>
+          <RefreshButton onClick={refreshUsers} loading={loading} />
         </div>
       }
     >
@@ -250,7 +250,7 @@ const deleteUser = async (userId: string, userName: string) => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, email, or phone..."
-              className="w-full h-11 pl-10 pr-4 bg-[#1E1B24] border border-white/10 rounded-xl text-sm text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500/50 focus:shadow-[0_0_15px_rgba(124,58,237,0.15)] transition-all"
+              className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500/50 transition-all"
             />
           </div>
 
@@ -259,7 +259,7 @@ const deleteUser = async (userId: string, userName: string) => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="w-full h-11 pl-4 pr-10 bg-[#1E1B24] border border-white/10 rounded-xl text-sm text-dark-200 focus:outline-none focus:border-primary-500/50 focus:shadow-[0_0_15px_rgba(124,58,237,0.15)] appearance-none transition-all cursor-pointer"
+              className="w-full h-11 pl-4 pr-10 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-dark-200 focus:outline-none focus:border-primary-500/50 appearance-none transition-all cursor-pointer"
             >
               <option value="all">All Status</option>
               <option value="active">Active</option>
@@ -279,7 +279,7 @@ const deleteUser = async (userId: string, userName: string) => {
               ))}
             </div>
           ) : filteredUsers.length === 0 ? (
-            <div className="text-center py-12 text-dark-400">No users found</div>
+            <EmptyState icon={Users} title="No users found" />
           ) : (
             <div className="space-y-2">
               {loading && (
@@ -298,7 +298,7 @@ const deleteUser = async (userId: string, userName: string) => {
                     {/* Avatar */}
                     <AvatarImage
                       src={user.avatar_url}
-                      wrapperClassName="w-10 h-10 rounded-full bg-[#1E1B24] border border-white/10 overflow-hidden shrink-0 flex items-center justify-center"
+                      wrapperClassName="w-10 h-10 rounded-full bg-[#1c1c1f] border border-white/10 overflow-hidden shrink-0 flex items-center justify-center"
                       fallback={<span className="text-dark-500 font-bold text-sm">{user.full_name?.[0] || "U"}</span>}
                     />
 

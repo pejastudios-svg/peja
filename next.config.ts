@@ -55,6 +55,16 @@ const nextConfig = {
           },
         ],
       },
+      // Face recognition models — large binary weights, content-addressed by path
+      {
+        source: "/face-models/(.*)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=2592000, immutable",
+          },
+        ],
+      },
       // Service worker — never cache
       {
         source: "/sw.js",

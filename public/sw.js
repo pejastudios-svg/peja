@@ -204,37 +204,45 @@ async function cacheHtmlPage(shell, url) {
   }
 }
 
+// Warm the shell + static caches with the CURRENT deploy's HTML, route
+// chunks and CSS. Runs at install AND on demand via the "reprecache"
+// message: the SW only reinstalls when sw.js's own bytes change, so a
+// web-only deploy (new asset hashes, same sw.js) would otherwise never
+// proactively cache its new CSS — the client triggers this after each
+// deploy so an offline cold-open still renders styled.
+async function precacheAppShell() {
+  const shell = await caches.open(APP_SHELL_CACHE);
+  const staticCache = await caches.open(CACHE_NAME);
+
+  // Static files (logo) — no redirects involved, plain add() is fine.
+  await Promise.allSettled(
+    APP_SHELL_FILES.map((url) => shell.add(url).catch(() => {}))
+  );
+
+  // Pre-cache every page's HTML AND collect their asset URLs in a
+  // single pass. Each route has its own JS chunk under
+  // /_next/static/chunks/app/<route>/page-<hash>.js — without this
+  // warm-up, an offline cold-open could load the HTML but not the
+  // route code, leaving the user stuck on a half-rendered page.
+  const assetUrls = new Set();
+  await Promise.allSettled(APP_SHELL_PAGES.map(async (url) => {
+    const urls = await cacheHtmlPage(shell, url);
+    urls.forEach((u) => assetUrls.add(u));
+  }));
+
+  // Leaflet stylesheet is injected at runtime by IncidentMapInner,
+  // so it won't appear in scraped HTML. Cache it explicitly so an
+  // offline /map still gets its tile-layer styling.
+  assetUrls.add("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
+
+  await Promise.allSettled(
+    Array.from(assetUrls).map((u) => staticCache.add(u).catch(() => {}))
+  );
+}
+
 self.addEventListener("install", (event) => {
   self.skipWaiting();
-  event.waitUntil((async () => {
-    const shell = await caches.open(APP_SHELL_CACHE);
-    const staticCache = await caches.open(CACHE_NAME);
-
-    // Static files (logo) — no redirects involved, plain add() is fine.
-    await Promise.allSettled(
-      APP_SHELL_FILES.map((url) => shell.add(url).catch(() => {}))
-    );
-
-    // Pre-cache every page's HTML AND collect their asset URLs in a
-    // single pass. Each route has its own JS chunk under
-    // /_next/static/chunks/app/<route>/page-<hash>.js — without this
-    // warm-up, an offline cold-open could load the HTML but not the
-    // route code, leaving the user stuck on a half-rendered page.
-    const assetUrls = new Set();
-    await Promise.allSettled(APP_SHELL_PAGES.map(async (url) => {
-      const urls = await cacheHtmlPage(shell, url);
-      urls.forEach((u) => assetUrls.add(u));
-    }));
-
-    // Leaflet stylesheet is injected at runtime by IncidentMapInner,
-    // so it won't appear in scraped HTML. Cache it explicitly so an
-    // offline /map still gets its tile-layer styling.
-    assetUrls.add("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
-
-    await Promise.allSettled(
-      Array.from(assetUrls).map((u) => staticCache.add(u).catch(() => {}))
-    );
-  })());
+  event.waitUntil(precacheAppShell());
 });
 
 // Matches the versioned static-asset cache names (`peja-v9`, `peja-v10`, ...).
@@ -527,6 +535,9 @@ async function replayQueue() {
 self.addEventListener("message", (event) => {
   if (event.data === "skipWaiting") self.skipWaiting();
   if (event.data === "clearCache") caches.keys().then((k) => k.forEach((key) => caches.delete(key)));
+  // Re-warm the app shell for a new deploy (new CSS/JS hashes) without a SW
+  // reinstall. Fired by the client when the deploy version changes.
+  if (event.data?.type === "reprecache") event.waitUntil(precacheAppShell());
   if (event.data?.type === "invalidate-data" && typeof event.data.urlContains === "string") {
     const needle = event.data.urlContains;
     caches.open(DATA_CACHE).then((cache) =>

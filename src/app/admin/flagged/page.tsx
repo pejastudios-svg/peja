@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { AvatarImage } from "@/components/ui/AvatarImage";
@@ -12,7 +12,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { InlineVideo } from "@/components/reels/InlineVideo";
 import HudShell from "@/components/dashboard/HudShell";
 import HudPanel from "@/components/dashboard/HudPanel";
-import GlowButton from "@/components/dashboard/GlowButton";
+import EmptyState from "@/components/dashboard/EmptyState";
+import RefreshButton from "@/components/dashboard/RefreshButton";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { FlaggedContentListener } from "@/components/notifications/FlaggedContentListener";
@@ -28,10 +29,8 @@ import {
   ChevronRight,
   User,
   MessageCircle,
-  RefreshCw,
   Shield,
   Clock,
-  History,
   AlertTriangle,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
@@ -120,11 +119,14 @@ const pageCache = usePageCache();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  // Only the latest queue fetch applies (tab change + realtime can overlap).
+  const reqRef = useRef(0);
   useScrollFreeze(showModal);
   // ============================================================
   // FETCH QUEUE (pending + escalated)
   // ============================================================
   const fetchFlagged = useCallback(async (silent = false) => {
+    const myReq = ++reqRef.current;
     if (!silent) setLoading(true);
     else setRefreshing(true);
 
@@ -140,6 +142,7 @@ const pageCache = usePageCache();
 
       const rows = (flags || []) as any[];
       const merged = await enrichFlaggedRows(rows);
+      if (myReq !== reqRef.current) return;
       setItems(merged);
       pageCache.set("admin:flagged:queue", merged);
 
@@ -152,10 +155,12 @@ const pageCache = usePageCache();
         }
       }
     } catch (e) {
-      setItems([]);
+      if (myReq === reqRef.current) setItems([]);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (myReq === reqRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [openId]);
 
@@ -388,44 +393,32 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
 
   return (
     <HudShell
-      title="Moderation Queue"
       subtitle="Review flagged content and maintain community safety"
-      right={
-        <GlowButton onClick={handleRefresh} disabled={refreshing || historyLoading} className="h-9 text-xs flex items-center justify-center gap-2">
-          <RefreshCw className={`w-4 h-4 ${(refreshing || historyLoading) ? "animate-spin" : ""}`} />
-          Refresh
-        </GlowButton>
-      }
+      right={<RefreshButton onClick={handleRefresh} loading={refreshing || historyLoading} />}
     >
       <FlaggedContentListener onNewFlaggedContent={() => fetchFlagged(true)} />
 
       {/* Tab Toggle */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-1 mb-4 border-b border-white/10">
         <button
           onClick={() => setViewMode("queue")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+          className={`relative px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
             viewMode === "queue"
-              ? "bg-primary-600 text-white shadow-lg shadow-primary-900/30"
-              : "glass-sm text-dark-300 hover:bg-white/10"
+              ? "text-primary-400 border-primary-500"
+              : "text-dark-400 border-transparent hover:text-dark-200"
           }`}
         >
-          <Flag className="w-4 h-4" />
           Queue
-          {items.length > 0 && (
-            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
-              {items.length}
-            </span>
-          )}
+          <span className="ml-1.5 text-[11px] text-dark-400">({items.length})</span>
         </button>
         <button
           onClick={() => setViewMode("history")}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+          className={`relative px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
             viewMode === "history"
-              ? "bg-primary-600 text-white shadow-lg shadow-primary-900/30"
-              : "glass-sm text-dark-300 hover:bg-white/10"
+              ? "text-primary-400 border-primary-500"
+              : "text-dark-400 border-transparent hover:text-dark-200"
           }`}
         >
-          <History className="w-4 h-4" />
           History
         </button>
       </div>
@@ -438,12 +431,12 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
           {loading && items.length === 0 ? (
             Array.from({ length: 8 }).map((_, i) => <FlaggedRowSkeleton key={i} />)
           ) : items.length === 0 ? (
-            <HudPanel className="text-center py-20">
-              <div className="flex flex-col items-center justify-center w-full">
-                <CheckCircle className="w-16 h-16 text-green-500/20 mb-4" />
-                <p className="text-dark-300 font-bold text-lg">Queue Clear</p>
-                <p className="text-dark-500">No flagged content pending review.</p>
-              </div>
+            <HudPanel>
+              <EmptyState
+                icon={Flag}
+                title="Queue clear"
+                description="No flagged content pending review."
+              />
             </HudPanel>
           ) : (
             <>
@@ -468,7 +461,7 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
                   <div className="w-14 h-14 rounded-lg bg-dark-900 overflow-hidden shrink-0 border border-white/5">
                     {item.contentType === "comment" ? (
                       <div className="w-full h-full flex items-center justify-center bg-dark-800">
-                        <MessageCircle className="w-6 h-6 text-orange-400" />
+                        <MessageCircle className="w-6 h-6 text-dark-200" />
                       </div>
                     ) : item.media?.[0] ? (
                       <img src={item.media[0].url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
@@ -515,7 +508,7 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
                   </div>
 
                   <div className="pr-2 self-center">
-                    <span className="pill pill-purple opacity-0 group-hover:opacity-100 transition-opacity shadow-[0_0_15px_rgba(124,58,237,0.4)]">Review</span>
+                    <span className="pill pill-purple opacity-0 group-hover:opacity-100 transition-opacity">Review</span>
                   </div>
                 </div>
               ))}
@@ -532,12 +525,12 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
           {historyLoading && historyItems.length === 0 ? (
             Array.from({ length: 8 }).map((_, i) => <FlaggedRowSkeleton key={i} />)
           ) : historyItems.length === 0 ? (
-            <HudPanel className="text-center py-20">
-              <div className="flex flex-col items-center justify-center w-full">
-                <History className="w-16 h-16 text-dark-600 mb-4" />
-                <p className="text-dark-300 font-bold text-lg">No Review History</p>
-                <p className="text-dark-500">Resolved items will appear here.</p>
-              </div>
+            <HudPanel>
+              <EmptyState
+                icon={Flag}
+                title="No review history"
+                description="Resolved items will appear here."
+              />
             </HudPanel>
           ) : (
             <>
@@ -550,19 +543,19 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
               {/* Summary bar */}
               <div className="flex gap-3 mb-2">
                 <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
+                  <CheckCircle className="w-4 h-4 text-dark-200" />
                   <span className="text-sm text-dark-300">
                     {historyItems.filter(i => i.status === "approved").length} Approved
                   </span>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 flex items-center gap-2">
-                  <XCircle className="w-4 h-4 text-red-400" />
+                  <XCircle className="w-4 h-4 text-dark-200" />
                   <span className="text-sm text-dark-300">
                     {historyItems.filter(i => i.status === "removed").length} Removed
                   </span>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-2 flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-yellow-400" />
+                  <Eye className="w-4 h-4 text-dark-200" />
                   <span className="text-sm text-dark-300">
                     {historyItems.filter(i => i.status === "blurred").length} Blurred
                   </span>
@@ -630,7 +623,7 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
                           <AvatarImage
                             src={item.reviewer?.avatar_url}
                             wrapperClassName="w-5 h-5 rounded-full bg-dark-800 border border-white/10 overflow-hidden flex items-center justify-center shrink-0"
-                            fallback={<Shield className="w-3 h-3 text-primary-400" />}
+                            fallback={<Shield className="w-3 h-3 text-dark-200" />}
                           />
                           <span className="text-xs text-dark-300">
                             {item.reviewer?.full_name || "Unknown"}
@@ -660,7 +653,7 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
       {/* ============================================================ */}
       {/* REVIEW MODAL */}
       {/* ============================================================ */}
-      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={selected?.contentType === "comment" ? "Review Comment" : "Review Content"} size="xl">
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={selected?.contentType === "comment" ? "Review Comment" : "Review Content"} size="xl" neutral>
         {selected && (
           <div className="space-y-6">
             {selected.contentType === "post" && selected.media?.[mediaIndex] && (
@@ -694,9 +687,9 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
             )}
 
             {selected.contentType === "comment" && (
-              <div className="p-4 bg-red-500/10 rounded-xl border border-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.15)]">
+              <div className="p-4 bg-red-500/10 rounded-xl border border-red-500/30">
                 <div className="flex items-center gap-2 mb-2">
-                  <MessageCircle className="w-4 h-4 text-red-400" />
+                  <MessageCircle className="w-4 h-4 text-dark-200" />
                   <span className="text-xs font-bold text-red-400 uppercase">Flagged Comment</span>
                 </div>
                 <p className="text-sm text-dark-100 wrap-break-word whitespace-pre-wrap">{selected.flaggedComment?.content || "No content."}</p>
@@ -737,7 +730,7 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
             )}
 
             <div className={`grid gap-3 border-t border-white/10 pt-4 ${selected.contentType === "post" ? "grid-cols-3" : "grid-cols-2"}`}>
-              <Button variant="primary" className="bg-green-600 hover:bg-green-500 border-none shadow-lg shadow-green-900/20" onClick={() => handleReviewAction("approve")} disabled={actionLoading}>
+              <Button variant="primary" className="bg-green-600 hover:bg-green-500 border-none" onClick={() => handleReviewAction("approve")} disabled={actionLoading}>
                 {actionLoading ? <PejaSpinner className="w-4 h-4 mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
                 Safe
               </Button>

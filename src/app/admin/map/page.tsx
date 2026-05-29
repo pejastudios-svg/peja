@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronUp, ChevronDown, MapPin, Navigation } from "lucide-react";
@@ -39,7 +39,6 @@ export default function AdminMapFullscreenPage() {
   const [mapHelpers, setMapHelpers] = useState<MapHelper[]>([]);
   const [dispatches, setDispatches] = useState<SOSDispatch[]>([]);
   const [panelOpen, setPanelOpen] = useState(true);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchHelpers = useCallback(async () => {
     try {
@@ -89,11 +88,29 @@ export default function AdminMapFullscreenPage() {
     } catch {}
   }, []);
 
+  // Realtime instead of a 15s poll. Refetch when an SOS alert changes (new /
+  // resolved) or when a helper-progress notification lands. The notifications
+  // subscription is scoped to type=sos_alert so it ignores the rest of that
+  // high-traffic table. Debounced so a burst collapses into one refetch.
   useEffect(() => {
     fetchHelpers();
-    pollRef.current = setInterval(fetchHelpers, 15000);
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const ping = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(fetchHelpers, 400);
+    };
+    const channel = supabase
+      .channel("admin-map-sos-helpers")
+      .on("postgres_changes", { event: "*", schema: "public", table: "sos_alerts" }, ping)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notifications", filter: "type=eq.sos_alert" },
+        ping
+      )
+      .subscribe();
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      if (debounce) clearTimeout(debounce);
+      supabase.removeChannel(channel);
     };
   }, [fetchHelpers]);
 

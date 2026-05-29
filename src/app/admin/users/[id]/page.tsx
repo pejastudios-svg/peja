@@ -253,7 +253,7 @@ useEffect(() => {
 
   if (loading) {
   return (
-    <div className="p-6">
+    <div className="px-6 pb-6 pt-32">
       <div className="mb-6 flex items-center gap-3">
         <Skeleton className="h-9 w-9 rounded-lg" />
         <Skeleton className="h-6 w-40" />
@@ -290,7 +290,7 @@ useEffect(() => {
 
   if (!u) {
     return (
-      <div className="p-6">
+      <div className="px-6 pb-6 pt-32">
         <Button variant="secondary" onClick={() => router.back()}>
           Back
         </Button>
@@ -302,7 +302,7 @@ useEffect(() => {
   }
 
   return (
-    <div className="p-6">
+    <div className="px-6 pb-6 pt-32">
       {/* Header */}
       <div className="mb-6 flex items-center gap-3">
         <button
@@ -422,7 +422,7 @@ useEffect(() => {
       {/* Posts */}
       <div className="mt-8 mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
-          <FileText className="w-5 h-5 text-primary-400" />
+          <FileText className="w-5 h-5 text-dark-200" />
           Posts ({posts.length})
         </h2>
         <Button variant="secondary" size="sm" onClick={fetchUserPosts}>

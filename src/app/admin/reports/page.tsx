@@ -20,10 +20,11 @@
 // BOTH user_reports.admin_notes AND the user-side reason column
 // (suspension_reason / ban_reason) so the audit trail is symmetric.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { AvatarImage } from "@/components/ui/AvatarImage";
+import EmptyState from "@/components/dashboard/EmptyState";
 import { Flag, User, Ban, Clock, ShieldOff, X, MessageCircle, Star } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -77,10 +78,22 @@ const REASON_LABELS: Record<string, string> = {
 
 export default function AdminReportsPage() {
   const { user } = useAuth();
+  const userId = user?.id;
   const [tab, setTab] = useState<ReportStatus>("pending");
-  const [rows, setRows] = useState<ReportRow[]>([]);
+  // Cache rows per tab so flipping tabs is instant (no spinner). Realtime
+  // keeps the visible tab fresh; revisiting a tab background-refreshes it.
+  const [rowsByTab, setRowsByTab] = useState<Partial<Record<ReportStatus, ReportRow[]>>>({});
   const [loading, setLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+
+  const rows = rowsByTab[tab] ?? [];
+
+  // Latest tab, read by the realtime handler so it can refetch the visible
+  // tab without the subscription tearing down on every tab switch.
+  const tabRef = useRef(tab);
+  useEffect(() => {
+    tabRef.current = tab;
+  }, [tab]);
 
   const authHeader = useCallback(async (): Promise<Record<string, string>> => {
     const { data } = await supabase.auth.getSession();
@@ -88,24 +101,57 @@ export default function AdminReportsPage() {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, []);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      const h = await authHeader();
-      const res = await fetch(`/api/admin/reports/list?status=${tab}`, {
-        headers: h,
-      });
-      const json = await res.json();
-      if (json.ok) setRows(json.reports as ReportRow[]);
-    } finally {
-      setLoading(false);
-    }
-  }, [tab, authHeader]);
+  // Never flips the spinner on by itself — callers decide when to show it.
+  // That keeps background/realtime refetches silent instead of flashing a
+  // "Loading…" each time, which was half of the perceived auto-refresh.
+  const refresh = useCallback(
+    async (status: ReportStatus) => {
+      try {
+        const h = await authHeader();
+        const res = await fetch(`/api/admin/reports/list?status=${status}`, {
+          headers: h,
+        });
+        const json = await res.json();
+        if (json.ok) {
+          setRowsByTab((prev) => ({ ...prev, [status]: json.reports as ReportRow[] }));
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [authHeader]
+  );
 
+  // Fetch on mount + tab change. Depends on user?.id (a stable string), NOT
+  // the user object — AuthContext swaps that reference on every token refresh
+  // and location write, which was re-running this effect and silently
+  // refetching. That was the reported "it refreshes on its own".
   useEffect(() => {
-    if (!user) return;
-    void refresh();
-  }, [user, refresh]);
+    if (!userId) return;
+    void refresh(tab);
+  }, [userId, tab, refresh]);
+
+  // Live updates instead of polling: refetch the visible tab whenever a
+  // report row changes. Debounced so a burst collapses into one refetch.
+  useEffect(() => {
+    if (!userId) return;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const channel = supabase
+      .channel(`admin-reports-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "user_reports" },
+        () => {
+          if (debounce) clearTimeout(debounce);
+          debounce = setTimeout(() => void refresh(tabRef.current), 250);
+        }
+      )
+      .subscribe();
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      supabase.removeChannel(channel);
+    };
+  }, [userId, refresh]);
 
   const counts = useMemo(
     () => ({ pending: rows.filter((r) => r.status === "pending").length }),
@@ -113,18 +159,20 @@ export default function AdminReportsPage() {
   );
 
   return (
-    <div className="px-4 lg:px-8 py-6 max-w-6xl mx-auto">
-      <header className="flex items-center gap-3 mb-6">
-        <Flag className="w-6 h-6 text-red-400" />
-        <h1 className="text-xl font-bold text-dark-100">User reports</h1>
-      </header>
+    <div className="px-4 lg:px-8 pb-6 pt-32 max-w-6xl mx-auto">
+      <p className="text-sm text-dark-400 mb-4">Review and action reports filed by users.</p>
 
       <div className="flex gap-1 mb-4 border-b border-white/10">
         {(["pending", "dismissed", "actioned"] as ReportStatus[]).map((t) => (
           <button
             key={t}
             type="button"
-            onClick={() => setTab(t)}
+            onClick={() => {
+              setTab(t);
+              // Only show the spinner when we have nothing cached for the
+              // target tab; cached tabs render instantly.
+              if (!rowsByTab[t]) setLoading(true);
+            }}
             className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === t
                 ? "text-primary-400 border-primary-500"
@@ -144,9 +192,7 @@ export default function AdminReportsPage() {
       {loading ? (
         <p className="text-sm text-dark-400 py-12 text-center">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-dark-400 py-12 text-center">
-          No reports in this tab.
-        </p>
+        <EmptyState icon={Flag} title="No reports in this tab" />
       ) : (
         <ul className="space-y-2">
           {rows.map((r) => (
@@ -165,7 +211,7 @@ export default function AdminReportsPage() {
           onClose={() => setPendingAction(null)}
           onApplied={() => {
             setPendingAction(null);
-            void refresh();
+            void refresh(tab);
           }}
           authHeader={authHeader}
         />
@@ -339,7 +385,7 @@ function UserPill({
       <AvatarImage
         src={user?.avatar_url}
         wrapperClassName="w-9 h-9 rounded-full overflow-hidden bg-primary-600/20 flex items-center justify-center shrink-0"
-        fallback={<User className="w-4 h-4 text-primary-300" />}
+        fallback={<User className="w-4 h-4 text-dark-200" />}
       />
       <div className="min-w-0">
         <p className="text-[10px] uppercase tracking-wider text-dark-500">

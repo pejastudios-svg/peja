@@ -14,6 +14,7 @@ export function Modal({
   children,
   size = "md",
   animation = "scale", // Default to scale to match existing behavior
+  neutral = false, // Neutral hairline border instead of the purple glass outline (admin)
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -21,6 +22,7 @@ export function Modal({
   children: React.ReactNode;
   size?: "sm" | "md" | "lg" | "xl" | "full";
   animation?: ModalAnimation;
+  neutral?: boolean;
 }) {
   const [mounted, setMounted] = useState(false);
   useScrollFreeze(isOpen);
@@ -81,13 +83,19 @@ return createPortal(
         className={`relative w-full ${sizeClasses[size]} shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 ease-out ${getAnimationClass()}`}
         style={{
           background: "var(--glass-strong-bg)",
-          border: "1px solid var(--glass-border-strong)",
+          border: neutral
+            ? "1px solid rgba(255,255,255,0.1)"
+            : "1px solid var(--glass-border-strong)",
         }}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-6 py-4 shrink-0"
-          style={{ borderBottom: "1px solid var(--glass-border-sm)" }}
+          style={{
+            borderBottom: neutral
+              ? "1px solid rgba(255,255,255,0.08)"
+              : "1px solid var(--glass-border-sm)",
+          }}
         >
           <h3 className="text-lg font-bold text-dark-100">{title}</h3>
           <button

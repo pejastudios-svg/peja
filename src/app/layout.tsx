@@ -33,6 +33,7 @@ import { SlowConnectionBanner } from "@/components/system/SlowConnectionBanner";
 import { BackgroundPrefetcher } from "@/components/navigation/BackgroundPrefetcher";
 import { Analytics } from "@vercel/analytics/next"
 import { OfflineBanner } from "@/components/system/OfflineBanner";
+import { AppUpdateBanner } from "@/components/system/AppUpdateBanner";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { OutboxBootstrap } from "@/components/system/OutboxBootstrap";
@@ -218,6 +219,7 @@ export default function RootLayout({
                         <CheckInMonitor />
                         <SlowConnectionBanner />
                         <OfflineBanner />
+                        <AppUpdateBanner />
                         <LoginPrompt />
                         <PostAuthRedirect />
                         <BackgroundPrefetcher />
