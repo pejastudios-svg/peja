@@ -47,10 +47,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
-    const url = siteUrl
-      ? `${siteUrl.replace(/\/$/, "")}/enroll-face/${token}`
-      : `/enroll-face/${token}`;
+    // Always build an absolute link. NEXT_PUBLIC_SITE_URL is set in dev
+    // (.env.local -> localhost) but unset in prod, where the old empty-string
+    // fallback produced a relative "/enroll-face/<token>" that's useless when
+    // shared. Fall back to the canonical domain (matches the hard-coded
+    // https://peja.life share links used elsewhere in the app).
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://peja.life").replace(/\/$/, "");
+    const url = `${siteUrl}/enroll-face/${token}`;
 
     await supabaseAdmin.from("admin_access_log").insert({
       user_id: user.id,
