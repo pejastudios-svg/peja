@@ -38,7 +38,13 @@ export function QuotedReplyBlock({
         e.stopPropagation();
         onJumpToOriginal?.();
       }}
-      className={`block w-full text-left rounded-md ${surface} border-l-2 ${accentBorder} px-2 py-1.5 mb-1 active:opacity-80`}
+      // min-w-0 + max-w-full: when the parent message has an unbroken
+      // long token, the inner truncate <p>'s intrinsic min-content equals
+      // the whole string, which a content-sized bubble would happily
+      // grow to. min-w-0 lets the block shrink past that intrinsic
+      // min-content so the bubble can hold its own 78% cap on first
+      // render — no momentary stretch-then-shrink.
+      className={`block w-full min-w-0 max-w-full text-left rounded-md ${surface} border-l-2 ${accentBorder} px-2 py-1.5 mb-1 active:opacity-80`}
     >
       <p
         className="text-[11px] font-semibold truncate"

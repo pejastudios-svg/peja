@@ -1812,7 +1812,14 @@ export default function ThreadV2Page() {
       <main
         ref={scrollRef}
         onScroll={handleThreadScroll}
-        className="flex-1 overflow-y-auto overscroll-contain pt-app-header-pill px-4 pb-3 relative"
+        // min-w-0 lets `flex-1` actually constrain this scroller to its
+        // allocated cross-axis width — without it, a flex item defaults to
+        // min-width: auto and silently grows to fit its widest descendant.
+        // An unbroken token in a message bubble was making the whole
+        // scroller wider than the viewport, defeating the per-bubble cap.
+        // overflow-x-hidden is the belt-and-suspenders: chat never needs
+        // horizontal scroll.
+        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain pt-app-header-pill px-4 pb-3 relative"
       >
         {!user && (
           <p className="text-sm text-dark-400 py-12 text-center">Sign in to view this chat.</p>
@@ -1913,8 +1920,8 @@ export default function ThreadV2Page() {
                   .filter((m) => m.delivery_status === "pending")
                   .map((m) => (
                     <div key={m.id} className="flex justify-end">
-                      <div className="max-w-[78%] rounded-2xl px-3.5 py-2 bg-primary-600 text-white">
-                        <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
+                      <div className="min-w-0 max-w-[78%] rounded-2xl px-3.5 py-2 bg-primary-600 text-white">
+                        <p className="text-sm whitespace-pre-wrap break-words wrap-anywhere">{m.content}</p>
                         <div className="flex items-center justify-end gap-1 mt-0.5">
                           <span className="text-[10px] text-white/70">
                             {format(new Date(m.created_at), "HH:mm")}
@@ -2052,7 +2059,13 @@ export default function ThreadV2Page() {
               // pinched. The cap now lives on the inner column
               // (assigned in the row wrapper below) so the bubble
               // grows naturally to its content within that cap.
-              const bubbleClass = `rounded-2xl ${
+              // min-w-0 lets the bubble actually shrink below its content's
+              // intrinsic min-content — without it, an unbroken string (no
+              // spaces) like `hhabbaHrhehshsbhssssshhabba...` kept the
+              // bubble at the string's full width and pushed the row past
+              // the 78% column cap. With min-w-0 the bubble caps at 78%
+              // and `break-words` on the inner <p> wraps the long token.
+              const bubbleClass = `rounded-2xl min-w-0 max-w-full ${
                 hasVisualMedia ? "p-1 overflow-hidden" : "px-3.5 py-2"
               } ${baseColor} ${
                 isFailed ? "opacity-70 border border-red-500/60 cursor-pointer" : ""
@@ -2286,7 +2299,7 @@ export default function ThreadV2Page() {
                         <>
                           {!incidentId && (
                             <p
-                              className={`text-sm whitespace-pre-wrap break-words ${
+                              className={`text-sm whitespace-pre-wrap break-words wrap-anywhere ${
                                 hasVisualMedia ? "px-2.5 pt-1.5" : ""
                               }`}
                             >
@@ -2420,7 +2433,7 @@ export default function ThreadV2Page() {
                       <span className="shrink-0 w-7" aria-hidden />
                     ))}
                 <div
-                  className={`flex flex-col max-w-[78%] ${
+                  className={`flex flex-col min-w-0 max-w-[78%] ${
                     isMine ? "items-end" : "items-start"
                   }`}
                 >
@@ -2620,7 +2633,7 @@ export default function ThreadV2Page() {
                   <Paperclip className="w-5 h-5" />
                 </button>
               )}
-              <div className="flex-1 relative rounded-2xl bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] focus-within:border-primary-500/40">
+              <div className="flex-1 min-w-0 relative rounded-2xl bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] focus-within:border-primary-500/40">
                 <textarea
                   ref={composerRef}
                   value={draft}
@@ -3256,7 +3269,11 @@ function MessageBubbleWrapper({
     // inner bubble div carries the transform. Without this split the
     // icon would never become visible because it would move out of
     // its slot at the same rate as the bubble.
-    <div className="relative">
+    // min-w-0 + max-w-full: this wrapper is a flex child of the 78%
+    // column. Without min-w-0 it kept growing to its content's
+    // intrinsic min-width (a long unbroken token), defeating the cap
+    // upstream — the bubble inside couldn't shrink past its parent.
+    <div className="relative min-w-0 max-w-full">
       {/* Reply-icon hint — appears on the side the bubble is moving
           AWAY from as the user drags. Two tiers:
             • below threshold: translucent primary background, growing scale
