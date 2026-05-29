@@ -14,8 +14,8 @@ android {
         applicationId "com.peja.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 17
-        versionName "1.6.1"
+        versionCode 18
+        versionName "1.7.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -29,6 +29,18 @@ buildTypes {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+    }
+    // Ship one complete APK per install instead of separate config splits.
+    // The app-update plugin pulls in Google Play Core, whose missing-splits
+    // check shows a "Something went wrong / reinstall" dialog on startup if
+    // any config split is absent. Transsion (Tecno/Infinix) devices manage
+    // storage aggressively and can drop a split, false-triggering that dialog
+    // for real users. With splits off, nothing can be missing — at the cost
+    // of a modestly larger download.
+    bundle {
+        language { enableSplit = false }
+        density { enableSplit = false }
+        abi { enableSplit = false }
     }
 }
 

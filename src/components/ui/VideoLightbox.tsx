@@ -401,7 +401,7 @@ if (animPhase === "enter") {
             e.stopPropagation();
             handleClose();
           }}
-          className="p-2 rounded-full bg-black/40 text-white backdrop-blur-md hover:bg-black/60"
+          className="p-2 rounded-full bg-black/40 text-white hover:bg-black/60"
         >
           <ChevronLeft className="w-8 h-8" />
         </button>

@@ -345,8 +345,11 @@ textarea,
 
 .glass-card {
   background: var(--glass-card-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* No backdrop-filter: --glass-card-bg is OPAQUE (#0a0612 / #ffffff) so the
+     blur is never visible — it only forced a compositing layer that paints a
+     black frame on first paint (the light-mode skeleton flash) and triggers
+     black compositor artifacts on some Android GPUs. Removing it is a no-op
+     visually. Translucent surfaces (header/footer/float) keep their blur. */
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   border-radius: 1rem;
