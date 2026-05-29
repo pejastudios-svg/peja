@@ -888,7 +888,7 @@ export default function SettingsPage() {
           />
         </section>
 
-        <p className="text-center text-sm text-dark-500 py-4">Peja v1.6.0</p>
+        <p className="text-center text-sm text-dark-500 py-4">Peja v1.6.1</p>
       </main>
 
       {/* ─── Change Password Modal ─── */}
