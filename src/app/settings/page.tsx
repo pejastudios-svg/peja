@@ -50,6 +50,7 @@ export default function SettingsPage() {
   const { user, session, signOut, loading: authLoading } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const toast = useToast();
+  const [nativeVersion, setNativeVersion] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -260,6 +261,26 @@ export default function SettingsPage() {
     }
   };
 
+
+  // Show the REAL installed native version (not the hard-coded web string),
+  // so it's obvious which binary is actually running. The web is served
+  // remotely from peja.life and updates independently of the native shell,
+  // so a stale APK can otherwise masquerade as the latest version.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cap = (window as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+        if (!cap?.isNativePlatform?.()) return;
+        const { App } = await import("@capacitor/app");
+        const info = await App.getInfo();
+        if (!cancelled) setNativeVersion(`Peja v${info.version} (build ${info.build})`);
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSignOut = async () => {
     await signOut();
@@ -934,7 +955,7 @@ export default function SettingsPage() {
           />
         </section>
 
-        <p className="text-center text-sm text-dark-500 py-4">Peja v1.6.1</p>
+        <p className="text-center text-sm text-dark-500 py-4">{nativeVersion || "Peja v1.6.1"}</p>
       </main>
 
       {/* ─── Change Password Modal ─── */}
