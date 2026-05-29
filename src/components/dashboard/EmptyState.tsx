@@ -16,7 +16,7 @@ export default function EmptyState({
   className?: string;
 }) {
   return (
-    <div className={`flex flex-col items-center justify-center text-center py-16 ${className}`}>
+    <div className={`flex flex-col items-center justify-center text-center ${className || "py-16"}`}>
       <div className="w-16 h-16 rounded-full bg-white/5 border border-white/[0.07] flex items-center justify-center mb-4">
         <Icon className="w-7 h-7 text-dark-500" strokeWidth={1.75} />
       </div>

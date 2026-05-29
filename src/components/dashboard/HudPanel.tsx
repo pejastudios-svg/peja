@@ -16,7 +16,7 @@ export default function HudPanel({
   className?: string;
 }) {
   return (
-    <section className={`hud-panel ${className}`}>
+    <section className={`hud-panel flex flex-col ${className}`}>
       {(title || right) && (
         <div className="hud-panel-header px-4 py-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -26,7 +26,7 @@ export default function HudPanel({
           {right}
         </div>
       )}
-      <div className="p-4">{children}</div>
+      <div className="p-4 flex-1">{children}</div>
     </section>
   );
 }

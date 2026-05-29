@@ -36,9 +36,11 @@ import {
   RefreshCw,
   Sun,
   Moon,
+  ArrowUpCircle,
 } from "lucide-react";
 import { refreshApp } from "@/lib/refreshApp";
 import { useTheme } from "@/context/ThemeContext";
+import { useToast } from "@/context/ToastContext";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { Header } from "@/components/layout/Header";
 
@@ -47,6 +49,7 @@ export default function SettingsPage() {
   const router = useRouter();
   const { user, session, signOut, loading: authLoading } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -261,6 +264,41 @@ export default function SettingsPage() {
   const handleSignOut = async () => {
     await signOut();
     router.push("/login");
+  };
+
+  // Manual update check + on-device diagnostic. The auto banner fails
+  // silently (prod strips console + WebView debugging is off), so this
+  // surfaces exactly what Google Play reports: a thrown error means the
+  // build is missing the plugin or wasn't installed from Play; "latest
+  // version" means Play sees no higher versionCode yet (still propagating
+  // or none published above this one); otherwise it opens the listing.
+  const checkForUpdates = async () => {
+    try {
+      const cap = (window as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor;
+      if (!cap?.isNativePlatform?.() || cap.getPlatform?.() !== "android") {
+        toast.info("Update checks are only available in the Android app.");
+        return;
+      }
+      const { AppUpdate, AppUpdateAvailability } = await import(
+        "@capawesome/capacitor-app-update"
+      );
+      const info = await AppUpdate.getAppUpdateInfo();
+      if (info.updateAvailability === AppUpdateAvailability.UPDATE_AVAILABLE) {
+        toast.success(
+          `Update available (build ${info.availableVersionCode ?? "?"}). Opening Play Store.`
+        );
+        try {
+          await AppUpdate.openAppStore();
+        } catch {}
+      } else {
+        toast.info(
+          `You're on the latest version (build ${info.currentVersionCode ?? "?"}).`
+        );
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "unknown error";
+      toast.danger(`Update check failed: ${msg}`);
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -858,6 +896,14 @@ export default function SettingsPage() {
             description="Clear cache and reload"
             onClick={() => {
               void refreshApp();
+            }}
+          />
+          <SettingRow
+            icon={ArrowUpCircle}
+            label="Check for Updates"
+            description="See if a new version is available"
+            onClick={() => {
+              void checkForUpdates();
             }}
           />
                 <button

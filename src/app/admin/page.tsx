@@ -326,7 +326,7 @@ export default function AdminOverviewPage() {
           right={<span className="pill pill-red">{stats.activeSOS} live</span>}
         >
           {activeSOS.length === 0 ? (
-            <EmptyState icon={AlertTriangle} title="No active SOS alerts" className="py-8" />
+            <EmptyState icon={AlertTriangle} title="No active SOS alerts" className="h-full py-8" />
           ) : (
             <div className="space-y-2">
               {activeSOS.map((sos) => (
@@ -366,7 +366,7 @@ export default function AdminOverviewPage() {
           subtitle="Latest posts entering the system"
         >
           {recentPosts.length === 0 ? (
-            <EmptyState icon={FileText} title="No posts yet" className="py-8" />
+            <EmptyState icon={FileText} title="No posts yet" className="h-full py-8" />
           ) : (
             <div className="space-y-2">
               {recentPosts.map((p) => (
