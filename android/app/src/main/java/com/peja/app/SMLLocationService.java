@@ -3,6 +3,7 @@ package com.peja.app;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
@@ -104,15 +105,28 @@ public class SMLLocationService extends Service {
             return START_NOT_STICKY;
         }
 
-        if (intent != null) {
-            checkinId = intent.getStringExtra(EXTRA_CHECKIN_ID) != null ? intent.getStringExtra(EXTRA_CHECKIN_ID) : "";
+        if (intent != null && intent.getStringExtra(EXTRA_CHECKIN_ID) != null) {
+            checkinId = intent.getStringExtra(EXTRA_CHECKIN_ID);
             supabaseUrl = intent.getStringExtra(EXTRA_SUPABASE_URL) != null ? intent.getStringExtra(EXTRA_SUPABASE_URL) : "";
             supabaseKey = intent.getStringExtra(EXTRA_SUPABASE_KEY) != null ? intent.getStringExtra(EXTRA_SUPABASE_KEY) : "";
             accessToken = intent.getStringExtra(EXTRA_ACCESS_TOKEN) != null ? intent.getStringExtra(EXTRA_ACCESS_TOKEN) : "";
+        } else {
+            // Restart with no extras — this is a START_STICKY restart after the
+            // process was killed (e.g. the user swiped the app from recents).
+            // Recover the in-flight check-in from prefs and resume tracking.
+            android.content.SharedPreferences prefs =
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            if (prefs.getBoolean("is_active", false)) {
+                checkinId = prefs.getString("checkin_id", "");
+                supabaseUrl = prefs.getString("supabase_url", "");
+                supabaseKey = prefs.getString("supabase_key", "");
+                accessToken = prefs.getString("access_token", "");
+                Log.d(TAG, "Recovered SML check-in from prefs: " + checkinId);
+            }
         }
 
         if (checkinId.isEmpty() || supabaseUrl.isEmpty() || supabaseKey.isEmpty()) {
-            Log.e(TAG, "Missing required data, stopping");
+            Log.e(TAG, "No active check-in to track, stopping");
             clearState();
             stopForegroundCompat();
             stopSelf();
@@ -293,6 +307,37 @@ public class SMLLocationService extends Service {
             }
         } catch (Exception ignored) {
         }
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        // The user swiped Peja out of recents. Android tears down the process
+        // and this foreground service with it. If a check-in is still active,
+        // schedule a near-immediate restart so location sharing survives the
+        // swipe. Best-effort: aggressive OEM battery managers may still block
+        // the relaunch, and the battery-optimization exemption greatly improves
+        // the odds. START_STICKY + the prefs recovery above resume tracking.
+        try {
+            boolean active = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getBoolean("is_active", false);
+            if (active) {
+                Intent restart = new Intent(getApplicationContext(), SMLLocationService.class);
+                PendingIntent pi;
+                int flags = PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    pi = PendingIntent.getForegroundService(this, 2, restart, flags);
+                } else {
+                    pi = PendingIntent.getService(this, 2, restart, flags);
+                }
+                AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                if (am != null) {
+                    am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1000, pi);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to schedule restart on task removal", e);
+        }
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override

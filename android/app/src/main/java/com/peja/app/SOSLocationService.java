@@ -1,5 +1,6 @@
 package com.peja.app;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -107,8 +108,8 @@ public class SOSLocationService extends Service {
             return START_NOT_STICKY;
         }
 
-        if (intent != null) {
-            sosId = intent.getStringExtra(EXTRA_SOS_ID) != null ? intent.getStringExtra(EXTRA_SOS_ID) : "";
+        if (intent != null && intent.getStringExtra(EXTRA_SOS_ID) != null) {
+            sosId = intent.getStringExtra(EXTRA_SOS_ID);
             supabaseUrl = intent.getStringExtra(EXTRA_SUPABASE_URL) != null ? intent.getStringExtra(EXTRA_SUPABASE_URL) : "";
             supabaseKey = intent.getStringExtra(EXTRA_SUPABASE_KEY) != null ? intent.getStringExtra(EXTRA_SUPABASE_KEY) : "";
             accessToken = intent.getStringExtra(EXTRA_ACCESS_TOKEN) != null ? intent.getStringExtra(EXTRA_ACCESS_TOKEN) : "";
@@ -116,10 +117,26 @@ public class SOSLocationService extends Service {
             helperId = intent.getStringExtra(EXTRA_HELPER_ID) != null ? intent.getStringExtra(EXTRA_HELPER_ID) : "";
             sosOwnerId = intent.getStringExtra(EXTRA_SOS_OWNER_ID) != null ? intent.getStringExtra(EXTRA_SOS_OWNER_ID) : "";
             helperName = intent.getStringExtra(EXTRA_HELPER_NAME) != null ? intent.getStringExtra(EXTRA_HELPER_NAME) : "";
+        } else {
+            // Restart with no extras — START_STICKY restart after the process
+            // was killed (e.g. the user swiped the app from recents). Recover
+            // the in-flight SOS from prefs and resume tracking.
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            if (prefs.getBoolean("is_active", false)) {
+                sosId = prefs.getString("sos_id", "");
+                supabaseUrl = prefs.getString("supabase_url", "");
+                supabaseKey = prefs.getString("supabase_key", "");
+                accessToken = prefs.getString("access_token", "");
+                mode = prefs.getString("mode", "activator");
+                helperId = prefs.getString("helper_id", "");
+                sosOwnerId = prefs.getString("sos_owner_id", "");
+                helperName = prefs.getString("helper_name", "");
+                Log.d(TAG, "Recovered SOS from prefs: " + sosId);
+            }
         }
 
         if (sosId.isEmpty() || supabaseUrl.isEmpty() || supabaseKey.isEmpty()) {
-            Log.e(TAG, "Missing required data, stopping");
+            Log.e(TAG, "No active SOS to track, stopping");
             clearState();
             stopForegroundCompat();
             stopSelf();
@@ -442,6 +459,36 @@ public class SOSLocationService extends Service {
                 Log.e(TAG, "Failed to cancel SOS in Supabase", e);
             }
         }).start();
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        // The user swiped Peja out of recents. If an SOS is still active,
+        // schedule a near-immediate restart so location sharing survives the
+        // swipe. Best-effort: aggressive OEM battery managers may still block
+        // the relaunch; the battery-optimization exemption greatly improves the
+        // odds. START_STICKY + the prefs recovery above resume tracking.
+        try {
+            boolean active = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .getBoolean("is_active", false);
+            if (active) {
+                Intent restart = new Intent(getApplicationContext(), SOSLocationService.class);
+                PendingIntent pi;
+                int flags = PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    pi = PendingIntent.getForegroundService(this, 3, restart, flags);
+                } else {
+                    pi = PendingIntent.getService(this, 3, restart, flags);
+                }
+                AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                if (am != null) {
+                    am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1000, pi);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to schedule restart on task removal", e);
+        }
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override
