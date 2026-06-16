@@ -99,6 +99,21 @@ public class SMLLocationService extends Service {
 
         saveState();
 
+        // Promote to foreground first. On Android 12+ this can throw
+        // ForegroundServiceStartNotAllowedException if we were started from the
+        // background, and on Android 14+ a SecurityException if the location
+        // permission isn't held. Either must NOT crash the app — catch, clean
+        // up, and stop. JS keeps the foreground web fallback as a safety net.
+        try {
+            Notification notification = buildNotification();
+            startForeground(NOTIFICATION_ID, notification);
+        } catch (Exception e) {
+            Log.e(TAG, "startForeground failed, stopping service", e);
+            clearState();
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         wakeLock = powerManager.newWakeLock(
                 PowerManager.PARTIAL_WAKE_LOCK,
@@ -108,9 +123,6 @@ public class SMLLocationService extends Service {
         // extends it. Falls back to foreground-service-only after this expires;
         // accuracy may degrade in Doze but the process stays alive.
         wakeLock.acquire(8 * 60 * 60 * 1000L);
-
-        Notification notification = buildNotification();
-        startForeground(NOTIFICATION_ID, notification);
 
         startLocationUpdates();
 

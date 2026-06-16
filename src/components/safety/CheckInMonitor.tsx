@@ -195,7 +195,13 @@ useEffect(() => {
         });
         const data = await res.json();
         if (data.active && data.checkin) {
-          if (!activeRef.current) startTracking(data.checkin.id);
+          // A foreground service can only be started while the app is
+          // visible (Android 12+ blocks background FGS starts). If we're
+          // backgrounded, defer — the visibilitychange handler restarts
+          // tracking the moment the app returns to the foreground.
+          if (!activeRef.current && document.visibilityState === "visible") {
+            startTracking(data.checkin.id);
+          }
         } else {
           if (activeRef.current) stopTracking();
         }
@@ -207,8 +213,11 @@ useEffect(() => {
 
     // Restart tracking when app returns to foreground
     const handleVisibility = () => {
-      if (document.visibilityState === "visible" && activeRef.current) {
-        // Re-check status and restart if needed
+      if (document.visibilityState === "visible") {
+        // Re-check status and start tracking if a check-in is active. This is
+        // also where tracking starts when the app was backgrounded at the
+        // moment the check-in became active (a foreground service can't be
+        // started from the background).
         checkAndTrack();
       }
     };

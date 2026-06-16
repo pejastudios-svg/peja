@@ -127,7 +127,7 @@ export function LocationReadinessPrompt() {
                 icon={<MapPin className="w-5 h-5 text-primary-400" />}
                 tint="bg-primary-500/15"
                 title="Allow location all the time"
-                subtitle="Pick 'Allow all the time' on the next screen."
+                subtitle="Open Permissions → Location, then pick 'Allow all the time'."
                 onClick={fixLocation}
               />
             )}

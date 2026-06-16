@@ -44,10 +44,19 @@ public class SOSLocationPlugin extends Plugin {
         intent.putExtra(SOSLocationService.EXTRA_SOS_OWNER_ID, sosOwnerId);
         intent.putExtra(SOSLocationService.EXTRA_HELPER_NAME, helperName);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getContext().startForegroundService(intent);
-        } else {
-            getContext().startService(intent);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                getContext().startForegroundService(intent);
+            } else {
+                getContext().startService(intent);
+            }
+        } catch (Exception e) {
+            // Don't crash if Android refuses a background FGS start.
+            Log.e(TAG, "Failed to start SOS service", e);
+            JSObject result = new JSObject();
+            result.put("started", false);
+            call.resolve(result);
+            return;
         }
 
         JSObject result = new JSObject();

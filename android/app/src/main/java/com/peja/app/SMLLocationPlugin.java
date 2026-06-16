@@ -36,10 +36,21 @@ public class SMLLocationPlugin extends Plugin {
         intent.putExtra(SMLLocationService.EXTRA_SUPABASE_KEY, supabaseKey);
         intent.putExtra(SMLLocationService.EXTRA_ACCESS_TOKEN, accessToken);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            getContext().startForegroundService(intent);
-        } else {
-            getContext().startService(intent);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                getContext().startForegroundService(intent);
+            } else {
+                getContext().startService(intent);
+            }
+        } catch (Exception e) {
+            // Android 12+ can refuse a foreground-service start from the
+            // background (ForegroundServiceStartNotAllowedException). Don't
+            // crash — report not-started so JS keeps its web fallback.
+            Log.e(TAG, "Failed to start SML service", e);
+            JSObject result = new JSObject();
+            result.put("started", false);
+            call.resolve(result);
+            return;
         }
 
         JSObject result = new JSObject();
