@@ -83,11 +83,26 @@ public class SOSLocationService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // CRITICAL: once started via startForegroundService(), Android requires
+        // startForeground() within ~5s on EVERY path — even the stop/invalid
+        // paths. Returning (even via stopSelf) without it crashes with
+        // ForegroundServiceDidNotStartInTimeException. Promote to foreground
+        // FIRST, before any branching, then stop afterward if needed.
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification());
+        } catch (Exception e) {
+            Log.e(TAG, "startForeground failed, stopping service", e);
+            clearState();
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             Log.d(TAG, "Stop action received");
             // Cancel SOS in Supabase
             cancelSOSInSupabase();
             clearState();
+            stopForegroundCompat();
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -105,25 +120,13 @@ public class SOSLocationService extends Service {
 
         if (sosId.isEmpty() || supabaseUrl.isEmpty() || supabaseKey.isEmpty()) {
             Log.e(TAG, "Missing required data, stopping");
+            clearState();
+            stopForegroundCompat();
             stopSelf();
             return START_NOT_STICKY;
         }
 
         saveState();
-
-        // Promote to foreground first. On Android 12+ this can throw
-        // ForegroundServiceStartNotAllowedException if started from the
-        // background, and on Android 14+ a SecurityException if location
-        // permission isn't held. Never let that crash the app.
-        try {
-            Notification notification = buildNotification();
-            startForeground(NOTIFICATION_ID, notification);
-        } catch (Exception e) {
-            Log.e(TAG, "startForeground failed, stopping service", e);
-            clearState();
-            stopSelf();
-            return START_NOT_STICKY;
-        }
 
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         wakeLock = powerManager.newWakeLock(
@@ -380,6 +383,18 @@ public class SOSLocationService extends Service {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putBoolean("is_active", false)
                 .apply();
+    }
+
+    /** Remove the foreground notification across API levels (minSdk 24). */
+    private void stopForegroundCompat() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(Service.STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+        } catch (Exception ignored) {
+        }
     }
 
         private void cancelSOSInSupabase() {

@@ -77,9 +77,29 @@ public class SMLLocationService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // CRITICAL: once started via startForegroundService(), Android requires
+        // startForeground() to be called within ~5s on EVERY path — even the
+        // stop/invalid paths that immediately tear down. Returning (even via
+        // stopSelf) without it crashes the process with
+        // ForegroundServiceDidNotStartInTimeException. So promote to foreground
+        // FIRST, before any branching, then stop afterward if needed.
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification());
+        } catch (Exception e) {
+            // Android 12+ may refuse a background start (ForegroundServiceStart-
+            // NotAllowedException); Android 14+ throws SecurityException without
+            // location permission. Don't crash — stop and let JS keep the
+            // foreground web fallback.
+            Log.e(TAG, "startForeground failed, stopping service", e);
+            clearState();
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             Log.d(TAG, "Stop action received");
             clearState();
+            stopForegroundCompat();
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -93,26 +113,13 @@ public class SMLLocationService extends Service {
 
         if (checkinId.isEmpty() || supabaseUrl.isEmpty() || supabaseKey.isEmpty()) {
             Log.e(TAG, "Missing required data, stopping");
+            clearState();
+            stopForegroundCompat();
             stopSelf();
             return START_NOT_STICKY;
         }
 
         saveState();
-
-        // Promote to foreground first. On Android 12+ this can throw
-        // ForegroundServiceStartNotAllowedException if we were started from the
-        // background, and on Android 14+ a SecurityException if the location
-        // permission isn't held. Either must NOT crash the app — catch, clean
-        // up, and stop. JS keeps the foreground web fallback as a safety net.
-        try {
-            Notification notification = buildNotification();
-            startForeground(NOTIFICATION_ID, notification);
-        } catch (Exception e) {
-            Log.e(TAG, "startForeground failed, stopping service", e);
-            clearState();
-            stopSelf();
-            return START_NOT_STICKY;
-        }
 
         PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
         wakeLock = powerManager.newWakeLock(
@@ -262,6 +269,18 @@ public class SMLLocationService extends Service {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
                 .putBoolean("is_active", false)
                 .apply();
+    }
+
+    /** Remove the foreground notification across API levels (minSdk 24). */
+    private void stopForegroundCompat() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(Service.STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     @Override

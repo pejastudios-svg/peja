@@ -52,10 +52,17 @@ public class SOSBootReceiver extends BroadcastReceiver {
         serviceIntent.putExtra(SOSLocationService.EXTRA_SOS_OWNER_ID, sosOwnerId);
         serviceIntent.putExtra(SOSLocationService.EXTRA_HELPER_NAME, helperName);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent);
-        } else {
-            context.startService(serviceIntent);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent);
+            } else {
+                context.startService(serviceIntent);
+            }
+        } catch (Exception e) {
+            // Android 12+ can refuse a foreground-service start triggered from
+            // a boot broadcast. Don't crash — the service simply won't auto-
+            // restart; the user can reopen the app to resume tracking.
+            Log.e("SOSBootReceiver", "Failed to restart SOS service after boot", e);
         }
     }
 }

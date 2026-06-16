@@ -42,12 +42,30 @@ export function BatteryOptimizationBanner() {
   useEffect(() => {
     refresh();
     // Re-check when the app returns to the foreground — the user may have
-    // just toggled the setting in the system dialog we opened.
+    // just toggled the setting. The battery dialog is a lightweight overlay
+    // that doesn't always fire visibilitychange in the WebView, so we also
+    // listen to Capacitor's appStateChange (the reliable native signal).
     const onVisible = () => {
       if (document.visibilityState === "visible") refresh();
     };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+
+    let removeAppListener: (() => void) | undefined;
+    void import("@capacitor/app")
+      .then(({ App }) =>
+        App.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) refresh();
+        })
+      )
+      .then((handle) => {
+        removeAppListener = () => void handle.remove();
+      })
+      .catch(() => {});
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      removeAppListener?.();
+    };
   }, [refresh]);
 
   const handleEnable = useCallback(async () => {
@@ -55,10 +73,27 @@ export function BatteryOptimizationBanner() {
     try {
       await DeviceSettings.requestIgnoreBatteryOptimizations();
     } catch {
-      // The visibilitychange re-check will reconcile state either way.
+      // The re-check listeners below reconcile state either way.
     } finally {
       setRequesting(false);
     }
+    // The OS may report the new state slightly after the dialog closes, and
+    // the resume event can race ahead of it. Poll a few times to be sure the
+    // banner disappears the moment the exemption is granted — no manual
+    // refresh needed.
+    let n = 0;
+    const poll = setInterval(async () => {
+      n += 1;
+      try {
+        const { ignoring } = await DeviceSettings.isIgnoringBatteryOptimizations();
+        if (ignoring) {
+          setShow(false);
+          clearInterval(poll);
+          return;
+        }
+      } catch {}
+      if (n >= 6) clearInterval(poll);
+    }, 1000);
   }, []);
 
   const handleDismiss = useCallback(() => {

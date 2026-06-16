@@ -40,39 +40,75 @@ export function LocationReadinessPrompt() {
     if (needsBattery || needsLocation) setOpen(true);
   }, []);
 
+  const close = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => { setOpen(false); setClosing(false); }, 200);
+  }, []);
+
+  // Re-read current state, flip the checkmarks, and auto-close once both are
+  // resolved — so the prompt updates live without a manual refresh.
+  const recheck = useCallback(async () => {
+    const r = await getLocationReadiness();
+    setBatteryOk(!r.batteryOptimized);
+    setLocationOk(r.backgroundLocation);
+    if (!r.batteryOptimized && r.backgroundLocation) close();
+  }, [close]);
+
+  // Poll for a few seconds after a fix is triggered. The OS can report the
+  // new state slightly after its settings screen/dialog closes, and the
+  // resume event may race ahead of it.
+  const pollAfterFix = useCallback(() => {
+    let n = 0;
+    const poll = setInterval(async () => {
+      n += 1;
+      await recheck();
+      if (n >= 8) clearInterval(poll);
+    }, 1000);
+  }, [recheck]);
+
   useEffect(() => {
     const onSession = () => { void evaluate(); };
     window.addEventListener("peja-session-started", onSession);
     return () => window.removeEventListener("peja-session-started", onSession);
   }, [evaluate]);
 
-  // Re-check when returning from a system settings screen so granted items
-  // flip to a checkmark, and auto-close once everything is resolved.
+  // Re-check when returning from a system settings screen. The battery dialog
+  // is a lightweight overlay that doesn't reliably fire visibilitychange in
+  // the WebView, so also listen to Capacitor's appStateChange.
   useEffect(() => {
     if (!open) return;
-    const onVisible = async () => {
-      if (document.visibilityState !== "visible") return;
-      const r = await getLocationReadiness();
-      setBatteryOk(!r.batteryOptimized);
-      setLocationOk(r.backgroundLocation);
-      if (!r.batteryOptimized && r.backgroundLocation) close();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void recheck();
     };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [open]);
 
-  const close = useCallback(() => {
-    setClosing(true);
-    setTimeout(() => { setOpen(false); setClosing(false); }, 200);
-  }, []);
+    let removeAppListener: (() => void) | undefined;
+    void import("@capacitor/app")
+      .then(({ App }) =>
+        App.addListener("appStateChange", ({ isActive }) => {
+          if (isActive) void recheck();
+        })
+      )
+      .then((handle) => {
+        removeAppListener = () => void handle.remove();
+      })
+      .catch(() => {});
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      removeAppListener?.();
+    };
+  }, [open, recheck]);
 
   const fixBattery = useCallback(async () => {
     try { await DeviceSettings.requestIgnoreBatteryOptimizations(); } catch {}
-  }, []);
+    pollAfterFix();
+  }, [pollAfterFix]);
 
   const fixLocation = useCallback(async () => {
     try { await DeviceSettings.requestBackgroundLocation(); } catch {}
-  }, []);
+    pollAfterFix();
+  }, [pollAfterFix]);
 
   if (!open) return null;
 
