@@ -809,8 +809,12 @@ export function SOSButton({ className = "" }: { className?: string }) {
         }
       } catch (e) {}
 
+      // Nudge toward the OS settings background tracking needs (battery
+      // optimization + "Allow all the time" location).
+      window.dispatchEvent(new CustomEvent("peja-session-started"));
+
       setLoadingComplete(true);
-      
+
       setTimeout(() => {
         setShowNotifiedCard(true);
       }, 500);

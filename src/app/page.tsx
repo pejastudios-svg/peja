@@ -6,6 +6,7 @@ import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { Header } from "@/components/layout/Header";
 import { PostCard } from "@/components/posts/PostCard";
 import { Button } from "@/components/ui/Button";
+import { BatteryOptimizationBanner } from "@/components/system/BatteryOptimizationBanner";
 import { Post } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
@@ -770,6 +771,8 @@ posts.forEach((p: any) => {
             </div>
           </div>
         )}
+
+        <BatteryOptimizationBanner />
 
 <div
           className="max-w-2xl mx-auto py-4"

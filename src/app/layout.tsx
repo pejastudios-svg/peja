@@ -27,6 +27,7 @@ import { ServiceWorkerRegistrar } from "@/components/navigation/ServiceWorkerReg
 import { TutorialProvider } from "@/components/tutorial/TutorialOverlay";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { CheckInMonitor } from "@/components/safety/CheckInMonitor";
+import { LocationReadinessPrompt } from "@/components/safety/LocationReadinessPrompt";
 import { LoginPrompt } from "@/components/auth/LoginPrompt";
 import { PostAuthRedirect } from "@/components/auth/PostAuthRedirect";
 import { SlowConnectionBanner } from "@/components/system/SlowConnectionBanner";
@@ -217,6 +218,7 @@ export default function RootLayout({
                         <CapacitorKeyboardHandler />
                         <ServiceWorkerRegistrar />
                         <CheckInMonitor />
+                        <LocationReadinessPrompt />
                         <SlowConnectionBanner />
                         <OfflineBanner />
                         <AppUpdateBanner />

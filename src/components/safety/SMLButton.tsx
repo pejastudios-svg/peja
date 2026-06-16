@@ -417,6 +417,8 @@ const handleButtonClick = () => {
       closeShareModal();
       setShowMenu(false);
       toast.success("Location sharing started!");
+      // Nudge the user toward the OS settings background tracking needs.
+      window.dispatchEvent(new CustomEvent("peja-session-started"));
     } catch (err: any) {
       // Network spike / server hiccup — queue the start so it lands
       // on the next drain. Optimistic synthetic state keeps the UI

@@ -13,6 +13,15 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SOSLocationPlugin.class);
+        // SML (Share My Location) drives the safety check-in foreground
+        // service. Without this registration the JS bridge call silently
+        // rejects and CheckInMonitor falls back to foreground-only web
+        // tracking — so location stopped updating once the app was
+        // backgrounded. Mirror the SOS registration above.
+        registerPlugin(SMLLocationPlugin.class);
+        // Battery-optimization + background-location helpers used by the
+        // top banner and the session-start readiness prompt.
+        registerPlugin(DeviceSettingsPlugin.class);
 
         // Read the user's saved theme (written by the web layer via
         // @capacitor/preferences, which stores under the "CapacitorStorage"
