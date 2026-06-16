@@ -77,6 +77,22 @@ public class SMLLocationPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void updateToken(PluginCall call) {
+        String accessToken = call.getString("accessToken", "");
+        if (!accessToken.isEmpty()) {
+            // The running service reads the freshest token from prefs on each
+            // Supabase write, so updating prefs is enough — no restart needed.
+            getContext().getSharedPreferences(SMLLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit()
+                    .putString("access_token", accessToken)
+                    .apply();
+        }
+        JSObject result = new JSObject();
+        result.put("updated", !accessToken.isEmpty());
+        call.resolve(result);
+    }
+
+    @PluginMethod
     public void isTracking(PluginCall call) {
         boolean isActive = getContext()
                 .getSharedPreferences(SMLLocationService.PREFS_NAME, Context.MODE_PRIVATE)

@@ -196,17 +196,29 @@ public class SMLLocationService extends Service {
                         "\"updated_at\":\"" + timestamp + "\"" +
                         "}";
 
+                // Read the freshest token from prefs (the JS layer pushes a
+                // refreshed token here when Supabase rotates it), falling back
+                // to the token captured at start.
+                String token = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .getString("access_token", accessToken);
+
                 Request request = new Request.Builder()
                         .url(supabaseUrl + "/rest/v1/safety_checkins?id=eq." + checkinId)
                         .patch(RequestBody.create(json, JSON_TYPE))
                         .addHeader("apikey", supabaseKey)
-                        .addHeader("Authorization", "Bearer " + accessToken)
+                        .addHeader("Authorization", "Bearer " + token)
                         .addHeader("Content-Type", "application/json")
                         .addHeader("Prefer", "return=minimal")
                         .build();
 
                 Response response = httpClient.newCall(request).execute();
-                Log.d(TAG, "SML location updated: " + response.code());
+                int code = response.code();
+                if (code >= 400) {
+                    String body = response.body() != null ? response.body().string() : "";
+                    Log.e(TAG, "SML location update failed: " + code + " " + body);
+                } else {
+                    Log.d(TAG, "SML location updated: " + code);
+                }
                 response.close();
             } catch (Exception e) {
                 Log.e(TAG, "Failed to update SML location", e);

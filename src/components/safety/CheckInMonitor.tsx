@@ -100,16 +100,46 @@ useEffect(() => {
   const locationWatchRef = useRef<number | null>(null);
   const locationPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeRef = useRef(false);
+  // Keep the latest access token in a ref so the tracking lifecycle does NOT
+  // depend on it. The Supabase token rotates periodically; if the effect were
+  // keyed on it, every rotation would tear down and restart the native
+  // foreground service (flickering notification, and a dead service whenever a
+  // rotation lands while backgrounded). The service is self-sufficient — start
+  // it once per check-in and only stop it when the check-in ends.
+  const tokenRef = useRef<string | undefined>(session?.access_token);
+  const checkAndTrackRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    if (!session?.access_token || !user) return;
+    tokenRef.current = session?.access_token;
+    // Push a refreshed token to the already-running native service so a long
+    // check-in (up to 4h) keeps authenticating after the original token
+    // expires (~1h) — WITHOUT restarting the service.
+    if (activeRef.current && session?.access_token) {
+      const isCapacitor = typeof (window as any).Capacitor !== "undefined";
+      if (isCapacitor) {
+        import("@/lib/smlLocation")
+          .then(({ default: SMLLocation }) =>
+            SMLLocation.updateToken?.({ accessToken: session.access_token })
+          )
+          .catch(() => {});
+      }
+    }
+    // If we just got a token (e.g. it arrived after mount), kick a re-check so
+    // tracking can start without waiting for the next poll.
+    checkAndTrackRef.current();
+  }, [session?.access_token]);
+
+  useEffect(() => {
+    if (!user?.id) return;
 
     const sendLocation = (lat: number, lng: number) => {
+      const token = tokenRef.current;
+      if (!token) return;
       fetch(apiUrl("/api/checkin/location/"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ latitude: lat, longitude: lng }),
       }).catch(() => {});
@@ -117,6 +147,8 @@ useEffect(() => {
 
     const startTracking = async (checkinId: string) => {
       if (activeRef.current) return;
+      const token = tokenRef.current;
+      if (!token) return;
       activeRef.current = true;
 
       // Native Android foreground service first. Mirrors the SOS pattern:
@@ -132,7 +164,7 @@ useEffect(() => {
             checkinId,
             supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
             supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-            accessToken: session.access_token,
+            accessToken: token,
           });
           return;
         }
@@ -189,9 +221,11 @@ useEffect(() => {
     };
 
     const checkAndTrack = async () => {
+      const token = tokenRef.current;
+      if (!token) return;
       try {
         const res = await fetch(apiUrl("/api/checkin/status/"), {
-          headers: { Authorization: `Bearer ${session.access_token}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
         const data = await res.json();
         if (data.active && data.checkin) {
@@ -207,6 +241,8 @@ useEffect(() => {
         }
       } catch {}
     };
+
+    checkAndTrackRef.current = () => { void checkAndTrack(); };
 
     checkAndTrack();
     const trackInterval = setInterval(checkAndTrack, 30000);
@@ -227,8 +263,9 @@ useEffect(() => {
       clearInterval(trackInterval);
       stopTracking();
       document.removeEventListener("visibilitychange", handleVisibility);
+      checkAndTrackRef.current = () => {};
     };
-  }, [session?.access_token, user]);
+  }, [user?.id]);
 
   return null;
 }
