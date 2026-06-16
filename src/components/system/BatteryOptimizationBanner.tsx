@@ -72,33 +72,37 @@ export function BatteryOptimizationBanner() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 pt-4">
-      <div className="glass-card p-4 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
-          <BatteryCharging className="w-5 h-5 text-green-400" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-dark-200">Turn off battery optimization</p>
-          <p className="text-xs text-dark-400">
-            Lets location keep updating during an SOS or check-in when Peja is
-            closed. This won't affect your other apps.
-          </p>
+      <div className="glass-card p-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
+            <BatteryCharging className="w-5 h-5 text-green-400" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-dark-100">
+              Turn off battery optimization
+            </p>
+            <p className="text-xs text-dark-400 mt-0.5 leading-relaxed">
+              Keeps your location updating during an SOS or check-in, even when
+              Peja is closed. Won't affect your other apps.
+            </p>
+          </div>
+          <button
+            onClick={handleDismiss}
+            aria-label="Dismiss"
+            className="shrink-0 -mr-1 -mt-1 p-1.5 rounded-lg text-dark-500 hover:text-dark-300 hover:bg-white/5 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
         <Button
           variant="primary"
           size="sm"
           onClick={handleEnable}
           disabled={requesting}
-          className="shrink-0"
+          className="w-full mt-3"
         >
-          Turn off
+          Turn off battery optimization
         </Button>
-        <button
-          onClick={handleDismiss}
-          aria-label="Dismiss"
-          className="shrink-0 p-1 rounded-lg text-dark-500 hover:text-dark-300 hover:bg-white/5 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
       </div>
     </div>
   );
