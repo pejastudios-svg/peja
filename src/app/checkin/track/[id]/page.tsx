@@ -8,17 +8,15 @@ import { AvatarImage } from "@/components/ui/AvatarImage";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
 import {
-  ArrowLeft,
   Loader2,
   AlertTriangle,
   Clock,
   MapPin,
   Phone,
   User,
-  Radio,
   CheckCircle,
-  Shield,
 } from "lucide-react";
+import { Header } from "@/components/layout/Header";
 import { formatDistanceToNow } from "date-fns";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 
@@ -202,19 +200,8 @@ useEffect(() => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-dark-950">
-      {/* Header */}
-      <header className="relative z-20 glass-header">
-        <div className="flex items-center justify-between px-4 h-14">
-          <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg">
-            <ArrowLeft className="w-5 h-5 text-dark-200" />
-          </button>
-          <div className="flex items-center gap-2">
-            <Radio className={`w-4 h-4 ${isOverdue ? "text-red-400" : "text-green-400"} animate-pulse`} />
-            <span className="text-sm font-medium text-dark-100">Live Location</span>
-          </div>
-          <div className="w-9" />
-        </div>
-      </header>
+      {/* Floating back-pill header (overlays the map, matching Map/Messages). */}
+      <Header variant="back" title="Live Location" onBack={() => router.back()} />
 
       {/* Map */}
       <div className="flex-1 relative">

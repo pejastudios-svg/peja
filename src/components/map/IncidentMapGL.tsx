@@ -105,29 +105,92 @@ function formatETA(minutes: number): { short: string; full: string; arrivalTime:
   };
 }
 
+async function fetchWithTimeout(url: string, ms: number, init?: RequestInit) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Road-following driving route between two points. Tries OpenRouteService
+ * first when NEXT_PUBLIC_ORS_API_KEY is set (free tier, ~2k/day, far more
+ * reliable than the public OSRM demo), then falls back to the OSRM demo
+ * server with a timeout + one retry. Returns null only if every attempt
+ * fails (caller keeps the last good route rather than drawing a fake line).
+ */
 async function fetchRoute(
   fromLat: number, fromLng: number, toLat: number, toLng: number
 ): Promise<{ geojson: any; distanceKm: number; durationMin: number } | null> {
-  try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson&steps=true`;
-    const res = await fetch(url);
-    const data = await res.json();
+  const orsKey = process.env.NEXT_PUBLIC_ORS_API_KEY;
 
-    if (data.code !== "Ok" || !data.routes?.[0]) return null;
-
-    const route = data.routes[0];
-    return {
-      geojson: {
-        type: "Feature",
-        geometry: route.geometry,
-        properties: {},
-      },
-      distanceKm: route.distance / 1000,
-      durationMin: route.duration / 60,
-    };
-  } catch {
-    return null;
+  if (orsKey) {
+    try {
+      const url =
+        `https://api.openrouteservice.org/v2/directions/driving-car` +
+        `?api_key=${orsKey}&start=${fromLng},${fromLat}&end=${toLng},${toLat}`;
+      const res = await fetchWithTimeout(url, 7000);
+      const data = await res.json();
+      const feat = data?.features?.[0];
+      if (feat?.geometry && feat?.properties?.summary) {
+        return {
+          geojson: { type: "Feature", geometry: feat.geometry, properties: {} },
+          distanceKm: feat.properties.summary.distance / 1000,
+          durationMin: feat.properties.summary.duration / 60,
+        };
+      }
+    } catch {
+      // fall through to OSRM
+    }
   }
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson`;
+      const res = await fetchWithTimeout(url, 7000);
+      const data = await res.json();
+      if (data.code === "Ok" && data.routes?.[0]) {
+        const route = data.routes[0];
+        return {
+          geojson: { type: "Feature", geometry: route.geometry, properties: {} },
+          distanceKm: route.distance / 1000,
+          durationMin: route.duration / 60,
+        };
+      }
+    } catch {
+      // retry once
+    }
+  }
+  return null;
+}
+
+// Meters between two lat/lng points (haversine).
+function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Approx distance (m) from a point to the nearest vertex of a route line.
+// OSRM/ORS return dense geometry, so vertex distance is a good proxy for
+// "how far off the planned route am I" without segment-projection math.
+function minDistanceToRoute(
+  lat: number, lng: number, coords: [number, number][]
+): number {
+  let min = Infinity;
+  for (const [clng, clat] of coords) {
+    const d = haversineM(lat, lng, clat, clng);
+    if (d < min) min = d;
+  }
+  return min;
 }
 
 function getCategoryColor(categoryId: string): string {
@@ -220,6 +283,11 @@ export default function IncidentMapGL({
   const [sendingHelp, setSendingHelp] = useState(false);
 const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
   const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null);
+  // Current route's geometry + when we last fetched it, kept in refs so the
+  // rerouting effect can decide whether to recompute without re-running on
+  // every routeGeoJSON change.
+  const routeCoordsRef = useRef<[number, number][]>([]);
+  const lastRouteFetchRef = useRef<number>(0);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [toast, setToast] = useState<string | null>(null);
   // Helpers state — initialized from localStorage
@@ -577,7 +645,11 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-// Fetch/update route when helping someone
+// Fetch/update route when helping someone, with real rerouting:
+  // recompute immediately when the helper drifts off the planned route
+  // (took a different road), otherwise just refresh ETA periodically.
+  const OFF_ROUTE_M = 50;       // deviation that counts as "took another route"
+  const ROUTE_REFRESH_MS = 20000; // periodic refresh while on-route (ETA/progress)
   useEffect(() => {
     if (!userLocation) return;
     const helpedId = [...helpedSOSIds][0];
@@ -588,9 +660,11 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
     if (!sos) return;
 
     const updateRoute = async () => {
+      lastRouteFetchRef.current = Date.now();
       const route = await fetchRoute(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
       if (route) {
         setRouteGeoJSON(route.geojson);
+        routeCoordsRef.current = route.geojson.geometry.coordinates as [number, number][];
         const distStr = route.distanceKm < 1
           ? `${Math.round(route.distanceKm * 1000)}m`
           : `${route.distanceKm.toFixed(1)}km`;
@@ -598,14 +672,25 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
       }
     };
 
-    // Fetch immediately if no route yet, otherwise debounce updates
-    if (!routeGeoJSON) {
+    const coords = routeCoordsRef.current;
+    if (!coords || coords.length === 0) {
+      // No route yet — compute the first one.
       updateRoute();
-    } else {
-      const timer = setTimeout(updateRoute, 15000);
+      return;
+    }
+
+    const deviation = minDistanceToRoute(userLocation.lat, userLocation.lng, coords);
+    const age = Date.now() - lastRouteFetchRef.current;
+
+    if (deviation > OFF_ROUTE_M) {
+      // Helper left the planned route — recompute from where they actually are.
+      updateRoute();
+    } else if (age > ROUTE_REFRESH_MS) {
+      // Still on route — refresh distance/ETA as they make progress.
+      const timer = setTimeout(updateRoute, 0);
       return () => clearTimeout(timer);
     }
-  }, [userLocation, helpedSOSIds, liveSOSAlerts, routeGeoJSON]);
+  }, [userLocation, helpedSOSIds, liveSOSAlerts]);
 
   // =====================================================================
   // LISTEN FOR HELPER NOTIFICATIONS (SOS activator receives these)
@@ -924,6 +1009,8 @@ if (milestoneToFire) {
     if (helpedSOSIds.size === 0) {
       setRouteGeoJSON(null);
       setRouteInfo(null);
+      routeCoordsRef.current = [];
+      lastRouteFetchRef.current = 0;
     }
   }, [helpedSOSIds]);
   // =====================================================================
@@ -1038,6 +1125,8 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
         mapStyle={MAP_STYLE}
         maxZoom={18}
         minZoom={3}
+      // Collapse the required MapTiler/OSM attribution to the small "i".
+      attributionControl={{ compact: true }}
       onLoad={() => setMapLoaded(true)}
       >
         {mapLoaded && <>

@@ -244,6 +244,8 @@ export default function SharedLocationsPage() {
             mapStyle={MAP_STYLE}
             maxZoom={18}
             minZoom={3}
+            // Collapse the required MapTiler/OSM attribution to the small "i".
+            attributionControl={{ compact: true }}
             onLoad={() => setMapLoaded(true)}
           >
             {mapLoaded && usersWithLocation.map((u) => {

@@ -131,6 +131,10 @@ const [targetLat, setTargetLat] = useState(latitude);
       mapStyle={MAP_STYLE}
       maxZoom={18}
       minZoom={3}
+      // Collapse the required MapTiler/OSM attribution to the small "i"
+      // (tap to expand) instead of the full text bar. Removing it entirely
+      // would violate MapTiler's terms and OSM's license.
+      attributionControl={{ compact: true }}
       onLoad={() => setMapLoaded(true)}
     >
       {mapLoaded && (

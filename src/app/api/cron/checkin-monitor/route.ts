@@ -174,6 +174,27 @@ export async function GET(req: NextRequest) {
     revived++;
   }
 
+  // --- 3b. REVIVE SOS: active alerts whose location has gone stale ---
+  // Same idea as check-ins. The native revive handler resurrects whichever
+  // safety service has saved active state, so the action payload is identical;
+  // we just also need to detect stale SOS alerts (sos_alerts.last_updated) for
+  // users who have an SOS but no SML check-in.
+  const { data: staleSos } = await supabaseAdmin
+    .from("sos_alerts")
+    .select("id, user_id, last_updated")
+    .eq("status", "active")
+    .lt("last_updated", staleCutoff);
+
+  for (const sos of staleSos || []) {
+    await sendSilentDataToUser({
+      userId: sos.user_id,
+      data: { action: "revive_tracking", sos_id: sos.id },
+      ttlMs: 2 * 60 * 1000,
+      collapseKey: `revive-${sos.user_id}`,
+    }).catch(() => {});
+    revived++;
+  }
+
   // --- 4. Clean up temp pre-upload files older than 24h ---
   const { data: tempFiles } = await supabaseAdmin.storage
     .from("media")
