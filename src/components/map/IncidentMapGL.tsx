@@ -673,10 +673,31 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
     if (!userLocation) return;
     const helpedId = [...helpedSOSIds][0];
     if (!helpedId) return;
-    if (liveSOSAlerts.length === 0) return;
 
     const sos = liveSOSAlerts.find(s => s.id === helpedId);
-    if (!sos) return;
+
+    // The helped SOS is gone from the live list (owner cancelled/resolved it)
+    // while we were drawing a route — clear the line + ETA pill and drop the
+    // helped flag. Guarded on an existing route so a transient empty list
+    // during initial load doesn't wipe a not-yet-drawn route (mount cleanup is
+    // handled separately against the DB).
+    if (!sos) {
+      if (routeCoordsRef.current.length > 0) {
+        setRouteGeoJSON(null);
+        setRouteInfo(null);
+        routeCoordsRef.current = [];
+        lastRouteFetchRef.current = 0;
+        routeTotalKmRef.current = 0;
+        routeTotalMinRef.current = 0;
+        setHelpedSOSIds((prev) => {
+          const next = new Set(prev);
+          next.delete(helpedId);
+          try { localStorage.setItem(HELPED_SOS_KEY, JSON.stringify([...next])); } catch {}
+          return next;
+        });
+      }
+      return;
+    }
 
     // Redraw the line starting exactly at the user's current position by
     // dropping the already-travelled portion of the fetched route. Runs
