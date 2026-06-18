@@ -659,12 +659,33 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
     const sos = liveSOSAlerts.find(s => s.id === helpedId);
     if (!sos) return;
 
+    // Redraw the line starting exactly at the user's current position by
+    // dropping the already-travelled portion of the fetched route. Runs
+    // locally on every location tick (no network), so the green line sticks
+    // to the moving marker instead of lagging until the next fetch.
+    const applyTrim = (lat: number, lng: number) => {
+      const full = routeCoordsRef.current;
+      if (!full || full.length === 0) return;
+      let bestI = 0;
+      let bestD = Infinity;
+      for (let i = 0; i < full.length; i++) {
+        const d = haversineM(lat, lng, full[i][1], full[i][0]);
+        if (d < bestD) { bestD = d; bestI = i; }
+      }
+      const trimmed: [number, number][] = [[lng, lat], ...full.slice(bestI)];
+      setRouteGeoJSON({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: trimmed },
+        properties: {},
+      });
+    };
+
     const updateRoute = async () => {
       lastRouteFetchRef.current = Date.now();
       const route = await fetchRoute(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
       if (route) {
-        setRouteGeoJSON(route.geojson);
         routeCoordsRef.current = route.geojson.geometry.coordinates as [number, number][];
+        applyTrim(userLocation.lat, userLocation.lng);
         const distStr = route.distanceKm < 1
           ? `${Math.round(route.distanceKm * 1000)}m`
           : `${route.distanceKm.toFixed(1)}km`;
@@ -678,6 +699,9 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
       updateRoute();
       return;
     }
+
+    // Instantly slide the line to the user's current spot (local, no network).
+    applyTrim(userLocation.lat, userLocation.lng);
 
     const deviation = minDistanceToRoute(userLocation.lat, userLocation.lng, coords);
     const age = Date.now() - lastRouteFetchRef.current;
@@ -1368,9 +1392,10 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
           </Source>
         )}
 
-        {/* Route info badge */}
+        {/* Route info badge — sits below the "Active SOS" pill (top-4) so the
+            two don't overlap. */}
         {routeInfo && routeGeoJSON && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20">
+          <div className="absolute top-24 left-1/2 -translate-x-1/2 z-20">
             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-600 text-white text-sm font-medium shadow-lg">
               <span>{routeInfo.distance}</span>
               <span className="w-1 h-1 rounded-full bg-white/50" />
