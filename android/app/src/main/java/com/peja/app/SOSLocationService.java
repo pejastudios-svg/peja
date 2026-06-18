@@ -59,6 +59,9 @@ public class SOSLocationService extends Service {
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
     private PowerManager.WakeLock wakeLock;
+    // Guards against re-registering updates when onStartCommand is delivered
+    // again to an already-running service (e.g. a revive push).
+    private boolean tracking = false;
 
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -160,6 +163,9 @@ public class SOSLocationService extends Service {
     }
 
     private void startLocationUpdates() {
+        if (tracking) return; // already registered — avoid duplicate listeners
+        tracking = true;
+
         // Strict 15s cadence regardless of movement. Previously this was
         // 10s preferred / 20m distance filter, which meant a stationary
         // user got no updates at all. SOS requires continuous tracking even
@@ -482,7 +488,14 @@ public class SOSLocationService extends Service {
                 }
                 AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
                 if (am != null) {
-                    am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1000, pi);
+                    long at = System.currentTimeMillis() + 1000;
+                    // setAndAllowWhileIdle fires even in Doze without needing
+                    // the exact-alarm permission.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+                    } else {
+                        am.set(AlarmManager.RTC_WAKEUP, at, pi);
+                    }
                 }
             }
         } catch (Exception e) {

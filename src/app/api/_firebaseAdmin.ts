@@ -140,6 +140,89 @@ export async function sendPushNotification(params: {
   }
 }
 
+/**
+ * Sends a DATA-ONLY high-priority message — no `notification` block, so the
+ * system shows nothing. High-priority data messages reach the native
+ * FirebaseMessagingService even when the app has been killed (and FCM grants a
+ * short window to start a foreground service), which is how we revive
+ * background location tracking on OEMs (Transsion/Xiaomi/etc.) that kill the
+ * app and block its own service from restarting.
+ */
+export async function sendSilentData(params: {
+  token: string;
+  data: Record<string, string>;
+  ttlMs?: number;
+  collapseKey?: string;
+}): Promise<SendResult> {
+  try {
+    const firebaseApp = getFirebaseAdmin();
+    const messaging = firebaseApp.messaging();
+
+    await messaging.send({
+      token: params.token,
+      data: params.data,
+      android: {
+        priority: "high",
+        ttl: params.ttlMs ?? 2 * MINUTE,
+        ...(params.collapseKey ? { collapseKey: params.collapseKey } : {}),
+        // Deliberately no `notification` block — silent wake only.
+      },
+    });
+
+    return "sent";
+  } catch (error: any) {
+    const INVALID_CODES = [
+      "messaging/registration-token-not-registered",
+      "messaging/invalid-registration-token",
+      "messaging/invalid-argument",
+    ];
+    if (INVALID_CODES.includes(error?.code)) {
+      return "invalid";
+    }
+    return "error";
+  }
+}
+
+export async function sendSilentDataToUser(params: {
+  userId: string;
+  data: Record<string, string>;
+  ttlMs?: number;
+  collapseKey?: string;
+}): Promise<number> {
+  const { getSupabaseAdmin } = await import("./_supabaseAdmin");
+  const supabaseAdmin = getSupabaseAdmin();
+
+  const { data: tokens, error } = await supabaseAdmin
+    .from("user_push_tokens")
+    .select("id, token")
+    .eq("user_id", params.userId);
+
+  if (error || !tokens || tokens.length === 0) return 0;
+
+  let sentCount = 0;
+  const invalidTokenIds: string[] = [];
+
+  for (const tokenRow of tokens) {
+    const result = await sendSilentData({
+      token: tokenRow.token,
+      data: params.data,
+      ttlMs: params.ttlMs,
+      collapseKey: params.collapseKey,
+    });
+    if (result === "sent") sentCount++;
+    else if (result === "invalid") invalidTokenIds.push(tokenRow.id);
+  }
+
+  if (invalidTokenIds.length > 0) {
+    await supabaseAdmin
+      .from("user_push_tokens")
+      .delete()
+      .in("id", invalidTokenIds);
+  }
+
+  return sentCount;
+}
+
 export async function sendPushToUser(params: {
   userId: string;
   title: string;

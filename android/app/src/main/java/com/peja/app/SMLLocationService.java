@@ -8,7 +8,11 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
@@ -57,6 +61,21 @@ public class SMLLocationService extends Service {
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
     private PowerManager.WakeLock wakeLock;
+
+    // Platform LocationManager as a GMS-independent fallback. On many low-end
+    // MediaTek/Transsion devices the Google Play Services fused provider
+    // silently delivers nothing, so we also listen to GPS + network providers
+    // directly, which don't depend on GMS.
+    private LocationManager locationManager;
+    private LocationListener gpsListener;
+    private LocationListener networkListener;
+    // Throttle so the three sources (fused + GPS + network) don't flood the
+    // backend; keeps the effective cadence near the intended 15s.
+    private volatile long lastSentMs = 0L;
+    // Guards against re-registering listeners when onStartCommand is delivered
+    // again to an already-running service (e.g. a revive push that arrives
+    // while tracking is still alive).
+    private boolean tracking = false;
 
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -153,6 +172,9 @@ public class SMLLocationService extends Service {
     }
 
     private void startLocationUpdates() {
+        if (tracking) return; // already registered — avoid duplicate listeners
+        tracking = true;
+
         // Strict 15s cadence regardless of movement, matching SOS. Pinning
         // interval == minInterval == maxDelay forces a fresh fix every ~15s
         // even when the user is stationary, which is the whole point of the
@@ -170,26 +192,103 @@ public class SMLLocationService extends Service {
             @Override
             public void onLocationResult(LocationResult result) {
                 if (result == null || result.getLastLocation() == null) return;
-
-                double lat = result.getLastLocation().getLatitude();
-                double lng = result.getLastLocation().getLongitude();
-
-                Log.d(TAG, "SML location: " + lat + ", " + lng);
-
-                updateCheckinLocation(lat, lng);
+                onNewLocation(
+                        result.getLastLocation().getLatitude(),
+                        result.getLastLocation().getLongitude(),
+                        "fused"
+                );
             }
         };
 
+        // 1) GMS fused provider — best accuracy/battery when it works.
         try {
             fusedLocationClient.requestLocationUpdates(
                     locationRequest,
                     locationCallback,
                     Looper.getMainLooper()
-            );
+            ).addOnFailureListener(e -> Log.e(TAG, "Fused requestLocationUpdates failed", e));
         } catch (SecurityException e) {
-            Log.e(TAG, "Location permission denied", e);
-            stopSelf();
+            Log.e(TAG, "Location permission denied (fused)", e);
         }
+
+        // 2) Platform LocationManager — GMS-independent fallback so devices
+        //    where fused delivers nothing still report location.
+        startPlatformUpdates();
+
+        // 3) Send an immediate last-known fix so the viewer doesn't wait for
+        //    the first periodic update.
+        sendLastKnownNow();
+    }
+
+    private void startPlatformUpdates() {
+        try {
+            if (locationManager == null) {
+                locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            }
+            if (locationManager == null) return;
+
+            gpsListener = new SimpleLocationListener("gps");
+            networkListener = new SimpleLocationListener("network");
+
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                        LocationManager.GPS_PROVIDER, 15_000L, 0f,
+                        gpsListener, Looper.getMainLooper());
+            }
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER, 15_000L, 0f,
+                        networkListener, Looper.getMainLooper());
+            }
+        } catch (SecurityException e) {
+            Log.e(TAG, "Location permission denied (platform)", e);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start platform location updates", e);
+        }
+    }
+
+    private void sendLastKnownNow() {
+        try {
+            if (locationManager == null) {
+                locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            }
+            Location best = null;
+            if (locationManager != null) {
+                Location gps = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                Location net = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                best = (gps != null) ? gps : net;
+            }
+            if (best != null) {
+                onNewLocation(best.getLatitude(), best.getLongitude(), "last-known");
+            }
+        } catch (SecurityException e) {
+            Log.e(TAG, "Location permission denied (last-known)", e);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to read last-known location", e);
+        }
+    }
+
+    private class SimpleLocationListener implements LocationListener {
+        private final String source;
+        SimpleLocationListener(String source) { this.source = source; }
+        @Override public void onLocationChanged(Location location) {
+            if (location != null) {
+                onNewLocation(location.getLatitude(), location.getLongitude(), source);
+            }
+        }
+        // Required no-op overrides for older API levels.
+        @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
+        @Override public void onProviderEnabled(String provider) {}
+        @Override public void onProviderDisabled(String provider) {}
+    }
+
+    /** Throttle the three location sources to ~one write per 12s. */
+    private void onNewLocation(double lat, double lng, String source) {
+        long now = System.currentTimeMillis();
+        if (now - lastSentMs < 12_000L) return;
+        lastSentMs = now;
+        Log.d(TAG, "SML location (" + source + "): " + lat + ", " + lng);
+        updateCheckinLocation(lat, lng);
     }
 
     private void updateCheckinLocation(double lat, double lng) {
@@ -331,7 +430,14 @@ public class SMLLocationService extends Service {
                 }
                 AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
                 if (am != null) {
-                    am.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1000, pi);
+                    long at = System.currentTimeMillis() + 1000;
+                    // setAndAllowWhileIdle fires even in Doze without needing
+                    // the exact-alarm permission.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+                    } else {
+                        am.set(AlarmManager.RTC_WAKEUP, at, pi);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -349,6 +455,14 @@ public class SMLLocationService extends Service {
             }
         } catch (Exception e) {
             Log.e(TAG, "Error removing SML location updates", e);
+        }
+        try {
+            if (locationManager != null) {
+                if (gpsListener != null) locationManager.removeUpdates(gpsListener);
+                if (networkListener != null) locationManager.removeUpdates(networkListener);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error removing platform location updates", e);
         }
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();

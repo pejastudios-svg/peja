@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
-import { sendPushToUser } from "../../_firebaseAdmin";
+import { sendPushToUser, sendSilentDataToUser } from "../../_firebaseAdmin";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   let warned = 0;
   let missed = 0;
+  let revived = 0;
 
   // --- 1. WARN: active check-ins expiring in < 5 minutes ---
   const warnCutoff = new Date(now.getTime() + 5 * 60 * 1000);
@@ -148,7 +149,32 @@ export async function GET(req: NextRequest) {
     missed++;
   }
 
-  // --- 3. Clean up temp pre-upload files older than 24h ---
+  // --- 3. REVIVE: still-sharing check-ins whose location has gone stale ---
+  // If a tracked check-in's location hasn't updated in > 2 min, the device's
+  // OEM power manager (Transsion/Xiaomi/etc.) likely killed the app and blocked
+  // its own service from restarting. A high-priority *silent* FCM data message
+  // reaches the native handler even when the app is killed and grants a short
+  // window to restart the foreground service. The native side recovers the
+  // check-in from prefs, so no payload beyond the action is needed.
+  const staleCutoff = new Date(now.getTime() - 2 * 60 * 1000).toISOString();
+  const { data: staleCheckins } = await supabaseAdmin
+    .from("safety_checkins")
+    .select("id, user_id, location_updated_at")
+    .in("status", ["active", "missed"])
+    .lt("location_updated_at", staleCutoff);
+
+  for (const checkin of staleCheckins || []) {
+    await sendSilentDataToUser({
+      userId: checkin.user_id,
+      data: { action: "revive_tracking", checkin_id: checkin.id },
+      ttlMs: 2 * 60 * 1000,
+      // One pending revive per user — newer collapses older.
+      collapseKey: `revive-${checkin.user_id}`,
+    }).catch(() => {});
+    revived++;
+  }
+
+  // --- 4. Clean up temp pre-upload files older than 24h ---
   const { data: tempFiles } = await supabaseAdmin.storage
     .from("media")
     .list("temp", { limit: 1000 });
@@ -164,5 +190,5 @@ export async function GET(req: NextRequest) {
       .remove(oldTempFiles.map((f) => `temp/${f.name}`));
   }
 
-  return NextResponse.json({ ok: true, warned, missed, tempCleaned: oldTempFiles.length });
+  return NextResponse.json({ ok: true, warned, missed, revived, tempCleaned: oldTempFiles.length });
 }
