@@ -11,6 +11,7 @@ import { Loader2, Navigation, Map as MapIcon, AlertTriangle, BarChart3, Compass,
 import { subHours } from "date-fns";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useFeedCache } from "@/context/FeedContext";
+import { realtimeManager } from "@/lib/realtime";
 import { usePageCache } from "@/context/PageCacheContext";
 import DataAnalyticsPanel from "@/components/map/DataAnalyticsPanel";
 import { ChevronDown } from "lucide-react";
@@ -451,6 +452,8 @@ export default function MapClient() {
           .maybeSingle();
 
         if (cancelled || !data || !data.latitude || !data.longitude) return;
+        // Don't surface archived/deleted posts via a stale deep link.
+        if (data.status !== "live" && data.status !== "resolved") return;
 
         const fetched: Post = {
           id: data.id,
@@ -591,6 +594,37 @@ export default function MapClient() {
       supabase.removeChannel(sosChannel);
     };
   }, [fetchPosts, fetchSOSAlerts, getUserLocation, myUserId]);
+
+  // Drop archived/deleted posts from the map markers AND the incident list
+  // (both derive from `posts`) the moment a post is archived/removed anywhere.
+  // Mirrors FeedContext: realtime for cross-device, local events for the
+  // same session (e.g. an admin archiving on this device).
+  useEffect(() => {
+    const remove = (id?: string) => {
+      if (!id) return;
+      setPosts((prev) => prev.filter((p) => p.id !== id));
+    };
+
+    const unsub = realtimeManager.subscribeToPosts(
+      undefined,
+      (updated: any) => {
+        if (updated?.status === "archived" || updated?.status === "deleted") {
+          remove(updated.id);
+        }
+      },
+      (deleted: any) => remove(deleted?.id),
+    );
+
+    const onArchived = (e: Event) => remove((e as CustomEvent).detail?.postId);
+    window.addEventListener("peja-post-archived", onArchived);
+    window.addEventListener("peja-post-deleted", onArchived);
+
+    return () => {
+      unsub();
+      window.removeEventListener("peja-post-archived", onArchived);
+      window.removeEventListener("peja-post-deleted", onArchived);
+    };
+  }, []);
 
   // ============================================================
   // ALL HOOKS ARE DONE

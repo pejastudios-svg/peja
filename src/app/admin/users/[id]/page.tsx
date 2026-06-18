@@ -245,6 +245,9 @@ useEffect(() => {
 
     try {
       await supabase.from("posts").update({ status: "archived" }).eq("id", postId);
+      // Drop it from every open surface this session (feed, map + incident
+      // list, search, watch); realtime covers other devices.
+      window.dispatchEvent(new CustomEvent("peja-post-archived", { detail: { postId } }));
     } catch (e) {
       alert("Failed to archive. Refreshing…");
       fetchUserPosts();

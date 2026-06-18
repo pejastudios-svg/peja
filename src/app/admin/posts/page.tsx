@@ -466,6 +466,15 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
       const patch: any = { status: newStatus };
       if (newStatus === "live") patch.created_at = new Date().toISOString();
       await supabase.from("posts").update(patch).eq("id", postId);
+
+      // Broadcast so every open surface (feed, map + incident list, search,
+      // profile, watch) drops the post instantly in this session — realtime
+      // covers other devices.
+      if (newStatus === "archived") {
+        window.dispatchEvent(new CustomEvent("peja-post-archived", { detail: { postId } }));
+      } else if (newStatus === "deleted") {
+        window.dispatchEvent(new CustomEvent("peja-post-deleted", { detail: { postId } }));
+      }
     } catch {
       setPosts(prev);
       toast.danger("Failed to update status");

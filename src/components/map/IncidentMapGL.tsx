@@ -105,6 +105,20 @@ function formatETA(minutes: number): { short: string; full: string; arrivalTime:
   };
 }
 
+// Compact ETA with seconds precision for the live route pill: "45s",
+// "3m 20s", or "1h 5m" for long routes.
+function formatDurationMS(minutes: number): string {
+  const totalSec = Math.max(0, Math.round(minutes * 60));
+  if (totalSec >= 3600) {
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.round((totalSec % 3600) / 60);
+    return `${h}h ${m}m`;
+  }
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 async function fetchWithTimeout(url: string, ms: number, init?: RequestInit) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -288,6 +302,11 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
   // every routeGeoJSON change.
   const routeCoordsRef = useRef<[number, number][]>([]);
   const lastRouteFetchRef = useRef<number>(0);
+  // Totals from the last fetched route, used to scale the remaining
+  // distance/ETA locally as the helper progresses (so the pill counts down
+  // smoothly every tick instead of only on the next fetch).
+  const routeTotalKmRef = useRef<number>(0);
+  const routeTotalMinRef = useRef<number>(0);
   const [liveSOSAlerts, setLiveSOSAlerts] = useState<SOSAlert[]>(sosAlerts);
   const [toast, setToast] = useState<string | null>(null);
   // Helpers state — initialized from localStorage
@@ -678,6 +697,22 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
         geometry: { type: "LineString", coordinates: trimmed },
         properties: {},
       });
+
+      // Recompute remaining distance from the trimmed line and scale the ETA
+      // proportionally, so the pill counts down smoothly every tick (with
+      // seconds) instead of only refreshing on the next fetch.
+      let remainingM = 0;
+      for (let i = 1; i < trimmed.length; i++) {
+        remainingM += haversineM(trimmed[i - 1][1], trimmed[i - 1][0], trimmed[i][1], trimmed[i][0]);
+      }
+      const remainingKm = remainingM / 1000;
+      const totalKm = routeTotalKmRef.current;
+      const totalMin = routeTotalMinRef.current;
+      const remainingMin = totalKm > 0 ? totalMin * (remainingKm / totalKm) : totalMin;
+      const distStr = remainingKm < 1
+        ? `${Math.round(remainingKm * 1000)}m`
+        : `${remainingKm.toFixed(1)}km`;
+      setRouteInfo({ distance: distStr, duration: formatDurationMS(remainingMin) });
     };
 
     const updateRoute = async () => {
@@ -685,11 +720,9 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
       const route = await fetchRoute(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
       if (route) {
         routeCoordsRef.current = route.geojson.geometry.coordinates as [number, number][];
+        routeTotalKmRef.current = route.distanceKm;
+        routeTotalMinRef.current = route.durationMin;
         applyTrim(userLocation.lat, userLocation.lng);
-        const distStr = route.distanceKm < 1
-          ? `${Math.round(route.distanceKm * 1000)}m`
-          : `${route.distanceKm.toFixed(1)}km`;
-        setRouteInfo({ distance: distStr, duration: formatETA(route.durationMin).short });
       }
     };
 
@@ -1001,10 +1034,14 @@ if (milestoneToFire) {
       const route = await fetchRoute(userLocation.lat, userLocation.lng, sos.latitude, sos.longitude);
       if (route) {
         setRouteGeoJSON(route.geojson);
+        routeCoordsRef.current = route.geojson.geometry.coordinates as [number, number][];
+        routeTotalKmRef.current = route.distanceKm;
+        routeTotalMinRef.current = route.durationMin;
+        lastRouteFetchRef.current = Date.now();
         const distStr = route.distanceKm < 1
           ? `${Math.round(route.distanceKm * 1000)}m`
           : `${route.distanceKm.toFixed(1)}km`;
-        setRouteInfo({ distance: distStr, duration: formatETA(route.durationMin).short });
+        setRouteInfo({ distance: distStr, duration: formatDurationMS(route.durationMin) });
 
         // Fit map to show entire route
         if (mapRef.current) {
@@ -1035,6 +1072,8 @@ if (milestoneToFire) {
       setRouteInfo(null);
       routeCoordsRef.current = [];
       lastRouteFetchRef.current = 0;
+      routeTotalKmRef.current = 0;
+      routeTotalMinRef.current = 0;
     }
   }, [helpedSOSIds]);
   // =====================================================================

@@ -9,6 +9,7 @@ import { ReelVideo } from "@/components/reels/ReelVideo";
 import { WatchCommentSheet } from "@/components/watch/WatchCommentSheet";
 import { CheckCircle, MessageCircle, Share2, Eye, ChevronLeft, ChevronRight, Flag, Trash2, MoreVertical } from "lucide-react";
 import { useFeedCache } from "@/context/FeedContext";
+import { realtimeManager } from "@/lib/realtime";
 import { useConfirm } from "@/context/ConfirmContext";
 import { useAudio } from "@/context/AudioContext";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -328,7 +329,33 @@ export default function WatchClient({
   // ✅ FIX: Use sourceKey to get the SAME posts from the page that launched watch
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
+  // Drop a post from the reel feed the moment it's archived/deleted anywhere
+  // (realtime for cross-device, local events for the same session).
+  useEffect(() => {
+    const remove = (id?: string) => {
+      if (!id) return;
+      setPosts((prev) => prev.filter((p) => p.id !== id));
+    };
+    const unsub = realtimeManager.subscribeToPosts(
+      undefined,
+      (updated: any) => {
+        if (updated?.status === "archived" || updated?.status === "deleted") {
+          remove(updated.id);
+        }
+      },
+      (deleted: any) => remove(deleted?.id),
+    );
+    const onArchived = (e: Event) => remove((e as CustomEvent).detail?.postId);
+    window.addEventListener("peja-post-archived", onArchived);
+    window.addEventListener("peja-post-deleted", onArchived);
+    return () => {
+      unsub();
+      window.removeEventListener("peja-post-archived", onArchived);
+      window.removeEventListener("peja-post-deleted", onArchived);
+    };
+  }, []);
+
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   
   const [activePostId, setActivePostId] = useState<string | null>(null);
