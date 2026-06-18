@@ -1629,14 +1629,20 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
                   </p>
                 </div>
               )}
-              {/* ETA for helpers */}
+              {/* ETA for helpers — updates live as the helper moves. When
+                  already helping this SOS, use the road-based route ETA (same
+                  source as the map pill); otherwise a live straight-line
+                  estimate. Both recompute on every location tick. */}
               {!isOwnSOS && userLocation && (
                 <div className="text-center py-3 bg-primary-500/10 rounded-xl">
                   <p className="text-sm text-dark-400">Your estimated arrival time:</p>
                   <p className="text-4xl font-bold text-primary-400">
-                    {calculateETA(userLocation.lat, userLocation.lng, selectedSOS.latitude, selectedSOS.longitude)}
+                    {helpedSOSIds.has(selectedSOS.id) && routeInfo
+                      ? routeInfo.duration
+                      : formatDurationMS(
+                          (getDistanceKm(userLocation.lat, userLocation.lng, selectedSOS.latitude, selectedSOS.longitude) / 30) * 60
+                        )}
                   </p>
-                  <p className="text-sm text-dark-500">minutes</p>
                 </div>
               )}
               {/* Emergency Call Buttons */}
