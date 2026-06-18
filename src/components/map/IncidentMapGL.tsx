@@ -620,10 +620,17 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
         (payload) => {
           const updatedSOS = payload.new as SOSAlert;
           setLiveSOSAlerts(prev =>
-            prev.map(sos => sos.id === updatedSOS.id ? { ...sos, ...updatedSOS } : sos)
+            updatedSOS.status && updatedSOS.status !== "active"
+              ? prev.filter(sos => sos.id !== updatedSOS.id)
+              : prev.map(sos => sos.id === updatedSOS.id ? { ...sos, ...updatedSOS } : sos)
           );
+          // Close the detail sheet if the SOS being viewed was turned off.
           if (selectedSOS?.id === updatedSOS.id) {
-            setSelectedSOS(prev => prev ? { ...prev, ...updatedSOS } : null);
+            if (updatedSOS.status && updatedSOS.status !== "active") {
+              setSelectedSOS(null);
+            } else {
+              setSelectedSOS(prev => prev ? { ...prev, ...updatedSOS } : null);
+            }
           }
         }
       )
@@ -652,11 +659,13 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
         (payload) => {
           const updated = payload.new as SOSAlert;
           setLiveSOSAlerts(prev =>
-            prev.map(sos =>
-              sos.id === updated.id
-                ? { ...sos, latitude: updated.latitude, longitude: updated.longitude, bearing: updated.bearing }
-                : sos
-            )
+            updated.status && updated.status !== "active"
+              ? prev.filter(sos => sos.id !== updated.id)
+              : prev.map(sos =>
+                  sos.id === updated.id
+                    ? { ...sos, latitude: updated.latitude, longitude: updated.longitude, bearing: updated.bearing }
+                    : sos
+                )
           );
         }
       )
