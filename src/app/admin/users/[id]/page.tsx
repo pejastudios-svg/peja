@@ -387,12 +387,16 @@ useEffect(() => {
             <p className="text-xs text-dark-500 mb-1 flex items-center gap-1">
               <MapPin className="w-3 h-3" /> Last known location
             </p>
-            <p className="text-sm text-dark-200">
-              {u.last_address ||
-                (u.last_latitude != null && u.last_longitude != null
-                  ? `${u.last_latitude.toFixed(5)}, ${u.last_longitude.toFixed(5)}`
-                  : "Unknown")}
-            </p>
+            {u.last_address && (
+              <p className="text-sm text-dark-200">{u.last_address}</p>
+            )}
+            {/* Exact coordinates are the real pinpoint — the address label can
+                be coarse where OSM street data is sparse. Always show them. */}
+            {u.last_latitude != null && u.last_longitude != null && (
+              <p className="text-xs text-dark-300 mt-0.5 font-mono">
+                {u.last_latitude.toFixed(6)}, {u.last_longitude.toFixed(6)}
+              </p>
+            )}
             {u.last_location_updated_at && (
               <p className="text-xs text-dark-500 mt-1">
                 Updated {formatDistanceToNow(new Date(u.last_location_updated_at), { addSuffix: true })}

@@ -262,19 +262,32 @@ class LocationTracker {
       );
       
       const data = await response.json();
-      
+
       if (data?.address) {
         const addr = data.address;
-        const parts = [];
-        
-        if (addr.road) parts.push(addr.road);
-        if (addr.suburb || addr.neighbourhood) parts.push(addr.suburb || addr.neighbourhood);
-        if (addr.city || addr.town || addr.village) parts.push(addr.city || addr.town || addr.village);
+        const parts: string[] = [];
+
+        // Street level first (house number + road), then progressively broader.
+        const street = [addr.house_number, addr.road].filter(Boolean).join(" ");
+        if (street) parts.push(street);
+        const area = addr.neighbourhood || addr.suburb || addr.residential || addr.quarter || addr.hamlet;
+        if (area) parts.push(area);
+        const place = addr.city || addr.town || addr.village || addr.city_district || addr.county;
+        if (place) parts.push(place);
         if (addr.state) parts.push(addr.state);
-        
-        return parts.length > 0 ? parts.join(", ") : "Location found";
+
+        // If we got nothing more specific than city/state, the area's OSM data
+        // is sparse — fall back to Nominatim's fuller formatted address so the
+        // label isn't just "Lagos State". The exact coordinates shown on the
+        // admin page are the real pinpoint regardless.
+        const hasSpecific = !!(street || area);
+        if (!hasSpecific && typeof data.display_name === "string" && data.display_name.length > 0) {
+          return data.display_name;
+        }
+
+        return parts.length > 0 ? parts.join(", ") : (data.display_name || "Location found");
       }
-      
+
       return "Location found";
     } catch {
       return "Location found";
