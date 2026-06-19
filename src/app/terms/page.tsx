@@ -25,9 +25,16 @@ export default function TermsPage() {
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-dark-100 mb-3">2. Description of Service</h2>
             <p className="text-dark-300 leading-relaxed">
-              Peja is a community safety platform that allows users to report and receive 
-              alerts about incidents in their area. The service is provided "as is" and 
+              Peja is a community safety platform that allows users to report and receive
+              alerts about incidents in their area. The service is provided "as is" and
               we make no warranties about the accuracy or timeliness of reports.
+            </p>
+            <p className="text-dark-300 leading-relaxed mt-3">
+              As a safety measure, while the app is open and you have granted location
+              permission, Peja keeps your most recent location up to date so that emergency
+              responders or administrators may locate you if you are unable to trigger an SOS
+              or Share My Location yourself. This stops when you close the app. By using the
+              service you consent to this use of your location.
             </p>
           </section>
 

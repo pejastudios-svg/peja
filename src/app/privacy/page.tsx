@@ -44,6 +44,13 @@ export default function PrivacyPage() {
                   <li>GPS coordinates when posting incidents</li>
                   <li>Location for receiving nearby alerts</li>
                   <li>Saved locations (home, work, etc.)</li>
+                  <li>
+                    Your most recent location while the app is open, kept up to
+                    date as a safety measure so emergency responders or
+                    administrators can locate you if you are unable to trigger
+                    an SOS or Share My Location yourself. This requires location
+                    permission and stops when you close the app.
+                  </li>
                 </ul>
               </div>
 

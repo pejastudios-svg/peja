@@ -7,13 +7,13 @@ import { supabase } from "@/lib/supabase";
 import MapGL, { Marker, MapRef } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
-  ArrowLeft,
   AlertTriangle,
   MapPin,
   User,
   ChevronRight,
   Radio,
 } from "lucide-react";
+import { Header } from "@/components/layout/Header";
 
 interface SharedUser {
   checkinId: string;
@@ -196,33 +196,43 @@ export default function SharedLocationsPage() {
 
   return (
     <div className="fixed inset-0 bg-dark-950 flex flex-col z-[100]">
-      {/* Header */}
-      <header className="shrink-0 flex items-center gap-3 px-4 h-14 bg-dark-950/90 backdrop-blur-sm border-b border-white/5 z-10">
-        <button onClick={() => router.back()} className="p-2 -ml-2 hover:bg-white/10 rounded-lg transition-colors">
-          <ArrowLeft className="w-5 h-5 text-dark-200" />
-        </button>
-        <div className="flex-1">
-          <h1 className="text-sm font-semibold text-dark-100">
-            {selectedUserId
-              ? sharedUsers.find(s => s.userId === selectedUserId)?.fullName || "Location"
-              : "Shared Locations"}
-          </h1>
-          <p className="text-[10px] text-dark-500">{sharedUsers.length} {sharedUsers.length === 1 ? "person" : "people"} sharing</p>
-        </div>
-        {selectedUserId ? (
-          <button
-            onClick={handleViewAll}
-            className="text-xs text-primary-400 bg-primary-500/10 px-3 py-1.5 rounded-lg border border-primary-500/20"
-          >
-            View All
-          </button>
-        ) : (
-          <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-green-500/10">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-[10px] text-green-400 font-medium">LIVE</span>
-          </div>
-        )}
-      </header>
+      {/* Floating back-pill header (overlays the map, matching Map/Messages). */}
+      <Header
+        variant="back"
+        title={
+          selectedUserId
+            ? sharedUsers.find((s) => s.userId === selectedUserId)?.fullName || "Location"
+            : "Shared Locations"
+        }
+        subtitle={`${sharedUsers.length} ${sharedUsers.length === 1 ? "person" : "people"} sharing`}
+        onBack={() => router.back()}
+        actionsBare
+        actions={
+          selectedUserId ? (
+            <button
+              onClick={handleViewAll}
+              className="flex items-center h-9 px-4 rounded-full text-xs font-medium text-primary-400 bg-primary-500/15 border border-primary-500/25 active:opacity-70 transition-opacity"
+              style={{
+                backdropFilter: "blur(20px) saturate(180%)",
+                WebkitBackdropFilter: "blur(20px) saturate(180%)",
+              }}
+            >
+              View All
+            </button>
+          ) : (
+            <div
+              className="flex items-center gap-1.5 h-9 px-3 rounded-full bg-green-500/15 border border-green-500/25"
+              style={{
+                backdropFilter: "blur(20px) saturate(180%)",
+                WebkitBackdropFilter: "blur(20px) saturate(180%)",
+              }}
+            >
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+              <span className="text-[10px] text-green-400 font-medium">LIVE</span>
+            </div>
+          )
+        }
+      />
 
       {/* Map */}
       <div className="flex-1 relative" style={{ minHeight: "55vh" }}>

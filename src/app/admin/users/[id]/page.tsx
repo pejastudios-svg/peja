@@ -208,6 +208,34 @@ useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
+  // Live-update the last-known location while an admin has this page open —
+  // critical during an active search for someone who can't reach their phone.
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`admin-user-loc-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "users", filter: `id=eq.${userId}` },
+        (payload) => {
+          const n = payload.new as any;
+          setU((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  last_latitude: n.last_latitude ?? prev.last_latitude,
+                  last_longitude: n.last_longitude ?? prev.last_longitude,
+                  last_address: n.last_address ?? prev.last_address,
+                  last_location_updated_at: n.last_location_updated_at ?? prev.last_location_updated_at,
+                }
+              : prev
+          );
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [userId]);
+
   // Cache user detail for instant revisits
   useEffect(() => {
     if (u && !loading) {
@@ -352,19 +380,36 @@ useEffect(() => {
           </div>
         </div>
 
-        {u.last_address && (
+        {/* Show whenever we have coordinates — never hide a known location
+            just because reverse-geocoding didn't produce an address. */}
+        {(u.last_latitude != null && u.last_longitude != null) || u.last_address ? (
           <div className="mt-4 pt-4 border-t border-white/10">
             <p className="text-xs text-dark-500 mb-1 flex items-center gap-1">
               <MapPin className="w-3 h-3" /> Last known location
             </p>
-            <p className="text-sm text-dark-200">{u.last_address}</p>
+            <p className="text-sm text-dark-200">
+              {u.last_address ||
+                (u.last_latitude != null && u.last_longitude != null
+                  ? `${u.last_latitude.toFixed(5)}, ${u.last_longitude.toFixed(5)}`
+                  : "Unknown")}
+            </p>
             {u.last_location_updated_at && (
               <p className="text-xs text-dark-500 mt-1">
                 Updated {formatDistanceToNow(new Date(u.last_location_updated_at), { addSuffix: true })}
               </p>
             )}
+            {u.last_latitude != null && u.last_longitude != null && (
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${u.last_latitude},${u.last_longitude}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-primary-400 hover:text-primary-300"
+              >
+                <MapPin className="w-3 h-3" /> Open in Maps
+              </a>
+            )}
           </div>
-        )}
+        ) : null}
       </div>
 
             {/* Emergency Contacts */}

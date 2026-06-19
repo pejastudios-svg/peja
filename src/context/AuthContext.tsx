@@ -197,6 +197,40 @@ class LocationTracker {
     );
   }
 
+  // Capture a single fresh fix and persist it immediately. Used on app open
+  // and on every return to foreground so the passive "last known location"
+  // (shown on the admin user page) is current even for users who never trigger
+  // SOS/SML — the safety net for locating someone after an incident.
+  async captureNow(userId?: string) {
+    if (userId) this.userId = userId;
+    if (!this.userId) return;
+    const pos = await this.getCurrentPosition();
+    if (!pos) return;
+
+    const moved =
+      !this.lastPosition ||
+      this.calculateDistance(this.lastPosition.lat, this.lastPosition.lng, pos.lat, pos.lng) >= 0.01;
+    this.lastPosition = { lat: pos.lat, lng: pos.lng };
+
+    if (moved) {
+      // Moved >10m — full save with a fresh reverse-geocoded address.
+      await this.savePosition(pos.lat, pos.lng);
+    } else {
+      // Stationary — keep the timestamp current (so the admin page shows the
+      // location is recent) without re-geocoding the same spot.
+      try {
+        await supabase
+          .from("users")
+          .update({
+            last_latitude: pos.lat,
+            last_longitude: pos.lng,
+            last_location_updated_at: new Date().toISOString(),
+          })
+          .eq("id", this.userId);
+      } catch {}
+    }
+  }
+
   private async savePosition(latitude: number, longitude: number) {
     if (!this.userId) return;
 
@@ -534,46 +568,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return;
 
-    const REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
+    // Keep the passive last-known location fresh while the app is open: on
+    // mount, when it returns to the foreground, and on a slow periodic tick.
+    // Uses the tracker's high-accuracy capture (with address on movement) so
+    // the admin user page is accurate — the safety net for locating someone
+    // who never got to tap SOS/SML. Throttled so quick tab switches don't spam.
+    const REFRESH_THRESHOLD_MS = 60 * 1000;
+    const PERIODIC_MS = 90 * 1000;
 
     const refresh = () => {
-      if (typeof navigator === "undefined" || !navigator.geolocation) return;
       if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       const now = Date.now();
       if (now - lastForegroundRefreshRef.current < REFRESH_THRESHOLD_MS) return;
       lastForegroundRefreshRef.current = now;
-
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          try {
-            await supabase
-              .from("users")
-              .update({
-                last_latitude: pos.coords.latitude,
-                last_longitude: pos.coords.longitude,
-                last_location_updated_at: new Date().toISOString(),
-              })
-              .eq("id", user.id);
-          } catch {}
-        },
-        () => {
-          // Permission denied / timeout — silently skip. We don't want to
-          // block app usage on this background-ish refresh.
-        },
-        { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 }
-      );
+      void locationTracker.captureNow(user.id);
     };
 
     refresh();
+
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") refresh();
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+
+    // Slow periodic refresh while the app stays open (no backgrounding event).
+    const periodic = setInterval(refresh, PERIODIC_MS);
+
+    // Capacitor app resume is more reliable than visibilitychange in the
+    // native WebView.
+    let removeAppListener: (() => void) | undefined;
+    void import("@capacitor/app")
+      .then(({ App }) =>
+        App.addListener("appStateChange", ({ isActive }) => { if (isActive) refresh(); })
+      )
+      .then((handle) => { removeAppListener = () => void handle.remove(); })
+      .catch(() => {});
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      clearInterval(periodic);
+      removeAppListener?.();
+    };
   }, [user]);
 
   async function checkAndStartLocationTracking(userId: string) {
     try {
+      // Passive safety net for EVERY user: grab a fresh, accurate fix the
+      // moment the app opens so the admin user page always has a recent
+      // last-known location — even if they never trigger SOS/SML. The
+      // foreground/periodic refresh effect keeps it current while the app is
+      // open; this is the immediate first write.
+      await locationTracker.captureNow(userId);
+
+      // Users with a custom radius alert zone or an active SOS additionally
+      // need continuous real-time tracking (every ~10s).
       const [{ data: settings }, { data: sos }] = await Promise.all([
         supabase
           .from("user_settings")
@@ -588,24 +636,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .maybeSingle(),
       ]);
 
-      const hasCustomRadius = settings?.alert_zone_type === "radius";
-      const hasActiveSOS = !!sos;
-
-
-      if (hasCustomRadius || hasActiveSOS) {
+      if (settings?.alert_zone_type === "radius" || !!sos) {
         locationTracker.start(userId);
-      } else {
-        const position = await locationTracker.getCurrentPosition();
-        if (position && userId) {
-          await supabase
-            .from("users")
-            .update({
-              last_latitude: position.lat,
-              last_longitude: position.lng,
-              last_location_updated_at: new Date().toISOString(),
-            })
-            .eq("id", userId);
-        }
       }
     } catch (error) {
     }
