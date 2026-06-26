@@ -1348,16 +1348,19 @@ setToast("Processing video...");
                   key={cat.id}
                   type="button"
                   onClick={() => setCategory(cat.id)}
-                  className="relative p-3 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                  className="relative p-2.5 sm:p-3 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
                   style={{
                     background: isSelected ? colors.bg : "var(--glass-input-bg)",
                     border: `1px solid ${isSelected ? colors.border : "var(--glass-border)"}`,
                     boxShadow: isSelected ? colors.glow : "none",
                   }}
                 >
-                  <div className="flex items-center gap-2.5">
+                  {/* pr-4 keeps the selected dot (top-right) from overlapping
+                      long labels; min-w-0 + break-words keep the text inside
+                      the card on small phones instead of poking out. */}
+                  <div className="flex items-center gap-2 min-w-0 pr-4">
                     <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
+                      className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors"
                       style={{
                         background: isSelected ? colors.bg : "var(--glass-bg)",
                         color: isSelected ? colors.text : "var(--color-dark-300)",
@@ -1366,7 +1369,7 @@ setToast("Processing video...");
                       {icon}
                     </div>
                     <span
-                      className="text-sm font-medium transition-colors"
+                      className="text-xs sm:text-sm font-medium leading-tight break-words min-w-0 transition-colors"
                       style={{ color: isSelected ? colors.text : "var(--color-dark-100)" }}
                     >
                       {cat.name}
