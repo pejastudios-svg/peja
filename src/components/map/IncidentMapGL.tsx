@@ -355,14 +355,23 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
     if (helpersRecoveredRef.current) return;
     helpersRecoveredRef.current = true;
     const recoverHelpers = async () => {
-      // Find all active SOS alerts owned by this user
+      // Find all active SOS alerts owned by this user — the source of truth.
       const { data: myActiveSOSes } = await supabase
         .from("sos_alerts")
         .select("id")
         .eq("user_id", myUserId)
         .eq("status", "active");
-      if (!myActiveSOSes || myActiveSOSes.length === 0) return;
-      const sosIds = myActiveSOSes.map(s => s.id);
+      const activeIds = new Set((myActiveSOSes || []).map((s) => s.id));
+
+      // No active SOS owned by this user → no helpers should be on the map.
+      // Clear any stale helpers left in localStorage from an ended SOS (the
+      // bug where helpers lingered for days after the SOS was turned off).
+      if (activeIds.size === 0) {
+        setHelpers([]);
+        try { localStorage.removeItem(HELPERS_STORAGE_KEY); } catch {}
+        return;
+      }
+
       // Query notifications for helper data sent to this user in the last 5 hours
       const fiveHoursAgo = new Date(Date.now() - HELPER_TRACKING_TIMEOUT_MS).toISOString();
       const { data: helperNotifications } = await supabase
@@ -372,14 +381,14 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
         .eq("type", "sos_alert")
         .gte("created_at", fiveHoursAgo)
         .order("created_at", { ascending: false });
-      if (!helperNotifications || helperNotifications.length === 0) return;
-      // Build helpers map — latest notification per helper wins
+
+      // Build helpers map — latest notification per helper wins, only for a
+      // still-active SOS.
       const helperMap: Record<string, Helper> = {};
-      for (const notif of helperNotifications) {
+      for (const notif of helperNotifications || []) {
         const d = notif.data as any;
         if (!d?.helper_id || !d?.sos_id) continue;
-        if (!sosIds.includes(d.sos_id)) continue;
-        // Only keep the latest entry per helper
+        if (!activeIds.has(d.sos_id)) continue;
         if (!helperMap[d.helper_id]) {
           helperMap[d.helper_id] = {
             id: d.helper_id,
@@ -393,22 +402,22 @@ const [routeGeoJSON, setRouteGeoJSON] = useState<any>(null);
         }
       }
       const recovered = Object.values(helperMap);
-      if (recovered.length > 0) {
-        setHelpers(prev => {
-          // Merge: keep existing helpers, add/update from Supabase
-          const merged = [...prev];
-          for (const rh of recovered) {
-            const existingIdx = merged.findIndex(h => h.id === rh.id);
-            if (existingIdx !== -1) {
-              // Update with latest data from Supabase
-              merged[existingIdx] = { ...merged[existingIdx], ...rh };
-            } else {
-              merged.push(rh);
-            }
-          }
-          return merged;
-        });
-      }
+
+      // Always reconcile: drop any existing helpers whose SOS has ended, then
+      // merge in the recovered ones for the still-active SOS.
+      setHelpers(prev => {
+        const merged = prev.filter(h => h.sosId && activeIds.has(h.sosId));
+        for (const rh of recovered) {
+          const idx = merged.findIndex(h => h.id === rh.id);
+          if (idx !== -1) merged[idx] = { ...merged[idx], ...rh };
+          else merged.push(rh);
+        }
+        try {
+          if (merged.length > 0) localStorage.setItem(HELPERS_STORAGE_KEY, JSON.stringify(merged));
+          else localStorage.removeItem(HELPERS_STORAGE_KEY);
+        } catch {}
+        return merged;
+      });
     };
     recoverHelpers();
   }, [myUserId]);
