@@ -555,12 +555,12 @@ useEffect(() => {
                       }
                     }}
                     placeholder="Add tag"
-                    className="flex-1 px-3 py-1.5 rounded-lg text-sm bg-[var(--glass-input-bg)] border border-[var(--glass-border)] text-dark-100 placeholder-dark-500 focus:outline-none focus:border-primary-500/40"
+                    className="flex-1 min-w-0 px-3 py-1.5 rounded-lg text-sm bg-[var(--glass-input-bg)] border border-[var(--glass-border)] text-dark-100 placeholder-dark-500 focus:outline-none focus:border-primary-500/40"
                   />
                   <button
                     type="button"
                     onClick={addTagFilter}
-                    className="px-3 py-1.5 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-500 transition-colors"
+                    className="shrink-0 px-3 py-1.5 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-500 transition-colors"
                   >
                     Add
                   </button>
