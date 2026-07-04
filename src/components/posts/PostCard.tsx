@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useFeedCache } from "@/context/FeedContext";
 import { useToast } from "@/context/ToastContext";
 import { getVideoThumbnailUrl, getOptimizedVideoUrl, preloadVideoChunk } from "@/lib/videoThumbnail";
+import { formatCount } from "@/lib/utils";
 import { ConfirmConfetti } from "@/components/ui/ConfirmConfetti";
 import { shareUrl } from "@/lib/share";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
@@ -487,26 +488,28 @@ const handleShareClick = async (e: React.MouseEvent) => {
       <div className="flex items-center justify-between text-sm text-dark-400 mb-4">
         <span className="flex items-center gap-1">
           <CheckCircle className={`w-4 h-4 ${isConfirmed ? "text-primary-400" : ""}`} />
-          {confirmations}
+          {formatCount(confirmations)}
         </span>
         <span className="flex items-center gap-1">
           <MessageCircle className="w-4 h-4" />
-          {post.comment_count || 0}
+          {formatCount(post.comment_count || 0)}
         </span>
         <span className="flex items-center gap-1">
           <Eye className="w-4 h-4" />
-          {post.views}
+          {formatCount(post.views)}
         </span>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-2 pt-3 border-t border-white/5">
+      {/* Actions. Uses the theme-aware --soft-surface-strong (white tint in
+          dark, black tint in light) instead of bg-white/10 + border-white/5,
+          which are invisible on the light theme's white background. */}
+      <div className="flex gap-2 pt-3 border-t border-[var(--soft-surface-strong)]">
 <button
   ref={confirmBtnRef}
   onClick={handleConfirmClick}
   data-tutorial="post-confirm"
   className={`relative flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95 ${
-    isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"
+    isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-[var(--soft-surface-strong)]"
   }`}
 >
   <ConfirmConfetti trigger={confettiTrigger} />
@@ -516,7 +519,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
 
         <button
           onClick={handleAddInfo}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-white/10 active:scale-90 transition-transform duration-150"
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-[var(--soft-surface-strong)] active:scale-90 transition-transform duration-150"
         >
           <MessageCircle className="w-4 h-4" />
           <span>Comment</span>

@@ -19,6 +19,11 @@ export async function GET(req: NextRequest) {
   let missed = 0;
   let revived = 0;
 
+  // Cap rows processed per run so a large backlog can't blow the function
+  // timeout and silently drop the tail. The cron runs every minute (see
+  // vercel.json), so anything not handled this pass is picked up next pass.
+  const BATCH = 500;
+
   // --- 1. WARN: active check-ins expiring in < 5 minutes ---
   const warnCutoff = new Date(now.getTime() + 5 * 60 * 1000);
 
@@ -27,7 +32,8 @@ export async function GET(req: NextRequest) {
     .select("id, user_id, next_check_in_at, last_confirmed_at")
     .eq("status", "active")
     .lt("next_check_in_at", warnCutoff.toISOString())
-    .gt("next_check_in_at", now.toISOString());
+    .gt("next_check_in_at", now.toISOString())
+    .limit(BATCH);
 
   for (const checkin of expiringSoon || []) {
     // Dedup: only warn once per interval since last confirmation.
@@ -73,80 +79,106 @@ export async function GET(req: NextRequest) {
     .from("safety_checkins")
     .select("*")
     .eq("status", "active")
-    .lt("next_check_in_at", now.toISOString());
+    .lt("next_check_in_at", now.toISOString())
+    .limit(BATCH);
 
-  for (const checkin of overdueCheckins || []) {
-    const newMissedCount = (checkin.missed_count || 0) + 1;
+  // Phase 1: flip each overdue row to "missed" under the status='active'
+  // guard (in parallel), keeping only the ones we actually won.
+  const flipped = await Promise.all(
+    (overdueCheckins || []).map(async (checkin) => {
+      const newMissedCount = (checkin.missed_count || 0) + 1;
+      const { data: updated, error: updateError } = await supabaseAdmin
+        .from("safety_checkins")
+        .update({
+          status: "missed",
+          missed_count: newMissedCount,
+          updated_at: now.toISOString(),
+        })
+        .eq("id", checkin.id)
+        .eq("status", "active")
+        // Re-check the deadline in the UPDATE itself. If the user tapped
+        // "I'm OK" between our SELECT and this UPDATE, confirm pushed
+        // next_check_in_at into the future, so this no longer matches and we
+        // don't fire a false "missed check-in" alert to their contacts.
+        .lt("next_check_in_at", now.toISOString())
+        .select("id");
+      // No row updated → we lost the race to a confirm (or another worker).
+      if (updateError || !updated || updated.length === 0) return null;
+      return { checkin, newMissedCount };
+    })
+  );
+  const won = flipped.filter(
+    (x): x is { checkin: any; newMissedCount: number } => x !== null
+  );
 
-    const { error: updateError } = await supabaseAdmin
-      .from("safety_checkins")
-      .update({
-        status: "missed",
-        missed_count: newMissedCount,
-        updated_at: now.toISOString(),
-      })
-      .eq("id", checkin.id)
-      .eq("status", "active");
-
-    if (updateError) continue;
-
-    const { data: userData } = await supabaseAdmin
+  if (won.length > 0) {
+    // Phase 2: resolve all names in ONE query instead of one per check-in.
+    const ownerIds = Array.from(new Set(won.map((w) => w.checkin.user_id)));
+    const { data: owners } = await supabaseAdmin
       .from("users")
-      .select("full_name")
-      .eq("id", checkin.user_id)
-      .single();
+      .select("id, full_name")
+      .in("id", ownerIds);
+    const nameById = new Map(
+      (owners || []).map((u: { id: string; full_name: string | null }) => [u.id, u.full_name])
+    );
 
-    const userName = userData?.full_name || "Your contact";
+    // Phase 3: build every notification row up front and insert them all in
+    // ONE call, then fire pushes in parallel. No per-check-in await chain.
+    const rows: any[] = [];
+    const pushes: Promise<any>[] = [];
+    for (const { checkin, newMissedCount } of won) {
+      const userName = nameById.get(checkin.user_id) || "Your contact";
+      const contactIds: string[] = checkin.contact_ids || [];
+      const missedBody = `${userName} missed their check-in. Try reaching out to them. Their location is still being shared.`;
 
-    const contactIds: string[] = checkin.contact_ids || [];
-
-    // Fire all notifications in parallel
-    await Promise.all([
-      // Contacts
-      contactIds.length > 0
-        ? supabaseAdmin.from("notifications").insert(
-            contactIds.map((contactId) => ({
-              user_id: contactId,
-              type: "system",
-              title: "Missed Check-In",
-              body: `${userName} missed their check-in. Try reaching out to them. Their location is still being shared.`,
-              data: {
-                type: "safety_checkin_missed",
-                checkin_id: checkin.id,
-                user_id: checkin.user_id,
-                user_name: userName,
-                missed_count: String(newMissedCount),
-              },
-              is_read: false,
-            }))
-          )
-        : Promise.resolve(),
-      ...contactIds.map((contactId) =>
-        sendPushToUser({
-          userId: contactId,
+      for (const contactId of contactIds) {
+        rows.push({
+          user_id: contactId,
+          type: "system",
           title: "Missed Check-In",
-          body: `${userName} missed their check-in. Try reaching out to them. Their location is still being shared.`,
-          data: { type: "safety_checkin_missed", checkin_id: checkin.id, user_id: checkin.user_id },
-        }).catch(() => {})
-      ),
-      // Self
-      supabaseAdmin.from("notifications").insert({
+          body: missedBody,
+          data: {
+            type: "safety_checkin_missed",
+            checkin_id: checkin.id,
+            user_id: checkin.user_id,
+            user_name: userName,
+            missed_count: String(newMissedCount),
+          },
+          is_read: false,
+        });
+        pushes.push(
+          sendPushToUser({
+            userId: contactId,
+            title: "Missed Check-In",
+            body: missedBody,
+            data: { type: "safety_checkin_missed", checkin_id: checkin.id, user_id: checkin.user_id },
+          }).catch(() => {})
+        );
+      }
+
+      rows.push({
         user_id: checkin.user_id,
         type: "system",
         title: "Check-In Expired",
         body: "Your safety check-in timer has expired. Your emergency contacts have been notified. Open Peja and tap 'I'm OK' to confirm you're safe.",
         data: { type: "safety_checkin_self_expired", checkin_id: checkin.id },
         is_read: false,
-      }),
-      sendPushToUser({
-        userId: checkin.user_id,
-        title: "Check-In Expired",
-        body: "Your safety check-in timer has expired. Your emergency contacts have been notified. Open Peja and tap 'I'm OK' to confirm you're safe.",
-        data: { type: "safety_checkin_self_expired", checkin_id: checkin.id },
-      }).catch(() => {}),
-    ]);
+      });
+      pushes.push(
+        sendPushToUser({
+          userId: checkin.user_id,
+          title: "Check-In Expired",
+          body: "Your safety check-in timer has expired. Your emergency contacts have been notified. Open Peja and tap 'I'm OK' to confirm you're safe.",
+          data: { type: "safety_checkin_self_expired", checkin_id: checkin.id },
+        }).catch(() => {})
+      );
+    }
 
-    missed++;
+    if (rows.length > 0) {
+      await supabaseAdmin.from("notifications").insert(rows);
+    }
+    await Promise.all(pushes);
+    missed = won.length;
   }
 
   // --- 3. REVIVE: still-sharing check-ins whose location has gone stale ---
@@ -161,7 +193,8 @@ export async function GET(req: NextRequest) {
     .from("safety_checkins")
     .select("id, user_id, location_updated_at")
     .in("status", ["active", "missed"])
-    .lt("location_updated_at", staleCutoff);
+    .lt("location_updated_at", staleCutoff)
+    .limit(BATCH);
 
   for (const checkin of staleCheckins || []) {
     await sendSilentDataToUser({
@@ -183,7 +216,8 @@ export async function GET(req: NextRequest) {
     .from("sos_alerts")
     .select("id, user_id, last_updated")
     .eq("status", "active")
-    .lt("last_updated", staleCutoff);
+    .lt("last_updated", staleCutoff)
+    .limit(BATCH);
 
   for (const sos of staleSos || []) {
     await sendSilentDataToUser({

@@ -61,9 +61,13 @@ export async function startPresence(userId: string): Promise<void> {
       useChatStore.getState().setOnlinePresence(onlineSet);
     })
     .on("presence", { event: "leave" }, ({ key }) => {
-      // A user (all their tabs/devices) just disconnected. Record the
-      // moment as their last-seen so the UI can show "last seen Xm ago"
-      // instead of just dropping the dot.
+      // Switching the viewed conversation re-tracks, which emits a "leave"
+      // for the OLD meta even though the user is still connected. Only mark
+      // them offline when they have NO remaining presences — otherwise every
+      // thread navigation briefly flips the user (and observers) offline.
+      const state = channel.presenceState() as Record<string, unknown[]>;
+      const remaining = state[String(key)];
+      if (remaining && remaining.length > 0) return;
       useChatStore
         .getState()
         .markUserOffline(String(key), new Date().toISOString());

@@ -210,7 +210,7 @@ const CommentRow = ({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-dark-200">{comment.user_name}</span>
+            <span className="text-sm font-medium text-dark-200 break-words min-w-0">{comment.user_name}</span>
             <span className="text-xs text-dark-500">
               {comment.isPending ? "Posting..." : formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}
             </span>
@@ -559,20 +559,29 @@ confirmCtx.hydrateCounts([{ postId, confirmations: data.confirmations || 0 }]);
     setCommentsError(false);
 
     try {
-      const { data: rawComments, error: commentsErr } = await supabase
+      // Bound the fetch so a viral post with thousands of comments can't
+      // freeze the WebView (previously every comment was loaded and mounted).
+      // Take the most recent COMMENTS_LIMIT, then flip back to ascending so
+      // the thread builder below is unchanged. Replies to comments older than
+      // the window simply won't render — an acceptable tail for huge threads.
+      const COMMENTS_LIMIT = 500;
+      const { data: rawCommentsDesc, error: commentsErr } = await supabase
         .from("post_comments")
         .select("id, post_id, user_id, content, is_anonymous, created_at, parent_id, likes_count, reply_to_id, reply_to_name")
         .eq("post_id", postId)
         .eq("status", "live")
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(COMMENTS_LIMIT);
 
       if (!isMounted.current) return;
 
-      if (commentsErr || !rawComments) {
+      if (commentsErr || !rawCommentsDesc) {
         setCommentsError(true);
         setCommentsLoading(false);
         return;
       }
+
+      const rawComments = rawCommentsDesc.slice().reverse();
 
       if (rawComments.length === 0) {
         setAllComments([]);
@@ -980,59 +989,69 @@ const handleShare = async () => {
 
   // Report
   const handleReport = async () => {
-    if (!reportReason || !user) return;
+    if (!reportReason || !user || submittingReport) return;
 
+    setSubmittingReport(true);
+    try {
       const { data: auth } = await supabase.auth.getSession();
-const token = auth.session?.access_token;
+      const token = auth.session?.access_token;
 
-if (!token) {
-  alert("Session expired. Please sign in again.");
-  return;
-}
+      if (!token) {
+        setToastMsg("Session expired. Please sign in again.");
+        setTimeout(() => setToastMsg(null), 2500);
+        return;
+      }
 
-const res = await fetch(apiUrl("/api/report-post"), {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,
-  },
-  body: JSON.stringify({
-    postId,
-    reason: reportReason,
-    description: reportDescription,
-  }),
-});
+      const res = await fetch(apiUrl("/api/report-post"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          postId,
+          reason: reportReason,
+          description: reportDescription,
+        }),
+      });
 
-const json = await res.json();
-if (!res.ok || !json.ok) {
-  throw new Error(json.error || "Failed to report");
-}
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setToastMsg(json.error || "Failed to report. Please try again.");
+        setTimeout(() => setToastMsg(null), 2500);
+        return;
+      }
 
-if (json.archived) {
-  setShowReportModal(false);
-  setToastMsg("Post removed due to reports.");
-  setTimeout(() => {
-    // ✅ If this post is open in the modal stack, close it cleanly
-    if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
-      window.dispatchEvent(new Event("peja-close-post"));
-      return;
+      if (json.archived) {
+        setShowReportModal(false);
+        setToastMsg("Post removed due to reports.");
+        setTimeout(() => {
+          // If this post is open in the modal stack, close it cleanly
+          if (typeof window !== "undefined" && (window as any).__pejaPostModalOpen) {
+            window.dispatchEvent(new Event("peja-close-post"));
+            return;
+          }
+          // Otherwise go back; if user landed directly here, fallback home
+          if (typeof window !== "undefined" && window.history.length > 1) {
+            router.back();
+          } else {
+            router.replace("/");
+          }
+        }, 600);
+        return;
+      }
+
+      setShowReportModal(false);
+      setReportReason("");
+      setReportDescription("");
+      setToastMsg("Report submitted!");
+      setTimeout(() => setToastMsg(null), 2500);
+    } catch {
+      setToastMsg("Something went wrong. Please try again.");
+      setTimeout(() => setToastMsg(null), 2500);
+    } finally {
+      setSubmittingReport(false);
     }
-
-    // ✅ Otherwise go back; if user landed directly here, fallback home
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-    } else {
-      router.replace("/");
-    }
-  }, 600);
-  return;
-}
-
-setShowReportModal(false);
-setReportReason("");
-setReportDescription("");
-setToastMsg("Report submitted!");
-setTimeout(() => setToastMsg(null), 2500);
   };
 
   // Delete post

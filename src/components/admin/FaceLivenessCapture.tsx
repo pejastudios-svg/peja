@@ -340,7 +340,7 @@ export default function FaceLivenessCapture({ mode, onComplete, onCancel }: Prop
           setFaceDetected(false);
           setLiveNosePos(null);
           setLiveEar(null);
-          setHint("No face detected — center yourself in the frame");
+          setHint("No face detected. Center yourself in the frame");
           consecutiveOkRef.current = 0;
           setFrameOk(0);
           drawOverlay(null, null, null, null, false);
@@ -467,7 +467,7 @@ export default function FaceLivenessCapture({ mode, onComplete, onCancel }: Prop
               parts.push(
                 `recentMax=${rMax.toFixed(3)}`,
                 `sawDip=${bState.sawDip}`,
-                `minDip=${bState.sawDip ? bState.minDuringDip.toFixed(3) : "—"}`,
+                `minDip=${bState.sawDip ? bState.minDuringDip.toFixed(3) : "-"}`,
                 `complete=${bState.complete}`
               );
             }
@@ -601,11 +601,11 @@ export default function FaceLivenessCapture({ mode, onComplete, onCancel }: Prop
         {status === "running" && (
           <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm rounded-md px-3 py-2 font-mono text-[10px] text-white space-y-0.5 leading-tight">
             <div>face: {faceDetected ? "yes" : "no"}</div>
-            <div>nosePos: {liveNosePos != null ? liveNosePos.toFixed(2) : "—"}</div>
-            <div>EAR: {liveEar != null ? liveEar.toFixed(2) : "—"}</div>
+            <div>nosePos: {liveNosePos != null ? liveNosePos.toFixed(2) : "-"}</div>
+            <div>EAR: {liveEar != null ? liveEar.toFixed(2) : "-"}</div>
             {challenges[stepIndex] === "blink" && (
               <>
-                <div>recentMax: {liveRecentMax != null ? liveRecentMax.toFixed(2) : "—"}</div>
+                <div>recentMax: {liveRecentMax != null ? liveRecentMax.toFixed(2) : "-"}</div>
                 <div>phase: {blinkPhase}</div>
               </>
             )}

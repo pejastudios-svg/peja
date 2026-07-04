@@ -28,6 +28,10 @@ import {
   MAX_AUTO_ATTEMPTS,
 } from "./outbox";
 
+// Ids we've already surfaced as permanently stranded, so we announce each at
+// most once per session instead of on every drain pass.
+const strandedReported = new Set<string>();
+
 export function useOutboxDrain(userId: string | null): void {
   const draining = useRef(false);
 
@@ -47,7 +51,21 @@ export function useOutboxDrain(userId: string | null): void {
       try {
         const items = readOutbox(userId!);
         for (const item of items) {
-          if ((item.attempts ?? 0) >= MAX_AUTO_ATTEMPTS) continue;
+          if ((item.attempts ?? 0) >= MAX_AUTO_ATTEMPTS) {
+            // Don't silently strand a queued SOS log / check-in forever — the
+            // user thinks it was recorded. Announce it once so the app can
+            // surface a "couldn't sync" toast and offer help.
+            if (!strandedReported.has(item.id)) {
+              strandedReported.add(item.id);
+              console.error("[outbox] item permanently stranded", item.kind, item.id, item.last_error);
+              window.dispatchEvent(
+                new CustomEvent("peja-outbox-stranded", {
+                  detail: { kind: item.kind, id: item.id },
+                })
+              );
+            }
+            continue;
+          }
           patchOutboxItem(userId!, item.id, {
             attempts: (item.attempts ?? 0) + 1,
           });

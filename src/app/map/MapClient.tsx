@@ -638,8 +638,12 @@ export default function MapClient() {
     <div className="min-h-screen pb-20 lg:pb-0">
       <Header variant="back" title="Map" onBack={() => router.back()} onCreateClick={() => router.push("/create")} showDefaultActions />
 
-      <main className="pt-app-header-pill h-screen">
-        <div className="relative h-[calc(100vh-8rem)] lg:h-[calc(100vh-4rem)]">
+      <main className="pt-app-header-pill h-[100dvh]">
+        {/* dvh tracks the visible viewport so the map + bottom drawer don't
+            slip behind mobile browser chrome the way 100vh does. z-0 + isolate
+            contains Leaflet's internal z-index panes (400-1000) below the
+            fixed header / bottom nav (z-50) instead of painting over them. */}
+        <div className="relative z-0 isolate h-[calc(100dvh-8rem)] lg:h-[calc(100dvh-4rem)]">
           {loading && !mapReady && posts.length === 0 ? (
             <div className="h-full bg-dark-800 flex items-center justify-center">
               <Skeleton className="h-[70vh] w-[92vw] max-w-5xl rounded-2xl" />

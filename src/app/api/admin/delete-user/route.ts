@@ -1,22 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
-import { requireUser } from "../../_auth";
+import { requireAdminSession } from "../../_auth";
 
 export async function POST(req: NextRequest) {
   try {
-    const { user } = await requireUser(req);
-    const supabaseAdmin = getSupabaseAdmin();
-
-    // Verify caller is admin
-    const { data: adminCheck } = await supabaseAdmin
-      .from("users")
-      .select("is_admin")
-      .eq("id", user.id)
-      .single();
-
-    if (!adminCheck?.is_admin) {
+    // Permanently deleting a user is one of the most destructive admin
+    // actions, so it requires the full admin gate (auth + is_admin + PIN
+    // session cookie), matching set-user-role / delete-post — not just a
+    // bare is_admin read on a possibly-stolen token.
+    let user: { id: string };
+    try {
+      ({ user } = await requireAdminSession(req));
+    } catch {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    const supabaseAdmin = getSupabaseAdmin();
 
     const { userId, reason } = await req.json();
     if (!userId) {
@@ -75,6 +73,47 @@ export async function POST(req: NextRequest) {
       } catch {}
     };
 
+    // Collect storage object URLs to purge after the rows are gone, so the
+    // deleted user's actual files don't linger world-readable at their URLs.
+    const mediaUrls: string[] = [];
+    const collectMediaUrls = async (
+      table: string,
+      column: string,
+      values: string[]
+    ) => {
+      if (!values.length) return;
+      try {
+        const { data } = await supabaseAdmin
+          .from(table)
+          .select("url")
+          .in(column, values);
+        for (const row of data || []) {
+          if (row?.url && typeof row.url === "string") mediaUrls.push(row.url);
+        }
+      } catch {}
+    };
+
+    const removeStorageObjects = async (urls: string[]) => {
+      const byBucket = new Map<string, string[]>();
+      for (const url of urls) {
+        const marker = "/storage/v1/object/public/";
+        const idx = url.indexOf(marker);
+        if (idx === -1) continue;
+        const rest = url.slice(idx + marker.length).split("?")[0];
+        const slash = rest.indexOf("/");
+        if (slash === -1) continue;
+        const bucket = rest.slice(0, slash);
+        const path = decodeURIComponent(rest.slice(slash + 1));
+        if (!byBucket.has(bucket)) byBucket.set(bucket, []);
+        byBucket.get(bucket)!.push(path);
+      }
+      for (const [bucket, paths] of byBucket) {
+        try {
+          await supabaseAdmin.storage.from(bucket).remove(paths);
+        } catch {}
+      }
+    };
+
     // =====================================================
     // 1. Delete data related to user's POSTS
     // =====================================================
@@ -94,12 +133,14 @@ export async function POST(req: NextRequest) {
       const commentIds = (postComments || []).map((c: any) => c.id);
 
       if (commentIds.length > 0) {
+        await collectMediaUrls("comment_media", "comment_id", commentIds);
         await safeDeleteIn("comment_likes", "comment_id", commentIds);
         await safeDeleteIn("comment_media", "comment_id", commentIds);
         await safeDeleteIn("flagged_content", "comment_id", commentIds);
         await safeDeleteIn("guardian_actions", "comment_id", commentIds);
       }
 
+      await collectMediaUrls("post_media", "post_id", postIds);
       await safeDeleteIn("post_comments", "post_id", postIds);
       await safeDeleteIn("post_media", "post_id", postIds);
       await safeDeleteIn("post_tags", "post_id", postIds);
@@ -119,6 +160,7 @@ export async function POST(req: NextRequest) {
     const userCommentIds = (userComments || []).map((c: any) => c.id);
 
     if (userCommentIds.length > 0) {
+      await collectMediaUrls("comment_media", "comment_id", userCommentIds);
       await safeDeleteIn("comment_likes", "comment_id", userCommentIds);
       await safeDeleteIn("comment_media", "comment_id", userCommentIds);
       await safeDeleteIn("flagged_content", "comment_id", userCommentIds);
@@ -154,6 +196,7 @@ export async function POST(req: NextRequest) {
         const msgIds = (convMsgs || []).map((m: any) => m.id);
 
         if (msgIds.length > 0) {
+          await collectMediaUrls("message_media", "message_id", msgIds);
           await safeDeleteIn("message_reactions", "message_id", msgIds);
           await safeDeleteIn("message_read_receipts", "message_id", msgIds);
           await safeDeleteIn("message_reads", "message_id", msgIds);
@@ -187,6 +230,7 @@ export async function POST(req: NextRequest) {
     await safeDelete("admin_notifications", "recipient_id", userId);
     await safeDeleteOr("emergency_contacts", `user_id.eq.${userId},contact_user_id.eq.${userId}`);
     await safeDelete("sos_alerts", "user_id", userId);
+    await safeDelete("safety_checkins", "user_id", userId);
     await safeDelete("user_settings", "user_id", userId);
     await safeDelete("user_sessions", "user_id", userId);
     await safeDelete("user_push_tokens", "user_id", userId);
@@ -202,6 +246,22 @@ export async function POST(req: NextRequest) {
     await safeDelete("verification_codes", "user_id", userId);
 
     // =====================================================
+    // 4b. Purge storage objects now that the rows are gone
+    // =====================================================
+    await removeStorageObjects(mediaUrls);
+    try {
+      const prefix = `posts/${userId}`;
+      const { data: files } = await supabaseAdmin.storage
+        .from("media")
+        .list(prefix, { limit: 1000 });
+      if (files && files.length > 0) {
+        await supabaseAdmin.storage
+          .from("media")
+          .remove(files.map((f) => `${prefix}/${f.name}`));
+      }
+    } catch {}
+
+    // =====================================================
     // 5. Delete the USER record
     // =====================================================
     const { error: userDeleteError } = await supabaseAdmin
@@ -210,8 +270,9 @@ export async function POST(req: NextRequest) {
       .eq("id", userId);
 
     if (userDeleteError) {
+      console.error("[admin/delete-user] user row delete failed", userDeleteError);
       return NextResponse.json(
-        { error: `Failed to delete user: ${userDeleteError.message}` },
+        { error: "Failed to delete user" },
         { status: 500 }
       );
     }
@@ -225,8 +286,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
+    console.error("[admin/delete-user] failed", error);
     return NextResponse.json(
-      { ok: false, error: error.message || "Server error" },
+      { ok: false, error: "Server error" },
       { status: 500 }
     );
   }

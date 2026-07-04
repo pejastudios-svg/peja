@@ -134,7 +134,12 @@ function SearchContent() {
     return feedCache.applyDeletes(merged).slice(0, 50);
   }, [feedCache, selectedCategory, dateRange, tagFilters, query]);
 
+  const searchSeqRef = useRef(0);
   const performSearch = useCallback(async () => {
+    // Request sequencing: only the newest search may write results. Without
+    // this, a slow response for an earlier query ("kidnap") can land after a
+    // faster one for a later query ("kidnapping lagos") and overwrite it.
+    const seq = ++searchSeqRef.current;
     // Only show loading skeleton if we have NO cached results
     if (posts.length === 0) setLoading(true);
 
@@ -309,6 +314,8 @@ function SearchContent() {
 
       const top = formattedPosts.slice(0, 50);
       const display = feedCache.applyDeletes(top);
+      // Drop this result if a newer search started while we were awaiting.
+      if (seq !== searchSeqRef.current) return;
       confirm.hydrateCounts(display.map((p) => ({ postId: p.id, confirmations: p.confirmations || 0 })));
       confirm.loadConfirmedFor(display.map((p) => p.id));
       setPosts(display);

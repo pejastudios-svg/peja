@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Post, REPORT_REASONS } from "@/lib/types";
+import { formatCount } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { ReelVideo } from "@/components/reels/ReelVideo";
 import { WatchCommentSheet } from "@/components/watch/WatchCommentSheet";
@@ -594,6 +595,11 @@ useEffect(() => {
     return [posts[idx], ...posts.slice(0, idx), ...posts.slice(idx + 1)];
   }, [posts, startId]);
 
+  // Index of the currently-snapped slide. Used to window video mounting so we
+  // don't keep up to 80 <video> elements alive at once (iOS caps hardware
+  // decoders, so far-off videos otherwise go black or refuse to play).
+  const activeIndex = ordered.findIndex((p) => p.id === activePostId);
+
   // Observer to track active post
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -842,13 +848,19 @@ useEffect(() => {
       </button>
 
       <div ref={scrollerRef} className="h-full w-full overflow-y-scroll" style={{ scrollSnapType: "y mandatory" }}>
-        {ordered.map((post) => {
+        {ordered.map((post, index) => {
           const isConfirmed = confirm.isConfirmed(post.id);
           const confirmCount = confirm.getCount(post.id, post.confirmations || 0);
           const activeMediaIndex = mediaIndexByPost[post.id] ?? 0;
           const isSensitive = !!post.is_sensitive;
           const isRevealed = revealedSensitive.has(post.id);
           const isActivePost = activePostId === post.id;
+          // Only mount the media (real <video>/<img>) for the active slide and
+          // its immediate neighbors; render a lightweight poster for the rest.
+          const nearActive =
+            activeIndex < 0 ? index < 3 : Math.abs(index - activeIndex) <= 1;
+          const posterUrl =
+            post.media?.[0]?.thumbnail_url || post.media?.[0]?.url || null;
 
           const containerStyle = isActivePost && showComments ? {
              transform: "scale(0.85) translateY(-15%)",
@@ -864,7 +876,7 @@ useEffect(() => {
             <div
               key={post.id}
               data-postid={post.id}
-              className="h-screen w-full relative overflow-hidden bg-black"
+              className="h-[100dvh] w-full relative overflow-hidden bg-black"
               style={{ scrollSnapAlign: "start", scrollSnapStop: "always" }}
             >
               {isActivePost && showComments && (
@@ -875,18 +887,31 @@ useEffect(() => {
               )}
 
               <div className="w-full h-full origin-top" style={containerStyle}>
-                  <WatchMediaCarousel 
-                    media={post.media} 
-                    isActivePost={isActivePost} 
-                    activeMediaIndex={activeMediaIndex} 
-                    onIndexChange={(idx: number) => setMediaIndexByPost(prev => ({ ...prev, [post.id]: idx }))}
-                    isSensitive={isSensitive}
-                    isRevealed={isRevealed}
-                    onReveal={() => revealPost(post.id)}
-                    onMarkViewed={() => markViewed(post.id)}
-                    onOpenOptions={() => { setActivePostForOptions(post); setShowOptions(true); }}
-                    onControlsChange={isActivePost ? setControlsVisible : undefined}
-                  />
+                  {nearActive ? (
+                    <WatchMediaCarousel
+                      media={post.media}
+                      isActivePost={isActivePost}
+                      activeMediaIndex={activeMediaIndex}
+                      onIndexChange={(idx: number) => setMediaIndexByPost(prev => ({ ...prev, [post.id]: idx }))}
+                      isSensitive={isSensitive}
+                      isRevealed={isRevealed}
+                      onReveal={() => revealPost(post.id)}
+                      onMarkViewed={() => markViewed(post.id)}
+                      onOpenOptions={() => { setActivePostForOptions(post); setShowOptions(true); }}
+                      onControlsChange={isActivePost ? setControlsVisible : undefined}
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-black">
+                      {posterUrl && !isSensitive && (
+                        <img
+                          src={posterUrl}
+                          alt=""
+                          className="w-full h-full object-cover opacity-80"
+                          loading="lazy"
+                        />
+                      )}
+                    </div>
+                  )}
                   
                   <div 
                     className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${showComments ? 'opacity-0' : 'opacity-100'}`}
@@ -896,17 +921,17 @@ useEffect(() => {
                           <button onClick={() => toggleConfirm(post)} className={`p-3 rounded-full backdrop-blur-md transition-colors ${isConfirmed ? "bg-primary-600/90 text-white" : "bg-black/40 text-white hover:bg-black/60"}`}>
                              <CheckCircle className={`w-8 h-8 ${isConfirmed ? "fill-current" : ""}`} />
                           </button>
-                          <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{confirmCount}</span>
+                          <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{formatCount(confirmCount)}</span>
                        </div>
                        <div className="flex flex-col items-center gap-1">
                           <button onClick={() => { if (isActivePost) openComments(); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
                              <MessageCircle className="w-8 h-8" />
                           </button>
-                          <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.comment_count || 0}</span>
+                          <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{formatCount(post.comment_count || 0)}</span>
                        </div>
                        <div className="flex flex-col items-center gap-1">
                           <div className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white"><Eye className="w-8 h-8" /></div>
-                          <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{post.views || 0}</span>
+                          <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{formatCount(post.views || 0)}</span>
                        </div>
                        <button onClick={() => { setActivePostForOptions(post); setShowOptions(true); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
                          <MoreVertical className="w-8 h-8" />

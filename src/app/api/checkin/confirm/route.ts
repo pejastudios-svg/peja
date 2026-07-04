@@ -34,7 +34,9 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    if (latitude && longitude) {
+    // Use != null, not truthiness — longitude 0 (the prime meridian) is a
+    // valid coordinate that `if (latitude && longitude)` would silently drop.
+    if (latitude != null && longitude != null) {
       updateData.latitude = latitude;
       updateData.longitude = longitude;
       updateData.location_updated_at = new Date().toISOString();

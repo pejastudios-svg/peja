@@ -799,7 +799,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
         },
       });
 
-      setToast("Saved as draft — will post when you're back online.");
+      setToast("Saved as draft. Will post when you're back online.");
       setTimeout(() => setToast(null), 4000);
       // Send the user back to the home feed so they don't see a
       // frozen create form. The draft is safely in IDB + the outbox.

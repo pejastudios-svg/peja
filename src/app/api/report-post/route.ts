@@ -1,19 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "../_auth";
 import { getSupabaseAdmin } from "../_supabaseAdmin";
-import { isRateLimited } from "../_rateLimit";
+import { isRateLimitedDurable } from "../_rateLimit";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
     const { user } = await requireUser(req);
+
+    // Throttle so a user can't rapidly report many posts and fan out
+    // moderator notifications. Per-target dedup still applies below.
+    if (await isRateLimitedDurable(`report:${user.id}`, 20, 10 * 60)) {
+      return NextResponse.json({ ok: false, error: "Too many reports. Please slow down." }, { status: 429 });
+    }
+
     const { postId, reason, description } = await req.json();
 
-
-    if (!postId || !reason) {
-      return NextResponse.json({ ok: false, error: "Missing postId or reason" }, { status: 400 });
+    if (!postId || typeof postId !== "string") {
+      return NextResponse.json({ ok: false, error: "Missing postId" }, { status: 400 });
     }
+    // Cap the free-text fields so a report can't store megabytes of text or
+    // stuff huge strings into the moderator notifications it fans out.
+    if (!reason || typeof reason !== "string" || reason.length > 100) {
+      return NextResponse.json({ ok: false, error: "Invalid reason" }, { status: 400 });
+    }
+    const safeDescription =
+      typeof description === "string" ? description.slice(0, 1000) : null;
 
     const supabaseAdmin = getSupabaseAdmin();
 
@@ -51,14 +64,15 @@ export async function POST(req: NextRequest) {
       post_id: postId,
       user_id: user.id,
       reason,
-      description: description || null,
+      description: safeDescription,
     });
 
     if (reportErr) {
       if ((reportErr as any).code === "23505") {
         return NextResponse.json({ ok: false, error: "You have already reported this post" }, { status: 400 });
       }
-      return NextResponse.json({ ok: false, error: reportErr.message }, { status: 400 });
+      console.error("[report-post] insert failed", reportErr);
+      return NextResponse.json({ ok: false, error: "Failed to submit report" }, { status: 400 });
     }
 
 
@@ -165,7 +179,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, reportCount: totalReports, archived });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });
+    console.error("[report-post] failed", e);
+    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
   }
 }
 

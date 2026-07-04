@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
+import { isRateLimitedDurable } from "../../_rateLimit";
 
 export const runtime = "nodejs";
 
@@ -10,6 +11,13 @@ export async function POST(req: NextRequest) {
     const { sosId } = await req.json();
 
     if (!sosId) return NextResponse.json({ ok: false, error: "Missing sosId" }, { status: 400 });
+
+    // Throttle the email fan-out so a caller can't spam nearby users. Generous
+    // enough for legitimate re-sends of a real SOS. Fails open if the limiter
+    // backend isn't available.
+    if (await isRateLimitedDurable(`sos-emails:${user.id}`, 5, 10 * 60)) {
+      return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 });
+    }
 
     const supabaseAdmin = getSupabaseAdmin();
 
@@ -75,11 +83,13 @@ export async function POST(req: NextRequest) {
 
     if (recipients.length === 0) return NextResponse.json({ ok: true, sent: 0 });
 
-    // Send one batch to Apps Script
-    await fetch(scriptUrl, {
+    // Send one batch to Apps Script. This is the emergency-email channel, so
+    // we must NOT report success blindly: if the webhook is down or errors,
+    // the caller (and the offline outbox) needs to know delivery failed.
+    const emailRes = await fetch(scriptUrl, {
       method: "POST",
-      headers: { 
-        "Content-Type": "application/json", 
+      headers: {
+        "Content-Type": "application/json",
         "X-Peja-Secret": process.env.APPS_SCRIPT_WEBHOOK_SECRET || "",
       },
       body: JSON.stringify({
@@ -99,8 +109,17 @@ export async function POST(req: NextRequest) {
       }),
     });
 
+    if (!emailRes.ok) {
+      console.error("[sos/send-emails] webhook returned", emailRes.status);
+      return NextResponse.json(
+        { ok: false, error: "Email delivery failed", sent: 0 },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json({ ok: true, sent: recipients.length });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });
+    console.error("[sos/send-emails] failed", e);
+    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
   }
 }

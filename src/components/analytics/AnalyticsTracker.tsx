@@ -137,31 +137,31 @@ export default function AnalyticsTracker() {
     const sessionId = sessionIdRef.current || getOrCreateSessionId();
 
     const track = async () => {
-      // Always log page_view
-      await supabase.from("app_events").insert({
-        user_id: user.id,
-        session_id: sessionId,
-        event_name: "page_view",
-        screen: pathname,
-        props: {},
-      });
+      // Build all events for this navigation and write them in ONE insert
+      // instead of up to three separate round-trips per page change.
+      const events: Record<string, any>[] = [
+        {
+          user_id: user.id,
+          session_id: sessionId,
+          event_name: "page_view",
+          screen: pathname,
+          props: {},
+        },
+      ];
 
-      // Bonus: log post_open automatically
       if (pathname.startsWith("/post/")) {
-        const postId = pathname.split("/post/")[1] || null;
-        await supabase.from("app_events").insert({
+        events.push({
           user_id: user.id,
           session_id: sessionId,
           event_name: "post_open",
           screen: "post_detail",
-          target_id: postId,
+          target_id: pathname.split("/post/")[1] || null,
           props: {},
         });
       }
 
-      // Bonus: log watch_open
       if (pathname === "/watch") {
-        await supabase.from("app_events").insert({
+        events.push({
           user_id: user.id,
           session_id: sessionId,
           event_name: "watch_open",
@@ -169,6 +169,8 @@ export default function AnalyticsTracker() {
           props: {},
         });
       }
+
+      await supabase.from("app_events").insert(events);
     };
 
     track().catch((e) => {

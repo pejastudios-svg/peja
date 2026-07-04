@@ -149,26 +149,44 @@ export async function fetchConversationList(
     for (const u of (users || []) as UserRow[]) usersById[u.id] = u;
   }
 
-  // 3. Unread counts in parallel — count rows in `messages` after my
-  //    last_read_at, sent by someone else.
+  // 3. Unread counts. Prefer the single-query RPC (peja_unread_counts), which
+  //    returns one row per conversation for the caller instead of the old
+  //    N-COUNTs-per-list-load. If the RPC isn't available (migration not yet
+  //    applied) or errors, fall back to the per-conversation loop so the list
+  //    can never break — this is a pure performance swap.
   const unreadByConv: Record<string, number> = {};
-  await Promise.all(
-    conversationIds.map(async (cid) => {
-      const lastRead = myReadByConv[cid];
-      if (!lastRead) {
-        unreadByConv[cid] = 0;
-        return;
+  let unreadFromRpc = false;
+  try {
+    const { data: rpcRows, error: rpcErr } = await supabase.rpc("peja_unread_counts");
+    if (!rpcErr && Array.isArray(rpcRows)) {
+      for (const row of rpcRows as Array<{ conversation_id: string; unread: number }>) {
+        if (row?.conversation_id) unreadByConv[row.conversation_id] = Number(row.unread) || 0;
       }
-      const { count } = await supabase
-        .from("messages")
-        .select("*", { count: "exact", head: true })
-        .eq("conversation_id", cid)
-        .neq("sender_id", currentUserId)
-        .gt("created_at", lastRead)
-        .eq("is_deleted", false);
-      unreadByConv[cid] = count || 0;
-    })
-  );
+      unreadFromRpc = true;
+    }
+  } catch {
+    // fall through to the per-conversation loop below
+  }
+
+  if (!unreadFromRpc) {
+    await Promise.all(
+      conversationIds.map(async (cid) => {
+        const lastRead = myReadByConv[cid];
+        let q = supabase
+          .from("messages")
+          .select("*", { count: "exact", head: true })
+          .eq("conversation_id", cid)
+          .neq("sender_id", currentUserId)
+          .eq("is_deleted", false);
+        // No last_read_at means the user has never opened this conversation
+        // (e.g. just added to a group) — every message from others is unread,
+        // so we must NOT force the count to 0 here or the badge never shows.
+        if (lastRead) q = q.gt("created_at", lastRead);
+        const { count } = await q;
+        unreadByConv[cid] = count || 0;
+      })
+    );
+  }
 
   // 4. Assemble + filter rows the current user has "deleted" (hidden_at
   //    set, and no newer message has arrived since). A newer message
@@ -299,50 +317,57 @@ export async function fetchThread(
   if (before) {
     messagesQuery = messagesQuery.lt("created_at", before);
   }
-  const [msgsRes, partsRes, deletionsRes] = await Promise.all([
+  const [msgsRes, partsRes] = await Promise.all([
     messagesQuery,
     supabase
       .from("conversation_participants")
       .select("user_id, last_read_at")
       .eq("conversation_id", conversationId)
       .neq("user_id", currentUserId),
-    supabase
-      .from("message_deletions")
-      .select("message_id")
-      .eq("user_id", currentUserId),
   ]);
   if (msgsRes.error) throw msgsRes.error;
   if (partsRes.error) throw partsRes.error;
 
-  const myDeletedIds = new Set(
-    (deletionsRes.data || []).map(
-      (d: { message_id: string }) => d.message_id
-    )
-  );
-  const rows = ((msgsRes.data || []) as MessageRow[])
-    .reverse() // chronological
-    .filter((r) => !myDeletedIds.has(r.id));
+  const pageRows = ((msgsRes.data || []) as MessageRow[]).reverse(); // chronological
+  const pageIds = pageRows.map((r) => r.id);
   const otherLastRead = partsRes.data?.[0]?.last_read_at || null;
 
-  // Fetch media in one round-trip for any non-text rows AND fetch the
-  // parent messages for any reply rows — both in parallel, both
-  // fanned-in by id.
-  const mediaCarriers = rows.filter((r) => r.content_type !== "text").map((r) => r.id);
+  // Fetch media, reply parents, reactions, AND this page's deletions in one
+  // round-trip. Crucially, message_deletions is scoped to THIS page's ids
+  // (not the user's entire delete-for-me history across every conversation),
+  // so a user who has cleared many chats no longer drags a growing list on
+  // every thread open. Media/reply carriers are computed from the unfiltered
+  // page — any extra fetch for a deleted-for-me row is discarded below and
+  // bounded by the page size.
+  const mediaCarriers = pageRows.filter((r) => r.content_type !== "text").map((r) => r.id);
   const replyParentIds = Array.from(
-    new Set(rows.map((r) => r.reply_to_id).filter((v): v is string => !!v))
+    new Set(pageRows.map((r) => r.reply_to_id).filter((v): v is string => !!v))
   );
-  const allMessageIds = rows.map((r) => r.id);
-  const [mediaByMessage, replyTargetsById, reactionsByMessage] = await Promise.all([
+  const [deletionsRes, mediaByMessage, replyTargetsById, reactionsByMessage] = await Promise.all([
+    pageIds.length
+      ? supabase
+          .from("message_deletions")
+          .select("message_id")
+          .eq("user_id", currentUserId)
+          .in("message_id", pageIds)
+      : Promise.resolve({ data: [] as { message_id: string }[] }),
     mediaCarriers.length
       ? fetchMediaForMessages(mediaCarriers)
       : Promise.resolve({} as Record<string, ChatMessageMedia[]>),
     replyParentIds.length
       ? fetchReplyTargets(replyParentIds)
       : Promise.resolve({} as Record<string, ReplyTarget>),
-    allMessageIds.length
-      ? fetchReactionsForMessages(allMessageIds)
+    pageIds.length
+      ? fetchReactionsForMessages(pageIds)
       : Promise.resolve({} as Record<string, MessageReaction[]>),
   ]);
+
+  const myDeletedIds = new Set(
+    ((deletionsRes as { data: { message_id: string }[] | null }).data || []).map(
+      (d) => d.message_id
+    )
+  );
+  const rows = pageRows.filter((r) => !myDeletedIds.has(r.id));
 
   return rows.map((row) => ({
     id: row.id,
@@ -901,9 +926,11 @@ export async function markConversationRead(
   conversationId: string,
   currentUserId: string
 ): Promise<string> {
-  // last_read_at = max(latest message timestamp, now). Setting it 1s past
-  // the latest message timestamp matches v1's behavior and ensures the
-  // strictly-greater-than filter in unread counts excludes our own catch-up.
+  // last_read_at = the latest message's exact timestamp. The unread count
+  // uses a strict `gt(created_at)` filter, so the message at this exact time
+  // is excluded (it's the one we just read) while anything newer stays unread.
+  // The previous "+1000ms" fudge swallowed any message that landed within a
+  // second of marking read, showing a false "seen".
   const { data: latest } = await supabase
     .from("messages")
     .select("created_at")
@@ -911,7 +938,7 @@ export async function markConversationRead(
     .order("created_at", { ascending: false })
     .limit(1);
   const readAt = latest && latest.length > 0
-    ? new Date(new Date(latest[0].created_at).getTime() + 1000).toISOString()
+    ? new Date(latest[0].created_at).toISOString()
     : new Date().toISOString();
   await supabase
     .from("conversation_participants")
@@ -939,6 +966,28 @@ export interface SharedLink {
   context: string;
 }
 
+// Upper bound on how far back the chat-info sheet scans for shared
+// media/links/incidents. The sheet shows recent shared content, not the
+// entire multi-year history, so an unbounded full-conversation scan was
+// pure cost. 1000 recent messages is plenty for the panel.
+const SHARED_SCAN_LIMIT = 1000;
+
+// Returns the set of message ids (within `messageIds`) the user has cleared
+// for themselves. Scoped by id so it never pulls the user's full deletion
+// log across every conversation.
+async function fetchMyDeletionsFor(
+  currentUserId: string,
+  messageIds: string[]
+): Promise<Set<string>> {
+  if (messageIds.length === 0) return new Set();
+  const { data } = await supabase
+    .from("message_deletions")
+    .select("message_id")
+    .eq("user_id", currentUserId)
+    .in("message_id", messageIds);
+  return new Set((data || []).map((d: { message_id: string }) => d.message_id));
+}
+
 /**
  * Fetch every message_media row for the conversation, grouped by type.
  * Filters out media for messages the current user has cleared.
@@ -952,27 +1001,22 @@ export async function fetchSharedMedia(
   conversationId: string,
   currentUserId: string
 ): Promise<SharedMediaBuckets> {
-  const [messagesRes, deletionsRes] = await Promise.all([
-    supabase
-      .from("messages")
-      .select(
-        "id, message_media(id, message_id, url, media_type, file_name, file_size, mime_type, thumbnail_url, created_at)"
-      )
-      .eq("conversation_id", conversationId)
-      .eq("is_deleted", false)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("message_deletions")
-      .select("message_id")
-      .eq("user_id", currentUserId),
-  ]);
+  // Bound the scan to the most recent SHARED_SCAN_LIMIT messages instead of
+  // the entire conversation history, and scope the delete-for-me lookup to
+  // those ids rather than the user's full deletion log.
+  const messagesRes = await supabase
+    .from("messages")
+    .select(
+      "id, message_media(id, message_id, url, media_type, file_name, file_size, mime_type, thumbnail_url, created_at)"
+    )
+    .eq("conversation_id", conversationId)
+    .eq("is_deleted", false)
+    .order("created_at", { ascending: false })
+    .limit(SHARED_SCAN_LIMIT);
   if (messagesRes.error) throw messagesRes.error;
 
-  const myDeleted = new Set(
-    (deletionsRes.data || []).map(
-      (d: { message_id: string }) => d.message_id
-    )
-  );
+  const scanIds = (messagesRes.data || []).map((r: { id: string }) => r.id);
+  const myDeleted = await fetchMyDeletionsFor(currentUserId, scanIds);
 
   const buckets: SharedMediaBuckets = {
     images: [],
@@ -1005,24 +1049,18 @@ export async function fetchSharedLinks(
   conversationId: string,
   currentUserId: string
 ): Promise<SharedLink[]> {
-  const [msgsRes, deletionsRes] = await Promise.all([
-    supabase
-      .from("messages")
-      .select("id, content, created_at")
-      .eq("conversation_id", conversationId)
-      .eq("is_deleted", false)
-      .eq("content_type", "text")
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("message_deletions")
-      .select("message_id")
-      .eq("user_id", currentUserId),
-  ]);
+  const msgsRes = await supabase
+    .from("messages")
+    .select("id, content, created_at")
+    .eq("conversation_id", conversationId)
+    .eq("is_deleted", false)
+    .eq("content_type", "text")
+    .order("created_at", { ascending: false })
+    .limit(SHARED_SCAN_LIMIT);
   if (msgsRes.error) throw msgsRes.error;
-  const myDeleted = new Set(
-    (deletionsRes.data || []).map(
-      (d: { message_id: string }) => d.message_id
-    )
+  const myDeleted = await fetchMyDeletionsFor(
+    currentUserId,
+    (msgsRes.data || []).map((r: { id: string }) => r.id)
   );
 
   const out: SharedLink[] = [];
@@ -1067,24 +1105,18 @@ export async function fetchSharedIncidents(
   conversationId: string,
   currentUserId: string
 ): Promise<SharedIncident[]> {
-  const [msgsRes, deletionsRes] = await Promise.all([
-    supabase
-      .from("messages")
-      .select("id, content, created_at")
-      .eq("conversation_id", conversationId)
-      .eq("is_deleted", false)
-      .eq("content_type", "text")
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("message_deletions")
-      .select("message_id")
-      .eq("user_id", currentUserId),
-  ]);
+  const msgsRes = await supabase
+    .from("messages")
+    .select("id, content, created_at")
+    .eq("conversation_id", conversationId)
+    .eq("is_deleted", false)
+    .eq("content_type", "text")
+    .order("created_at", { ascending: false })
+    .limit(SHARED_SCAN_LIMIT);
   if (msgsRes.error) throw msgsRes.error;
-  const myDeleted = new Set(
-    (deletionsRes.data || []).map(
-      (d: { message_id: string }) => d.message_id
-    )
+  const myDeleted = await fetchMyDeletionsFor(
+    currentUserId,
+    (msgsRes.data || []).map((r: { id: string }) => r.id)
   );
   const out: SharedIncident[] = [];
   const seen = new Set<string>();

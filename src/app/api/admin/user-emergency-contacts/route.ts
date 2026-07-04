@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAdmin } from "../../_auth";
+import { requireAdminSession } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireAdmin(req);
+    // Reading another user's emergency contacts is sensitive PII, so require
+    // the full admin PIN session, not just an is_admin flag.
+    await requireAdminSession(req);
+  } catch {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+  }
 
+  try {
     const { userId } = await req.json();
     if (!userId) {
       return NextResponse.json({ ok: false, error: "Missing userId" }, { status: 400 });
@@ -51,6 +57,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, contacts: merged });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });
+    console.error("[admin/user-emergency-contacts] failed", e);
+    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
   }
 }

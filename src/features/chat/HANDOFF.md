@@ -233,14 +233,26 @@ To verify a migration is applied, query: `select proname from pg_proc where pron
 
 Using **cron-job.org** (not Vercel cron). Existing job:
 - `https://peja.life/api/cron/checkin-monitor/?secret=...` — SOS / SML check-in monitor
+  - Schedule: every minute (`* * * * *`). Unchanged — internals were batched/bounded
+    but the URL, GET method, and `?secret=` auth are the same.
 
-Add this one (currently missing):
+Add these (currently missing):
 - `https://peja.life/api/cron/cleanup-orphan-chat-media/?secret=YOUR_CRON_SECRET`
-- Schedule: `0 3 * * *` (daily 03:00 UTC)
-- Method: GET
-- No headers needed; secret is in the query string
+  - Schedule: `0 3 * * *` (daily 03:00 UTC)
+- `https://peja.life/api/jobs/expire/?secret=YOUR_CRON_SECRET`
+  - Schedule: `0 * * * *` (hourly). REQUIRED: expiry used to be triggered from the
+    client on every feed visit; that was removed, so posts/SOS/check-ins now only
+    auto-resolve when this cron runs.
+- `https://peja.life/api/cron/analytics-retention/?secret=YOUR_CRON_SECRET`
+  - Schedule: `0 3 * * *` (daily). Prunes app_events / user_sessions / old SOS
+    notifications so those tables don't grow forever.
+
+All: Method GET, no headers needed (secret is in the query string).
 
 **Trailing slash before `?` is load-bearing** — `next.config.ts` has `trailingSlash: true` which 308-redirects URLs without the slash.
+
+NOTE: do NOT also schedule these via Supabase pg_cron or Vercel cron — cron-job.org
+is the single scheduler. Double-scheduling would run the check-in monitor twice a minute.
 
 ---
 

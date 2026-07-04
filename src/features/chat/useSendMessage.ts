@@ -29,7 +29,7 @@ import {
   uploadMediaToStorage,
   fetchGroupParticipantsForNotify,
 } from "./api";
-import { addToOutbox, patchOutboxItem, removeFromOutbox } from "./outbox";
+import { addToOutbox, patchOutboxItem, removeFromOutbox, markSendInFlight, clearSendInFlight } from "./outbox";
 import { putBlob, removeBlobsForMessage } from "./mediaBlobs";
 import { processAttachment, type ProcessedAttachment } from "./chatMedia";
 import { notifyDMMessage } from "@/lib/notifications";
@@ -206,6 +206,10 @@ export function useSendMessage() {
       //    mid-flight (e.g. user tapped X on the progress ring).
       const controller = new AbortController();
       inflightControllers.set(messageId, controller);
+      // Mark this id as sending so a concurrent outbox drain (fired by an
+      // online/visibility/reconnect event mid-upload) skips it instead of
+      // re-uploading and colliding on the primary key.
+      markSendInFlight(messageId);
       console.log("[chat-v2] sending message", { id: messageId, isMedia });
       try {
         let confirmed: ChatMessage;
@@ -372,6 +376,7 @@ export function useSendMessage() {
         throw err;
       } finally {
         inflightControllers.delete(messageId);
+        clearSendInFlight(messageId);
       }
     },
     [user?.id]

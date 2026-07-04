@@ -65,6 +65,7 @@ class LocationTracker {
   private isTracking = false;
   private currentBearing: number = 0;
   private bearingListeners: ((bearing: number) => void)[] = [];
+  private orientationHandler: ((event: DeviceOrientationEvent) => void) | null = null;
 
   start(userId: string) {
     if (this.isTracking) return;
@@ -98,6 +99,8 @@ class LocationTracker {
 
   private startCompassTracking() {
     if (typeof window === "undefined") return;
+    // Already listening — don't stack a second handler on a repeat start().
+    if (this.orientationHandler) return;
 
     const handleOrientation = (event: DeviceOrientationEvent) => {
       let bearing = 0;
@@ -117,12 +120,16 @@ class LocationTracker {
       this.bearingListeners.forEach(cb => cb(bearing));
     };
 
+    // Keep the reference so stop() can remove it (otherwise every
+    // start/stop cycle leaks another orientation listener).
+    this.orientationHandler = handleOrientation;
+
     // Request permission on iOS 13+
     if (typeof (DeviceOrientationEvent as any).requestPermission === "function") {
       (DeviceOrientationEvent as any).requestPermission()
         .then((response: string) => {
-          if (response === "granted") {
-            window.addEventListener("deviceorientation", handleOrientation, true);
+          if (response === "granted" && this.orientationHandler) {
+            window.addEventListener("deviceorientation", this.orientationHandler, true);
           }
         })
         .catch((err: any) => {
@@ -157,6 +164,11 @@ class LocationTracker {
     if (this.updateInterval) {
       clearInterval(this.updateInterval);
       this.updateInterval = null;
+    }
+
+    if (this.orientationHandler) {
+      window.removeEventListener("deviceorientation", this.orientationHandler, true);
+      this.orientationHandler = null;
     }
 
     this.isTracking = false;
@@ -706,29 +718,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      if (error) {
+      // Distinguish a transient read failure from a genuine "no row". After
+      // the retries, an error with no data means we simply could NOT read the
+      // profile (network/RLS blip) — it does NOT mean the profile is missing.
+      // Treating it as missing is what wiped roles/name and poisoned the cache.
+      const readFailed = !!error && !data;
+      if (readFailed) {
+        console.warn("[Auth] Profile read failed, keeping existing state:", error?.message);
+        // Preserve any real profile we already have for this user. Only if we
+        // have nothing do we paint a minimal placeholder — and we never cache
+        // it, so the next successful fetch fully replaces it.
+        setUser((prev) =>
+          prev && prev.id === userId
+            ? prev
+            : {
+                id: userId,
+                email: supabaseUser?.email || "",
+                email_verified: false,
+                phone_verified: false,
+              }
+        );
+        return;
       }
-      // If no profile exists (first-time OAuth user), create one
-      if (!data && supabaseUser) {
-        console.log("[Auth] No profile found, creating for OAuth user:", supabaseUser.email);
-        const meta = supabaseUser.user_metadata || {};
-        const newProfile = {
-          id: userId,
-          email: supabaseUser.email || "",
-          full_name: meta.full_name || meta.name || "",
-          avatar_url: meta.avatar_url || meta.picture || "",
-          phone: meta.phone || "",
-          status: "active",
-          email_verified: !!supabaseUser.email_confirmed_at,
-        };
-        const { data: inserted, error: insertErr } = await supabase
-          .from("users")
-          .upsert(newProfile, { onConflict: "id" })
-          .select()
-          .single();
-        console.log("[Auth] Profile create result:", insertErr ? insertErr.message : "success", inserted?.id);
-        if (!insertErr && inserted) {
-          data = inserted;
+
+      // Genuinely no row (the read succeeded and returned nothing): create a
+      // profile for a first-time OAuth user. Fetch the auth user FRESH here —
+      // the closed-over `supabaseUser` state is captured from the first render
+      // (null) inside this mount-once callback and never updates, so the old
+      // `!data && supabaseUser` guard was always false and this never ran.
+      if (!data) {
+        const { data: authData } = await supabase.auth.getUser();
+        const authUser = authData?.user;
+        if (authUser) {
+          const meta = authUser.user_metadata || {};
+          const newProfile = {
+            id: userId,
+            email: authUser.email || "",
+            full_name: meta.full_name || meta.name || "",
+            avatar_url: meta.avatar_url || meta.picture || "",
+            phone: meta.phone || "",
+            status: "active",
+            email_verified: !!authUser.email_confirmed_at,
+          };
+          // insert (not upsert): if a row somehow already exists but was hidden
+          // from our SELECT (e.g. RLS), the conflict is ignored rather than
+          // overwriting real data like a suspended status.
+          const { data: inserted, error: insertErr } = await supabase
+            .from("users")
+            .insert(newProfile)
+            .select()
+            .single();
+          if (!insertErr && inserted) {
+            data = inserted;
+          }
         }
       }
       const profile: User = data ? {
@@ -777,21 +819,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return;
 }
       
-      userProfileCache = {
-        userId,
-        profile,
-        timestamp: Date.now(),
-      };
-      try {
-        localStorage.setItem(PROFILE_LS_KEY, JSON.stringify({ userId, profile, timestamp: Date.now() }));
-      } catch {}
+      // Only persist a REAL profile row. Caching a skeleton would pin the
+      // blank version for CACHE_DURATION and survive reloads.
+      if (data) {
+        userProfileCache = {
+          userId,
+          profile,
+          timestamp: Date.now(),
+        };
+        try {
+          localStorage.setItem(PROFILE_LS_KEY, JSON.stringify({ userId, profile, timestamp: Date.now() }));
+        } catch {}
+      }
     } catch (error) {
-      setUser({
-        id: userId,
-        email: supabaseUser?.email || "",
-        email_verified: false,
-        phone_verified: false,
-      });
+      // Unexpected throw (not a query error): keep any real profile we have
+      // rather than clobbering it with a placeholder, and never cache it.
+      console.warn("[Auth] fetchUserProfile threw, keeping existing state:", error);
+      setUser((prev) =>
+        prev && prev.id === userId
+          ? prev
+          : {
+              id: userId,
+              email: supabaseUser?.email || "",
+              email_verified: false,
+              phone_verified: false,
+            }
+      );
     } finally {
       fetchingRef.current = false;
     }
@@ -824,16 +877,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const next: any = payload.new;
           if (!next?.id) return;
 
-          // update local user immediately
+          // Update local user, but ONLY produce a new object when a field we
+          // actually care about changed. This UPDATE fires for every write to
+          // our own row — including the 30s last_seen_at heartbeat — and a
+          // fresh object identity each time made every [user]-keyed effect
+          // (Header channel, check-in poll, comment refetch) tear down and
+          // rebuild on a 30s clock.
           setUser((prev) => {
             if (!prev) return prev;
+            const nextStatus = next.status ?? prev.status;
+            const nextGuardian = next.is_guardian ?? prev.is_guardian;
+            const nextAdmin = next.is_admin ?? prev.is_admin;
+            const nextVip = next.is_vip ?? prev.is_vip;
+            const nextMvp = next.is_mvp ?? prev.is_mvp;
+            if (
+              nextStatus === prev.status &&
+              nextGuardian === prev.is_guardian &&
+              nextAdmin === prev.is_admin &&
+              nextVip === prev.is_vip &&
+              nextMvp === prev.is_mvp
+            ) {
+              return prev; // nothing relevant changed — keep identity
+            }
             return {
               ...prev,
-              status: next.status,
-              is_guardian: next.is_guardian ?? prev.is_guardian,
-              is_admin: next.is_admin ?? prev.is_admin,
-              is_vip: next.is_vip ?? prev.is_vip,
-              is_mvp: next.is_mvp ?? prev.is_mvp,
+              status: nextStatus,
+              is_guardian: nextGuardian,
+              is_admin: nextAdmin,
+              is_vip: nextVip,
+              is_mvp: nextMvp,
             };
           });
 

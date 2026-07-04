@@ -69,6 +69,13 @@ export default function InAppNotificationToasts() {
   const mountedRef = useRef(true);
 
   const isModPage = pathname.startsWith("/admin") || pathname.startsWith("/guardian");
+  // Keep the current mod-page state in a ref so the realtime subscription can
+  // read it WITHOUT being torn down and recreated on every navigation (which
+  // dropped any notification that arrived during the resubscribe gap).
+  const isModPageRef = useRef(isModPage);
+  useEffect(() => {
+    isModPageRef.current = isModPage;
+  }, [isModPage]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -77,7 +84,6 @@ export default function InAppNotificationToasts() {
 
   useEffect(() => {
     if (!user?.id) return;
-    if (isModPage) return;
 
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
@@ -101,6 +107,8 @@ export default function InAppNotificationToasts() {
         (payload) => {
           console.log("[toasts] INSERT received", payload.new);
           if (!mountedRef.current) return;
+          // Suppress toasts while the user is on an admin/guardian page.
+          if (isModPageRef.current) return;
 
           const n = payload.new as NotificationRow;
 
@@ -158,7 +166,7 @@ export default function InAppNotificationToasts() {
         channelRef.current = null;
       }
     };
-  }, [user?.id, isModPage, pathname]);
+  }, [user?.id]);
 
   const dismiss = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

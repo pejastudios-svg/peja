@@ -97,6 +97,7 @@ export default function NotificationsPage() {
     return true;
   });
 
+  const [notifError, setNotifError] = useState(false);
   const [inviteModal, setInviteModal] = useState<InviteModalData | null>(null);
   const [responding, setResponding] = useState<"accept" | "decline" | null>(null);
   const [accountStatusModal, setAccountStatusModal] =
@@ -136,15 +137,6 @@ export default function NotificationsPage() {
     if (notifications.length === 0) setLoading(true);
 
     try {
-      const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
-
-      await supabase
-        .from("notifications")
-        .delete()
-        .eq("user_id", user.id)
-        .eq("type", "sos_alert")
-        .lt("created_at", fiveHoursAgo);
-
       const { data, error } = await supabase
         .from("notifications")
         .select("*")
@@ -153,11 +145,19 @@ export default function NotificationsPage() {
         .limit(50);
 
       if (error) throw error;
-      const list = data || [];
+      // Hide SOS alerts older than 5h client-side instead of DELETEing them on
+      // every page load (that was a write, with index churn, per open). A
+      // scheduled cron actually prunes old sos_alert rows.
+      const fiveHoursAgo = Date.now() - 5 * 60 * 60 * 1000;
+      const list = (data || []).filter(
+        (n) => n.type !== "sos_alert" || new Date(n.created_at).getTime() >= fiveHoursAgo
+      );
       setNotifications(list);
+      setNotifError(false);
       feedCache.setPosts("notifications:list", list as unknown as any[]);
     } catch (error) {
       console.error("Error fetching notifications:", error);
+      if (notifications.length === 0) setNotifError(true);
     } finally {
       setLoading(false);
     }
@@ -203,12 +203,18 @@ export default function NotificationsPage() {
   };
 
   const handleMarkAsRead = async (notificationId: string) => {
-    try {
-      await supabase.from("notifications").update({ is_read: true }).eq("id", notificationId);
-      setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n)));
-    } catch (error) {
+    // supabase-js resolves with { error } instead of throwing, so a plain
+    // try/catch never fires — check the returned error explicitly, otherwise
+    // the row shows "read" locally then reverts on the next fetch.
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", notificationId);
+    if (error) {
       console.error("Error marking as read:", error);
+      return;
     }
+    setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, is_read: true } : n)));
   };
 
   const handleMarkAllAsRead = async () => {
@@ -224,12 +230,12 @@ export default function NotificationsPage() {
     e.preventDefault();
     e.stopPropagation();
 
-    try {
-      await supabase.from("notifications").delete().eq("id", notificationId);
-      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
-    } catch (error) {
+    const { error } = await supabase.from("notifications").delete().eq("id", notificationId);
+    if (error) {
       console.error("Error deleting notification:", error);
+      return;
     }
+    setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
   };
 
   const handleInviteResponse = async (accept: boolean) => {
@@ -516,6 +522,17 @@ export default function NotificationsPage() {
                   <NotificationRowSkeleton key={i} />
                 ))}
               </div>
+            ) : notifications.length === 0 && notifError ? (
+              <div className="text-center py-12">
+                <Bell className="w-12 h-12 text-dark-600 mx-auto mb-4" />
+                <p className="text-dark-400 mb-2">Couldn&apos;t load notifications</p>
+                <button
+                  onClick={() => { setNotifError(false); fetchNotifications(); }}
+                  className="mt-1 px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium"
+                >
+                  Retry
+                </button>
+              </div>
             ) : notifications.length === 0 ? (
               <div className="text-center py-12">
                 <Bell className="w-12 h-12 text-dark-600 mx-auto mb-4" />
@@ -540,7 +557,7 @@ export default function NotificationsPage() {
                         handleNotificationClick(notification);
                       }
                     }}
-                    className={`glass-card p-4 cursor-pointer transition-all active:scale-[0.98] active:bg-white/10 hover:bg-white/5 select-none ${
+                    className={`glass-card p-4 cursor-pointer transition-all active:scale-[0.98] active:bg-[var(--soft-surface-strong)] hover:bg-[var(--soft-surface-strong)] select-none ${
                       !notification.is_read ? "border-l-4 border-l-primary-500" : ""
                     }`}
                     style={{ WebkitTapHighlightColor: "transparent" }}
@@ -553,11 +570,11 @@ export default function NotificationsPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <p className={`font-medium ${notification.is_read ? "text-dark-300" : "text-dark-100"}`}>
+                            <p className={`font-medium break-words line-clamp-2 ${notification.is_read ? "text-dark-300" : "text-dark-100"}`}>
                               {notification.title}
                             </p>
                             {notification.body && (
-                              <p className="text-sm text-dark-400 mt-0.5 line-clamp-2">{notification.body}</p>
+                              <p className="text-sm text-dark-400 mt-0.5 line-clamp-2 break-words">{notification.body}</p>
                             )}
                             {notification.data?.type === "emergency_contact_invite" && (
                               <p className="text-xs text-yellow-400 mt-1 font-medium">
@@ -566,22 +583,6 @@ export default function NotificationsPage() {
                             )}
                           </div>
 
-                          {notification.type === "sos_alert" && (
-                            <div className="mt-2 space-y-2">
-                              {notification.data?.tag && (
-                                <p className="text-xs text-red-300">
-                                  {SOS_TAGS.find((t) => t.id === notification.data.tag)?.label || "Emergency"}
-                                </p>
-                              )}
-                              {notification.data?.message && (
-                                <p className="text-sm text-dark-300">{notification.data.message}</p>
-                              )}
-                              {notification.data?.voice_note_url && (
-                                <audio src={notification.data.voice_note_url} controls className="w-full" />
-                              )}
-                            </div>
-                          )}
-
                           <button
                             onClick={(e) => handleDeleteNotification(e, notification.id)}
                             className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-400 active:bg-white/20 shrink-0"
@@ -589,6 +590,24 @@ export default function NotificationsPage() {
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
+
+                        {/* Full-width below the title row so the audio player's
+                            intrinsic min-width can't blow out the layout. */}
+                        {notification.type === "sos_alert" && (
+                          <div className="mt-2 space-y-2">
+                            {notification.data?.tag && (
+                              <p className="text-xs text-red-300">
+                                {SOS_TAGS.find((t) => t.id === notification.data.tag)?.label || "Emergency"}
+                              </p>
+                            )}
+                            {notification.data?.message && (
+                              <p className="text-sm text-dark-300 break-words">{notification.data.message}</p>
+                            )}
+                            {notification.data?.voice_note_url && (
+                              <audio src={notification.data.voice_note_url} controls className="w-full" />
+                            )}
+                          </div>
+                        )}
 
                         <div className="flex items-center gap-2 mt-2 text-xs text-dark-500">
                           <Clock className="w-3 h-3" />

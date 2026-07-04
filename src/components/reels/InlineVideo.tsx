@@ -48,6 +48,7 @@ export function InlineVideo({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Retries video load when Cloudinary returns an empty-body 200 during
   // async transcoding. First request triggers transcode; it's ready within
   // ~10-30s for short clips, so retry with backoff before giving up.
@@ -197,6 +198,16 @@ export function InlineVideo({
     };
   }, [src, instanceId, handoff]);
 
+  // Clear both stray timers on unmount so a fast scroll / navigation away
+  // mid-animation can't setState (or dispatch peja-modal-close, which could
+  // resume another page's video) after this component is gone.
+  useEffect(() => {
+    return () => {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+    };
+  }, []);
+
   const resetControlsTimer = () => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     setShowControls(true);
@@ -300,7 +311,7 @@ export function InlineVideo({
     if (closingExpandRef.current) return;
     closingExpandRef.current = true;
     setExpandPhase("exit");
-    setTimeout(() => {
+    collapseTimerRef.current = setTimeout(() => {
       setExpandPhase("idle");
       expandSourceRectRef.current = null;
       setDragOffset({ x: 0, y: 0 });

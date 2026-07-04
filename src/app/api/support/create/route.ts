@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
+import { isRateLimitedDurable } from "../../_rateLimit";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,10 @@ export async function POST(req: NextRequest) {
     if (!message) return NextResponse.json({ ok: false, error: "Message is required" }, { status: 400 });
     if (title.length > TITLE_MAX) {
       return NextResponse.json({ ok: false, error: `Title too long (max ${TITLE_MAX})` }, { status: 400 });
+    }
+    // Throttle ticket creation so the support inbox can't be flooded.
+    if (await isRateLimitedDurable(`support-create:${user.id}`, 5, 10 * 60)) {
+      return NextResponse.json({ ok: false, error: "Too many requests. Please try again shortly." }, { status: 429 });
     }
     if (message.length > MESSAGE_MAX) {
       return NextResponse.json({ ok: false, error: `Message too long (max ${MESSAGE_MAX})` }, { status: 400 });

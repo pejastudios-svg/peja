@@ -21,6 +21,8 @@ import {
   readOutbox,
   removeFromOutbox,
   patchOutboxItem,
+  markSendInFlight,
+  clearSendInFlight,
 } from "./outbox";
 import { sendTextMessage } from "./api";
 import { uploadAndSendMedia } from "./useSendMessage";
@@ -84,6 +86,9 @@ export function useOutboxDrain(userId: string | null): void {
 // has a backlog of unsent messages.
 async function attemptSend(userId: string, item: OutboxItem): Promise<void> {
   const store = useChatStore.getState();
+  // Skip if this exact message is already being sent (by the live send path or
+  // a concurrent drain/retry). Prevents the double-upload + false-"failed" race.
+  if (!markSendInFlight(item.id)) return;
   patchOutboxItem(userId, item.id, { attempts: (item.attempts ?? 0) + 1 });
   // Show the user we're trying — flip "failed" back to "pending" during
   // the network call so the bubble doesn't sit red while we retry.
@@ -143,6 +148,8 @@ async function attemptSend(userId: string, item: OutboxItem): Promise<void> {
     store.patchMessage(item.conversation_id, item.id, {
       delivery_status: "failed",
     });
+  } finally {
+    clearSendInFlight(item.id);
   }
 }
 

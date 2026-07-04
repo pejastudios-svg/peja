@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { getFirebaseAdmin } from "../../_firebaseAdmin";
+import { requireAdmin } from "../../_auth";
 
-// Test endpoint: GET /api/push/test?userId=xxx
-// Returns exactly where the push chain is breaking
+// Admin-only diagnostic: GET /api/push/test?userId=xxx
+// Returns exactly where the push chain is breaking. This is gated behind
+// admin auth because it can send pushes to arbitrary users and exposes
+// Firebase configuration state.
 export async function GET(req: NextRequest) {
+  try {
+    await requireAdmin(req);
+  } catch {
+    return NextResponse.json({ error: "Admin required" }, { status: 403 });
+  }
+
   const userId = req.nextUrl.searchParams.get("userId");
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
 

@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
-  try {
-    await requireUser(req);
+// Scheduled maintenance sweep. Runs from Vercel Cron (see vercel.json),
+// NOT from clients: it uses the service role to mutate every user's rows,
+// so it must be gated by CRON_SECRET rather than a logged-in session.
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get("authorization");
+  const queryToken = req.nextUrl.searchParams.get("secret");
+  const expected = process.env.CRON_SECRET;
+  const authorized =
+    (expected && authHeader === `Bearer ${expected}`) ||
+    (expected && queryToken === expected);
+  if (!authorized) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
+  try {
     const supabaseAdmin = getSupabaseAdmin();
     const now = Date.now();
     const cutoff24h = new Date(now - 24 * 60 * 60 * 1000).toISOString();
@@ -48,6 +58,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "Server error" }, { status: 500 });
+    console.error("[jobs/expire] failed", e);
+    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
   }
 }

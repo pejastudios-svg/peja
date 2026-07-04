@@ -62,6 +62,46 @@ export async function createNotification({
   }
 }
 
+// Batched fan-out. Writes ALL notification rows in a single insert instead
+// of one round-trip per recipient (the SOS/nearby loops previously awaited
+// up to 200 sequential inserts, which took minutes on weak connections and
+// died if the app was backgrounded mid-loop). Pushes are fired in parallel
+// and fire-and-forget so they never block the alert from being recorded.
+export async function createNotifications(
+  recipients: Array<Omit<CreateNotificationParams, "silent" | "skipPush">>,
+): Promise<number> {
+  if (recipients.length === 0) return 0;
+  try {
+    const rows = recipients.map((r) => ({
+      user_id: r.userId,
+      type: r.type,
+      title: r.title,
+      body: r.body,
+      data: r.data || {},
+      is_read: false,
+    }));
+
+    const { error } = await supabase.from("notifications").insert(rows);
+    if (error) {
+      console.warn("[notifications] batch insert failed", error.message);
+      return 0;
+    }
+
+    // Fire pushes in parallel; failures are non-fatal (the in-app
+    // notification row is already written).
+    for (const r of recipients) {
+      if (r.title) {
+        sendFCMPush(r.userId, r.type, r.title, r.body || "", r.data || {}).catch(() => {});
+      }
+    }
+
+    return recipients.length;
+  } catch (e) {
+    console.warn("[notifications] batch insert threw", e);
+    return 0;
+  }
+}
+
 async function sendFCMPush(
   userId: string,
   type: string,

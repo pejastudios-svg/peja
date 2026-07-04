@@ -355,6 +355,9 @@ export default function ThreadV2Page() {
   // returns FEWER than the page size — that's our signal that we've
   // hit the start of the conversation.
   const hasMoreOlderRef = useRef(true);
+  // True when the initial thread fetch failed and we have nothing to show, so
+  // the message area can offer a retry instead of an endless skeleton.
+  const [threadLoadError, setThreadLoadError] = useState(false);
   const loadingOlderRef = useRef(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   // Captured BEFORE a load-older fetch so we can restore scroll
@@ -442,6 +445,7 @@ export default function ThreadV2Page() {
       });
     }
 
+    setThreadLoadError(false);
     fetchThread(conversationId, user.id, 50)
       .then((msgs) => {
         setThread(conversationId, msgs);
@@ -453,7 +457,12 @@ export default function ThreadV2Page() {
         // conversation — no point trying to paginate older.
         if (msgs.length < 50) hasMoreOlderRef.current = false;
       })
-      .catch(() => {});
+      .catch(() => {
+        // Only surface an error if we have nothing cached to show; otherwise
+        // the cached thread stays and this is a silent background refresh.
+        const cur = useChatStore.getState().threadsByConversation[conversationId];
+        if (!cur?.hydrated) setThreadLoadError(true);
+      });
     markConversationRead(conversationId, user.id)
       .then((readAt) => {
         // Keep the local summary in sync so a re-open of THIS chat
@@ -1862,16 +1871,11 @@ export default function ThreadV2Page() {
               // Full-bleed sticky banner. The parent <main> has px-4
               // padding for messages, but the pinned-message strip
               // should run edge-to-edge so the right side doesn't clip
-              // when the preview is long (audio messages especially).
-              // The classic "break-out of constrained parent" trick:
-              // width:100vw with marginLeft / marginRight calculated to
-              // cancel the parent's padding regardless of viewport size.
-              className="sticky top-0 z-20 mb-2 px-4 py-2 flex items-center gap-2 bg-[var(--page-bg)]/95 backdrop-blur border-b border-[var(--chat-input-border)] text-left"
-              style={{
-                width: "100vw",
-                marginLeft: "calc(50% - 50vw)",
-                marginRight: "calc(50% - 50vw)",
-              }}
+              // Full width of the thread column. We used to break out with
+              // width:100vw + negative margins, but 100vw includes the desktop
+              // scrollbar, so the right-edge count pill got clipped. w-full
+              // respects the scroll container's actual width instead.
+              className="sticky top-0 z-20 mb-2 px-4 py-2 flex items-center gap-2 bg-[var(--page-bg)]/95 backdrop-blur border-b border-[var(--chat-input-border)] text-left w-full"
               aria-label="Jump to pinned message"
             >
               <PinIcon className="w-3.5 h-3.5 text-primary-300 shrink-0" />
@@ -1900,7 +1904,23 @@ export default function ThreadV2Page() {
             User's own pending sends are different: they're not partial
             data, they're the user's immediate input and must show
             instantly to feel responsive. */}
-        {user && (!thread || !thread.hydrated) && (
+        {user && threadLoadError && (!thread || !thread.hydrated) && (
+          <div className="text-center py-10 text-dark-400">
+            <p>Couldn&apos;t load this conversation.</p>
+            <button
+              onClick={() => {
+                setThreadLoadError(false);
+                fetchThread(conversationId, user.id, 50)
+                  .then((msgs) => setThread(conversationId, msgs))
+                  .catch(() => setThreadLoadError(true));
+              }}
+              className="mt-3 px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {user && !threadLoadError && (!thread || !thread.hydrated) && (
           <>
             <div className="space-y-3 py-4">
               {Array.from({ length: 4 }).map((_, i) => (

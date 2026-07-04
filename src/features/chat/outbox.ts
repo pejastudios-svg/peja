@@ -27,6 +27,27 @@ import type { OutboxItem } from "./types";
 const KEY_PREFIX = "peja:chat:outbox:v1:";
 const MAX_ITEMS = 200; // Safety cap.
 
+// Message ids with a send currently in flight, shared across the live send
+// (useSendMessage) and the drain/manual-retry paths (useOutboxDrain). A single
+// outbox item can otherwise be sent twice at once — e.g. a video mid-upload
+// when the socket reconnects and fires the drain — causing a duplicate upload
+// and a PK collision that wrongly flags the delivered message "failed".
+const inFlightSends = new Set<string>();
+
+export function markSendInFlight(messageId: string): boolean {
+  if (inFlightSends.has(messageId)) return false; // already sending
+  inFlightSends.add(messageId);
+  return true;
+}
+
+export function clearSendInFlight(messageId: string): void {
+  inFlightSends.delete(messageId);
+}
+
+export function isSendInFlight(messageId: string): boolean {
+  return inFlightSends.has(messageId);
+}
+
 function keyFor(userId: string): string {
   return `${KEY_PREFIX}${userId}`;
 }

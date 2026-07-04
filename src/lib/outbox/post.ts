@@ -43,11 +43,15 @@ export async function dispatchPostCreate(
         ? media.file_name.split(".").pop()
         : media.mime_type.split("/")[1] || "bin";
     const path = `posts/${payload.user_id}/draft-${payload.draft_id}-${media.media_id}.${ext}`;
+    // upsert:true is essential for retry safety. The path is deterministic, so
+    // if a previous drain uploaded this blob and then failed before the post
+    // row landed, upsert:false would throw "already exists" on EVERY retry and
+    // the draft could never publish. Overwriting the same object is harmless.
     const { error: upErr } = await supabase.storage
       .from("media")
       .upload(path, blob, {
         cacheControl: "3600",
-        upsert: false,
+        upsert: true,
         contentType: media.mime_type,
       });
     if (upErr) {

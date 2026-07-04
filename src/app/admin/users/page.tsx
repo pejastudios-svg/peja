@@ -302,9 +302,9 @@ const deleteUser = async (userId: string, userName: string) => {
                       fallback={<span className="text-dark-500 font-bold text-sm">{user.full_name?.[0] || "U"}</span>}
                     />
 
-                    <div>
-                        <div className="flex items-center gap-2">
-                        <p className="font-semibold text-dark-100 text-sm">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                        <p className="font-semibold text-dark-100 text-sm truncate">
                             {user.full_name || "Unnamed User"}
                         </p>
                         {/* Centered Badges */}

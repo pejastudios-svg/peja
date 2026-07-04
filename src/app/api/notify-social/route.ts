@@ -119,7 +119,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (kind === "dm_message") {
-      const res = await handleDM(admin, body, lap);
+      const res = await handleDM(admin, body, user.id, lap);
       lap("T_done");
       return res;
     }
@@ -132,8 +132,7 @@ export async function POST(req: NextRequest) {
     // catch used to silently swallow everything and return a generic
     // 500, which made notification regressions undebuggable.
     console.error("[notify-social] route failed", err);
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Server error" }, { status: 500 });
   }
 }
 
@@ -151,6 +150,24 @@ async function handleSocial(
   const cfg = SOCIAL_CONFIG[kind as Exclude<SocialKind, "dm_message">];
   if (!cfg) {
     return NextResponse.json({ ok: false, error: "Unknown kind" }, { status: 400 });
+  }
+
+  // Anti-spoof: the recipient must actually be a stakeholder in this post
+  // (its owner, or someone who commented on it — which covers reply/like
+  // recipients). Without this any authenticated user could push a fabricated
+  // "New comment on your post: <text>" to an arbitrary victim.
+  const [{ data: postRow }, { count: recipientCommentCount }] = await Promise.all([
+    admin.from("posts").select("user_id").eq("id", postId).maybeSingle(),
+    admin
+      .from("post_comments")
+      .select("id", { count: "exact", head: true })
+      .eq("post_id", postId)
+      .eq("user_id", recipientId),
+  ]);
+  const recipientIsStakeholder =
+    postRow?.user_id === recipientId || (recipientCommentCount || 0) > 0;
+  if (!recipientIsStakeholder) {
+    return NextResponse.json({ ok: true, skipped: "not_stakeholder" });
   }
 
   const since = new Date(Date.now() - SOCIAL_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
@@ -253,12 +270,26 @@ async function handleSocial(
 async function handleDM(
   admin: ReturnType<typeof getSupabaseAdmin>,
   body: Body,
+  callerId: string,
   lap: (label: string) => void
 ) {
   const { recipientId, actorName, conversationId, preview } = body;
 
   if (!conversationId) {
     return NextResponse.json({ ok: false, error: "Missing conversationId" }, { status: 400 });
+  }
+
+  // Anti-spoof: the caller must actually be a participant of this
+  // conversation, otherwise anyone could fake "X sent you a message" in a
+  // thread they're not part of, using any conversation id they can guess.
+  const { data: membership } = await admin
+    .from("conversation_participants")
+    .select("user_id")
+    .eq("conversation_id", conversationId)
+    .eq("user_id", callerId)
+    .maybeSingle();
+  if (!membership) {
+    return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
   }
 
   // Single round-trip: mute check + digest decision + delete-old +

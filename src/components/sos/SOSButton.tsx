@@ -2,14 +2,14 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { createNotification } from "@/lib/notifications";
+import { createNotifications } from "@/lib/notifications";
 import { Portal } from "@/components/ui/Portal";
 import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
 import SOSLocation from "@/lib/sosLocation";
 import { supabase } from "@/lib/supabase";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
-import { readEmergencyContactsCache } from "@/lib/emergencyContactsCache";
+import { readEmergencyContactsCache, type CachedEmergencyContact } from "@/lib/emergencyContactsCache";
 import { openSosSmsIntent } from "@/lib/sosSms";
 import { dispatchOrQueue, newOutboxId } from "@/lib/outbox";
 import { 
@@ -242,6 +242,17 @@ export function SOSButton({ className = "" }: { className?: string }) {
     }
     return { contacts: 0, nearby: 0 };
   });
+  // Phone-only emergency contacts (a phone number but no linked Peja account)
+  // can't be reached by the online in-app/email fan-out, and Peja must not
+  // send carrier SMS server-side (charges fall on the user). So after an
+  // online SOS we surface a one-tap SMS action for them via the device's
+  // Messages app — same channel the offline path uses.
+  const [smsFallback, setSmsFallback] = useState<{
+    contacts: CachedEmergencyContact[];
+    latitude: number | null;
+    longitude: number | null;
+    address: string | null;
+  } | null>(null);
   const [showOptions, setShowOptions] = useState(false);
   const [isHolding, setIsHolding] = useState(false);
   const [holdProgress, setHoldProgress] = useState(0);
@@ -429,26 +440,30 @@ export function SOSButton({ className = "" }: { className?: string }) {
     payload: {
       tag?: SOSTagId | null;
       message?: string | null;
-      latitude: number;
-      longitude: number;
+      latitude: number | null;
+      longitude: number | null;
     }
   ) => {
     if (!user) return 0;
     const tagId = payload.tag ?? null;
     const tagInfo = tagId ? SOS_TAGS.find(t => t.id === tagId) : null;
+    // Only notify contacts who ACCEPTED being an emergency contact. A
+    // contact who declined must not receive the user's live location.
     const { data: contacts } = await supabase
       .from("emergency_contacts")
       .select("contact_user_id")
       .eq("user_id", user.id)
+      .eq("status", "accepted")
       .not("contact_user_id", "is", null);
     if (!contacts?.length) return 0;
 
-    let notifiedCount = 0;
-    for (const contact of contacts) {
-      if (contact.contact_user_id) {
-        const success = await createNotification({
-          userId: contact.contact_user_id,
-          type: "sos_alert",
+    // One batched insert + parallel pushes instead of a sequential await loop.
+    return await createNotifications(
+      contacts
+        .filter((c) => c.contact_user_id)
+        .map((c) => ({
+          userId: c.contact_user_id as string,
+          type: "sos_alert" as const,
           title: `SOS Alert: ${tagInfo?.label || "Emergency"}`,
           body: `${userName} needs immediate help at ${address}`,
           data: {
@@ -459,11 +474,8 @@ export function SOSButton({ className = "" }: { className?: string }) {
             latitude: payload.latitude,
             longitude: payload.longitude,
           },
-        });
-        if (success) notifiedCount++;
-      }
-    }
-    return notifiedCount;
+        })),
+    );
   };
 
   // =====================================================
@@ -560,7 +572,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
       // whichever step is broken instead of guessing.
       const reason =
         allCached.length === 0
-          ? "cache is empty (offline contact list never synced — open the app once online with contacts saved)"
+          ? "cache is empty (offline contact list never synced, open the app once online with contacts saved)"
           : `cache has ${allCached.length} contact(s) but none have phone numbers`;
       toast.danger(`SOS offline: ${reason}.`);
       console.log("[sos-offline] cache state", {
@@ -664,13 +676,17 @@ export function SOSButton({ className = "" }: { className?: string }) {
     setShowNotifiedCard(false);
     try {
       const animationPromise = runLoadingAnimation();
-      let lat = 6.5244, lng = 3.3792, address = "Location unavailable";
-      
+      // Do NOT fall back to a hardcoded city center: a wrong pin is worse
+      // than none in an emergency. Leave coords null when GPS fails so the
+      // alert still reaches contacts, the nearby-stranger fan-out is skipped
+      // (we don't know where "nearby" is), and the UI can flag it.
+      let lat: number | null = null, lng: number | null = null, address = "Location unavailable";
+
       try {
         const pos = await new Promise<GeolocationPosition>((res, rej) =>
-          navigator.geolocation.getCurrentPosition(res, rej, { 
-            enableHighAccuracy: true, 
-            timeout: 10000 
+          navigator.geolocation.getCurrentPosition(res, rej, {
+            enableHighAccuracy: true,
+            timeout: 10000
           })
         );
         lat = pos.coords.latitude;
@@ -752,41 +768,58 @@ export function SOSButton({ className = "" }: { className?: string }) {
         longitude: lng,
       });
 
-      const { data: nearby, error: nearbyErr } = await supabase.rpc("users_within_radius", {
-        lat,
-        lng,
-        radius_m: 5000,
-        max_results: 200,
-      });
-
-      const nearbyIds = (nearby || [])
-        .map((r: any) => r.id)
-        .filter((id: string) => id && id !== user.id);
-
+      // Only fan out to nearby strangers when we actually have a location.
+      // Without coords "nearby" is undefined, so we skip it rather than
+      // notify the wrong area.
       const tagInfo = selectedTag ? SOS_TAGS.find(t => t.id === selectedTag) : null;
       let nearbyNotified = 0;
-      for (const uid of nearbyIds) {
-        const success = await createNotification({
-          userId: uid,
-          type: "sos_alert",
-          title: `SOS Alert: ${tagInfo?.label || "Emergency"}`,
-          body: `Someone needs help at ${address}`,
-          data: {
-            sos_id: sosData.id,
-            tag: selectedTag,
-            message: textMessage || null,
-            address,
-            latitude: lat,
-            longitude: lng,
-          },
+      if (lat != null && lng != null) {
+        const { data: nearby } = await supabase.rpc("users_within_radius", {
+          lat,
+          lng,
+          radius_m: 5000,
+          max_results: 200,
         });
-        if (success) nearbyNotified++;
+
+        const nearbyIds = (nearby || [])
+          .map((r: any) => r.id)
+          .filter((id: string) => id && id !== user.id);
+
+        // Batched fan-out: one insert for everyone nearby + parallel pushes,
+        // instead of up to 200 sequential awaits in a life-critical flow.
+        nearbyNotified = await createNotifications(
+          nearbyIds.map((uid: string) => ({
+            userId: uid,
+            type: "sos_alert" as const,
+            title: `SOS Alert: ${tagInfo?.label || "Emergency"}`,
+            body: `Someone needs help at ${address}`,
+            data: {
+              sos_id: sosData.id,
+              tag: selectedTag,
+              message: textMessage || null,
+              address,
+              latitude: lat,
+              longitude: lng,
+            },
+          })),
+        );
       }
 
       await animationPromise;
 
-      const newStatus = { contacts: contactsNotified, nearby: nearbyNotified };
+      const newStatus = { contacts: contactsNotified, nearby: nearbyNotified, locationKnown: lat != null && lng != null };
       setNotifyStatus(newStatus);
+
+      // Surface a one-tap SMS for phone-only contacts (phone number, no linked
+      // Peja account) who the online in-app/email fan-out can't reach.
+      const phoneOnly = readEmergencyContactsCache(user.id).filter(
+        (c) => typeof c.phone === "string" && c.phone.trim().length > 0 && !c.contact_user_id,
+      );
+      setSmsFallback(
+        phoneOnly.length > 0
+          ? { contacts: phoneOnly, latitude: lat, longitude: lng, address }
+          : null,
+      );
       try {
         localStorage.setItem('peja-sos-notify-status', JSON.stringify(newStatus));
       } catch {}
@@ -1081,7 +1114,7 @@ const closeOptions = () => {
                 </div>
                 
                 <h3 className="text-xl font-bold text-dark-100 mb-2 select-none">SOS Sent Successfully</h3>
-                
+
                 <div className="flex items-center justify-center gap-2 mb-4">
                   <Users className="w-5 h-5 text-primary-400" />
                   <span className="text-2xl font-bold text-primary-400">
@@ -1089,11 +1122,36 @@ const closeOptions = () => {
                   </span>
                   <span className="text-dark-300 select-none">Users Notified</span>
                 </div>
-                
+
+                {notifyStatus.locationKnown === false && (
+                  <p className="text-sm text-amber-400 mb-4 select-none">
+                    Your location could not be captured, so your alert has no map pin and nearby users were not notified. Tell your contacts where you are, or turn on location and resend.
+                  </p>
+                )}
+
                 <p className="text-sm text-dark-400 mb-6 select-none">
                   Help is being coordinated. Stay calm and stay safe.
                 </p>
-                
+
+                {smsFallback && smsFallback.contacts.length > 0 && (
+                  <button
+                    onClick={() =>
+                      openSosSmsIntent({
+                        userName: user?.full_name || "Someone",
+                        tag: selectedTag,
+                        message: textMessage || null,
+                        latitude: smsFallback.latitude,
+                        longitude: smsFallback.longitude,
+                        address: smsFallback.address,
+                        contacts: smsFallback.contacts,
+                      })
+                    }
+                    className="w-full py-3 mb-3 glass-sm text-dark-100 rounded-xl font-medium select-none"
+                  >
+                    Text {smsFallback.contacts.length} contact{smsFallback.contacts.length === 1 ? "" : "s"} not on Peja
+                  </button>
+                )}
+
                 <button
                   onClick={handleLoadingContinue}
                   className="w-full py-3 bg-primary-600 text-white rounded-xl font-medium hover:bg-primary-700 transition-colors select-none"

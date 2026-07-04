@@ -37,6 +37,18 @@ export async function POST(req: NextRequest) {
 
   const { photo, userId, userEmail, userName, latitude, longitude } = body;
 
+  // This endpoint is unauthenticated by design (it fires on a failed admin
+  // PIN), so every field below is attacker-controlled and must be escaped
+  // before it lands in the alert email HTML.
+  const escHtml = (v: unknown) =>
+    String(v ?? "").replace(
+      /[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string)
+    );
+  const latNum = Number(latitude);
+  const lngNum = Number(longitude);
+  const hasCoords = Number.isFinite(latNum) && Number.isFinite(lngNum);
+
   // ── upload photo to Cloudinary ──
   let photoUrl: string | null = null;
 
@@ -87,12 +99,13 @@ export async function POST(req: NextRequest) {
   let geo = "Unknown";
   let googleMapsLink = "";
 
-  if (latitude && longitude) {
-    // Reverse geocode from browser coordinates (accurate)
-    googleMapsLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
+  if (hasCoords) {
+    // Reverse geocode from browser coordinates (accurate). Built from parsed
+    // numbers, so the URL can't be broken out of by a crafted string.
+    googleMapsLink = `https://www.google.com/maps?q=${latNum},${lngNum}`;
     try {
       const g = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lngNum}&zoom=18&addressdetails=1`,
         { headers: { "User-Agent": "Peja Security" } }
       );
       if (g.ok) {
@@ -168,17 +181,17 @@ export async function POST(req: NextRequest) {
   <div style="background:#1a1a2e;color:#e0e0e0;padding:20px;border:1px solid #333">
     <table style="width:100%;border-collapse:collapse">
       <tr><td style="padding:8px 0;color:#888;width:120px">Time</td><td>${now}</td></tr>
-      <tr><td style="padding:8px 0;color:#888">IP Address</td><td>${ip}</td></tr>
-      <tr><td style="padding:8px 0;color:#888">Location</td><td>${geo}</td></tr>
-      ${googleMapsLink ? `<tr><td style="padding:8px 0;color:#888">Map</td><td><a href="${googleMapsLink}" style="color:#a78bfa">View on Google Maps</a></td></tr>` : ""}
-      <tr><td style="padding:8px 0;color:#888">User</td><td>${userName || "Unknown"} (${userEmail || "N/A"})</td></tr>
-      <tr><td style="padding:8px 0;color:#888">User ID</td><td style="font-size:11px">${userId || "N/A"}</td></tr>
-      <tr><td style="padding:8px 0;color:#888">Browser</td><td style="font-size:11px">${ua}</td></tr>
+      <tr><td style="padding:8px 0;color:#888">IP Address</td><td>${escHtml(ip)}</td></tr>
+      <tr><td style="padding:8px 0;color:#888">Location</td><td>${escHtml(geo)}</td></tr>
+      ${googleMapsLink ? `<tr><td style="padding:8px 0;color:#888">Map</td><td><a href="${escHtml(googleMapsLink)}" style="color:#a78bfa">View on Google Maps</a></td></tr>` : ""}
+      <tr><td style="padding:8px 0;color:#888">User</td><td>${escHtml(userName || "Unknown")} (${escHtml(userEmail || "N/A")})</td></tr>
+      <tr><td style="padding:8px 0;color:#888">User ID</td><td style="font-size:11px">${escHtml(userId || "N/A")}</td></tr>
+      <tr><td style="padding:8px 0;color:#888">Browser</td><td style="font-size:11px">${escHtml(ua)}</td></tr>
     </table>
     ${
       photoUrl
         ? `<h3 style="color:#ff6b6b;margin-top:20px">Captured Photo:</h3>
-           <img src="${photoUrl}" style="max-width:100%;border-radius:8px;border:2px solid #ff6b6b" />`
+           <img src="${escHtml(photoUrl)}" style="max-width:100%;border-radius:8px;border:2px solid #ff6b6b" />`
         : `<p style="color:#888;margin-top:20px">Camera was unavailable or denied.</p>`
     }
   </div>
@@ -210,10 +223,13 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Do NOT return internal error detail (Cloudinary/DB/webhook messages) to
+  // this unauthenticated caller — log it server-side instead.
+  if (errors.length > 0) console.warn("[intruder-alert] non-fatal errors", errors);
+
   return NextResponse.json({
     ok: true,
     email_sent: emailSent,
     photo_uploaded: !!photoUrl,
-    debug: errors.length > 0 ? errors : undefined,
   });
 }

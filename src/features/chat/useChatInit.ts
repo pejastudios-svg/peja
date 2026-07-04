@@ -103,6 +103,14 @@ export function useChatInit() {
     startChatRealtime(userId).catch((e) => console.error("[chat-v2] startChatRealtime failed", e));
     startPresence(userId).catch((e) => console.error("[chat-v2] startPresence failed", e));
     startHeartbeat(userId);
+
+    // Fetch the list over REST immediately, independent of the realtime
+    // websocket. On networks/WebViews where the socket is blocked but HTTPS
+    // works, the lastConnectedAt-gated refetch below never fires, so without
+    // this a first-time user would stare at skeletons forever.
+    fetchConversationList(userId)
+      .then((list) => useChatStore.getState().setConversations(list))
+      .catch((e) => console.error("[chat-v2] initial fetchConversationList failed", e));
   }, [userId]);
 
   // Conversation list (re)fetch effect. Fires on:

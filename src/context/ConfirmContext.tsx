@@ -28,6 +28,10 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const debouncedRpc = useRef(createDebouncedAction(600));
   const originalState = useRef<Record<string, boolean>>({});
   const notifiedPosts = useRef<Set<string>>(new Set());
+  // Resolver for the in-flight toggle promise per post. Rapid taps supersede
+  // each other in the debouncer, which drops the earlier action — so we must
+  // settle the earlier promise here or its `await` hangs forever.
+  const pendingResolvers = useRef<Record<string, (v: { confirmed: boolean; newCount: number } | null) => void>>({});
 
   const hydrateCounts = (pairs: { postId: string; confirmations: number }[]) => {
     setCounts((prev) => {
@@ -116,13 +120,26 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
     // Debounce: wait 600ms after last tap, then decide
     return new Promise<{ confirmed: boolean; newCount: number } | null>((resolve) => {
+      // This tap supersedes any earlier pending one for the post — settle the
+      // earlier promise now so its awaiter doesn't hang, then register ours.
+      const prevResolve = pendingResolvers.current[postId];
+      if (prevResolve) prevResolve(null);
+      pendingResolvers.current[postId] = resolve;
+
+      const settle = (v: { confirmed: boolean; newCount: number } | null) => {
+        if (pendingResolvers.current[postId] === resolve) {
+          delete pendingResolvers.current[postId];
+        }
+        resolve(v);
+      };
+
       debouncedRpc.current(postId, async () => {
         const origState = originalState.current[postId];
         delete originalState.current[postId];
 
         // If final state === original state, user toggled back — skip RPC
         if (newState === origState) {
-          resolve(null);
+          settle(null);
           return;
         }
 
@@ -156,7 +173,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             });
           }
 
-          resolve({ confirmed: serverConfirmed, newCount: serverCount });
+          settle({ confirmed: serverConfirmed, newCount: serverCount });
         } catch (e) {
           // Rollback to original state
           setConfirmed((prev) => {
@@ -166,7 +183,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             return next;
           });
           setCounts((prev) => ({ ...prev, [postId]: currentCount }));
-          resolve(null);
+          settle(null);
         }
       });
     });

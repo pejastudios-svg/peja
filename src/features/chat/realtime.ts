@@ -244,8 +244,11 @@ async function handleMessageInsert(row: any, currentUserId: string) {
   // soon as it lands. (Our own optimistic message already has media
   // populated client-side; upsertMessage's merge below preserves that.)
   const contentType = row.content_type ?? "text";
+  const isSystem = contentType === "system";
   let media: ChatMessage["media"];
-  if (contentType !== "text") {
+  // System rows ("X joined/left") never carry media, so skip the media
+  // hydration + its 600ms retry entirely.
+  if (contentType !== "text" && !isSystem) {
     try {
       let map = await fetchMediaForMessages([row.id]);
       let rows = map[row.id];
@@ -341,7 +344,9 @@ async function handleMessageInsert(row: any, currentUserId: string) {
     //   (b) User is elsewhere (list, another conv, another page) → bump
     //       the badge. clearUnread + markConversationRead get called the
     //       moment they open this conversation.
-    if (message.sender_id !== currentUserId) {
+    // System messages (joins/leaves) must not bump the unread badge — their
+    // sender_id is the joining/leaving user, not a real message from them.
+    if (message.sender_id !== currentUserId && !isSystem) {
       const isActive = state.activeConversationId === conversationId;
       if (isActive) {
         markConversationRead(conversationId, currentUserId).catch(() => {});

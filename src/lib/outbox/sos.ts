@@ -19,7 +19,7 @@
 
 import { supabase } from "../supabase";
 import { apiUrl } from "../api";
-import { createNotification } from "../notifications";
+import { createNotifications } from "../notifications";
 import { SOS_TAGS } from "../types";
 import type { SosLogPayload } from "../outbox";
 
@@ -94,10 +94,10 @@ export async function dispatchSosLog(payload: SosLogPayload): Promise<void> {
         .map((r) => r.id)
         .filter((id) => id && id !== payload.user_id);
 
-      for (const uid of nearbyIds) {
-        await createNotification({
+      await createNotifications(
+        nearbyIds.map((uid) => ({
           userId: uid,
-          type: "sos_alert",
+          type: "sos_alert" as const,
           title: `SOS Alert: ${tagInfo?.label || "Emergency"}`,
           body: `Someone needs help at ${payload.address || "an unknown location"}`,
           data: {
@@ -108,8 +108,8 @@ export async function dispatchSosLog(payload: SosLogPayload): Promise<void> {
             latitude: payload.latitude,
             longitude: payload.longitude,
           },
-        });
-      }
+        })),
+      );
     } catch (e) {
       console.warn("[outbox/sos] nearby fan-out failed (non-fatal)", e);
     }

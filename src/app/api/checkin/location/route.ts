@@ -9,7 +9,8 @@ export async function POST(req: NextRequest) {
 
     const { latitude, longitude, address } = await req.json();
 
-    if (!latitude || !longitude) {
+    // != null so a valid 0 coordinate isn't rejected as "missing".
+    if (latitude == null || longitude == null) {
       return NextResponse.json({ error: "Missing coordinates" }, { status: 400 });
     }
 

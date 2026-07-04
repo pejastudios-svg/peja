@@ -14,7 +14,6 @@ import { realtimeManager } from "@/lib/realtime";
 import { useFeedCache } from "@/context/FeedContext";
 import { useConfirm } from "@/context/ConfirmContext";
 import { PostCardSkeleton } from "@/components/posts/PostCardSkeleton";
-import { apiUrl } from "@/lib/api";
 import { usePageCache } from "@/context/PageCacheContext";
 import { preloadFeedVideos, getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
@@ -70,7 +69,7 @@ export default function Home() {
 
   const confirm = useConfirm();
   const router = useRouter();
-  const { user, loading: authLoading, session } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const feedCache = useFeedCache();
   const pageCache = usePageCache();
   const [mounted, setMounted] = useState(false);
@@ -107,6 +106,9 @@ export default function Home() {
   });
 
   const [refreshing, setRefreshing] = useState(false);
+  // True when the last fetch failed AND we have nothing cached to show, so we
+  // can render a real error+retry instead of a misleading "no posts" state.
+  const [feedError, setFeedError] = useState(false);
   // Cache of the other tab's posts for smooth swiping
   const [nearbyPosts, setNearbyPosts] = useState<Post[]>(() => {
     if (typeof window !== "undefined") {
@@ -176,20 +178,23 @@ export default function Home() {
     setIsSwiping(false);
     swipeStartRef.current = null;
   }, [swipeOffset, activeTab]);
-  // Preload first videos from cache immediately on mount
+  // Preload first videos from cache immediately on mount. The thumbnail
+  // warm-up lives INSIDE the effect — it used to sit bare in the render body,
+  // so it re-ran on every render (including every touchmove frame during a tab
+  // swipe), allocating Image objects ~60x/sec.
   useEffect(() => {
     if (posts.length > 0) {
       preloadFeedVideos(posts);
-    }
-  }, []);
-posts.forEach((p: any) => {
-        p.media?.forEach((m: any) => {
+      for (const p of posts as any[]) {
+        for (const m of p.media || []) {
           if (m.media_type === "video") {
             const thumb = m.thumbnail_url || getVideoThumbnailUrl(m.url);
             if (thumb) { const img = new Image(); img.src = thumb; }
           }
-        });
-      });
+        }
+      }
+    }
+  }, []);
   // ── Stable refs: prevent fetchPosts from being recreated on every
   //    auth / confirm context update ──
   const userRef = useRef(user);
@@ -199,6 +204,9 @@ posts.forEach((p: any) => {
 
   // Guard against concurrent fetches
   const fetchingRef = useRef(false);
+  // Tracks which feedKey the in-flight fetch is for, so tab switches don't
+  // dedupe away the new tab's fetch.
+  const fetchingKeyRef = useRef<string | null>(null);
 
   // Track if this is a return visit (have cached data) vs first visit
   const isReturnVisit = useRef(false);
@@ -273,9 +281,13 @@ posts.forEach((p: any) => {
 
   const fetchPosts = useCallback(
     async (isRefresh = false) => {
-      // ── Deduplicate: skip if a fetch is already running (unless explicit refresh) ──
-      if (fetchingRef.current && !isRefresh) return;
+      // ── Deduplicate, but only against a fetch for the SAME tab. Previously
+      //    this dropped the new tab's fetch when you switched tabs mid-fetch,
+      //    leaving e.g. Trending stuck on "No trending posts yet" until a
+      //    manual pull-to-refresh. A different-key fetch is allowed through. ──
+      if (fetchingRef.current && !isRefresh && fetchingKeyRef.current === feedKey) return;
       fetchingRef.current = true;
+      fetchingKeyRef.current = feedKey;
 
       const cached = feedCache.get(feedKey);
       const hasCachedData = cached && cached.posts.length > 0;
@@ -332,9 +344,13 @@ posts.forEach((p: any) => {
         }
 
         if (error || !data) {
-          // ── Never wipe posts the user can already see ──
+          // ── Never wipe posts the user can already see ── flag the error;
+          // the empty-state render only shows the retry when the list is
+          // actually empty, so this is a no-op when cached posts are visible.
+          setFeedError(true);
           return;
         }
+        setFeedError(false);
 
         const formattedPosts: Post[] = (data || []).map((post) => ({
           id: post.id,
@@ -466,6 +482,7 @@ posts.forEach((p: any) => {
         
       } catch (err) {
         // ── Never wipe posts the user can already see ──
+        setFeedError(true);
       } finally {
         fetchingRef.current = false;
         setLoading(false);
@@ -554,15 +571,8 @@ posts.forEach((p: any) => {
     return () => window.removeEventListener("peja-app-foreground", onForeground);
   }, [authLoading]);
 
-  // Expire job
-  useEffect(() => {
-    if (!session?.access_token) return;
-
-    fetch(apiUrl("/api/jobs/expire"), {
-      method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    }).catch(() => {});
-  }, [session?.access_token]);
+  // Expiry sweep now runs on a schedule via Vercel Cron (see vercel.json),
+  // not from every client session. See /api/jobs/expire.
 
   // Real-time subscription
   useEffect(() => {
@@ -570,6 +580,11 @@ posts.forEach((p: any) => {
       // On new post — prepend to both tabs so cross-device inserts show up immediately.
       async (newPost) => {
         if (newPost.status !== "live") return;
+        // The feed only ever renders Nigeria posts (country gate below in the
+        // fetch path). Bail before the two enrichment queries for anything
+        // that could never appear here — otherwise every connected client
+        // runs post_media + post_tags lookups for every insert worldwide.
+        if (!isNigeriaPost(newPost.country_code, newPost.latitude, newPost.longitude)) return;
         const formatted = await formatPost(newPost);
         if (!formatted) return;
 
@@ -715,7 +730,7 @@ posts.forEach((p: any) => {
 
   if (!mounted || (posts.length === 0 && (authLoading || (!user && !authCheckDone)))) {
     return (
-      <div className="min-h-screen pb-20">
+      <div className="min-h-screen pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
         <Header onCreateClick={() => {}} />
         <main
           className="max-w-2xl mx-auto px-4 py-4 space-y-4"
@@ -729,7 +744,7 @@ posts.forEach((p: any) => {
 
   if (posts.length === 0 && !user) {
     return (
-      <div className="min-h-screen pb-20">
+      <div className="min-h-screen pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
         <Header onCreateClick={() => {}} />
         <main
           className="max-w-2xl mx-auto px-4 py-4 space-y-4"
@@ -743,7 +758,7 @@ posts.forEach((p: any) => {
 
   // Calculate tab blend ratio for swipe animation (0 = nearby active, 1 = trending active)
   return (
-    <div className="min-h-screen pb-20 lg:pb-0">
+    <div className="min-h-screen pb-[calc(5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
       <Header onCreateClick={() => router.push("/create")} />
 
       <PullToRefresh onRefresh={handleRefresh}>
@@ -834,7 +849,19 @@ posts.forEach((p: any) => {
                     ))}
                   </div>
                 ) : nearbyPosts.length === 0 ? (
-                  <div className="text-center py-12 text-dark-400">No nearby posts yet.</div>
+                  feedError ? (
+                    <div className="text-center py-12 text-dark-400">
+                      <p>Couldn&apos;t load posts. Check your connection.</p>
+                      <button
+                        onClick={() => fetchPostsRef.current(true)}
+                        className="mt-3 px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-dark-400">No nearby posts yet.</div>
+                  )
                 ) : (
                   <div className="space-y-4" data-tutorial="home-feed">
                     {refreshing && activeTab === "nearby" && (
@@ -862,7 +889,19 @@ posts.forEach((p: any) => {
                     ))}
                   </div>
                 ) : trendingPosts.length === 0 ? (
-                  <div className="text-center py-12 text-dark-400">No trending posts yet.</div>
+                  feedError ? (
+                    <div className="text-center py-12 text-dark-400">
+                      <p>Couldn&apos;t load posts. Check your connection.</p>
+                      <button
+                        onClick={() => fetchPostsRef.current(true)}
+                        className="mt-3 px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-medium"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-dark-400">No trending posts yet.</div>
+                  )
                 ) : (
                   <div className="space-y-4">
                     {refreshing && activeTab === "trending" && (

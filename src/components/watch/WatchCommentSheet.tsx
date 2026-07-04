@@ -179,7 +179,9 @@ export function WatchCommentSheet({
         .select("*")
         .eq("post_id", post.id)
         .eq("status", "live")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        // Bound so a viral post can't load thousands of comments at once.
+        .limit(500);
 
       if (error || !rawComments) {
         setLoading(false);
