@@ -47,36 +47,20 @@ interface HeaderProps {
   onTitleTap?: () => void;
 }
 
-// Blurred backdrop bounded to the header's own height — anything that
-// scrolls behind the pill blurs softly, with a mask gradient that fades
-// to transparent before the header bottom so it never bleeds onto
-// chips/tabs/titles below. Pointer-events disabled so it doesn't catch
-// taps; negative z keeps it behind the pills.
+// Retired: this was a backdrop-filter blur layer (with a mask gradient — the
+// blur + mask combo is a heavy compositing trigger). The header pills are now
+// opaque, so there's nothing to blur behind them. Rendering it caused the very
+// black-rectangle GPU artifact this comment used to describe.
 function HeaderBlurFade() {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute inset-0 -z-10"
-      style={{
-        backdropFilter: "blur(20px) saturate(180%)",
-        WebkitBackdropFilter: "blur(20px) saturate(180%)",
-        maskImage:
-          "linear-gradient(to bottom, black 0%, black 60%, transparent 100%)",
-        WebkitMaskImage:
-          "linear-gradient(to bottom, black 0%, black 60%, transparent 100%)",
-      }}
-    />
-  );
+  return null;
 }
 
-// Theme-aware liquid glass via CSS variables. blur(20px) is the sweet spot —
-// visually nearly identical to the old blur(50px) but a fraction of the GPU
-// cost, which was triggering Android WebView compositor glitches (black
-// rectangles around text-selection popups and stacked glass surfaces).
+// Header pill surface. Opaque (--glass-header-bg is now a solid colour) and
+// WITHOUT backdrop-filter: even blur(20px) still triggered Android WebView
+// compositor glitches (black rectangles over text / stacked glass) on some
+// GPUs. An opaque pill has nothing to blur, so the artifact can't occur.
 const GLASS: React.CSSProperties = {
   background: "var(--glass-header-bg)",
-  backdropFilter: "blur(20px) saturate(180%)",
-  WebkitBackdropFilter: "blur(20px) saturate(180%)",
   border: "1px solid var(--glass-border)",
   boxShadow: "var(--glass-shadow-header)",
   borderRadius: "9999px",

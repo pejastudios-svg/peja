@@ -24,10 +24,11 @@ const navItems = [
   { href: "/search", icon: Search, label: "Search" },
 ];
 
+// Opaque, no backdrop-filter. A blur(40px) on a fixed bar was the heaviest
+// compositing trigger in the app and stamped black tiles onto the scrolling
+// content on some Android GPUs. --glass-footer-bg is now a solid colour.
 const GLASS: React.CSSProperties = {
   background: "var(--glass-footer-bg)",
-  backdropFilter: "blur(40px) saturate(180%)",
-  WebkitBackdropFilter: "blur(40px) saturate(180%)",
   border: "1px solid var(--glass-border)",
   boxShadow: "var(--glass-shadow-footer)",
 };
@@ -398,8 +399,6 @@ export function BottomNav() {
                   background: menuOpen && !menuClosing
                     ? "var(--peja-btn-pressed-bg)"
                     : "var(--peja-btn-bg)",
-                  backdropFilter: "blur(40px) saturate(180%)",
-                  WebkitBackdropFilter: "blur(40px) saturate(180%)",
                   border: `2px solid ${
                     menuOpen && !menuClosing
                       ? "var(--peja-btn-pressed-bg)"
