@@ -75,8 +75,11 @@ export function ConfirmConfetti({
 
   return (
     <div
+      // No `perspective` here: a 3D rendering context forces its own GPU
+      // compositor layer that some Android WebViews fail to invalidate when
+      // the particles unmount, leaving stale coloured tiles stuck near the
+      // buttons. Plain 2D transforms repaint with the card on scroll.
       className="absolute inset-0 pointer-events-none overflow-visible z-50"
-      style={{ perspective: "500px" }}
     >
       {particles.map((p) => {
         const dx = Math.cos(p.angle) * p.speed;
@@ -95,7 +98,9 @@ export function ConfirmConfetti({
               marginTop: -p.size / 2,
               backgroundColor: p.shape !== "star" ? p.color : "transparent",
               borderRadius: p.shape === "circle" ? "50%" : p.shape === "square" ? "2px" : "0",
-              boxShadow: p.shape !== "star" ? `0 0 ${p.size}px ${p.color}40` : "none",
+              // No box-shadow glow: the soft coloured halo is exactly what
+              // lingered as stuck GPU tiles on affected devices.
+              boxShadow: "none",
               animation: `confetti-burst 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards`,
               // Custom properties for the animation
               ["--dx" as any]: `${dx}px`,
