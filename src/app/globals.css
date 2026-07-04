@@ -343,6 +343,17 @@ textarea,
   box-shadow: var(--glass-shadow-sm);
 }
 
+/* Small action chips (post confirm / comment / send / share). Identical
+   surface to .glass-sm but WITHOUT backdrop-filter. The blur produced stray
+   coloured speckles at the chip edges over video on some Android WebViews
+   (a device-specific GPU compositing bug), and adds nothing visible at this
+   size over the opaque card. Same border/shadow so the look is unchanged. */
+.action-chip {
+  background: var(--glass-sm-bg);
+  border: 1px solid var(--glass-border-sm);
+  box-shadow: var(--glass-shadow-sm);
+}
+
 .glass-card {
   background: var(--glass-card-bg);
   /* No backdrop-filter: --glass-card-bg is OPAQUE (#0a0612 / #ffffff) so the

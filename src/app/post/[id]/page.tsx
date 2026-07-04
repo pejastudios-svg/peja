@@ -1611,7 +1611,7 @@ if (error || !post) {
                 <button
                 onClick={handleConfirm}
                 className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all active:scale-95 ${
-                  isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-white/10"
+                  isConfirmed ? "bg-primary-600 text-white" : "action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)]"
                 }`}
               >
                 <ConfirmConfetti trigger={confettiTrigger} />
@@ -1621,13 +1621,13 @@ if (error || !post) {
               {canForwardToChat && (
                 <button
                   onClick={() => setForwardSheetOpen(true)}
-                  className="p-2.5 rounded-xl glass-sm text-dark-300 hover:bg-white/10 active:scale-90 transition-transform duration-150"
+                  className="p-2.5 rounded-xl action-chip text-dark-300 hover:bg-[var(--soft-surface-strong)] active:scale-90 transition-transform duration-150"
                   aria-label="Send to chat"
                 >
                   <Send className="w-5 h-5" />
                 </button>
               )}
-              <button onClick={handleShare} className="p-2.5 rounded-xl glass-sm text-dark-300 hover:bg-white/10">
+              <button onClick={handleShare} className="p-2.5 rounded-xl action-chip text-dark-300 hover:bg-[var(--soft-surface-strong)]">
                 <Share2 className="w-5 h-5" />
               </button>
             </div>

@@ -509,7 +509,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
   onClick={handleConfirmClick}
   data-tutorial="post-confirm"
   className={`relative flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95 ${
-    isConfirmed ? "bg-primary-600 text-white" : "glass-sm text-dark-200 hover:bg-[var(--soft-surface-strong)]"
+    isConfirmed ? "bg-primary-600 text-white" : "action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)]"
   }`}
 >
   <ConfirmConfetti trigger={confettiTrigger} />
@@ -519,7 +519,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
 
         <button
           onClick={handleAddInfo}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-[var(--soft-surface-strong)] active:scale-90 transition-transform duration-150"
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)] active:scale-90 transition-transform duration-150"
         >
           <MessageCircle className="w-4 h-4" />
           <span>Comment</span>
@@ -531,7 +531,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
               e.stopPropagation();
               setForwardSheetOpen(true);
             }}
-            className="p-2 rounded-xl glass-sm text-dark-200 hover:bg-white/10 active:scale-90 transition-transform duration-150"
+            className="p-2 rounded-xl action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)] active:scale-90 transition-transform duration-150"
             aria-label="Send to chat"
           >
             <Send className="w-4 h-4" />
@@ -540,7 +540,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
 
         <button
           onClick={handleShareClick}
-          className="p-2 rounded-xl glass-sm text-dark-200 hover:bg-white/10"
+          className="p-2 rounded-xl action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)]"
         >
           <Share2 className="w-4 h-4" />
         </button>
