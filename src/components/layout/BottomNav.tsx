@@ -4,11 +4,12 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Home, Map, PlusCircle, Search } from "lucide-react";
+import { Home, Map, PlusCircle, Radio, Search } from "lucide-react";
 import { SOSButton } from "../sos/SOSButton";
 import { useAuth } from "@/context/AuthContext";
 import { SMLButton } from "../safety/SMLButton";
 import { buildLoginHref } from "@/lib/safeNext";
+import { canUseBeacon } from "@/lib/beacon";
 
 // Bundled local asset (public/peja-logo.png.png) — the older
 // edgeone CDN URL didn't render offline and made the center BottomNav
@@ -351,6 +352,37 @@ export function BottomNav() {
                   <span className="text-[9px] font-bold text-primary-300 uppercase tracking-wider">SML</span>
                 </div>
               </div>
+
+            {/* Fan-out: Beacon (top center) — closed pilot, gated by email */}
+              {canUseBeacon(user?.email) && (
+                <div
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    bottom: "100%",
+                    transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.08s",
+                    transform: menuOpen && !menuClosing
+                      ? "translate(-50%, -68px) scale(1)"
+                      : "translate(-50%, 20px) scale(0)",
+                    opacity: menuOpen && !menuClosing ? 1 : 0,
+                    pointerEvents: menuOpen && !menuClosing ? "auto" : "none",
+                  }}
+                >
+                  <div className="flex flex-col items-center gap-1">
+                    <button
+                      onClick={() => {
+                        closeMenu();
+                        router.push("/beacon");
+                      }}
+                      aria-label="Beacon"
+                      className="w-12 h-12 rounded-full bg-dark-800 border border-primary-500/40 shadow-lg shadow-primary-900/30 flex items-center justify-center active:scale-90 transition-transform"
+                    >
+                      <Radio className="w-5.5 h-5.5 text-primary-300" />
+                    </button>
+                    <span className="text-[9px] font-bold text-primary-300 uppercase tracking-wider">Beacon</span>
+                  </div>
+                </div>
+              )}
 
             {/* Fan-out: SOS (right) */}
               <div

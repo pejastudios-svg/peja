@@ -3071,3 +3071,73 @@ video {
   width: 0;
   height: 0;
 }
+/* ══════════════ Beacon 1 (device pairing) ══════════════ */
+
+/* Apple-style sheet/step transition: content glides up and settles. */
+@keyframes beacon-step-in {
+  0%   { opacity: 0; transform: translateY(24px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.beacon-step-in {
+  animation: beacon-step-in 0.5s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+/* Staggered children reveal (add inline animation-delay). */
+.beacon-stagger {
+  opacity: 0;
+  animation: beacon-step-in 0.55s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+/* Radar rings while searching for the device connection. */
+@keyframes beacon-radar {
+  0%   { transform: scale(0.55); opacity: 0.65; }
+  70%  { opacity: 0.12; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+.beacon-radar-ring {
+  animation: beacon-radar 2.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+}
+
+/* Gentle breathing for the device glyph during connect. */
+@keyframes beacon-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.06); }
+}
+.beacon-breathe { animation: beacon-breathe 2.4s ease-in-out infinite; }
+
+/* Success: circle + check drawn like AirPods pairing. Dash lengths are
+   set inline via strokeDasharray/-offset; these just run the draw. */
+@keyframes beacon-draw { to { stroke-dashoffset: 0; } }
+.beacon-draw-circle {
+  animation: beacon-draw 0.6s cubic-bezier(0.65, 0, 0.35, 1) 0.1s forwards;
+}
+.beacon-draw-check {
+  animation: beacon-draw 0.35s cubic-bezier(0.65, 0, 0.35, 1) 0.65s forwards;
+}
+@keyframes beacon-pop {
+  0%   { transform: scale(0.6); opacity: 0; }
+  60%  { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.beacon-pop { animation: beacon-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+
+/* One-shot celebratory ring burst behind the success check. */
+@keyframes beacon-burst {
+  0%   { transform: scale(0.6); opacity: 0.5; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.beacon-burst { animation: beacon-burst 0.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.6s both; }
+
+/* Live status dot on the dashboard. */
+@keyframes beacon-live {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55); }
+  70%      { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); }
+}
+.beacon-live-dot { animation: beacon-live 2s ease-out infinite; }
+
+/* Scanner viewfinder corner shimmer. */
+@keyframes beacon-scanline {
+  0%, 100% { transform: translateY(-52px); opacity: 0; }
+  15%, 85% { opacity: 1; }
+  50%      { transform: translateY(52px); }
+}
+.beacon-scanline { animation: beacon-scanline 2.6s ease-in-out infinite; }
