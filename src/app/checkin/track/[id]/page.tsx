@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { apiUrl } from "@/lib/api";
+import { authFetchJson } from "@/lib/authFetch";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import dynamic from "next/dynamic";
 import { supabase } from "@/lib/supabase";
@@ -49,46 +49,83 @@ interface OwnerData {
   avatar_url?: string;
 }
 
+// Map raw server errors to user-facing copy. Auth internals like
+// "Invalid user" must never reach the screen.
+function friendlyError(raw?: string | null): string {
+  if (!raw) return "Could not load check-in";
+  if (raw === "Check-in not found or ended") return raw;
+  if (/not authorized/i.test(raw)) {
+    return "You do not have permission to view this location.";
+  }
+  if (/invalid user|session expired|authorization token/i.test(raw)) {
+    return "We could not verify your session. Please try again.";
+  }
+  return raw;
+}
+
 export default function CheckInTrackPage() {
   const params = useParams();
   const router = useRouter();
-  const { session, user } = useAuth();
+  const { session } = useAuth();
   const checkinId = params.id as string;
 
   const [checkin, setCheckin] = useState<CheckInData | null>(null);
   const [owner, setOwner] = useState<OwnerData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
   const [timeLeft, setTimeLeft] = useState("");
   const [isOverdue, setIsOverdue] = useState(false);
 
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const headers = useCallback(() => ({
-    Authorization: `Bearer ${session?.access_token || ""}`,
-  }), [session?.access_token]);
+  const authFailsRef = useRef(0);
+  const hasDataRef = useRef(false);
 
   const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl(`/api/checkin/view/?id=${checkinId}`), {
-        headers: headers(),
-      });
-      const data = await res.json();
+      const { res, data, authFailed } = await authFetchJson(
+        `/api/checkin/view/?id=${checkinId}`,
+      );
 
-      if (!res.ok || data.error) {
-        setError(data.error || "Could not load check-in");
+      if (authFailed) {
+        // Token refresh race (e.g. the app just resumed from a push
+        // tap). Keep the 15s poll going and show a soft reconnecting
+        // state instead of a fatal screen; only give up after several
+        // consecutive failures, which means the session is truly dead.
+        authFailsRef.current += 1;
+        if (authFailsRef.current >= 3) {
+          setError("Your session has expired. Please sign in again.");
+          setLoading(false);
+        } else {
+          setReconnecting(true);
+        }
+        return;
+      }
+      authFailsRef.current = 0;
+      setReconnecting(false);
+
+      if (!res.ok || data?.error) {
+        setError(friendlyError(data?.error));
         setLoading(false);
         return;
       }
 
       setCheckin(data.checkin);
       setOwner(data.owner);
+      hasDataRef.current = true;
       setError(null);
+      setLoading(false);
     } catch {
-      setError("Connection error");
+      // Network-level failure. If we already have data, keep showing it
+      // and let the next poll reconcile; only surface an error when we
+      // never managed to load anything.
+      setReconnecting(true);
+      if (!hasDataRef.current) {
+        setError("Connection error. Please check your network and try again.");
+        setLoading(false);
+      }
     }
-    setLoading(false);
-  }, [checkinId, headers]);
+  }, [checkinId]);
 
 useEffect(() => {
     if (!session?.access_token) return;
@@ -168,7 +205,9 @@ useEffect(() => {
       <div className="fixed inset-0 flex items-center justify-center bg-dark-950">
         <div className="text-center">
           <PejaSpinner className="w-10 h-10 mx-auto mb-3" />
-          <p className="text-dark-400 text-sm">Loading location...</p>
+          <p className="text-dark-400 text-sm">
+            {reconnecting ? "Reconnecting..." : "Loading location..."}
+          </p>
         </div>
       </div>
     );
@@ -205,6 +244,13 @@ useEffect(() => {
 
       {/* Map */}
       <div className="flex-1 relative">
+        {/* Soft reconnect indicator; the 15s poll recovers on its own. */}
+        {reconnecting && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-full bg-dark-900/90 border border-white/10 flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 text-primary-400 animate-spin" />
+            <span className="text-xs text-dark-300">Reconnecting...</span>
+          </div>
+        )}
         {hasLocation ? (
             <TrackingMap
             latitude={checkin.latitude!}

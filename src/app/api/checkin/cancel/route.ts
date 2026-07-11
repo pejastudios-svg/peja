@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
-import { requireUser } from "../../_auth";
+import { requireUser, authErrorResponse } from "../../_auth";
 import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function POST(req: NextRequest) {
   try {
     const { user } = await requireUser(req);
     const supabaseAdmin = getSupabaseAdmin();
+
+    // Optional body: offline-queued cancels carry the timestamp the
+    // user actually tapped Stop. The route has no required body, so
+    // parse failures just mean "no body".
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    const triggeredAt =
+      typeof body?.triggeredAt === "string" ? new Date(body.triggeredAt) : null;
 
     // Get active check-in
     const { data: checkin } = await supabaseAdmin
@@ -18,6 +25,17 @@ export async function POST(req: NextRequest) {
 
     if (!checkin) {
       return NextResponse.json({ error: "No active check-in found" }, { status: 404 });
+    }
+
+    // Stale-cancel guard: a cancel queued offline in a previous session
+    // must not kill a check-in that was started AFTER the user tapped
+    // Stop. Ignore it as already-satisfied (its target no longer exists).
+    if (
+      triggeredAt &&
+      !isNaN(triggeredAt.getTime()) &&
+      new Date(checkin.created_at) > triggeredAt
+    ) {
+      return NextResponse.json({ ok: true, skipped: "stale_cancel" });
     }
 
     // Cancel check-in
@@ -66,6 +84,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error.message || "Server error" }, { status: 500 });
+    return (
+      authErrorResponse(error) ??
+      NextResponse.json({ ok: false, error: error.message || "Server error" }, { status: 500 })
+    );
   }
 }

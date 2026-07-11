@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
-import { requireUser } from "../../_auth";
+import { requireUser, authErrorResponse } from "../../_auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -40,6 +40,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error.message || "Server error" }, { status: 500 });
+    return (
+      authErrorResponse(error) ??
+      NextResponse.json({ ok: false, error: error.message || "Server error" }, { status: 500 })
+    );
   }
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
-import { requireUser } from "../../_auth";
+import { requireUser, authErrorResponse } from "../../_auth";
 import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function GET(req: NextRequest) {
@@ -101,6 +101,9 @@ export async function GET(req: NextRequest) {
       isOverdue,
     });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Server error" }, { status: 500 });
+    return (
+      authErrorResponse(error) ??
+      NextResponse.json({ error: error.message || "Server error" }, { status: 500 })
+    );
   }
 }

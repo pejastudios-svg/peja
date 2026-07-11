@@ -7,43 +7,30 @@
 // throws so the drain bumps attempts and tries again on the next
 // online/visibility trigger.
 //
-// Auth header: the drain runs inside the user's session, so we can
-// pull the access token from supabase.auth.getSession() the same way
-// the SMLButton component does.
+// Auth: goes through authFetchJson, which pulls a fresh access token
+// from supabase.auth.getSession() and does one refresh + retry if the
+// server rejects it — a drain firing right after app-resume would
+// otherwise replay with a stale token and burn retry attempts.
 
-import { supabase } from "../supabase";
-import { apiUrl } from "../api";
+import { authFetchJson } from "../authFetch";
 import type {
   SmlStartPayload,
   SmlConfirmPayload,
   SmlCancelPayload,
 } from "../outbox";
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
-
 async function postCheckin(
   path: string,
   body: Record<string, unknown> | undefined,
 ): Promise<void> {
-  const res = await fetch(apiUrl(path), {
+  const { res, data } = await authFetchJson(path, {
     method: "POST",
-    headers: await authHeaders(),
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   if (!res.ok) {
     // Try to surface the server's error message for the drain log.
     let detail = `${res.status} ${res.statusText}`;
-    try {
-      const data = await res.json();
-      if (data?.error) detail = `${detail}: ${data.error}`;
-    } catch {}
+    if (data?.error) detail = `${detail}: ${data.error}`;
     throw new Error(`${path} failed: ${detail}`);
   }
 }
@@ -65,7 +52,13 @@ export async function dispatchSmlConfirm(
 }
 
 export async function dispatchSmlCancel(
-  _payload: SmlCancelPayload,
+  payload: SmlCancelPayload,
 ): Promise<void> {
-  await postCheckin("/api/checkin/cancel/", undefined);
+  // triggeredAt lets the server ignore a stale queued cancel that
+  // predates the currently active check-in — without it, a cancel
+  // queued in a previous session could kill a share the user just
+  // started.
+  await postCheckin("/api/checkin/cancel/", {
+    triggeredAt: payload.triggered_at,
+  });
 }

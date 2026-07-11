@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { apiUrl } from "@/lib/api";
+import { authFetchJson } from "@/lib/authFetch";
 import { supabase } from "@/lib/supabase";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import {
@@ -56,7 +56,7 @@ export function SafetyCheckIn({
 }: {
   contacts: { id: string; contact_user_id: string; status: string; contact_user?: { id: string; full_name: string; avatar_url?: string } }[];
 }) {
-  const { session, user } = useAuth();
+  const { user } = useAuth();
   const toast = useToast();
 
   const [activeCheckIn, setActiveCheckIn] = useState<ActiveCheckIn | null>(null);
@@ -76,11 +76,6 @@ const getWarned = () => typeof window !== "undefined" && sessionStorage.getItem(
   const getExpired = () => typeof window !== "undefined" && sessionStorage.getItem("peja-checkin-expired") === "true";
   const setExpired = (v: boolean) => { if (typeof window !== "undefined") sessionStorage.setItem("peja-checkin-expired", String(v)); };
 
-  const headers = useCallback(() => ({
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${session?.access_token || ""}`,
-  }), [session?.access_token]);
-
   const acceptedContacts: CheckInContact[] = contacts
     .filter(c => c.status === "accepted" && c.contact_user)
     .map(c => ({
@@ -94,10 +89,9 @@ const getWarned = () => typeof window !== "undefined" && sessionStorage.getItem(
   // Check status on mount and poll
   const checkStatus = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl("/api/checkin/status/"), { headers: headers() });
-      const data = await res.json();
+      const { res, data } = await authFetchJson("/api/checkin/status/");
 
-if (data.active && data.checkin) {
+      if (res.ok && data?.active && data.checkin) {
         if (cancellingRef.current) return;
         setActiveCheckIn(prev => {
           // Only update if something actually changed
@@ -107,13 +101,16 @@ if (data.active && data.checkin) {
           return prev;
         });
         setIsOverdue(data.isOverdue);
-} else if (!data.active) {
+      } else if (res.ok && data?.active === false) {
+        // Only an explicit "no active check-in" answer clears state.
+        // Error responses (auth hiccup, 5xx) keep the current state so
+        // a transient failure can't silently end a share.
         if (!cancellingRef.current) setActiveCheckIn(null);
         setIsOverdue(false);
       }
     } catch {}
     setCheckingStatus(false);
-  }, [headers]);
+  }, []);
 
 // Only fetch once on mount, global CheckInMonitor handles polling
   useEffect(() => {
@@ -190,11 +187,10 @@ if (diff <= 0) {
 
     const sendLocation = (lat: number, lng: number) => {
       console.log("[SML] Sending location:", lat.toFixed(6), lng.toFixed(6));
-      fetch(apiUrl("/api/checkin/location/"), {
+      authFetchJson("/api/checkin/location/", {
         method: "POST",
-        headers: headers(),
         body: JSON.stringify({ latitude: lat, longitude: lng }),
-      }).then(res => {
+      }).then(({ res }) => {
         if (!res.ok) console.error("[SML] Location send failed:", res.status);
       }).catch((err) => console.error("[SML] Location send error:", err));
     };
@@ -225,7 +221,7 @@ if (diff <= 0) {
       }
       clearInterval(pollInterval);
     };
-  }, [activeCheckIn, headers]);
+  }, [activeCheckIn]);
 
  const handleStart = async () => {
     if (selectedContacts.length === 0) {
@@ -252,17 +248,14 @@ if (diff <= 0) {
 
       setStartPhase("Starting location sharing...");
 
-      const res = await fetch(apiUrl("/api/checkin/start/"), {
+      const { data } = await authFetchJson("/api/checkin/start/", {
         method: "POST",
-        headers: headers(),
         body: JSON.stringify({
           contactIds: selectedContacts,
           intervalMinutes: interval,
         }),
       });
-
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
+      if (!data?.ok) throw new Error(data?.error || "Could not start check-in");
 
       setStartPhase("Informing your contacts...");
       await new Promise(r => setTimeout(r, 500));
@@ -306,14 +299,11 @@ if (diff <= 0) {
         lng = pos.coords.longitude;
       } catch {}
 
-      const res = await fetch(apiUrl("/api/checkin/confirm/"), {
+      const { data } = await authFetchJson("/api/checkin/confirm/", {
         method: "POST",
-        headers: headers(),
         body: JSON.stringify({ latitude: lat, longitude: lng }),
       });
-
-      const data = await res.json();
-      if (data.ok && data.nextCheckInAt) {
+      if (data?.ok && data.nextCheckInAt) {
         setActiveCheckIn(prev => prev ? { ...prev, next_check_in_at: data.nextCheckInAt } : null);
       }
     } catch {}
@@ -329,11 +319,16 @@ const handleCancel = async () => {
 
     // Background: send to server
     try {
-      await fetch(apiUrl("/api/checkin/cancel/"), {
+      const { res, data } = await authFetchJson("/api/checkin/cancel/", {
         method: "POST",
-        headers: headers(),
+        body: JSON.stringify({ triggeredAt: new Date().toISOString() }),
       });
-} catch {
+      // 404 means there was nothing to cancel server-side, which is the
+      // outcome the user wanted; anything else non-ok is a real failure.
+      if (!res.ok && res.status !== 404) {
+        throw new Error(data?.error || "Cancel failed");
+      }
+    } catch {
       // Revert if failed
       cancellingRef.current = false;
       setActiveCheckIn(prevCheckIn);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
-import { requireUser } from "../../_auth";
+import { requireUser, authErrorResponse } from "../../_auth";
 import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function POST(req: NextRequest) {
@@ -55,7 +55,9 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ ok: true });
+  } catch (error) {
+    // Surface auth failures so the client can refresh and retry; all
+    // other failures stay best-effort (the warn is a nicety).
+    return authErrorResponse(error) ?? NextResponse.json({ ok: true });
   }
 }

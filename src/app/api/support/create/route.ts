@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "../../_auth";
+import { requireUser, authErrorResponse } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { isRateLimitedDurable } from "../../_rateLimit";
 
@@ -102,7 +102,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (e: any) {
     const msg = e?.message || "Server error";
-    const status = /token|Invalid user/i.test(msg) ? 401 : 500;
-    return NextResponse.json({ ok: false, error: msg }, { status });
+    return (
+      authErrorResponse(e) ??
+      NextResponse.json({ ok: false, error: msg }, { status: 500 })
+    );
   }
 }

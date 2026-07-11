@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { supabase } from "@/lib/supabase";
-import { apiUrl } from "@/lib/api";
+import { authFetchJson } from "@/lib/authFetch";
 import { Portal } from "@/components/ui/Portal";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
-import { dispatchOrQueue, newOutboxId } from "@/lib/outbox";
+import { dispatchOrQueue, newOutboxId, readOutbox } from "@/lib/outbox";
 import { readEmergencyContactsCache } from "@/lib/emergencyContactsCache";
 import {
   MapPin,
@@ -61,7 +61,7 @@ const INTERVAL_OPTIONS = [
 
 export function SMLButton() {
   const router = useRouter();
-  const { user, session } = useAuth();
+  const { user } = useAuth();
   const toast = useToast();
   const cancellingRef = useRef(false);
 
@@ -112,29 +112,30 @@ export function SMLButton() {
 
   useScrollFreeze(showMenu || showShareModal || showActiveModal || showCancelConfirm);
 
-  const headers = useCallback(() => ({
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${session?.access_token || ""}`,
-  }), [session?.access_token]);
-
   // Fetch my check-in status + people sharing with me
   const fetchData = useCallback(async () => {
-    if (!session?.access_token || !user) return;
+    if (!user) return;
 
     try {
       // My check-in
-      const statusRes = await fetch(apiUrl("/api/checkin/status/"), {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const statusData = await statusRes.json();
+      const { res: statusRes, data: statusData } =
+        await authFetchJson("/api/checkin/status/");
 
       if (cancellingRef.current) { /* skip update during confirm/cancel */ }
-      else if (statusData.active && statusData.checkin) {
+      else if (statusRes.ok && statusData?.active && statusData.checkin) {
         setMyCheckIn(statusData.checkin);
         setIsOverdue(statusData.isOverdue);
-      } else {
-        setMyCheckIn(null);
-        setIsOverdue(false);
+      } else if (statusRes.ok && statusData?.active === false) {
+        // Only an explicit "no active check-in" answer clears local
+        // state. Error responses (auth hiccup, 5xx) keep the current
+        // state so a transient failure can't silently end a share.
+        // A queued offline start also keeps the optimistic state; the
+        // server legitimately has no row until the outbox drains.
+        const pendingStart = readOutbox(user.id).some((i) => i.kind === "sml-start");
+        if (!pendingStart) {
+          setMyCheckIn(null);
+          setIsOverdue(false);
+        }
       }
 
       // People sharing with me
@@ -166,7 +167,7 @@ export function SMLButton() {
         setSharedWithMe([]);
       }
     } catch {}
-  }, [session?.access_token, user]);
+  }, [user]);
 
   // Fetch contacts for share flow. Reads from the shared cache
   // (populated by SOSButton's mount effect — both buttons live in
@@ -403,12 +404,11 @@ const handleButtonClick = () => {
 
     try {
       setStartPhase("Starting location sharing...");
-      const res = await fetch(apiUrl("/api/checkin/start/"), {
-        method: "POST", headers: headers(),
+      const { data } = await authFetchJson("/api/checkin/start/", {
+        method: "POST",
         body: JSON.stringify({ contactIds: selectedContacts, intervalMinutes: interval }),
       });
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
+      if (!data?.ok) throw new Error(data?.error || "Could not start sharing");
 
       setStartPhase("Informing your contacts...");
       await new Promise(r => setTimeout(r, 400));

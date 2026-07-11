@@ -3,7 +3,8 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
-import { apiUrl } from "@/lib/api";
+import { authFetchJson } from "@/lib/authFetch";
+import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/lib/notifications";
 
 /**
@@ -24,7 +25,7 @@ export function CheckInMonitor() {
   const setExpired = (v: boolean) => { if (typeof window !== "undefined") sessionStorage.setItem("peja-checkin-expired", String(v)); };
 
   const checkStatus = useCallback(async () => {
-    if (!session?.access_token || !user) return;
+    if (!user) return;
 
     // Throttle: don't check more than once every 20 seconds
     const now = Date.now();
@@ -32,19 +33,20 @@ export function CheckInMonitor() {
     lastCheckRef.current = now;
 
     try {
-      const res = await fetch(apiUrl("/api/checkin/status/"), {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      const data = await res.json();
+      const { res, data } = await authFetchJson("/api/checkin/status/");
 
-      if (!data.active) {
+      // Error responses (auth hiccup, 5xx) are not "no check-in" —
+      // leave the warned/expired flags alone and try again next poll.
+      if (!res.ok) return;
+
+      if (data?.active === false) {
         // No active check-in, clear any stale flags
         setWarned(false);
         setExpired(false);
         return;
       }
 
-      const checkin = data.checkin;
+      const checkin = data?.checkin;
       if (!checkin) return;
 
       const target = new Date(checkin.next_check_in_at).getTime();
@@ -55,13 +57,7 @@ export function CheckInMonitor() {
         setWarned(true);
         toast.warning("Check-in expires in less than 5 minutes. Tap 'I'm OK' to reset.");
         // Send warn notification to contacts
-        fetch(apiUrl("/api/checkin/warn/"), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }).catch(() => {});
+        authFetchJson("/api/checkin/warn/", { method: "POST" }).catch(() => {});
         // Push notification to the user
         createNotification({
           userId: user.id,
@@ -85,7 +81,7 @@ export function CheckInMonitor() {
         }).catch(() => {});
       }
     } catch {}
-  }, [session?.access_token, user, toast]);
+  }, [user, toast]);
 
 useEffect(() => {
     if (!user) return;
@@ -133,21 +129,21 @@ useEffect(() => {
     if (!user?.id) return;
 
     const sendLocation = (lat: number, lng: number) => {
-      const token = tokenRef.current;
-      if (!token) return;
-      fetch(apiUrl("/api/checkin/location/"), {
+      authFetchJson("/api/checkin/location/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({ latitude: lat, longitude: lng }),
       }).catch(() => {});
     };
 
     const startTracking = async (checkinId: string) => {
       if (activeRef.current) return;
-      const token = tokenRef.current;
+      // Fresh token for the native service — the ref can hold a stale
+      // one right after app-resume. getSession() refreshes if needed.
+      let token = tokenRef.current;
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        if (sess.session?.access_token) token = sess.session.access_token;
+      } catch {}
       if (!token) return;
       activeRef.current = true;
 
@@ -221,14 +217,9 @@ useEffect(() => {
     };
 
     const checkAndTrack = async () => {
-      const token = tokenRef.current;
-      if (!token) return;
       try {
-        const res = await fetch(apiUrl("/api/checkin/status/"), {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        if (data.active && data.checkin) {
+        const { res, data } = await authFetchJson("/api/checkin/status/");
+        if (res.ok && data?.active && data.checkin) {
           // A foreground service can only be started while the app is
           // visible (Android 12+ blocks background FGS starts). If we're
           // backgrounded, defer — the visibilitychange handler restarts
@@ -236,7 +227,11 @@ useEffect(() => {
           if (!activeRef.current && document.visibilityState === "visible") {
             startTracking(data.checkin.id);
           }
-        } else {
+        } else if (res.ok && data?.active === false) {
+          // Only an explicit "no active check-in" stops tracking. A
+          // transient error (auth hiccup, 5xx) must NEVER tear down the
+          // foreground location service mid-share — that silently stops
+          // sharing for a user who believes they are protected.
           if (activeRef.current) stopTracking();
         }
       } catch {}
