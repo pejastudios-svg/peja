@@ -44,7 +44,7 @@ export default function BeaconPage() {
   return (
     <div className="min-h-screen bg-dark-950">
       <Header variant="back" title="Beacon" onBack={() => router.back()} />
-      <main className="pt-2">
+      <main className="pt-app-header-pill">
         {loading ? (
           <div className="flex justify-center pt-24">
             <PejaSpinner />

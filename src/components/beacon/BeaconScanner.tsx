@@ -15,6 +15,29 @@ declare global {
   }
 }
 
+// Zoom/focus camera capabilities aren't in the standard TS lib yet.
+interface ZoomCapabilities {
+  zoom?: { min: number; max: number; step: number };
+}
+interface ZoomConstraints {
+  advanced?: Array<{ zoom?: number; focusMode?: string }>;
+}
+
+/**
+ * The QR on the device back is ~1cm; at normal focus distance it's only a
+ * few dozen pixels. Optical/digital zoom lets the user hold the phone at
+ * focusable distance while the code fills the frame.
+ */
+async function tuneTrack(track: MediaStreamTrack, zoom: number): Promise<void> {
+  try {
+    await track.applyConstraints({
+      advanced: [{ zoom, focusMode: "continuous" }],
+    } as ZoomConstraints as MediaTrackConstraints);
+  } catch {
+    // Not supported on this camera - fine, plain scanning still works.
+  }
+}
+
 /**
  * Camera viewfinder that reads the QR on the back of a Beacon 1
  * (encodes `tel:<device id>`). Falls back to manual entry when the
@@ -23,10 +46,13 @@ declare global {
 export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
   const foundRef = useRef(false);
   const [mode, setMode] = useState<"starting" | "scanning" | "manual">("starting");
   const [manualValue, setManualValue] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [maxZoom, setMaxZoom] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,7 +65,12 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
       }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
+          video: {
+            facingMode: "environment",
+            // High resolution so a ~1cm QR still has enough pixels.
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
           audio: false,
         });
         if (cancelled) {
@@ -52,6 +83,20 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
         video.srcObject = stream;
         await video.play();
         setMode("scanning");
+
+        // Zoom in by default when the camera supports it - the Beacon's QR
+        // is tiny and unreadable at arm's length otherwise.
+        const track = stream.getVideoTracks()[0];
+        trackRef.current = track;
+        const caps = (track.getCapabilities?.() ?? {}) as ZoomCapabilities;
+        if (caps.zoom && caps.zoom.max > 1) {
+          const start = Math.min(2, caps.zoom.max);
+          setMaxZoom(caps.zoom.max);
+          setZoom(start);
+          await tuneTrack(track, start);
+        } else {
+          await tuneTrack(track, 1);
+        }
 
         const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
         const tick = async () => {
@@ -156,9 +201,29 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
             <ScanLine className="w-8 h-8 text-dark-500 animate-pulse" />
           </div>
         )}
+        {/* zoom control - only when the camera can zoom */}
+        {mode === "scanning" && maxZoom > 1 && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1 bg-black/50 backdrop-blur rounded-full p-1">
+            {[1, 2, 3].filter((z) => z <= maxZoom).map((z) => (
+              <button
+                key={z}
+                onClick={() => {
+                  setZoom(z);
+                  if (trackRef.current) tuneTrack(trackRef.current, z);
+                }}
+                className={`w-9 h-7 rounded-full text-xs font-bold transition-all ${
+                  zoom === z ? "bg-white text-black scale-105" : "text-white/80"
+                }`}
+              >
+                {z}x
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <p className="text-center text-sm text-dark-400">
-        Point the camera at the QR code on the back of your Beacon
+        Point the camera at the QR code on the back of your Beacon. Hold it
+        about a hand&apos;s length away and let it focus.
       </p>
       <button
         onClick={() => setMode("manual")}

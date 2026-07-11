@@ -360,9 +360,10 @@ export function BottomNav() {
                     position: "absolute",
                     left: "50%",
                     bottom: "100%",
+                    zIndex: 2,
                     transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.08s",
                     transform: menuOpen && !menuClosing
-                      ? "translate(-50%, -68px) scale(1)"
+                      ? "translate(-50%, -96px) scale(1)"
                       : "translate(-50%, 20px) scale(0)",
                     opacity: menuOpen && !menuClosing ? 1 : 0,
                     pointerEvents: menuOpen && !menuClosing ? "auto" : "none",
