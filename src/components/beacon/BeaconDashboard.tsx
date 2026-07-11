@@ -58,6 +58,10 @@ export function BeaconDashboard({
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const [unpairing, setUnpairing] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
+  const [allContacts, setAllContacts] = useState<
+    Array<{ id: string; name: string; avatar: string | null; phone: string | null }>
+  >([]);
+  const [pickerSlot, setPickerSlot] = useState<1 | 2 | null>(null);
 
   // Keep telemetry fresh while the screen is open.
   useEffect(() => {
@@ -73,6 +77,36 @@ export function BeaconDashboard({
     window.addEventListener("focus", refresh);
     return () => { clearInterval(t); window.removeEventListener("focus", refresh); };
   }, [initial.id]);
+
+  // Load ALL accepted contacts (for the picker) once.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      const { data } = await supabase
+        .from("emergency_contacts")
+        .select("id, contact_user_id, status")
+        .eq("user_id", user.id)
+        .eq("status", "accepted");
+      const rows = (data || []).filter((c) => c.contact_user_id);
+      if (rows.length === 0) return;
+      const { data: users } = await supabase
+        .from("users")
+        .select("id, full_name, avatar_url, phone")
+        .in("id", rows.map((r) => r.contact_user_id as string));
+      const byId = new Map((users || []).map((u) => [u.id, u]));
+      setAllContacts(
+        rows.map((r) => {
+          const u = byId.get(r.contact_user_id as string);
+          return {
+            id: r.id,
+            name: u?.full_name || "Unknown",
+            avatar: u?.avatar_url || null,
+            phone: u?.phone || null,
+          };
+        })
+      );
+    })();
+  }, [user]);
 
   // Resolve chosen contact names for display.
   useEffect(() => {
@@ -244,24 +278,28 @@ export function BeaconDashboard({
           Call buttons
         </p>
         {[
-          { label: "Button 1 + SOS", id: device.family1_contact_id },
-          { label: "Button 2", id: device.family2_contact_id },
+          { label: "Button 1 + SOS", id: device.family1_contact_id, slot: 1 as const },
+          { label: "Button 2", id: device.family2_contact_id, slot: 2 as const },
         ].map((slot, i) => (
-          <div key={slot.label} className={`flex items-center gap-3 px-5 py-3.5 ${i === 0 ? "border-b border-dark-700/70" : ""}`}>
+          <button
+            key={slot.label}
+            onClick={() => setPickerSlot(slot.slot)}
+            className={`w-full flex items-center gap-3 px-5 py-3.5 active:bg-dark-700/40 transition-colors ${i === 0 ? "border-b border-dark-700/70" : ""}`}
+          >
             <div className="w-8 h-8 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
               <Phone className="w-4 h-4 text-green-400" />
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-medium text-dark-100">{slot.label}</p>
               <p className="text-xs text-dark-500 truncate">
-                {slot.id ? contactNames.get(slot.id) || "..." : "Not set"}
+                {slot.id ? contactNames.get(slot.id) || "..." : "Not set - tap to choose"}
               </p>
             </div>
-          </div>
+            <ChevronRight className="w-4 h-4 text-dark-500 shrink-0" />
+          </button>
         ))}
         <p className="px-5 pb-4 pt-1 text-xs text-dark-500">
-          Change these from your emergency contacts list, then re-pair or
-          update in settings.
+          Changing a button gives you a text to send to the Beacon.
         </p>
       </div>
 
@@ -377,6 +415,63 @@ export function BeaconDashboard({
           >
             <Check className="w-4 h-4" /> Done
           </button>
+        </div>
+      </Modal>
+
+      {/* ── Contact picker for call buttons ── */}
+      <Modal
+        isOpen={pickerSlot !== null}
+        onClose={() => setPickerSlot(null)}
+        title={pickerSlot === 1 ? "Button 1 + SOS calls..." : "Button 2 calls..."}
+      >
+        <div className="space-y-1.5">
+          {allContacts.length === 0 && (
+            <p className="text-sm text-dark-400 py-4 text-center">
+              No accepted emergency contacts yet. Add them from the Emergency
+              Contacts page first.
+            </p>
+          )}
+          {allContacts.map((c) => {
+            const currentId = pickerSlot === 1 ? device.family1_contact_id : device.family2_contact_id;
+            const otherId = pickerSlot === 1 ? device.family2_contact_id : device.family1_contact_id;
+            const disabled = !c.phone || c.id === otherId;
+            const selected = currentId === c.id;
+            return (
+              <button
+                key={c.id}
+                disabled={disabled || saving === "contacts"}
+                onClick={async () => {
+                  const patch =
+                    pickerSlot === 1
+                      ? { family1_contact_id: c.id }
+                      : { family2_contact_id: c.id };
+                  setPickerSlot(null);
+                  await save(patch, "contacts");
+                }}
+                className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-all active:scale-[0.985] ${
+                  selected ? "border-primary-500 bg-primary-500/10" : "border-dark-700 bg-dark-800/60"
+                } ${disabled ? "opacity-35" : ""}`}
+              >
+                <div className="flex-1 text-left min-w-0">
+                  <p className="text-sm font-medium text-dark-100 truncate">{c.name}</p>
+                  <p className="text-xs text-dark-500">{c.phone || "No phone number on profile"}</p>
+                </div>
+                {selected && <Check className="w-4 h-4 text-primary-300 shrink-0" />}
+              </button>
+            );
+          })}
+          {pickerSlot === 2 && device.family2_contact_id && (
+            <button
+              disabled={saving === "contacts"}
+              onClick={async () => {
+                setPickerSlot(null);
+                await save({ family2_contact_id: null }, "contacts");
+              }}
+              className="w-full p-3 rounded-2xl border border-dark-700 text-sm text-dark-400 active:scale-[0.985] transition-transform"
+            >
+              Clear button 2
+            </button>
+          )}
         </div>
       </Modal>
 

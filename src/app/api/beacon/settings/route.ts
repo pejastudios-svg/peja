@@ -48,8 +48,9 @@ export async function POST(req: NextRequest) {
     const contactsChanged =
       body.family1_contact_id !== undefined || body.family2_contact_id !== undefined;
     if (contactsChanged) {
-      const f1 = body.family1_contact_id ?? device.family1_contact_id;
-      const f2 = body.family2_contact_id ?? device.family2_contact_id;
+      // `null` means "clear this slot"; absent means "keep current".
+      const f1 = "family1_contact_id" in body ? body.family1_contact_id : device.family1_contact_id;
+      const f2 = "family2_contact_id" in body ? body.family2_contact_id : device.family2_contact_id;
 
       async function phoneFor(contactId: string | null): Promise<string | null> {
         if (!contactId) return null;

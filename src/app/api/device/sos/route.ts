@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
 
   const { data: device } = await supabaseAdmin
     .from("devices")
-    .select("id, user_id, name, fall_alert_enabled, status")
+    .select("id, user_id, name, fall_alert_enabled, status, last_lat, last_lng, last_fix_at")
     .eq("device_id", payload.device_id)
     .maybeSingle();
   if (!device || device.status === "unpaired") {
@@ -85,40 +85,62 @@ export async function POST(req: NextRequest) {
   }
   const userName = owner.full_name || "Someone";
 
-  const lat = typeof payload.latitude === "number" ? payload.latitude : null;
-  const lng = typeof payload.longitude === "number" ? payload.longitude : null;
+  // The device often has no GPS fix indoors (its SOS still arrives, just
+  // without coordinates). Fall back to the device's last known position;
+  // an alert with a slightly stale pin beats a dead alert.
+  let lat = typeof payload.latitude === "number" ? payload.latitude : null;
+  let lng = typeof payload.longitude === "number" ? payload.longitude : null;
+  let freshFix = lat != null && lng != null;
+  let staleFix = false;
+  if (!freshFix && device.last_lat != null && device.last_lng != null) {
+    lat = device.last_lat;
+    lng = device.last_lng;
+    staleFix = true;
+    // "Fresh enough" for the nearby-strangers broadcast: within 15 min.
+    freshFix =
+      !!device.last_fix_at &&
+      Date.now() - new Date(device.last_fix_at).getTime() < 15 * 60 * 1000;
+  }
+
   const address =
     lat != null && lng != null
-      ? await reverseGeocode(lat, lng)
-      : "Location unavailable (no GPS fix yet)";
+      ? `${await reverseGeocode(lat, lng)}${staleFix ? " (last known location)" : ""}`
+      : "Location not available yet";
 
   const sourceMessage =
     kind === "sos"
       ? `Triggered from ${device.name || "Beacon 1"} tracker`
       : `Fall detected by ${device.name || "Beacon 1"} tracker`;
 
-  const { data: sosAlert, error: insertErr } = await supabaseAdmin
-    .from("sos_alerts")
-    .insert({
-      user_id: device.user_id,
-      latitude: lat,
-      longitude: lng,
-      address,
-      status: "active",
-      tag: null,
-      message: sourceMessage,
-    })
-    .select("id")
-    .single();
-  if (insertErr || !sosAlert) {
-    return NextResponse.json(
-      { error: `sos_alerts insert failed: ${insertErr?.message}` },
-      { status: 500 }
-    );
+  // sos_alerts requires coordinates. With none at all (device never got a
+  // fix since pairing), skip the map alert but STILL notify the user's
+  // emergency contacts below - never let SOS die silently.
+  let sosAlert: { id: string } | null = null;
+  if (lat != null && lng != null) {
+    const { data, error: insertErr } = await supabaseAdmin
+      .from("sos_alerts")
+      .insert({
+        user_id: device.user_id,
+        latitude: lat,
+        longitude: lng,
+        address,
+        status: "active",
+        tag: null,
+        message: sourceMessage,
+      })
+      .select("id")
+      .single();
+    if (insertErr || !data) {
+      return NextResponse.json(
+        { error: `sos_alerts insert failed: ${insertErr?.message}` },
+        { status: 500 }
+      );
+    }
+    sosAlert = data;
   }
 
   const notifData = {
-    sos_id: sosAlert.id,
+    sos_id: sosAlert?.id ?? null,
     source: "beacon1",
     kind,
     address,
@@ -127,7 +149,7 @@ export async function POST(req: NextRequest) {
     message: sourceMessage,
   };
   const pushData: Record<string, string> = {
-    sos_id: String(sosAlert.id),
+    sos_id: sosAlert ? String(sosAlert.id) : "",
     source: "beacon1",
     kind,
   };
@@ -135,7 +157,9 @@ export async function POST(req: NextRequest) {
   const title = kind === "sos" ? "SOS Alert: Emergency" : "Fall Alert";
   const contactBody =
     kind === "sos"
-      ? `${userName} needs immediate help at ${address}`
+      ? sosAlert
+        ? `${userName} needs immediate help at ${address}`
+        : `${userName} pressed their Beacon SOS. Location not available yet - try calling them now.`
       : `${userName} may have fallen at ${address}`;
 
   // 1. Accepted emergency contacts only - same rule as the app SOS.
@@ -149,9 +173,11 @@ export async function POST(req: NextRequest) {
     .map((c) => c.contact_user_id as string)
     .filter(Boolean);
 
-  // 2. Nearby fan-out: real SOS only, never for falls (decided policy).
+  // 2. Nearby fan-out: real SOS only, never for falls (decided policy),
+  // and only with a fresh-enough fix - broadcasting strangers to a stale
+  // location would send help to the wrong place.
   let nearbyIds: string[] = [];
-  if (kind === "sos" && lat != null && lng != null) {
+  if (kind === "sos" && freshFix && lat != null && lng != null) {
     const { data: nearby } = await supabaseAdmin.rpc("users_within_radius", {
       lat,
       lng,
@@ -200,7 +226,7 @@ export async function POST(req: NextRequest) {
   ]);
 
   return NextResponse.json({
-    sos_alert_id: sosAlert.id,
+    sos_alert_id: sosAlert?.id ?? null,
     contacts_notified: contactIds.length,
     nearby_notified: nearbyIds.length,
   });
