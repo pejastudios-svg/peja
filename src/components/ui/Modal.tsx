@@ -78,13 +78,16 @@ return createPortal(
         onClick={onClose}
       />
 
-      {/* Modal Panel — black on dark, white on light, purple outline */}
+      {/* Modal Panel — black on dark, white on light, sheet radius +
+          strong layered shadow with inner top light (premium glass) */}
       <div
-        className={`relative w-full ${sizeClasses[size]} shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 ease-out ${getAnimationClass()}`}
+        className={`relative w-full ${sizeClasses[size]} ${size === "full" ? "" : "rounded-[28px]"} overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 ${getAnimationClass()}`}
         style={{
           background: "var(--glass-strong-bg)",
+          boxShadow: "var(--glass-shadow-strong)",
+          transitionTimingFunction: "var(--ease-sheet)",
           border: neutral
-            ? "1px solid rgba(255,255,255,0.1)"
+            ? "1px solid var(--hairline)"
             : "1px solid var(--glass-border-strong)",
         }}
       >

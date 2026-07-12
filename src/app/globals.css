@@ -36,6 +36,17 @@
   --body-bg: #000000;
   --fg-default: #f8fafc;
 
+  /* ── Premium-glass foundations (see PEJA_DESIGN_SYSTEM.md) ──
+     Radii tiers: controls / cards / sheets. Easing: sheet for entrances,
+     spring for toggles + fan-outs. Hairline: neutral 1px separators.
+     Same values in both themes except --hairline (overridden below). */
+  --r-control: 14px;
+  --r-card: 20px;
+  --r-sheet: 28px;
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --hairline: rgba(255, 255, 255, 0.06);
+
   --glass-bg: rgba(15, 10, 26, 0.85);
   --glass-sm-bg: rgba(15, 10, 26, 0.75);
   --glass-card-bg: #0a0612;
@@ -49,17 +60,38 @@
   --glass-float-bg: rgba(10, 6, 18, 0.92);
   --glass-input-bg: rgba(15, 10, 26, 0.6);
 
-  --glass-border: rgba(139, 92, 246, 0.2);
-  --glass-border-sm: rgba(139, 92, 246, 0.15);
-  --glass-border-strong: rgba(139, 92, 246, 0.45);
-  --glass-border-float: rgba(139, 92, 246, 0.25);
+  /* Hairline borders: de-saturated violet cast at low opacity. The old
+     0.2-0.45 purple outlines read as "neon"; premium glass keeps borders
+     nearly neutral and saves saturated violet for focus/selection. */
+  --glass-border: rgba(167, 139, 250, 0.13);
+  --glass-border-sm: rgba(167, 139, 250, 0.10);
+  --glass-border-strong: rgba(167, 139, 250, 0.38);
+  --glass-border-float: rgba(167, 139, 250, 0.16);
 
-  --glass-shadow: 0 32px 80px 0 rgba(0, 0, 0, 0.45), 0 8px 24px 0 rgba(0, 0, 0, 0.18);
-  --glass-shadow-sm: 0 14px 32px 0 rgba(0, 0, 0, 0.2), 0 2px 8px 0 rgba(0, 0, 0, 0.1);
-  --glass-shadow-strong: 0 32px 80px 0 rgba(0, 0, 0, 0.55);
-  --glass-shadow-header: 0 4px 20px 0 rgba(0, 0, 0, 0.4);
-  --glass-shadow-footer: 0 -4px 20px 0 rgba(0, 0, 0, 0.4);
-  --glass-shadow-float: 0 4px 20px 0 rgba(0, 0, 0, 0.5);
+  /* Layered shadows with an inner top light — the light-catch on a pane's
+     top edge is the core glass cue and costs nothing on the GPU
+     (no backdrop-filter involved). Contact shadow + wide soft ambient. */
+  --glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 2px 8px 0 rgba(0, 0, 0, 0.25),
+    0 16px 48px 0 rgba(0, 0, 0, 0.35);
+  --glass-shadow-sm:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 4px 0 rgba(0, 0, 0, 0.2),
+    0 8px 24px 0 rgba(0, 0, 0, 0.18);
+  --glass-shadow-strong:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 24px 0 rgba(0, 0, 0, 0.4),
+    0 32px 80px 0 rgba(0, 0, 0, 0.55);
+  --glass-shadow-header:
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04),
+    0 4px 20px 0 rgba(0, 0, 0, 0.4);
+  --glass-shadow-footer:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 -4px 20px 0 rgba(0, 0, 0, 0.4);
+  --glass-shadow-float:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 4px 20px 0 rgba(0, 0, 0, 0.5);
 
   --peja-btn-outline: rgba(139, 92, 246, 0.5);
   /* Peja center floating button (BottomNav) */
@@ -117,14 +149,17 @@
   --glass-float-bg: rgba(255, 255, 255, 0.92);
   --glass-input-bg: rgba(255, 255, 255, 0.7);
 
-  --glass-border: rgba(0, 0, 0, 0.14);
-  --glass-border-sm: rgba(0, 0, 0, 0.1);
+  /* Softer neutral hairlines on white; strong stays violet for focus. */
+  --glass-border: rgba(0, 0, 0, 0.10);
+  --glass-border-sm: rgba(0, 0, 0, 0.07);
   --glass-border-strong: rgba(124, 58, 237, 0.4);
-  --glass-border-float: rgba(0, 0, 0, 0.14);
+  --glass-border-float: rgba(0, 0, 0, 0.10);
+  --hairline: rgba(0, 0, 0, 0.08);
 
   /* Tight elevation shadow — the previous 32px / 80px-blur value rendered a
      visible rectangular boundary on the pure-white page where the gradient
-     hit zero, reading as a "sharp outline" behind cards. */
+     hit zero, reading as a "sharp outline" behind cards. Inner top light
+     is a dark-mode-only trick (white inset is invisible on white). */
   --glass-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.04), 0 4px 12px 0 rgba(0, 0, 0, 0.05);
   --glass-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 2px 6px 0 rgba(0, 0, 0, 0.04);
   --glass-shadow-strong: 0 4px 16px 0 rgba(0, 0, 0, 0.08), 0 12px 32px 0 rgba(0, 0, 0, 0.06);
@@ -367,7 +402,7 @@ textarea,
      visually. Translucent surfaces (header/footer/float) keep their blur. */
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
-  border-radius: 1rem;
+  border-radius: var(--r-card);
   padding: 1.5rem;
 }
 
@@ -378,7 +413,7 @@ textarea,
   background: var(--glass-card-bg);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
-  border-radius: 1rem;
+  border-radius: var(--r-card);
   padding: 0;
 }
 @media (max-width: 639px) {
@@ -433,7 +468,7 @@ textarea,
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
-  border-radius: 0.75rem;
+  border-radius: var(--r-control);
   padding-top: 0.75rem;
   padding-bottom: 0.75rem;
   width: 100%;
