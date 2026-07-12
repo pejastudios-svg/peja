@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { sendPushToUser, sendSilentDataToUser } from "../../_firebaseAdmin";
+import { escalateStaleBeaconSos } from "../../_beaconEscalation";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -229,6 +230,15 @@ export async function GET(req: NextRequest) {
     revived++;
   }
 
+  // --- 3c. Beacon SOS escalation + housekeeping ---
+  // Guarded: a failure here must never affect the check-in logic above.
+  let beaconEscalated = 0;
+  try {
+    beaconEscalated = await escalateStaleBeaconSos(supabaseAdmin);
+  } catch (e) {
+    console.error("[checkin-monitor] beacon escalation failed", e);
+  }
+
   // --- 4. Clean up temp pre-upload files older than 24h ---
   const { data: tempFiles } = await supabaseAdmin.storage
     .from("media")
@@ -245,5 +255,5 @@ export async function GET(req: NextRequest) {
       .remove(oldTempFiles.map((f) => `temp/${f.name}`));
   }
 
-  return NextResponse.json({ ok: true, warned, missed, revived, tempCleaned: oldTempFiles.length });
+  return NextResponse.json({ ok: true, warned, missed, revived, beaconEscalated, tempCleaned: oldTempFiles.length });
 }

@@ -40,7 +40,11 @@ export async function POST(req: NextRequest) {
 
     await supabaseAdmin
       .from("devices")
-      .update({ active_sos_alert_id: null, updated_at: new Date().toISOString() })
+      .update({
+        active_sos_alert_id: null,
+        sos_escalated_at: null,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", device.id);
 
     return NextResponse.json({ ok: true, cancelled: true });

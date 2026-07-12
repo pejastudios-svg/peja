@@ -171,7 +171,11 @@ export async function POST(req: NextRequest) {
     // every location report and repeat alarms merge into it.
     await supabaseAdmin
       .from("devices")
-      .update({ active_sos_alert_id: sosAlert.id, updated_at: new Date().toISOString() })
+      .update({
+        active_sos_alert_id: sosAlert.id,
+        sos_escalated_at: null, // fresh alert, fresh escalation budget
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", device.id);
   }
 
@@ -225,7 +229,23 @@ export async function POST(req: NextRequest) {
       .filter((id) => id && id !== device.user_id && !contactIds.includes(id));
   }
 
+  // The owner gets told too - it's their device, and if it was a false
+  // trigger they need to know there's something to cancel.
+  const ownerTitle = kind === "sos" ? "Your Beacon sent an SOS" : "Your Beacon detected a fall";
+  const ownerBody =
+    kind === "sos"
+      ? "Your emergency contacts were alerted. If this was a mistake, open Beacon and tap I'm safe."
+      : "Your emergency contacts were alerted. If you're okay, open Beacon and cancel the alert.";
+
   const rows = [
+    {
+      user_id: device.user_id,
+      type: "system",
+      title: ownerTitle,
+      body: ownerBody,
+      data: { ...notifData, self: true },
+      is_read: false,
+    },
     ...contactIds.map((uid) => ({
       user_id: uid,
       type: "sos_alert",
@@ -248,6 +268,12 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin.from("notifications").insert(rows);
   }
   await Promise.all([
+    sendPushToUser({
+      userId: device.user_id,
+      title: ownerTitle,
+      body: ownerBody,
+      data: { ...pushData, self: "true" },
+    }).catch(() => 0),
     ...contactIds.map((uid) =>
       sendPushToUser({ userId: uid, title, body: contactBody, data: pushData }).catch(() => 0)
     ),
