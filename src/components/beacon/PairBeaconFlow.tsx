@@ -164,7 +164,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
             <div className="absolute inset-0 rounded-full bg-primary-500/10 beacon-radar-ring" style={{ animationDelay: "0.8s" }} />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-24 h-24 rounded-[28px] bg-gradient-to-b from-dark-700 to-dark-800 border border-dark-600 shadow-2xl flex items-center justify-center beacon-breathe">
-                <Radio className="w-10 h-10 text-primary-300" />
+                <Radio className="w-10 h-10 beacon-accent-text" />
               </div>
             </div>
           </div>
@@ -185,7 +185,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
             ].map((line, i) => (
               <div key={i} className="flex items-center gap-3">
                 <div className="w-6 h-6 rounded-full bg-primary-500/15 flex items-center justify-center shrink-0">
-                  <Check className="w-3.5 h-3.5 text-primary-300" />
+                  <Check className="w-3.5 h-3.5 beacon-accent-text" />
                 </div>
                 <p className="text-sm text-dark-300">{line}</p>
               </div>
@@ -217,7 +217,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
         <div className="pt-4 beacon-step-in space-y-6">
           <div className="text-center space-y-2">
             <div className="mx-auto w-12 h-12 rounded-2xl bg-green-500/15 flex items-center justify-center">
-              <Check className="w-6 h-6 text-green-400" />
+              <Check className="w-6 h-6 beacon-ok-text" />
             </div>
             <h2 className="text-xl font-bold text-dark-50">Beacon found</h2>
             <p className="text-sm text-dark-400">
@@ -338,7 +338,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
             <div className="absolute inset-0 rounded-full bg-primary-500/10 beacon-radar-ring" style={{ animationDelay: "1.6s" }} />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="w-20 h-20 rounded-3xl bg-gradient-to-b from-dark-700 to-dark-800 border border-dark-600 flex items-center justify-center beacon-breathe">
-                <Radio className="w-8 h-8 text-primary-300" />
+                <Radio className="w-8 h-8 beacon-accent-text" />
               </div>
             </div>
           </div>

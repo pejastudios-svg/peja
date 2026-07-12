@@ -14,10 +14,10 @@ import {
 import type { BeaconCommand, BeaconDevice } from "@/lib/beacon";
 
 const STATUS_META: Record<string, { label: string; dot: string; text: string }> = {
-  connected: { label: "Connected", dot: "bg-green-400 beacon-live-dot", text: "text-green-400" },
-  configuring: { label: "Waiting for device", dot: "bg-amber-400 animate-pulse", text: "text-amber-400" },
-  offline: { label: "Offline", dot: "bg-red-400", text: "text-red-400" },
-  pairing: { label: "Pairing", dot: "bg-amber-400 animate-pulse", text: "text-amber-400" },
+  connected: { label: "Connected", dot: "bg-green-500 beacon-live-dot", text: "beacon-ok-text" },
+  configuring: { label: "Waiting for device", dot: "bg-amber-500 animate-pulse", text: "beacon-wait-text" },
+  offline: { label: "Offline", dot: "bg-red-500", text: "beacon-bad-text" },
+  pairing: { label: "Pairing", dot: "bg-amber-500 animate-pulse", text: "beacon-wait-text" },
   unpaired: { label: "Unpaired", dot: "bg-dark-500", text: "text-dark-400" },
 };
 
@@ -184,7 +184,7 @@ export function BeaconDashboard({
     () => [
       {
         key: "fall",
-        icon: <Activity className="w-4.5 h-4.5 text-orange-300" />,
+        icon: <Activity className="w-4.5 h-4.5 beacon-wait-text" />,
         title: "Fall alerts",
         sub: "Tell my emergency contacts if a fall is detected",
         control: (
@@ -197,7 +197,7 @@ export function BeaconDashboard({
       },
       {
         key: "tone",
-        icon: <Volume1 className="w-4.5 h-4.5 text-primary-300" />,
+        icon: <Volume1 className="w-4.5 h-4.5 beacon-accent-text" />,
         title: "SOS received tone",
         sub: "Quiet beep on the Beacon when peja gets its SOS",
         control: (
@@ -222,7 +222,7 @@ export function BeaconDashboard({
               <div className="absolute inset-0 rounded-2xl bg-primary-500/10 beacon-radar-ring" />
             )}
             <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-b from-dark-600 to-dark-800 border border-dark-600 flex items-center justify-center">
-              <Radio className="w-7 h-7 text-primary-300" />
+              <Radio className="w-7 h-7 beacon-accent-text" />
             </div>
           </div>
           <div className="flex-1 min-w-0">
@@ -237,9 +237,9 @@ export function BeaconDashboard({
             {battery != null ? (
               <div className="flex items-center gap-1">
                 {battery <= 15
-                  ? <BatteryLow className="w-5 h-5 text-red-400" />
-                  : <Battery className="w-5 h-5 text-green-400" />}
-                <span className={`text-sm font-semibold ${battery <= 15 ? "text-red-400" : "text-dark-200"}`}>
+                  ? <BatteryLow className="beacon-bad-text w-5 h-5" />
+                  : <Battery className="w-5 h-5 beacon-ok-text" />}
+                <span className={`text-sm font-semibold ${battery <= 15 ? "beacon-bad-text" : "text-dark-200"}`}>
                   {battery}%
                 </span>
               </div>
@@ -257,7 +257,7 @@ export function BeaconDashboard({
             className="mt-4 flex items-center gap-2.5 rounded-2xl bg-dark-800/80 border border-dark-700 p-3 active:scale-[0.985] transition-transform"
           >
             <div className="w-8 h-8 rounded-full bg-primary-500/15 flex items-center justify-center shrink-0">
-              <MapPin className="w-4 h-4 text-primary-300" />
+              <MapPin className="w-4 h-4 beacon-accent-text" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[13px] font-medium text-dark-200">Last known location</p>
@@ -287,7 +287,7 @@ export function BeaconDashboard({
             className={`w-full flex items-center gap-3 px-5 py-3.5 active:bg-dark-700/40 transition-colors ${i === 0 ? "border-b border-dark-700/70" : ""}`}
           >
             <div className="w-8 h-8 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
-              <Phone className="w-4 h-4 text-green-400" />
+              <Phone className="w-4 h-4 beacon-ok-text" />
             </div>
             <div className="flex-1 min-w-0 text-left">
               <p className="text-sm font-medium text-dark-100">{slot.label}</p>
@@ -360,9 +360,9 @@ export function BeaconDashboard({
             ))}
           </div>
           {device.volume > 1 && (
-            <div className="mt-2.5 flex items-start gap-2 rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2.5 beacon-step-in">
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-200/90 leading-snug">
+            <div className="beacon-warn mt-2.5 flex items-start gap-2 rounded-xl px-3 py-2.5 beacon-step-in">
+              <AlertTriangle className="beacon-warn-icon w-4 h-4 shrink-0 mt-0.5" />
+              <p className="beacon-warn-text text-xs leading-snug">
                 Louder volumes make the Beacon easy to notice. In an emergency,
                 staying hidden is the point. Level 1 or 0 is recommended.
               </p>
@@ -374,7 +374,7 @@ export function BeaconDashboard({
       {/* ── Unpair ── */}
       <button
         onClick={() => setConfirmUnpair(true)}
-        className="beacon-stagger w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-red-500/25 text-red-400 text-sm font-semibold active:scale-[0.98] transition-transform"
+        className="beacon-stagger w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-red-500/40 beacon-bad-text text-sm font-semibold active:scale-[0.98] transition-transform"
         style={{ animationDelay: "0.24s" }}
       >
         <Trash2 className="w-4 h-4" />
@@ -465,7 +465,7 @@ export function BeaconDashboard({
                   <p className="text-sm font-medium text-dark-100 truncate">{c.name}</p>
                   <p className="text-xs text-dark-500">{c.phone || "No phone number on profile"}</p>
                 </div>
-                {selected && <Check className="w-4 h-4 text-primary-300 shrink-0" />}
+                {selected && <Check className="w-4 h-4 beacon-accent-text shrink-0" />}
               </button>
             );
           })}

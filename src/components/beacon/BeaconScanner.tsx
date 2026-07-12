@@ -162,7 +162,7 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
           placeholder="e.g. 67084982860"
           className="w-full bg-dark-800 border border-dark-600 rounded-2xl px-4 py-3.5 text-center text-lg tracking-widest text-dark-100 placeholder:text-dark-500 placeholder:tracking-normal focus:outline-none focus:border-primary-500 transition-colors"
         />
-        {manualError && <p className="text-sm text-red-400 text-center">{manualError}</p>}
+        {manualError && <p className="beacon-bad-text text-sm text-center">{manualError}</p>}
         <button
           onClick={submitManual}
           disabled={!manualValue.trim()}
@@ -227,7 +227,7 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
       </p>
       <button
         onClick={() => setMode("manual")}
-        className="mx-auto flex items-center gap-2 text-sm text-primary-300 font-medium py-2 px-4 rounded-full active:scale-95 transition-transform"
+        className="mx-auto flex items-center gap-2 text-sm beacon-accent-text font-medium py-2 px-4 rounded-full active:scale-95 transition-transform"
       >
         <Keyboard className="w-4 h-4" />
         Type the ID instead
