@@ -8,8 +8,8 @@ import { authFetchJson } from "@/lib/authFetch";
 import { Modal } from "@/components/ui/Modal";
 import { formatDistanceToNow } from "date-fns";
 import {
-  Activity, Battery, BatteryLow, Check, ChevronRight, Copy, MapPin,
-  Phone, Radio, Send, Trash2, Volume1, VolumeX,
+  Activity, AlertTriangle, Battery, BatteryLow, Check, ChevronRight, Copy,
+  MapPin, Phone, Radio, Send, Trash2, Volume1, VolumeX,
 } from "lucide-react";
 import type { BeaconCommand, BeaconDevice } from "@/lib/beacon";
 
@@ -359,6 +359,15 @@ export function BeaconDashboard({
               </button>
             ))}
           </div>
+          {device.volume > 1 && (
+            <div className="mt-2.5 flex items-start gap-2 rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2.5 beacon-step-in">
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-200/90 leading-snug">
+                Louder volumes make the Beacon easy to notice. In an emergency,
+                staying hidden is the point. Level 1 or 0 is recommended.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
