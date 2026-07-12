@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { X, AlertTriangle, CheckCircle2, Info } from "lucide-react";
 
 type ToastType = "info" | "success" | "warning" | "danger";
@@ -10,7 +10,12 @@ type Toast = {
   type: ToastType;
   message: string;
   ttlMs?: number;
+  /** Exit in progress: pill is playing its slide-up-and-fade animation. */
+  leaving?: boolean;
 };
+
+/** Keep in sync with the toastOut animation duration in globals.css. */
+const EXIT_MS = 220;
 
 type ToastApi = {
   show: (t: Omit<Toast, "id">) => void;
@@ -51,6 +56,19 @@ function iconFor(type: ToastType) {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // Swipe tracking per toast id (touch start Y), for swipe-up-to-dismiss.
+  const touchStartY = useRef<Record<string, number>>({});
+
+  // Every exit path (tap, swipe up, X, timeout) goes through here so the
+  // pill always slides up and fades (WhatsApp-style) instead of popping out.
+  const dismiss = (id: string) => {
+    setToasts((prev) =>
+      prev.map((t) => (t.id === id && !t.leaving ? { ...t, leaving: true } : t))
+    );
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, EXIT_MS);
+  };
 
   const show = (t: Omit<Toast, "id">) => {
     const id = crypto.randomUUID();
@@ -58,9 +76,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
     setToasts((prev) => [toast, ...prev].slice(0, 4));
 
-    window.setTimeout(() => {
-      setToasts((prev) => prev.filter((x) => x.id !== id));
-    }, toast.ttlMs || 3500);
+    window.setTimeout(() => dismiss(id), toast.ttlMs || 3500);
   };
 
   const api = useMemo<ToastApi>(
@@ -99,7 +115,22 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           {toasts.map((t) => (
             <div
               key={t.id}
-              className="inline-flex max-w-[90vw] glass-float rounded-full border border-white/10 shadow-xl overflow-hidden animate-[toastIn_180ms_ease-out]"
+              onClick={() => dismiss(t.id)}
+              onTouchStart={(e) => {
+                touchStartY.current[t.id] = e.touches[0].clientY;
+              }}
+              onTouchMove={(e) => {
+                const start = touchStartY.current[t.id];
+                if (start != null && start - e.touches[0].clientY > 24) {
+                  delete touchStartY.current[t.id];
+                  dismiss(t.id);
+                }
+              }}
+              className={`inline-flex max-w-[90vw] glass-float rounded-full border border-white/10 shadow-xl overflow-hidden cursor-pointer select-none ${
+                t.leaving
+                  ? "animate-[toastOut_220ms_cubic-bezier(0.32,0.72,0,1)_forwards]"
+                  : "animate-[toastIn_180ms_ease-out]"
+              }`}
             >
               <div className="px-3 py-1.5 flex items-center gap-2">
                 <span className="shrink-0 flex items-center justify-center">
@@ -112,7 +143,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
                 <button
                   type="button"
-                  onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dismiss(t.id);
+                  }}
                   className="p-1 rounded-full hover:bg-white/10 text-dark-400 shrink-0"
                   aria-label="Dismiss"
                 >

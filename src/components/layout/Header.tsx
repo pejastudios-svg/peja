@@ -174,7 +174,7 @@ export function Header({
             <button
               type="button"
               onClick={onBack || (() => router.back())}
-              className="flex items-center justify-center h-11 w-11 shrink-0 active:opacity-70 transition-opacity"
+              className="flex items-center justify-center h-11 w-11 shrink-0 active:scale-90 active:opacity-80 transition-all duration-150"
               style={GLASS_CIRCLE}
               aria-label="Back"
             >
@@ -233,7 +233,7 @@ export function Header({
                   <button
                     type="button"
                     onClick={onBack || (() => router.back())}
-                    className="p-0.5 rounded-lg active:opacity-70 transition-opacity shrink-0"
+                    className="p-0.5 rounded-lg active:scale-90 active:opacity-80 transition-all duration-150 shrink-0"
                     aria-label="Back"
                   >
                     <ArrowLeft className="w-5 h-5 text-dark-200" strokeWidth={2.5} />
@@ -243,7 +243,7 @@ export function Header({
                       <button
                         type="button"
                         onClick={onAvatarTap}
-                        className="shrink-0 active:opacity-70 transition-opacity"
+                        className="shrink-0 active:scale-90 active:opacity-80 transition-all duration-150"
                         aria-label="View profile picture"
                       >
                         {avatarContent}
@@ -255,7 +255,7 @@ export function Header({
                     <button
                       type="button"
                       onClick={onTitleTap}
-                      className="min-w-0 flex-1 p-0.5 rounded-lg active:opacity-70 transition-opacity text-left"
+                      className="min-w-0 flex-1 p-0.5 rounded-lg active:scale-90 active:opacity-80 transition-all duration-150 text-left"
                     >
                       {titleContent}
                     </button>
