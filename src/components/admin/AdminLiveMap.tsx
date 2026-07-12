@@ -16,7 +16,7 @@ import { CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { VoiceNotePlayer } from "@/components/messages/VoiceNotePlayer";
 import { SOS_TAGS } from "@/lib/types";
-import { Maximize2, Play } from "lucide-react";
+import { Maximize2, Play, Radio } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { VideoLightbox } from "@/components/ui/VideoLightbox";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
@@ -54,6 +54,20 @@ export interface MapHelper {
   eta: number;
   sosId: string;
   milestone?: string | null;
+}
+interface MapBeacon {
+  id: string;
+  device_id: string;
+  name: string;
+  status: string;
+  battery_pct: number | null;
+  last_lat: number | null;
+  last_lng: number | null;
+  last_fix_at: string | null;
+  last_seen_at: string | null;
+  sos_active: boolean;
+  owner_name: string;
+  owner_avatar: string | null;
 }
 
 /* ── severity weight per category color ── */
@@ -200,6 +214,31 @@ const [lightboxOpen, setLightboxOpen] = useState(false);
 const [selectedSOS, setSelectedSOS] = useState<MapSOS | null>(null);
   const [videoLightboxOpen, setVideoLightboxOpen] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [beacons, setBeacons] = useState<MapBeacon[]>([]);
+  const [selectedBeacon, setSelectedBeacon] = useState<MapBeacon | null>(null);
+
+  /* ── Beacon trackers: fetch + poll (devices move; 30s keeps pins honest) ── */
+  useEffect(() => {
+    let stop = false;
+    const load = async () => {
+      try {
+        const { data: auth } = await supabase.auth.getSession();
+        const token = auth.session?.access_token;
+        if (!token) return;
+        const res = await fetch("/api/admin/beacons", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!stop && Array.isArray(data.beacons)) setBeacons(data.beacons);
+      } catch {
+        /* transient network errors: keep last known pins */
+      }
+    };
+    load();
+    const t = setInterval(load, 30_000);
+    return () => { stop = true; clearInterval(t); };
+  }, []);
 
 
   // Fetch media for selected post
@@ -944,6 +983,107 @@ return (
                 </div>
               </Marker>
             ))}
+
+            {/* ── Beacon tracker markers ── */}
+            {beacons
+              .filter((b) => b.last_lat != null && b.last_lng != null)
+              .map((b) => {
+                const online = b.status === "connected";
+                const ring = b.sos_active ? "#dc2626" : online ? "#22c55e" : "#6b7280";
+                return (
+                  <Marker
+                    key={`beacon-${b.id}`}
+                    longitude={b.last_lng as number}
+                    latitude={b.last_lat as number}
+                    anchor="center"
+                  >
+                    <div
+                      style={{ position: "relative", width: 34, height: 34, cursor: "pointer" }}
+                      onClick={() => {
+                        flyTo(b.last_lat as number, b.last_lng as number);
+                        setSelectedBeacon(b);
+                      }}
+                    >
+                      {b.sos_active && (
+                        <div className="sos-glow-ring" style={{ width: 34, height: 34 }} />
+                      )}
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "50%",
+                          left: "50%",
+                          transform: "translate(-50%, -50%)",
+                          width: 26,
+                          height: 26,
+                          borderRadius: "50%",
+                          border: `2px solid ${ring}`,
+                          background: online ? "#7c3aed" : "#4b5563",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          zIndex: 2,
+                          opacity: online ? 1 : 0.75,
+                        }}
+                      >
+                        <Radio size={14} color="white" />
+                      </div>
+                    </div>
+                  </Marker>
+                );
+              })}
+
+            {/* ── Beacon detail popup ── */}
+            {selectedBeacon && selectedBeacon.last_lat != null && (
+              <Popup
+                longitude={selectedBeacon.last_lng as number}
+                latitude={selectedBeacon.last_lat as number}
+                anchor="bottom"
+                offset={20}
+                onClose={() => setSelectedBeacon(null)}
+                closeButton={false}
+                className="admin-map-popup"
+              >
+                <div style={{ minWidth: 200, padding: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <img
+                      src={
+                        selectedBeacon.owner_avatar ||
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedBeacon.owner_name)}&background=7c3aed&color=fff&size=48`
+                      }
+                      alt=""
+                      style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover" }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>{selectedBeacon.owner_name}</div>
+                      <div style={{ fontSize: 11, opacity: 0.7 }}>
+                        {selectedBeacon.name} · {selectedBeacon.device_id}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+                    <div>
+                      Status:{" "}
+                      <b style={{ color: selectedBeacon.sos_active ? "#dc2626" : selectedBeacon.status === "connected" ? "#16a34a" : "#6b7280" }}>
+                        {selectedBeacon.sos_active ? "SOS ACTIVE" : selectedBeacon.status}
+                      </b>
+                    </div>
+                    <div>Battery: {selectedBeacon.battery_pct != null ? `${selectedBeacon.battery_pct}%` : "unknown"}</div>
+                    <div>
+                      Last fix:{" "}
+                      {selectedBeacon.last_fix_at
+                        ? formatDistanceToNow(new Date(selectedBeacon.last_fix_at), { addSuffix: true })
+                        : "never"}
+                    </div>
+                    <div>
+                      Last heard:{" "}
+                      {selectedBeacon.last_seen_at
+                        ? formatDistanceToNow(new Date(selectedBeacon.last_seen_at), { addSuffix: true })
+                        : "never"}
+                    </div>
+                  </div>
+                </div>
+              </Popup>
+            )}
           </>
         )}
         {/* ── SOS Detail Panel ── */}
