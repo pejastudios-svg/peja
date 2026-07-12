@@ -25,6 +25,7 @@ export interface BeaconDevice {
   fall_alert_enabled: boolean;
   sos_ack_tone: boolean;
   intercom_enabled: boolean;
+  active_sos_alert_id: string | null;
   battery_pct: number | null;
   last_lat: number | null;
   last_lng: number | null;

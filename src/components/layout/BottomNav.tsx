@@ -376,11 +376,11 @@ export function BottomNav() {
                         router.push("/beacon");
                       }}
                       aria-label="Beacon"
-                      className="w-12 h-12 rounded-full bg-dark-800 border border-primary-500/40 shadow-lg shadow-primary-900/30 flex items-center justify-center active:scale-90 transition-transform"
+                      className="w-12 h-12 rounded-full bg-primary-600 border-2 border-primary-400/60 shadow-lg shadow-primary-900/40 flex items-center justify-center active:scale-90 transition-transform"
                     >
-                      <Radio className="w-5.5 h-5.5 text-primary-300" />
+                      <Radio className="w-5.5 h-5.5 text-white" />
                     </button>
-                    <span className="text-[9px] font-bold text-primary-300 uppercase tracking-wider">Beacon</span>
+                    <span className="beacon-accent-text text-[9px] font-bold uppercase tracking-wider">Beacon</span>
                   </div>
                 </div>
               )}

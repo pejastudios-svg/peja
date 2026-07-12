@@ -62,6 +62,8 @@ export function BeaconDashboard({
     Array<{ id: string; name: string; avatar: string | null; phone: string | null }>
   >([]);
   const [pickerSlot, setPickerSlot] = useState<1 | 2 | null>(null);
+  const [activeSos, setActiveSos] = useState<{ id: string; created_at: string } | null>(null);
+  const [cancellingSos, setCancellingSos] = useState(false);
 
   // Keep telemetry fresh while the screen is open.
   useEffect(() => {
@@ -71,12 +73,46 @@ export function BeaconDashboard({
         .select("*")
         .eq("id", initial.id)
         .maybeSingle();
-      if (data && data.status !== "unpaired") setDevice(data as BeaconDevice);
+      if (data && data.status !== "unpaired") {
+        setDevice(data as BeaconDevice);
+        // Surface a live SOS (and hide it once resolved anywhere else).
+        if (data.active_sos_alert_id) {
+          const { data: alert } = await supabase
+            .from("sos_alerts")
+            .select("id, created_at, status")
+            .eq("id", data.active_sos_alert_id)
+            .maybeSingle();
+          setActiveSos(alert?.status === "active" ? { id: alert.id, created_at: alert.created_at } : null);
+        } else {
+          setActiveSos(null);
+        }
+      }
     };
+    refresh();
     const t = setInterval(refresh, 10_000);
     window.addEventListener("focus", refresh);
     return () => { clearInterval(t); window.removeEventListener("focus", refresh); };
   }, [initial.id]);
+
+  const cancelSos = async () => {
+    setCancellingSos(true);
+    try {
+      const { res, data } = await authFetchJson("/api/beacon/sos-cancel", {
+        method: "POST",
+        body: JSON.stringify({ id: device.id }),
+      });
+      if (!res.ok) {
+        toast.warning(data?.error || "Could not cancel");
+        return;
+      }
+      setActiveSos(null);
+      toast.success("SOS cancelled. Glad you're safe.");
+    } catch {
+      toast.warning("Network error");
+    } finally {
+      setCancellingSos(false);
+    }
+  };
 
   // Load ALL accepted contacts (for the picker) once.
   useEffect(() => {
@@ -214,6 +250,32 @@ export function BeaconDashboard({
 
   return (
     <div className="max-w-md mx-auto px-5 pb-28 space-y-5">
+      {/* ── Live SOS banner ── */}
+      {activeSos && (
+        <div className="beacon-step-in rounded-3xl bg-red-600 p-5 shadow-lg shadow-red-900/30">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-3 w-3 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-white" />
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-[15px]">SOS is live</p>
+              <p className="text-red-100 text-xs">
+                Started {formatDistanceToNow(new Date(activeSos.created_at), { addSuffix: true })}.
+                Your contacts were alerted and the pin follows the Beacon.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={cancelSos}
+            disabled={cancellingSos}
+            className="mt-3.5 w-full py-3 rounded-2xl bg-white text-red-700 text-sm font-bold active:scale-[0.98] transition-transform disabled:opacity-60"
+          >
+            {cancellingSos ? "Cancelling..." : "I'm safe. Cancel this SOS"}
+          </button>
+        </div>
+      )}
+
       {/* ── Status hero ── */}
       <div className="beacon-step-in relative overflow-hidden rounded-3xl border border-dark-700 bg-gradient-to-b from-dark-800 to-dark-900 p-6">
         <div className="flex items-center gap-4">

@@ -62,7 +62,9 @@ export async function POST(req: NextRequest) {
 
   const { data: device } = await supabaseAdmin
     .from("devices")
-    .select("id, user_id, name, fall_alert_enabled, status, last_lat, last_lng, last_fix_at")
+    .select(
+      "id, user_id, name, fall_alert_enabled, status, last_lat, last_lng, last_fix_at, active_sos_alert_id"
+    )
     .eq("device_id", payload.device_id)
     .maybeSingle();
   if (!device || device.status === "unpaired") {
@@ -73,6 +75,34 @@ export async function POST(req: NextRequest) {
   // still recorded by the gateway; we just don't alert anyone.
   if (kind === "fall" && !device.fall_alert_enabled) {
     return NextResponse.json({ sos_alert_id: null, skipped: "fall_alerts_disabled" });
+  }
+
+  // ONE living alert per device: while an alert is still active, any new
+  // alarm (SOS re-press, fall during SOS, repeat fall) refreshes it
+  // instead of dropping another pin, and nobody gets re-notified.
+  if (device.active_sos_alert_id) {
+    const { data: existing } = await supabaseAdmin
+      .from("sos_alerts")
+      .select("id, status")
+      .eq("id", device.active_sos_alert_id)
+      .eq("status", "active")
+      .maybeSingle();
+    if (existing) {
+      const freshLat = typeof payload.latitude === "number" ? payload.latitude : null;
+      const freshLng = typeof payload.longitude === "number" ? payload.longitude : null;
+      const patch: Record<string, unknown> = { last_updated: new Date().toISOString() };
+      if (freshLat != null && freshLng != null) {
+        patch.latitude = freshLat;
+        patch.longitude = freshLng;
+      }
+      await supabaseAdmin.from("sos_alerts").update(patch).eq("id", existing.id);
+      return NextResponse.json({
+        sos_alert_id: existing.id,
+        merged_into_active: true,
+        contacts_notified: 0,
+        nearby_notified: 0,
+      });
+    }
   }
 
   const { data: owner } = await supabaseAdmin
@@ -137,6 +167,12 @@ export async function POST(req: NextRequest) {
       );
     }
     sosAlert = data;
+    // Remember the living alert so the gateway can move its pin with
+    // every location report and repeat alarms merge into it.
+    await supabaseAdmin
+      .from("devices")
+      .update({ active_sos_alert_id: sosAlert.id, updated_at: new Date().toISOString() })
+      .eq("id", device.id);
   }
 
   const notifData = {
