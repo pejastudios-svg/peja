@@ -78,6 +78,11 @@ export function pairingCommands(opts: {
       sms: `adminip123456 ${opts.gatewayHost} ${opts.gatewayPort}`,
     },
     { label: "Smart tracking mode (60s while moving)", sms: "md123456 3 60S" },
+    // Undocumented but confirmed on-device 2026-07: fall detection ships
+    // OFF (check123456 shows A:0). Without this the app's fall toggle
+    // would silently do nothing. Whether anyone is NOTIFIED stays
+    // controlled by devices.fall_alert_enabled in the app.
+    { label: "Enable fall detection", sms: "falldown123456 1" },
   ];
   if (opts.family1Phone) {
     const f1 = devicePhone(opts.family1Phone);
