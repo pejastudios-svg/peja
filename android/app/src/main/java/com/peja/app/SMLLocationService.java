@@ -301,8 +301,10 @@ public class SMLLocationService extends Service {
         // Worse than 800m is never trusted. This is what stops watchers
         // seeing the sharer teleport around weak-GPS neighborhoods. ──
         float acc = location.hasAccuracy() ? location.getAccuracy() : 100f;
-        if (acc > 800f) return;
-        if (acc > 150f && now - lastGoodFixMs < 60_000L) return;
+        // Hard gate with a desperation valve: fully blind for 3+ minutes
+        // -> one coarse fix passes rather than going silent mid check-in.
+        if (acc > 800f && (acc > 5000f || now - lastSentMs < 180_000L)) return;
+        if (acc > 150f && acc <= 800f && now - lastGoodFixMs < 60_000L) return;
         if (acc <= 150f) lastGoodFixMs = now;
 
         if (now - lastSentMs < 12_000L) return;

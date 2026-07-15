@@ -19,6 +19,7 @@ public class MainActivity extends BridgeActivity {
         // tracking — so location stopped updating once the app was
         // backgrounded. Mirror the SOS registration above.
         registerPlugin(SMLLocationPlugin.class);
+        registerPlugin(AmbientLocationPlugin.class);
         // Battery-optimization + background-location helpers used by the
         // top banner and the session-start readiness prompt.
         registerPlugin(DeviceSettingsPlugin.class);

@@ -122,6 +122,25 @@
             </intent-filter>
         </service>
 
+        <!-- Ambient (always-on) presence service: gentle balanced-power
+             fixes every ~3 min, beats to /api/presence/beat with a
+             long-lived device key. -->
+        <service
+            android:name=".AmbientLocationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- Boot receiver to resume ambient tracking after reboot -->
+        <receiver
+            android:name=".AmbientBootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Boot receiver to restart SOS tracking after reboot -->
         <receiver
             android:name=".SOSBootReceiver"
