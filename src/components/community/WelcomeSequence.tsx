@@ -23,6 +23,9 @@ export function WelcomeSequence() {
   const [step, setStep] = useState(0);
   const [open, setOpen] = useState(false);
   const [quickAdd, setQuickAdd] = useState(false);
+  // Location card state: show a live check when permission is granted so
+  // the user SEES it worked before moving on.
+  const [locState, setLocState] = useState<"idle" | "checking" | "granted" | "denied">("idle");
 
   useEffect(() => {
     if (loading || !user) return;
@@ -81,15 +84,30 @@ export function WelcomeSequence() {
     setOpen(false);
   };
 
+  // If the browser already granted location, show the check immediately.
+  useEffect(() => {
+    if (!open || step !== 1) return;
+    try {
+      navigator.permissions
+        ?.query({ name: "geolocation" as PermissionName })
+        .then((p) => {
+          if (p.state === "granted") setLocState("granted");
+        })
+        .catch(() => {});
+    } catch {}
+  }, [open, step]);
+
   const requestLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(() => setStep(2), () => setStep(2), {
-        enableHighAccuracy: false,
-        timeout: 10_000,
-      });
-    } else {
-      setStep(2);
+    if (!navigator.geolocation) {
+      setLocState("denied");
+      return;
     }
+    setLocState("checking");
+    navigator.geolocation.getCurrentPosition(
+      () => setLocState("granted"),
+      () => setLocState("denied"),
+      { enableHighAccuracy: false, timeout: 15_000 }
+    );
   };
 
   if (!user) return null;
@@ -104,12 +122,30 @@ export function WelcomeSequence() {
       secondary: null,
     },
     {
-      icon: <MapPin className="w-10 h-10 text-primary-300" />,
-      title: "This is your safety map",
-      body: "The dot in the middle is you. Hold the SOS button any time you need help, and turn on location so your people can find you in an emergency.",
-      cta: "Turn on location",
-      onCta: requestLocation,
-      secondary: { label: "Skip for now", onClick: () => setStep(2) },
+      icon:
+        locState === "granted" ? (
+          <ShieldCheck className="w-10 h-10 text-green-500" />
+        ) : (
+          <MapPin className="w-10 h-10 text-primary-300" />
+        ),
+      title: locState === "granted" ? "Location is on" : "This is your safety map",
+      body:
+        locState === "granted"
+          ? "Your people can find you in an emergency. You control who sees you, person by person."
+          : locState === "denied"
+            ? "Location looks blocked. Allow it in your phone or browser settings, or skip for now and turn it on later."
+            : "The dot in the middle is you. Hold the SOS button any time you need help, and turn on location so your people can find you in an emergency.",
+      cta:
+        locState === "granted"
+          ? "Continue"
+          : locState === "checking"
+            ? "Waiting for permission..."
+            : locState === "denied"
+              ? "Try again"
+              : "Turn on location",
+      onCta: locState === "granted" ? () => setStep(2) : requestLocation,
+      ctaDisabled: locState === "checking",
+      secondary: locState === "granted" ? null : { label: "Skip for now", onClick: () => setStep(2) },
     },
     {
       icon: <Users className="w-10 h-10 text-primary-300" />,
@@ -156,7 +192,8 @@ export function WelcomeSequence() {
 
           <button
             onClick={c.onCta}
-            className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-transform"
+            disabled={Boolean((c as { ctaDisabled?: boolean }).ctaDisabled)}
+            className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
           >
             {c.cta}
           </button>

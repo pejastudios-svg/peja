@@ -34,6 +34,13 @@ export function PresenceCapture() {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
+            // One-shot ambient fix: no filter history to lean on, so just
+            // refuse outright junk (distant cell towers). A wrong ambient
+            // position is worse than a slightly stale one.
+            if ((pos.coords.accuracy ?? 0) > 800) {
+              busyRef.current = false;
+              return;
+            }
             const battery = await batteryPct();
             const { error } = await supabase.from("presence").upsert({
               user_id: user.id,

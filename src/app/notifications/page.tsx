@@ -319,6 +319,13 @@ export default function NotificationsPage() {
     // Handle emergency contact invite — open modal optimistically, then fetch
     // the current status so we can render the right state (pending vs already
     // accepted/declined vs deleted).
+    // "Are you OK?" ping: the answer button lives on the map home (the
+    // "X is checking on you" banner with I'm OK), so take them there.
+    if (data.type === "community_ping") {
+      router.push("/");
+      return;
+    }
+
     if (data.type === "group_invite" && data.member_row_id) {
       setGroupInvite({
         memberRowId: data.member_row_id,

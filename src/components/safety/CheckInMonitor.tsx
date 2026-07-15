@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { authFetchJson } from "@/lib/authFetch";
 import { createMotionTracker } from "@/lib/motion";
+import { createPositionFilter } from "@/lib/positionFilter";
 import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/lib/notifications";
 
@@ -95,6 +96,7 @@ useEffect(() => {
 
   // Background location tracking when check-in is active
   const trackMotion = useRef(createMotionTracker());
+  const posFilter = useRef(createPositionFilter());
   const locationWatchRef = useRef<number | null>(null);
   const locationPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeRef = useRef(false);
@@ -141,17 +143,24 @@ useEffect(() => {
       }).catch(() => {});
     };
 
-    // Same motion engine as the map; the localStorage cooldown inside it
+    // Filter first (junk fixes never reach watchers), then the same
+    // motion engine as the map; the localStorage cooldown inside it
     // keeps this and MapHome from double-alerting on the same drive.
-    const feedMotion = (pos: GeolocationPosition): number | null => {
-      const m = trackMotion.current(pos);
+    const handleFix = (pos: GeolocationPosition) => {
+      const f = posFilter.current(pos);
+      if (!f) return; // rejected: coarse fallback or unconfirmed teleport
+      const filteredPos = {
+        coords: { ...pos.coords, latitude: f.lat, longitude: f.lng, accuracy: f.accuracyM },
+        timestamp: pos.timestamp,
+      } as GeolocationPosition;
+      const m = trackMotion.current(filteredPos);
       if (m.speedingTrigger && m.speedKmh != null) {
         authFetchJson("/api/motion/speeding", {
           method: "POST",
           body: JSON.stringify({ speed_kmh: Math.round(m.speedKmh) }),
         }).catch(() => {});
       }
-      return m.speedKmh;
+      sendLocation(f.lat, f.lng, m.speedKmh);
     };
 
     const startTracking = async (checkinId: string) => {
@@ -191,24 +200,23 @@ useEffect(() => {
       // is in the foreground — browsers don't support real background tracking.
       if (!navigator.geolocation) return;
 
-      navigator.geolocation.getCurrentPosition(
-        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude, feedMotion(pos)),
-        () => {},
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
+      navigator.geolocation.getCurrentPosition(handleFix, () => {}, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+      });
 
-      locationWatchRef.current = navigator.geolocation.watchPosition(
-        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude, feedMotion(pos)),
-        () => {},
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
-      );
+      locationWatchRef.current = navigator.geolocation.watchPosition(handleFix, () => {}, {
+        enableHighAccuracy: true,
+        maximumAge: 10000,
+        timeout: 10000,
+      });
 
       locationPollRef.current = setInterval(() => {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude, feedMotion(pos)),
-          () => {},
-          { enableHighAccuracy: true, maximumAge: 5000, timeout: 8000 }
-        );
+        navigator.geolocation.getCurrentPosition(handleFix, () => {}, {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 8000,
+        });
       }, 15000);
     };
 

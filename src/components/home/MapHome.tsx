@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { CIRCLE_REFRESH_EVENT } from "@/lib/authFetch";
 import { BADGE_MIN_KMH, SPEEDING_KMH, createMotionTracker, stillLabel } from "@/lib/motion";
+import { createPositionFilter } from "@/lib/positionFilter";
 import { batteryPct } from "@/lib/battery";
 import { openDirections } from "@/lib/directions";
 import { AvatarImage } from "@/components/ui/AvatarImage";
@@ -81,7 +82,12 @@ export default function MapHome() {
   // at ~60Hz and would re-render the whole map.
   const [compassHeading, setCompassHeading] = useState<number | null>(null);
   const compassThrottle = useRef({ t: 0, v: -999 });
+  // Unwrapped (continuous) cone angle: instead of snapping 359 -> 1 and
+  // letting CSS spin the long way round, accumulate the shortest-path
+  // delta so every turn animates the way you actually turned.
+  const coneRot = useRef<number | null>(null);
   const motionTracker = useRef(createMotionTracker());
+  const posFilter = useRef(createPositionFilter());
   const lastPresenceWrite = useRef(0);
   // ── long-press pin: hold the map, get a place + directions ──
   const [pin, setPin] = useState<{ lat: number; lng: number; name: string | null; loading: boolean } | null>(null);
@@ -162,12 +168,29 @@ export default function MapHome() {
         (pos) => {
           if (!cancelled) {
             setGpsDenied(false);
-            const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+
+            // ── position filter: junk fixes (cell-tower fallbacks, GPS
+            // teleports) never reach the map, the motion engine, or the
+            // database. This is what keeps the dot from jumping around
+            // in weak-GPS areas. ──
+            const f = posFilter.current(pos);
+            if (!f) return;
+            const c = { lat: f.lat, lng: f.lng };
             centerRef.current = c;
             setCenter(c);
 
-            // ── motion engine: speed, heading, stillness, speeding ──
-            const m = motionTracker.current(pos);
+            // Motion engine consumes the FILTERED coordinates so speed
+            // and stillness are computed from clean positions.
+            const filteredPos = {
+              coords: {
+                ...pos.coords,
+                latitude: f.lat,
+                longitude: f.lng,
+                accuracy: f.accuracyM,
+              },
+              timestamp: pos.timestamp,
+            } as GeolocationPosition;
+            const m = motionTracker.current(filteredPos);
             setMotion({ speedKmh: m.speedKmh, heading: m.heading, stillSince: m.stillSince });
             if (m.speedingTrigger && m.speedKmh != null) {
               const kmh = Math.round(m.speedKmh);
@@ -193,7 +216,7 @@ export default function MapHome() {
                   user_id: user.id,
                   lat: c.lat,
                   lng: c.lng,
-                  accuracy_m: pos.coords.accuracy ?? null,
+                  accuracy_m: Math.round(f.accuracyM),
                   battery_pct: battery,
                   speed_kmh: m.speedKmh != null ? Math.round(m.speedKmh * 10) / 10 : null,
                   heading: m.heading,
@@ -487,9 +510,17 @@ export default function MapHome() {
       if (h == null || Number.isNaN(h)) return;
       const now = Date.now();
       const { t, v } = compassThrottle.current;
-      if (now - t > 200 && Math.abs(h - v) > 2) {
-        compassThrottle.current = { t: now, v: h };
-        setCompassHeading(h);
+      // Circular smoothing: blend a quarter of the shortest-path delta so
+      // hand jitter doesn't wobble the cone, then only re-render for
+      // changes a human would notice.
+      const prev = v === -999 ? h : v;
+      const delta = ((h - prev + 540) % 360) - 180;
+      const smoothed = (prev + delta * 0.25 + 360) % 360;
+      if (now - t > 150 && Math.abs(((smoothed - prev + 540) % 360) - 180) > 1.5) {
+        compassThrottle.current = { t: now, v: smoothed };
+        setCompassHeading(smoothed);
+      } else {
+        compassThrottle.current = { t, v: smoothed };
       }
     };
     window.addEventListener("deviceorientation", onOrient, true);
@@ -503,12 +534,24 @@ export default function MapHome() {
       mapRef.current?.getMap().easeTo({ bearing: 0, duration: 400 });
       return;
     }
+    let lastEase = 0;
     const onOrient = (e: DeviceOrientationEvent) => {
       // webkitCompassHeading (iOS) is true heading; alpha is 0=north CCW.
       const heading =
         (e as unknown as { webkitCompassHeading?: number }).webkitCompassHeading ??
         (e.alpha != null ? 360 - e.alpha : null);
-      if (heading != null) mapRef.current?.getMap().setBearing(heading);
+      if (heading == null) return;
+      // Ease the map instead of snapping it: slight head movements used
+      // to yank the whole world around. Throttled + minimum meaningful
+      // turn + a smooth 400ms glide.
+      const map = mapRef.current?.getMap();
+      if (!map) return;
+      const now = Date.now();
+      const current = map.getBearing();
+      const d = ((heading - current + 540) % 360) - 180;
+      if (now - lastEase < 250 || Math.abs(d) < 2) return;
+      lastEase = now;
+      map.easeTo({ bearing: current + d, duration: 400 });
     };
     window.addEventListener("deviceorientation", onOrient, true);
     return () => window.removeEventListener("deviceorientation", onOrient, true);
@@ -692,7 +735,18 @@ export default function MapHome() {
           // Subtract the map bearing so it stays geographically true when
           // compass mode rotates the map.
           const rawHeading = motion.heading ?? compassHeading;
-          const coneDeg = rawHeading != null ? rawHeading - mapBearing : null;
+          let coneDeg: number | null = null;
+          if (rawHeading != null) {
+            const target = rawHeading - mapBearing;
+            if (coneRot.current == null) {
+              coneRot.current = target;
+            } else {
+              // shortest-path accumulate (idempotent when target repeats)
+              const d = ((target - coneRot.current) % 360 + 540) % 360 - 180;
+              coneRot.current += d;
+            }
+            coneDeg = coneRot.current;
+          }
           const idle = (motion.speedKmh ?? 0) < 2;
           const kmh = motion.speedKmh != null ? Math.round(motion.speedKmh) : null;
           return (
@@ -705,10 +759,10 @@ export default function MapHome() {
               {coneDeg != null && (
                 <svg
                   viewBox="0 0 100 100"
-                  className="absolute left-1/2 bottom-0 w-[110px] h-[110px]"
+                  className="absolute left-1/2 bottom-0 w-[170px] h-[170px]"
                   style={{
                     transform: `translate(-50%, 50%) rotate(${coneDeg}deg)`,
-                    transition: "transform 0.5s ease-out",
+                    transition: "transform 0.8s cubic-bezier(0.25, 0.1, 0.25, 1)",
                   }}
                   aria-hidden
                 >

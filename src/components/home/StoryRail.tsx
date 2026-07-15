@@ -139,7 +139,7 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
       gs.push({
         id: "near-you",
         label: "Near you",
-        icon: <MapPin className="w-6 h-6 text-white" {...filledIconProps("MapPin", "#b91c1c")} />,
+        icon: <MapPin className="w-5 h-5 text-white" {...filledIconProps("MapPin", "#b91c1c")} />,
         ring: "ring-red-500",
         stories,
         seedIds: incidents.slice(0, 8).map((i) => `inc-${i.id}`),
@@ -151,7 +151,7 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
       gs.push({
         id: `tip-${tip.id}`,
         label: "Tip",
-        icon: <Icon className="w-6 h-6 text-white" {...filledIconProps(tip.icon, TIP_ENGRAVE)} />,
+        icon: <Icon className="w-5 h-5 text-white" {...filledIconProps(tip.icon, TIP_ENGRAVE)} />,
         ring: TONE_RING[tip.tone] || TONE_RING.violet,
         stories: [{ kind: "tip", id: tip.id, title: tip.title, body: tip.body, icon: tip.icon, tone: tip.tone }],
         seedIds: [`tip-${tip.id}`],
@@ -205,7 +205,8 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
 
   return (
     <>
-      <div className="flex gap-3 overflow-x-auto hide-scrollbar px-4 py-1 justify-center">
+      <div className="overflow-x-auto hide-scrollbar px-4 py-1">
+        <div className="flex gap-2.5 w-max mx-auto">
         {groups.map((g) => {
           const allSeen = g.seedIds.every((id) => viewed.has(id));
           return (
@@ -215,19 +216,19 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
               className="flex flex-col items-center gap-1 shrink-0 active:scale-95 transition-transform"
             >
               <div
-                className={`w-14 h-14 rounded-full flex items-center justify-center bg-dark-800 ring-2 ${
+                className={`w-12 h-12 rounded-full flex items-center justify-center bg-dark-800 ring-2 ${
                   allSeen ? "ring-dark-600" : g.ring
                 } ${g.id === "near-you" ? "bg-gradient-to-b from-red-600 to-red-800" : "bg-gradient-to-b from-primary-700 to-primary-900"}`}
               >
                 {g.icon}
                 {g.id === "near-you" && (
-                  <span className="absolute mt-9 ml-9 min-w-5 h-5 px-1 rounded-full bg-white text-red-600 text-[11px] font-bold flex items-center justify-center border-2 border-black/80">
+                  <span className="absolute mt-7 ml-7 min-w-4 h-4 px-1 rounded-full bg-white text-red-600 text-[11px] font-bold flex items-center justify-center border-2 border-black/80">
                     {g.stories.length}
                   </span>
                 )}
               </div>
               <span
-                className="text-[10px] font-semibold text-white max-w-[60px] truncate"
+                className="text-[10px] font-semibold text-white max-w-[56px] truncate"
                 style={{ textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
               >
                 {g.label}
@@ -235,6 +236,7 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
             </button>
           );
         })}
+        </div>
       </div>
 
       {viewerStart != null && (

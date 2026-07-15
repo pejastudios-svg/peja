@@ -86,6 +86,9 @@ public class SMLLocationService extends Service {
     private volatile long lastAtMs = 0L;
     private volatile double anchorLat = 0, anchorLng = 0;
     private volatile long anchorAtMs = 0L;
+    // Accuracy gate state: when the last GOOD (<=150m) fix arrived, so
+    // coarse network-provider fixes only pass while we're blind.
+    private volatile long lastGoodFixMs = 0L;
 
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -291,6 +294,17 @@ public class SMLLocationService extends Service {
     /** Throttle the three location sources to ~one write per 12s. */
     private void onNewLocation(Location location, String source) {
         long now = System.currentTimeMillis();
+
+        // ── accuracy gate: never ship cell-tower junk while GPS works.
+        // Coarse fixes (150-800m) pass only after 60s without a good one
+        // (stale-good beats fresh-garbage, but never go fully dark).
+        // Worse than 800m is never trusted. This is what stops watchers
+        // seeing the sharer teleport around weak-GPS neighborhoods. ──
+        float acc = location.hasAccuracy() ? location.getAccuracy() : 100f;
+        if (acc > 800f) return;
+        if (acc > 150f && now - lastGoodFixMs < 60_000L) return;
+        if (acc <= 150f) lastGoodFixMs = now;
+
         if (now - lastSentMs < 12_000L) return;
         lastSentMs = now;
 
