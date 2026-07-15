@@ -13,6 +13,7 @@ const navItems: { href: string; label: string; badge?: boolean }[] = [
   { href: "/admin", label: "Overview" },
   { href: "/admin/notifications", label: "Notifications", badge: true },
   { href: "/admin/users", label: "Users" },
+  { href: "/admin/circles", label: "Circles" },
   { href: "/admin/posts", label: "Posts" },
   { href: "/admin/sos", label: "SOS Alerts" },
   { href: "/admin/support", label: "Support" },
