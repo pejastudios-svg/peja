@@ -90,6 +90,7 @@ export default function MapHome() {
   const [compassOn, setCompassOn] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [sheetExpanded, setSheetExpanded] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [sheetLiveTop, setSheetLiveTop] = useState<number | null>(null);
   // ── motion: my own speed / heading / stillness, from the GPS watcher ──
   const [motion, setMotion] = useState<{ speedKmh: number | null; heading: number | null; stillSince: string | null }>({ speedKmh: null, heading: null, stillSince: null });
@@ -152,6 +153,29 @@ export default function MapHome() {
       cancelPress();
     }
   }, [cancelPress]);
+
+  // Unread notifications badge on the bell (same source as the feed
+  // header). Polls gently + refreshes on focus and circle mutations.
+  useEffect(() => {
+    if (!user) return;
+    let stop = false;
+    const fetchUnread = async () => {
+      const { count, error } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false);
+      if (!stop && !error) setUnreadCount(count || 0);
+    };
+    fetchUnread();
+    const t = setInterval(fetchUnread, 30_000);
+    window.addEventListener("focus", fetchUnread);
+    return () => {
+      stop = true;
+      clearInterval(t);
+      window.removeEventListener("focus", fetchUnread);
+    };
+  }, [user]);
 
   // Re-render every 30s so "Here for Xm" labels age in place.
   const [, setLabelTick] = useState(0);
@@ -988,10 +1012,18 @@ export default function MapHome() {
         </button>
         <button
           onClick={() => router.push("/notifications")}
-          className="pointer-events-auto w-11 h-11 rounded-full flex items-center justify-center border border-white/20 shadow-lg bg-dark-800 active:scale-90 transition-transform"
+          className="pointer-events-auto relative w-11 h-11 rounded-full flex items-center justify-center border border-white/20 shadow-lg bg-dark-800 active:scale-90 transition-transform"
           aria-label="Notifications"
         >
           <Bell className="w-5 h-5 text-dark-100" />
+          {unreadCount > 0 && (
+            <span
+              className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center text-[9px] font-bold rounded-full px-1"
+              style={{ background: "#ef4444", color: "white", boxShadow: "0 0 6px rgba(239,68,68,0.5)" }}
+            >
+              {unreadCount > 99 ? "99+" : unreadCount}
+            </span>
+          )}
         </button>
       </div>
 
