@@ -7,7 +7,7 @@ import { CATEGORIES } from "@/lib/types";
 import { tipsForToday } from "@/lib/safetyTips";
 import { StoryViewer, type Story } from "./StoryViewer";
 import {
-  BatteryCharging, Bike, Bus, Car, Compass, Footprints, Home, KeyRound,
+  BatteryCharging, Bike, Bus, Car, ChevronDown, ChevronUp, Compass, Footprints, Home, KeyRound,
   Lock, MapPin, PhoneCall, ShieldAlert, ShoppingBag, Smartphone, UserCheck, Users,
 } from "lucide-react";
 import type { NearbyIncident } from "./CircleSheet";
@@ -83,6 +83,15 @@ function markViewed(ids: string[]) {
 export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
   const [media, setMedia] = useState<Record<string, { url: string; type: string; confirmations: number }>>({});
   const [viewerStart, setViewerStart] = useState<number | null>(null);
+  // Minimized mode: the circles stack into a compact cluster. Base state
+  // is open; the choice sticks per device.
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("peja-stories-collapsed") === "1"; } catch { return false; }
+  });
+  const setCollapsedPersist = (v: boolean) => {
+    setCollapsed(v);
+    try { localStorage.setItem("peja-stories-collapsed", v ? "1" : "0"); } catch {}
+  };
   const [viewed, setViewed] = useState<Set<string>>(() =>
     typeof window !== "undefined" ? readViewed() : new Set()
   );
@@ -203,17 +212,54 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
     setViewed((prev) => new Set([...prev, ...g.seedIds]));
   };
 
+  if (collapsed) {
+    const stack = groups.slice(0, 3);
+    const anyUnseen = groups.some((g) => !g.seedIds.every((id) => viewed.has(id)));
+    return (
+      <div className="flex justify-end px-4 py-1">
+        <button
+          onClick={() => setCollapsedPersist(false)}
+          aria-label="Show stories"
+          className="beacon-pop flex items-center gap-1.5 rounded-full pl-1.5 pr-2.5 py-1.5 active:scale-95 transition-transform"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+        >
+          <div className="flex items-center">
+            {stack.map((g, i) => (
+              <div
+                key={g.id}
+                className={`w-8 h-8 rounded-full flex items-center justify-center ring-2 border border-black/40 ${
+                  g.seedIds.every((id) => viewed.has(id)) ? "ring-dark-600" : g.ring
+                } ${g.id === "near-you" ? "bg-gradient-to-b from-red-600 to-red-800" : "bg-gradient-to-b from-primary-700 to-primary-900"} ${
+                  i > 0 ? "-ml-3.5" : ""
+                }`}
+                style={{ zIndex: stack.length - i }}
+              >
+                <span className="scale-[0.8] flex">{g.icon}</span>
+              </div>
+            ))}
+          </div>
+          {groups.length > stack.length && (
+            <span className="text-[11px] font-bold text-white">+{groups.length - stack.length}</span>
+          )}
+          {anyUnseen && <span className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+          <ChevronDown className="w-4 h-4 text-white/80" />
+        </button>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="overflow-x-auto hide-scrollbar px-4 py-1">
         <div className="flex gap-2.5 w-max mx-auto">
-        {groups.map((g) => {
+        {groups.map((g, gi) => {
           const allSeen = g.seedIds.every((id) => viewed.has(id));
           return (
             <button
               key={g.id}
               onClick={() => openGroup(g, groups.indexOf(g))}
-              className="flex flex-col items-center gap-1 shrink-0 active:scale-95 transition-transform"
+              className="beacon-pop flex flex-col items-center gap-1 shrink-0 active:scale-95 transition-transform"
+              style={{ animationDelay: `${Math.min(gi * 0.04, 0.3)}s` }}
             >
               <div
                 className={`w-12 h-12 rounded-full flex items-center justify-center bg-dark-800 ring-2 ${
@@ -236,6 +282,14 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
             </button>
           );
         })}
+        <button
+          onClick={() => setCollapsedPersist(true)}
+          aria-label="Minimize stories"
+          className="shrink-0 self-start mt-2.5 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+          style={{ background: "rgba(0,0,0,0.45)" }}
+        >
+          <ChevronUp className="w-4 h-4 text-white/80" />
+        </button>
         </div>
       </div>
 

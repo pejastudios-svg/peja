@@ -221,7 +221,13 @@ export default function MapHome() {
             centerRef.current = c;
             setCenter(c);
             centerOnUserOnce(c.lat, c.lng);
-            try { localStorage.setItem("peja-map-center", JSON.stringify(c)); } catch {}
+            try {
+              localStorage.setItem("peja-map-center", JSON.stringify(c));
+              // Live proof that location permission works (the welcome
+              // card reads this instead of guessing from the flaky
+              // Permissions API, which Safari half-supports).
+              sessionStorage.setItem("peja-gps-ok", String(Date.now()));
+            } catch {}
 
             // Motion engine consumes the FILTERED coordinates so speed
             // and stillness are computed from clean positions.

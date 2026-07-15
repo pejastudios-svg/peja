@@ -86,39 +86,42 @@ export function WelcomeSequence() {
     setOpen(false);
   };
 
-  // Watch the permission live while the card is open: already granted
-  // shows the check immediately, and flipping it on in settings flips
-  // the card to granted the moment the user returns.
+  // Ground truth beats API guessing: the MAP behind this card is already
+  // running GPS. Every accepted fix stamps sessionStorage("peja-gps-ok"),
+  // so "is location working" is a simple freshness check that works on
+  // every browser (Safari half-supports the Permissions API, which is why
+  // this card used to hang on "waiting" with location fully on).
+  const gpsAliveRecently = () => {
+    try {
+      const t = Number(sessionStorage.getItem("peja-gps-ok") || 0);
+      return Date.now() - t < 90_000;
+    } catch {
+      return false;
+    }
+  };
+
   useEffect(() => {
     if (!open || step !== 1) return;
-    let status: PermissionStatus | null = null;
-    const apply = (state: string) => {
-      if (state === "granted") setLocState("granted");
+    const check = () => {
+      if (gpsAliveRecently()) {
+        setLocState("granted");
+        return true;
+      }
+      return false;
     };
+    if (check()) return;
+    // Secondary: the Permissions API where it exists.
     try {
       navigator.permissions
         ?.query({ name: "geolocation" as PermissionName })
         .then((p) => {
-          status = p;
-          apply(p.state);
-          p.onchange = () => apply(p.state);
+          if (p.state === "granted") setLocState("granted");
         })
         .catch(() => {});
     } catch {}
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
-      try {
-        navigator.permissions
-          ?.query({ name: "geolocation" as PermissionName })
-          .then((p) => apply(p.state))
-          .catch(() => {});
-      } catch {}
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      if (status) status.onchange = null;
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    // Keep watching while the card is up: the map's next fix flips us.
+    const t = setInterval(check, 1500);
+    return () => clearInterval(t);
   }, [open, step]);
 
   const requestLocation = async () => {
@@ -136,9 +139,13 @@ export function WelcomeSequence() {
     navigator.geolocation.getCurrentPosition(
       () => setLocState("granted"),
       async () => {
-        // A failed FIX is not a missing PERMISSION: indoors or on a slow
-        // GPS the position can time out while location is fully on. The
-        // card's job is permission, so check that before claiming denial.
+        // A failed FIX is not a missing PERMISSION. Check the map's
+        // heartbeat first, then the Permissions API, before claiming
+        // anything is blocked.
+        if (gpsAliveRecently()) {
+          setLocState("granted");
+          return;
+        }
         try {
           const p = await navigator.permissions?.query({ name: "geolocation" as PermissionName });
           setLocState(p?.state === "granted" ? "granted" : "denied");
@@ -146,7 +153,9 @@ export function WelcomeSequence() {
           setLocState("denied");
         }
       },
-      { enableHighAccuracy: false, timeout: 12_000 }
+      // maximumAge Infinity: ANY cached position proves permission - it
+      // resolves instantly instead of waiting for a fresh (slow) fix.
+      { enableHighAccuracy: false, timeout: 20_000, maximumAge: Infinity }
     );
   };
 
