@@ -77,6 +77,16 @@ public class SMLLocationService extends Service {
     // while tracking is still alive).
     private boolean tracking = false;
 
+    // Motion state, mirroring the web tracker (src/lib/motion.ts) so native
+    // and web SML sessions report identical semantics:
+    //  - speed: chipset first (m/s), derived from successive fixes second
+    //  - stillness: anchor point; moving >30m replants it; still_since is
+    //    simply the anchor's timestamp (viewers only show it after 60s)
+    private volatile double lastLat = 0, lastLng = 0;
+    private volatile long lastAtMs = 0L;
+    private volatile double anchorLat = 0, anchorLng = 0;
+    private volatile long anchorAtMs = 0L;
+
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)
@@ -192,11 +202,7 @@ public class SMLLocationService extends Service {
             @Override
             public void onLocationResult(LocationResult result) {
                 if (result == null || result.getLastLocation() == null) return;
-                onNewLocation(
-                        result.getLastLocation().getLatitude(),
-                        result.getLastLocation().getLongitude(),
-                        "fused"
-                );
+                onNewLocation(result.getLastLocation(), "fused");
             }
         };
 
@@ -259,7 +265,7 @@ public class SMLLocationService extends Service {
                 best = (gps != null) ? gps : net;
             }
             if (best != null) {
-                onNewLocation(best.getLatitude(), best.getLongitude(), "last-known");
+                onNewLocation(best, "last-known");
             }
         } catch (SecurityException e) {
             Log.e(TAG, "Location permission denied (last-known)", e);
@@ -273,7 +279,7 @@ public class SMLLocationService extends Service {
         SimpleLocationListener(String source) { this.source = source; }
         @Override public void onLocationChanged(Location location) {
             if (location != null) {
-                onNewLocation(location.getLatitude(), location.getLongitude(), source);
+                onNewLocation(location, source);
             }
         }
         // Required no-op overrides for older API levels.
@@ -283,28 +289,80 @@ public class SMLLocationService extends Service {
     }
 
     /** Throttle the three location sources to ~one write per 12s. */
-    private void onNewLocation(double lat, double lng, String source) {
+    private void onNewLocation(Location location, String source) {
         long now = System.currentTimeMillis();
         if (now - lastSentMs < 12_000L) return;
         lastSentMs = now;
-        Log.d(TAG, "SML location (" + source + "): " + lat + ", " + lng);
-        updateCheckinLocation(lat, lng);
+
+        double lat = location.getLatitude();
+        double lng = location.getLongitude();
+
+        // A cached fix (last-known) can carry an hours-old speed; only trust
+        // motion data from fixes taken in the last 30s.
+        boolean freshFix = now - location.getTime() < 30_000L;
+
+        // Speed: chipset value first (m/s -> km/h), derived second.
+        Double speedKmh = null;
+        if (freshFix && location.hasSpeed() && location.getSpeed() >= 0f) {
+            speedKmh = location.getSpeed() * 3.6d;
+        } else if (freshFix && lastAtMs > 0L) {
+            double dt = (now - lastAtMs) / 1000.0;
+            if (dt >= 1 && dt <= 60 && location.getAccuracy() < 100f) {
+                speedKmh = haversineM(lastLat, lastLng, lat, lng) / dt * 3.6d;
+            }
+        }
+        if (speedKmh != null && speedKmh > 300d) speedKmh = null; // GPS teleport
+        lastLat = lat;
+        lastLng = lng;
+        lastAtMs = now;
+
+        // Stillness anchor: replant after ~30m of real movement.
+        if (anchorAtMs == 0L || haversineM(anchorLat, anchorLng, lat, lng) > 30d) {
+            anchorLat = lat;
+            anchorLng = lng;
+            anchorAtMs = now;
+        }
+
+        Log.d(TAG, "SML location (" + source + "): " + lat + ", " + lng
+                + (speedKmh != null ? " @ " + Math.round(speedKmh) + " km/h" : ""));
+        updateCheckinLocation(lat, lng, speedKmh, anchorAtMs);
     }
 
-    private void updateCheckinLocation(double lat, double lng) {
+    private static double haversineM(double lat1, double lng1, double lat2, double lng2) {
+        double r = 6371000d;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+        return 2 * r * Math.asin(Math.sqrt(a));
+    }
+
+    /** ISO-8601 for an epoch, matching the format the PATCH already uses. */
+    private static String isoTimestamp(long epochMs) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return Instant.ofEpochMilli(epochMs).toString();
+        }
+        java.text.SimpleDateFormat fmt = new java.text.SimpleDateFormat(
+                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.US);
+        fmt.setTimeZone(java.util.TimeZone.getTimeZone("UTC"));
+        return fmt.format(new java.util.Date(epochMs));
+    }
+
+    private void updateCheckinLocation(double lat, double lng, Double speedKmh, long stillSinceMs) {
         new Thread(() -> {
             try {
-                String timestamp;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    timestamp = Instant.now().toString();
-                } else {
-                    timestamp = new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
-                            java.util.Locale.US).format(new java.util.Date());
-                }
+                String timestamp = isoTimestamp(System.currentTimeMillis());
+                // speed_kmh rounded to one decimal; null when unknown.
+                String speedStr = speedKmh != null
+                        ? String.format(java.util.Locale.US, "%.1f", speedKmh)
+                        : "null";
 
                 String json = "{" +
                         "\"latitude\":" + lat + "," +
                         "\"longitude\":" + lng + "," +
+                        "\"speed_kmh\":" + speedStr + "," +
+                        "\"still_since\":\"" + isoTimestamp(stillSinceMs) + "\"," +
                         "\"location_updated_at\":\"" + timestamp + "\"," +
                         "\"updated_at\":\"" + timestamp + "\"" +
                         "}";
