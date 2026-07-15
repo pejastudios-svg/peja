@@ -51,6 +51,24 @@ export default function MapHome() {
   const mapRef = useRef<MapRef>(null);
 
   const [center, setCenter] = useState<{ lat: number; lng: number } | null>(null);
+  // Open the map where the user actually IS: last session's center from
+  // localStorage immediately, then a one-time flyTo on the first live fix.
+  const [initialView] = useState<{ lat: number; lng: number; known: boolean }>(() => {
+    try {
+      const v = localStorage.getItem("peja-map-center");
+      if (v) {
+        const p = JSON.parse(v);
+        if (Number.isFinite(p?.lat) && Number.isFinite(p?.lng)) return { lat: p.lat, lng: p.lng, known: true };
+      }
+    } catch {}
+    return { ...FALLBACK, known: false };
+  });
+  const didCenterOnUser = useRef(false);
+  const centerOnUserOnce = useCallback((lat: number, lng: number) => {
+    if (didCenterOnUser.current) return;
+    didCenterOnUser.current = true;
+    mapRef.current?.flyTo({ center: [lng, lat], zoom: 16, duration: 700 });
+  }, []);
   // Always-fresh copy of `center` for use inside the load() closure (which
   // is memoized on [user] and otherwise can't see live position updates).
   const centerRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -157,7 +175,7 @@ export default function MapHome() {
         .select("lat, lng")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (!cancelled && data) { const c = { lat: data.lat, lng: data.lng }; centerRef.current = c; setCenter(c); }
+      if (!cancelled && data) { const c = { lat: data.lat, lng: data.lng }; centerRef.current = c; setCenter(c); centerOnUserOnce(c.lat, c.lng); }
     };
 
     // watchPosition (foreground only - this screen unmounts on nav away):
@@ -178,6 +196,8 @@ export default function MapHome() {
             const c = { lat: f.lat, lng: f.lng };
             centerRef.current = c;
             setCenter(c);
+            centerOnUserOnce(c.lat, c.lng);
+            try { localStorage.setItem("peja-map-center", JSON.stringify(c)); } catch {}
 
             // Motion engine consumes the FILTERED coordinates so speed
             // and stillness are computed from clean positions.
@@ -503,28 +523,38 @@ export default function MapHome() {
   // stays silent until the user grants motion permission via the compass
   // button; the cone then falls back to GPS course while driving.
   useEffect(() => {
+    // Android's plain deviceorientation is often RELATIVE (arbitrary zero,
+    // drifts) - that's why turns looked wrong. deviceorientationabsolute
+    // gives a true compass frame; iOS keeps webkitCompassHeading. Devices
+    // with neither show no beam while standing (GPS course covers moving).
+    const useAbs = "ondeviceorientationabsolute" in window;
+    const evName = useAbs ? "deviceorientationabsolute" : "deviceorientation";
     const onOrient = (e: DeviceOrientationEvent) => {
-      const h =
-        (e as unknown as { webkitCompassHeading?: number }).webkitCompassHeading ??
-        (e.alpha != null ? 360 - e.alpha : null);
+      const webkit = (e as unknown as { webkitCompassHeading?: number }).webkitCompassHeading;
+      let h: number | null = null;
+      if (webkit != null && !Number.isNaN(webkit)) {
+        h = webkit;
+      } else if (e.alpha != null && (useAbs || e.absolute === true)) {
+        // alpha is CCW from north; compensate for screen rotation.
+        const ang = typeof screen !== "undefined" && screen.orientation ? screen.orientation.angle || 0 : 0;
+        h = (360 - e.alpha + ang + 360) % 360;
+      }
       if (h == null || Number.isNaN(h)) return;
       const now = Date.now();
       const { t, v } = compassThrottle.current;
-      // Circular smoothing: blend a quarter of the shortest-path delta so
-      // hand jitter doesn't wobble the cone, then only re-render for
-      // changes a human would notice.
+      // Light circular smoothing kills hand jitter without adding lag.
       const prev = v === -999 ? h : v;
       const delta = ((h - prev + 540) % 360) - 180;
-      const smoothed = (prev + delta * 0.25 + 360) % 360;
-      if (now - t > 150 && Math.abs(((smoothed - prev + 540) % 360) - 180) > 1.5) {
+      const smoothed = (prev + delta * 0.35 + 360) % 360;
+      if (now - t > 100 && Math.abs(((smoothed - v + 540) % 360) - 180) > 1) {
         compassThrottle.current = { t: now, v: smoothed };
         setCompassHeading(smoothed);
       } else {
         compassThrottle.current = { t, v: smoothed };
       }
     };
-    window.addEventListener("deviceorientation", onOrient, true);
-    return () => window.removeEventListener("deviceorientation", onOrient, true);
+    window.addEventListener(evName, onOrient, true);
+    return () => window.removeEventListener(evName, onOrient, true);
   }, []);
 
   // ── Compass mode: rotate the map to match which way the phone points.
@@ -699,7 +729,6 @@ export default function MapHome() {
     visibility: topFade > 0.97 ? ("hidden" as const) : ("visible" as const),
   };
 
-  const view = center ?? FALLBACK;
   const initials = (user?.full_name || "?")
     .split(/\s+/)
     .map((w) => w[0])
@@ -716,7 +745,7 @@ export default function MapHome() {
     <div className="fixed inset-0 bg-dark-950">
       <MapGL
         ref={mapRef}
-        initialViewState={{ latitude: view.lat, longitude: view.lng, zoom: 13 }}
+        initialViewState={{ latitude: initialView.lat, longitude: initialView.lng, zoom: initialView.known ? 15 : 12 }}
         mapStyle={MAP_STYLE}
         attributionControl={false}
         style={{ width: "100%", height: "100%" }}
@@ -755,29 +784,30 @@ export default function MapHome() {
               <style>{`@keyframes ownIdleFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }`}</style>
               {/* accuracy/ambient halo behind everything */}
               <div className="absolute bottom-[-14px] w-20 h-20 rounded-full bg-primary-500/15 beacon-radar-ring" />
-              {/* radar cone: where you're facing, rotates as you turn */}
-              {coneDeg != null && (
-                <svg
-                  viewBox="0 0 100 100"
-                  className="absolute left-1/2 bottom-0 w-[170px] h-[170px]"
-                  style={{
-                    transform: `translate(-50%, 50%) rotate(${coneDeg}deg)`,
-                    transition: "transform 0.8s cubic-bezier(0.25, 0.1, 0.25, 1)",
-                  }}
-                  aria-hidden
-                >
-                  <defs>
-                    <radialGradient id="peja-cone" cx="50%" cy="50%" r="50%">
-                      <stop offset="0%" stopColor="rgba(139,92,246,0.55)" />
-                      <stop offset="70%" stopColor="rgba(139,92,246,0.18)" />
-                      <stop offset="100%" stopColor="rgba(139,92,246,0)" />
-                    </radialGradient>
-                  </defs>
-                  <path d="M50 50 L30 5 A49 49 0 0 1 70 5 Z" fill="url(#peja-cone)" />
-                </svg>
-              )}
               <div className="relative" style={idle ? { animation: "ownIdleFloat 3.4s ease-in-out infinite" } : undefined}>
-                <div className="w-[52px] h-[52px] rounded-2xl border-[3px] border-white bg-primary-600 shadow-[0_4px_16px_rgba(0,0,0,0.4)] flex items-center justify-center overflow-hidden">
+                {/* view beam (Google Maps style): emanates from the CENTER
+                    of your avatar, behind it, rotating as you turn */}
+                {coneDeg != null && (
+                  <svg
+                    viewBox="0 0 100 100"
+                    className="absolute left-1/2 top-1/2 w-[200px] h-[200px] pointer-events-none"
+                    style={{
+                      transform: `translate(-50%, -50%) rotate(${coneDeg}deg)`,
+                      transition: "transform 0.35s ease-out",
+                    }}
+                    aria-hidden
+                  >
+                    <defs>
+                      <radialGradient id="peja-cone" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%" stopColor="rgba(139,92,246,0.55)" />
+                        <stop offset="55%" stopColor="rgba(139,92,246,0.22)" />
+                        <stop offset="100%" stopColor="rgba(139,92,246,0)" />
+                      </radialGradient>
+                    </defs>
+                    <path d="M50 50 L26 4 A52 52 0 0 1 74 4 Z" fill="url(#peja-cone)" />
+                  </svg>
+                )}
+                <div className="relative z-10 w-[52px] h-[52px] rounded-2xl border-[3px] border-white bg-primary-600 shadow-[0_4px_16px_rgba(0,0,0,0.4)] flex items-center justify-center overflow-hidden">
                   {user?.avatar_url ? (
                     <AvatarImage src={user.avatar_url} wrapperClassName="w-full h-full" />
                   ) : (
@@ -786,7 +816,7 @@ export default function MapHome() {
                 </div>
                 {/* tail: makes the bubble point at the exact spot */}
                 <div
-                  className="absolute left-1/2 -translate-x-1/2 -bottom-[7px] w-3.5 h-3.5 rotate-45 bg-primary-600 border-b-[3px] border-r-[3px] border-white"
+                  className="absolute z-10 left-1/2 -translate-x-1/2 -bottom-[7px] w-3.5 h-3.5 rotate-45 bg-primary-600 border-b-[3px] border-r-[3px] border-white"
                   style={{ borderBottomRightRadius: 4 }}
                 />
               </div>

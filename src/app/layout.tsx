@@ -42,6 +42,8 @@ import { ThemeProvider } from "@/context/ThemeContext";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { OutboxBootstrap } from "@/components/system/OutboxBootstrap";
 import { EmergencyContactsBootstrap } from "@/components/system/EmergencyContactsBootstrap";
+import { AmbientTrackerBootstrap } from "@/components/system/AmbientTrackerBootstrap";
+import { AndroidInstallBanner } from "@/components/system/AndroidInstallBanner";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -204,6 +206,8 @@ export default function RootLayout({
                         <ChatBootstrap />
                         <OutboxBootstrap />
                         <EmergencyContactsBootstrap />
+                        <AmbientTrackerBootstrap />
+                        <AndroidInstallBanner />
                         <PresenceCapture />
                         <AchievementCelebration />
                         <AnalyticsTracker />

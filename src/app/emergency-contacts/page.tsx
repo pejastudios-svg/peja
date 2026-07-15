@@ -514,7 +514,7 @@ export default function EmergencyContactsPage() {
   if (authLoading || loading) {
     return (
       <div className="min-h-screen pb-20">
-        <Header variant="back" title="Your Community" onBack={() => router.back()} />
+        <Header variant="back" title="Your people" onBack={() => router.back()} />
         <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6 space-y-3">
           <Skeleton className="h-16 w-full rounded-2xl" />
           {Array.from({ length: 3 }).map((_, i) => (
@@ -530,7 +530,7 @@ export default function EmergencyContactsPage() {
 
   return (
     <div className="min-h-screen pb-20">
-      <Header variant="back" title="Your Community" onBack={() => router.back()} />
+      <Header variant="back" title="Your people" onBack={() => router.back()} />
 
       <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6">
         {/* Safety Check-In */}

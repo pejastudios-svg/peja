@@ -26,6 +26,10 @@ const HARD_ACCURACY_M = 800;
 // After this long with no accepted fix, accept a degraded (soft-gated)
 // fix rather than showing nothing.
 const BLIND_MS = 60_000;
+// Desperation valve: after this long fully blind, even a hard-gated
+// coarse fix passes (a safety app must never go silent while the phone
+// still knows SOMETHING). 5km+ claims stay out - those are noise.
+const HARD_BLIND_MS = 180_000;
 // Implied speed above this is a teleport, pending confirmation.
 const TELEPORT_KMH = 300;
 // A pending teleport is confirmed when the next fix lands within this
@@ -57,8 +61,17 @@ export function createPositionFilter() {
     const acc = pos.coords.accuracy ?? 100;
     const now = pos.timestamp || Date.now();
 
-    // Never trust the worst junk (distant cell towers).
-    if (acc > HARD_ACCURACY_M) return null;
+    // Never trust the worst junk (distant cell towers)... unless we've
+    // been fully blind for minutes. Then a coarse fix with HONEST
+    // accuracy beats silence: reset the estimate (blending stale + junk
+    // helps no one) and mark it approximate.
+    if (acc > HARD_ACCURACY_M) {
+      if (Date.now() - lastAcceptedAt < HARD_BLIND_MS || acc > 5000) return null;
+      est = { lat, lng, varM2: acc * acc, t: now };
+      lastAcceptedAt = Date.now();
+      pendingJump = null;
+      return { lat, lng, accuracyM: acc, approximate: true };
+    }
 
     const blind = Date.now() - lastAcceptedAt > BLIND_MS;
 

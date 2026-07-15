@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { QuickAddSheet } from "./QuickAddSheet";
 import { MapPin, ShieldCheck, Users } from "lucide-react";
+import DeviceSettings from "@/lib/deviceSettings";
+import { isCapacitor } from "@/lib/ambientTracker";
 
 // New users land on a MAP they don't yet understand and an EMPTY circle.
 // A coach-mark tour of empty space teaches nothing, so instead: three
@@ -84,20 +86,48 @@ export function WelcomeSequence() {
     setOpen(false);
   };
 
-  // If the browser already granted location, show the check immediately.
+  // Watch the permission live while the card is open: already granted
+  // shows the check immediately, and flipping it on in settings flips
+  // the card to granted the moment the user returns.
   useEffect(() => {
     if (!open || step !== 1) return;
+    let status: PermissionStatus | null = null;
+    const apply = (state: string) => {
+      if (state === "granted") setLocState("granted");
+    };
     try {
       navigator.permissions
         ?.query({ name: "geolocation" as PermissionName })
         .then((p) => {
-          if (p.state === "granted") setLocState("granted");
+          status = p;
+          apply(p.state);
+          p.onchange = () => apply(p.state);
         })
         .catch(() => {});
     } catch {}
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        navigator.permissions
+          ?.query({ name: "geolocation" as PermissionName })
+          .then((p) => apply(p.state))
+          .catch(() => {});
+      } catch {}
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      if (status) status.onchange = null;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [open, step]);
 
-  const requestLocation = () => {
+  const requestLocation = async () => {
+    // Denied on the Android app: the browser prompt won't reappear, so
+    // take them straight to the app's permission settings instead.
+    if (locState === "denied" && isCapacitor()) {
+      try { await DeviceSettings.openAppSettings(); } catch {}
+      return;
+    }
     if (!navigator.geolocation) {
       setLocState("denied");
       return;
@@ -105,8 +135,18 @@ export function WelcomeSequence() {
     setLocState("checking");
     navigator.geolocation.getCurrentPosition(
       () => setLocState("granted"),
-      () => setLocState("denied"),
-      { enableHighAccuracy: false, timeout: 15_000 }
+      async () => {
+        // A failed FIX is not a missing PERMISSION: indoors or on a slow
+        // GPS the position can time out while location is fully on. The
+        // card's job is permission, so check that before claiming denial.
+        try {
+          const p = await navigator.permissions?.query({ name: "geolocation" as PermissionName });
+          setLocState(p?.state === "granted" ? "granted" : "denied");
+        } catch {
+          setLocState("denied");
+        }
+      },
+      { enableHighAccuracy: false, timeout: 12_000 }
     );
   };
 
@@ -133,7 +173,7 @@ export function WelcomeSequence() {
         locState === "granted"
           ? "Your people can find you in an emergency. You control who sees you, person by person."
           : locState === "denied"
-            ? "Location looks blocked. Allow it in your phone or browser settings, or skip for now and turn it on later."
+            ? "Location is blocked for peja. Allow it in settings and this will turn green by itself."
             : "The dot in the middle is you. Hold the SOS button any time you need help, and turn on location so your people can find you in an emergency.",
       cta:
         locState === "granted"
@@ -141,7 +181,9 @@ export function WelcomeSequence() {
           : locState === "checking"
             ? "Waiting for permission..."
             : locState === "denied"
-              ? "Try again"
+              ? isCapacitor()
+                ? "Open settings"
+                : "Try again"
               : "Turn on location",
       onCta: locState === "granted" ? () => setStep(2) : requestLocation,
       ctaDisabled: locState === "checking",

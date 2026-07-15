@@ -107,6 +107,7 @@ export default function NotificationsPage() {
     groupName: string;
     fromName: string;
     notificationId: string;
+    status: "loading" | "pending" | "accepted" | "declined" | "missing";
   } | null>(null);
   const [groupResponding, setGroupResponding] = useState(false);
   const [responding, setResponding] = useState<"accept" | "decline" | null>(null);
@@ -327,12 +328,29 @@ export default function NotificationsPage() {
     }
 
     if (data.type === "group_invite" && data.member_row_id) {
+      const memberRowId = data.member_row_id;
       setGroupInvite({
-        memberRowId: data.member_row_id,
+        memberRowId,
         groupName: data.group_name || "a circle",
         fromName: data.from_name || "Someone",
         notificationId: notification.id,
+        status: "loading",
       });
+      // An old invite may already be handled: fetch the real state so the
+      // modal never shows Accept/Decline for something already answered.
+      (async () => {
+        const { data: row } = await supabase
+          .from("contact_group_members")
+          .select("status")
+          .eq("id", memberRowId)
+          .maybeSingle();
+        setGroupInvite((prev) => {
+          if (!prev || prev.memberRowId !== memberRowId) return prev;
+          if (!row) return { ...prev, status: "missing" };
+          const st = row.status as "pending" | "accepted" | "declined";
+          return { ...prev, status: st };
+        });
+      })();
       return;
     }
 
@@ -485,7 +503,7 @@ export default function NotificationsPage() {
       }
       handleMarkAsRead(groupInvite.notificationId);
       toast.success(accept ? `You're in ${groupInvite.groupName}` : "Declined");
-      setGroupInvite(null);
+      setGroupInvite((prev) => (prev ? { ...prev, status: accept ? "accepted" : "declined" } : prev));
     } finally {
       setGroupResponding(false);
     }
@@ -809,27 +827,51 @@ export default function NotificationsPage() {
         >
           {groupInvite && (
             <div className="space-y-4">
-              <p className="text-sm text-dark-300 leading-relaxed">
-                {groupInvite.fromName} added you to their{" "}
-                <span className="font-semibold text-dark-100">{groupInvite.groupName}</span> circle.
-                Accepting also makes you their emergency contact if you aren&apos;t already.
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleGroupInviteResponse(false)}
-                  disabled={groupResponding}
-                  className="flex-1 py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
-                >
-                  Decline
-                </button>
-                <button
-                  onClick={() => handleGroupInviteResponse(true)}
-                  disabled={groupResponding}
-                  className="flex-1 py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
-                >
-                  Accept
-                </button>
-              </div>
+              {groupInvite.status === "loading" ? (
+                <div className="flex justify-center py-6">
+                  <PejaSpinner className="w-6 h-6" />
+                </div>
+              ) : groupInvite.status === "pending" ? (
+                <>
+                  <p className="text-sm text-dark-300 leading-relaxed">
+                    {groupInvite.fromName} added you to their{" "}
+                    <span className="font-semibold text-dark-100">{groupInvite.groupName}</span> circle.
+                    Accepting also makes you their emergency contact if you aren&apos;t already.
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => handleGroupInviteResponse(false)}
+                      disabled={groupResponding}
+                      className="flex-1 py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+                    >
+                      Decline
+                    </button>
+                    <button
+                      onClick={() => handleGroupInviteResponse(true)}
+                      disabled={groupResponding}
+                      className="flex-1 py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+                    >
+                      Accept
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-dark-300 leading-relaxed">
+                    {groupInvite.status === "accepted"
+                      ? `You're in ${groupInvite.groupName}. You can see each other on the map.`
+                      : groupInvite.status === "declined"
+                        ? "You declined this invite."
+                        : "This invite is no longer available."}
+                  </p>
+                  <button
+                    onClick={() => setGroupInvite(null)}
+                    className="w-full py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform"
+                  >
+                    Close
+                  </button>
+                </>
+              )}
             </div>
           )}
         </Modal>

@@ -11,6 +11,8 @@ import { Modal } from "@/components/ui/Modal";
 import { InvitePanel } from "@/components/community/InvitePanel";
 import { QuickAddSheet } from "@/components/community/QuickAddSheet";
 import { AddToCircleModal } from "@/components/community/AddToCircleModal";
+import { authFetchJson } from "@/lib/authFetch";
+import { useToast } from "@/context/ToastContext";
 import { CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { AlertTriangle, ChevronRight, ChevronUp, Plus, Radio, User, UserPlus, Users } from "lucide-react";
@@ -76,6 +78,32 @@ export function CircleSheet({
   const [showAll, setShowAll] = useState(false);
   const [openCircle, setOpenCircle] = useState<string | null>(null);
   const [addToCircle, setAddToCircle] = useState<{ id: string; name: string; memberIds: string[]; owned: boolean } | null>(null);
+  const toast = useToast();
+  // Create a circle right from the map sheet, then flow into inviting.
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newCircleName, setNewCircleName] = useState("");
+  const [creating, setCreating] = useState(false);
+  const createCircle = async () => {
+    const name = newCircleName.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      const { res, data } = await authFetchJson("/api/community/groups", {
+        method: "POST",
+        body: JSON.stringify({ action: "create", name }),
+      });
+      if (!res.ok || !data?.group?.id) {
+        toast.warning(data?.error || "Couldn't create the circle");
+        return;
+      }
+      setCreateOpen(false);
+      setNewCircleName("");
+      // Straight into inviting people to the new circle.
+      setAddToCircle({ id: data.group.id, name, memberIds: [], owned: true });
+    } finally {
+      setCreating(false);
+    }
+  };
   const [dragY, setDragY] = useState<number | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ startY: number; startT: number; baseOffset: number } | null>(null);
@@ -335,7 +363,7 @@ export function CircleSheet({
           </div>
 
           <p className="text-xs font-bold uppercase tracking-wider text-dark-500 mb-2 mt-1">
-            Your circle
+            Your people
           </p>
           {members.length === 0 ? (
             <button
@@ -364,11 +392,20 @@ export function CircleSheet({
           )}
 
           {/* my circles, expandable in place - every member pingable */}
-          {circles.length > 0 && (
+          {(
             <>
               <p className="text-xs font-bold uppercase tracking-wider text-dark-500 mb-2 mt-5">
                 Your circles
               </p>
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="w-full flex items-center gap-3 p-2.5 mb-1.5 rounded-2xl border border-dashed border-primary-500/50 active:scale-[0.985] transition-transform"
+              >
+                <div className="w-9 h-9 rounded-full border border-dashed border-primary-500/60 flex items-center justify-center shrink-0">
+                  <Plus className="beacon-accent-text w-4 h-4" />
+                </div>
+                <p className="flex-1 text-left text-sm font-medium text-dark-300">New circle</p>
+              </button>
               <div className="space-y-1.5">
                 {circles.map((c) => (
                   <div key={c.id}>
@@ -447,6 +484,30 @@ export function CircleSheet({
 
       <Modal isOpen={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite your people">
         <InvitePanel />
+      </Modal>
+      <Modal isOpen={createOpen} onClose={() => { setCreateOpen(false); setNewCircleName(""); }} title="New circle">
+        <div className="space-y-4">
+          <p className="text-sm text-dark-400">
+            Name your circle, then pick the people who belong in it.
+          </p>
+          <input
+            type="text"
+            value={newCircleName}
+            onChange={(e) => setNewCircleName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") createCircle(); }}
+            placeholder="Family, Roommates, Ride group..."
+            maxLength={40}
+            autoFocus
+            className="w-full px-4 py-3 rounded-2xl bg-dark-800/70 border border-dark-700 text-sm text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500"
+          />
+          <button
+            onClick={createCircle}
+            disabled={!newCircleName.trim() || creating}
+            className="w-full py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+          >
+            {creating ? "Creating..." : "Create and add people"}
+          </button>
+        </div>
       </Modal>
       <QuickAddSheet open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
       <AddToCircleModal

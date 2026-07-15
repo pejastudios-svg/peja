@@ -12,6 +12,9 @@ import { useScrollRestore } from "@/hooks/useScrollRestore";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStrength";
 import { resetTutorial } from "@/components/tutorial/TutorialOverlay";
+import { setAmbientTracking } from "@/components/system/AmbientTrackerBootstrap";
+import { AMBIENT_PREF_KEY, isCapacitor } from "@/lib/ambientTracker";
+import DeviceSettings from "@/lib/deviceSettings";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import {
   Bell,
@@ -56,6 +59,35 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [settingsId, setSettingsId] = useState<string | null>(null);
+
+  // Background location (Android app only): the always-on tracker.
+  const [ambientOn, setAmbientOn] = useState(false);
+  const [isNativeApp, setIsNativeApp] = useState(false);
+  useEffect(() => {
+    setIsNativeApp(isCapacitor());
+    try { setAmbientOn(localStorage.getItem(AMBIENT_PREF_KEY) === "on"); } catch {}
+  }, []);
+  const toggleAmbient = async (on: boolean) => {
+    setAmbientOn(on);
+    await setAmbientTracking(on);
+    if (on) {
+      toast.success("Background location on. Your circle stays updated.");
+      // OEM battery managers kill background services; the exemption is
+      // what keeps the tracker alive on Tecno/Infinix-class devices. Ask
+      // via the system dialog if we're still optimized.
+      try {
+        const { ignoring } = await DeviceSettings.isIgnoringBatteryOptimizations();
+        if (!ignoring) {
+          toast.info("Allow peja to run in the background so tracking survives.");
+          await DeviceSettings.requestIgnoreBatteryOptimizations();
+        }
+      } catch {
+        // Can't verify: don't nag with a dialog we can't justify.
+      }
+    } else {
+      toast.info("Background location off.");
+    }
+  };
 
   // Notification settings
   const [pushEnabled, setPushEnabled] = useState(true);
@@ -644,6 +676,26 @@ export default function SettingsPage() {
           </SettingRow>
         </section>
 
+        {/* Background location: only meaningful inside the Android app */}
+        {isNativeApp && (
+          <section className="py-6 border-b border-white/5">
+            <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Location</h2>
+            <SettingRow
+              icon={MapPin}
+              label="Background location"
+              description="Keep your circle updated even when the app is closed. Shows a small ongoing notification."
+            >
+              <ToggleSwitch enabled={ambientOn} onChange={toggleAmbient} />
+            </SettingRow>
+            {ambientOn && (
+              <p className="text-xs text-dark-500 mt-2 ml-1">
+                Gentle updates every few minutes. Turn it off any time, or use
+                the Pause button on the notification.
+              </p>
+            )}
+          </section>
+        )}
+
         {/* Notifications Section */}
         <section className="py-6 border-b border-white/5">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Notifications</h2>
@@ -955,7 +1007,7 @@ export default function SettingsPage() {
           />
         </section>
 
-        <p className="text-center text-sm text-dark-500 py-4">{nativeVersion || "Peja v1.9.9"}</p>
+        <p className="text-center text-sm text-dark-500 py-4">{nativeVersion || "Peja v2.0.2"}</p>
       </main>
 
       {/* Change Password Modal */}

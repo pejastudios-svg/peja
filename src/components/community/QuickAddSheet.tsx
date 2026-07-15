@@ -84,12 +84,16 @@ export function QuickAddSheet({ open, onClose }: { open: boolean; onClose: () =>
       setSentTo((prev) => new Set(prev).add(target.id));
       if (navigator.vibrate) navigator.vibrate(12);
 
-      const { error } = await supabase.from("emergency_contacts").insert({
-        user_id: user.id,
-        contact_user_id: target.id,
-        relationship: "friend",
-        status: "pending",
-      });
+      const { data: inserted, error } = await supabase
+        .from("emergency_contacts")
+        .insert({
+          user_id: user.id,
+          contact_user_id: target.id,
+          relationship: "friend",
+          status: "pending",
+        })
+        .select("id")
+        .single();
       if (error) {
         setSentTo((prev) => {
           const next = new Set(prev);
@@ -100,12 +104,20 @@ export function QuickAddSheet({ open, onClose }: { open: boolean; onClose: () =>
         return;
       }
       signalCircleRefresh();
+      // Same shape as the emergency-contacts page invite so tapping the
+      // notification opens the accept/decline modal there.
       await createNotification({
         userId: target.id,
         type: "system",
         title: "Emergency Contact Request",
         body: `${user.full_name || "Someone"} wants to add you as their emergency contact (friend).`,
-        data: { type: "emergency_contact_request", from_user_id: user.id },
+        data: {
+          type: "emergency_contact_invite",
+          contact_id: inserted?.id,
+          requester_name: user.full_name,
+          requester_avatar: user.avatar_url,
+          relationship: "friend",
+        },
       });
     } finally {
       setSendingTo(null);
