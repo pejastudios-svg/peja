@@ -30,7 +30,7 @@ export function OutboxBootstrap() {
         : kind.startsWith("post")
         ? "A post couldn't finish syncing."
         : "A queued action couldn't finish syncing.";
-      toast.warning(`${label} Please check your connection and try again.`);
+      toast.warning(`${label} It was discarded. Please redo it if you still need it.`);
     };
     window.addEventListener("peja-outbox-stranded", onStranded);
     return () => window.removeEventListener("peja-outbox-stranded", onStranded);

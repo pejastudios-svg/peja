@@ -28,9 +28,11 @@ import {
   MAX_AUTO_ATTEMPTS,
 } from "./outbox";
 
-// Ids we've already surfaced as permanently stranded, so we announce each at
-// most once per session instead of on every drain pass.
-const strandedReported = new Set<string>();
+// A stranded item is announced at most once and only while it's still
+// FRESH; then it's removed. The old behavior kept dead items in the
+// queue forever and re-announced them every session, so one expired
+// check-in nagged the user on every single app open.
+const STRANDED_ANNOUNCE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export function useOutboxDrain(userId: string | null): void {
   const draining = useRef(false);
@@ -52,12 +54,13 @@ export function useOutboxDrain(userId: string | null): void {
         const items = readOutbox(userId!);
         for (const item of items) {
           if ((item.attempts ?? 0) >= MAX_AUTO_ATTEMPTS) {
-            // Don't silently strand a queued SOS log / check-in forever — the
-            // user thinks it was recorded. Announce it once so the app can
-            // surface a "couldn't sync" toast and offer help.
-            if (!strandedReported.has(item.id)) {
-              strandedReported.add(item.id);
-              console.error("[outbox] item permanently stranded", item.kind, item.id, item.last_error);
+            // Out of retries: this item will never succeed by itself, so
+            // remove it. Announce the loss ONLY if it's recent enough for
+            // the user to act on ("start the check-in again"); a days-old
+            // failure is pure noise.
+            console.error("[outbox] item permanently stranded, discarding", item.kind, item.id, item.last_error);
+            removeFromOutbox(userId!, item.id);
+            if (Date.now() - (item.queued_at ?? 0) < STRANDED_ANNOUNCE_WINDOW_MS) {
               window.dispatchEvent(
                 new CustomEvent("peja-outbox-stranded", {
                   detail: { kind: item.kind, id: item.id },
