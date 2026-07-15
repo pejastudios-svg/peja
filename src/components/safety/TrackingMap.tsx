@@ -5,6 +5,7 @@ import MapGL, { Marker, MapRef } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { User } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { BADGE_MIN_KMH, SPEEDING_KMH, stillLabel } from "@/lib/motion";
 
 interface TrackingMapProps {
   latitude: number;
@@ -30,6 +31,7 @@ export default function TrackingMap({
 const [targetLat, setTargetLat] = useState(latitude);
   const [targetLng, setTargetLng] = useState(longitude);
   const [liveLat, setLiveLat] = useState(latitude);
+  const [motionInfo, setMotionInfo] = useState<{ speedKmh: number | null; stillSince: string | null }>({ speedKmh: null, stillSince: null });
   const [liveLng, setLiveLng] = useState(longitude);
   const animRef = useRef<number | null>(null);
 
@@ -45,6 +47,21 @@ const [targetLat, setTargetLat] = useState(latitude);
     setTargetLng(longitude);
   }, [latitude, longitude]);
 
+  // Seed motion info (a viewer may open mid-drive or mid-stop).
+  useEffect(() => {
+    if (!checkinId) return;
+    let stop = false;
+    supabase
+      .from("safety_checkins")
+      .select("speed_kmh, still_since")
+      .eq("id", checkinId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!stop && data) setMotionInfo({ speedKmh: data.speed_kmh ?? null, stillSince: data.still_since ?? null });
+      });
+    return () => { stop = true; };
+  }, [checkinId]);
+
   // Realtime subscription for check-in location
   useEffect(() => {
     if (!checkinId) return;
@@ -57,11 +74,11 @@ const [targetLat, setTargetLat] = useState(latitude);
         (payload) => {
           const updated = payload.new as any;
           if (updated.latitude && updated.longitude) {
-            console.log("[TrackingMap] Received update:", updated.latitude, updated.longitude);
             setTargetLat(updated.latitude);
             setTargetLng(updated.longitude);
             onLocationUpdate?.(updated.latitude, updated.longitude);
           }
+          setMotionInfo({ speedKmh: updated.speed_kmh ?? null, stillSince: updated.still_since ?? null });
         }
       )
       .subscribe();
@@ -174,7 +191,18 @@ const [targetLat, setTargetLat] = useState(latitude);
                 border: `1px solid ${isOverdue ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`,
               }}
             >
-              {ownerName}
+              {(() => {
+                if (motionInfo.speedKmh != null && motionInfo.speedKmh >= BADGE_MIN_KMH) {
+                  const kmh = Math.round(motionInfo.speedKmh);
+                  return (
+                    <span className={kmh > SPEEDING_KMH ? "text-red-400 font-bold" : undefined}>
+                      {ownerName} · {kmh} km/h
+                    </span>
+                  );
+                }
+                const still = stillLabel(motionInfo.stillSince);
+                return still ? `${ownerName} · ${still}` : ownerName;
+              })()}
             </div>
           </div>
         </Marker>

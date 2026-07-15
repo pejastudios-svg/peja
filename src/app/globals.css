@@ -1,7 +1,10 @@
 @import "tailwindcss";
 
 @theme {
-  --font-family-sans: "Poppins", system-ui, sans-serif;
+  /* Tailwind v4 reads --font-sans (the old --font-family-sans token was
+     silently ignored, so the app fell back to the system font). The
+     var(--font-poppins) comes from next/font in layout.tsx. */
+  --font-sans: var(--font-poppins), "Poppins", system-ui, sans-serif;
 
   --color-primary-50: #f5f3ff;
   --color-primary-100: #ede9fe;
@@ -3184,3 +3187,33 @@ video {
 :root[data-theme="light"] .beacon-ok-text { color: #15803d; }
 :root[data-theme="light"] .beacon-bad-text { color: #b91c1c; }
 :root[data-theme="light"] .beacon-wait-text { color: #b45309; }
+
+/* Bottom-sheet entrance/exit for the SOS + SML panels: they are sheets
+   now (drag-to-dismiss), so they SLIDE from the bottom edge with the
+   house spring instead of the old scale/fade bounce. Exit is 0.2s to
+   finish inside the components' 200ms close timers. */
+@keyframes sheet-slide-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes sheet-slide-out {
+  to { transform: translateY(110%); }
+}
+.animate-sheet-in {
+  /* backwards (not both): once the entrance finishes, transform control
+     must return to the inline style so drag-to-dismiss can move the
+     panel. A forwards fill would pin translateY(0) over the drag. */
+  animation: sheet-slide-in 0.45s cubic-bezier(0.32, 0.72, 0, 1) backwards;
+}
+.animate-sheet-out {
+  animation: sheet-slide-out 0.2s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+/* Sheet drag handle: theme-aware so it's visible on BOTH the dark glass
+   and the light cream sheet surfaces (bg-white/25 vanished on white). */
+.sheet-handle {
+  background: rgba(255, 255, 255, 0.28);
+}
+:root[data-theme="light"] .sheet-handle {
+  background: rgba(0, 0, 0, 0.22);
+}

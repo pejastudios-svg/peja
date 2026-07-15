@@ -11,7 +11,7 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue>({
-  theme: "dark",
+  theme: "light",
   setTheme: () => {},
   toggle: () => {},
 });
@@ -19,12 +19,12 @@ const ThemeContext = createContext<ThemeContextValue>({
 const STORAGE_KEY = "peja-theme";
 
 function readStored(): Theme {
-  if (typeof window === "undefined") return "dark";
+  if (typeof window === "undefined") return "light";
   try {
     const v = localStorage.getItem(STORAGE_KEY);
     if (v === "light" || v === "dark") return v;
   } catch {}
-  return "dark";
+  return "light";
 }
 
 // Push the theme to the native layer:
@@ -51,7 +51,7 @@ function syncNativeTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("dark");
+  const [theme, setThemeState] = useState<Theme>("light");
 
   useEffect(() => {
     const initial = readStored();

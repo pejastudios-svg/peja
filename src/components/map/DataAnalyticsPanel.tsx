@@ -32,6 +32,15 @@ interface DataAnalyticsPanelProps {
   onSelectArea: (lat: number, lng: number) => void;
 }
 
+// Header pill surfaces, matching src/components/layout/Header.tsx
+// (opaque + no backdrop-filter by design).
+const PILL: React.CSSProperties = {
+  background: "var(--glass-header-bg)",
+  border: "1px solid var(--glass-border)",
+  boxShadow: "var(--glass-shadow-header)",
+  borderRadius: "9999px",
+};
+
 export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: DataAnalyticsPanelProps) {
   const [hotspots, setHotspots] = useState<Hotspot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +108,7 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
       const { data, error } = await supabase
         .from("posts")
         .select("id, category, address, latitude, longitude, created_at")
+        .in("status", ["live", "resolved"])
         .not("latitude", "is", null)
         .not("longitude", "is", null)
         .not("address", "is", null)
@@ -263,23 +273,27 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
           className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col"
           style={{ paddingTop: "var(--cap-status-bar-height, 0px)" }}
         >
-          {/* Header */}
-          <div className="flex items-center gap-3 p-4 border-b border-white/10 shrink-0">
+          {/* Header: back chip + title pill, app-wide header style */}
+          <div className="flex items-center gap-2 px-4 pt-3 pb-2 shrink-0">
             <button
               onClick={handleCloseDetails}
-              className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-lg"
+              aria-label="Back"
+              className="w-11 h-11 flex items-center justify-center active:scale-90 transition-transform shrink-0"
+              style={PILL}
             >
               <ArrowLeft className="w-5 h-5 text-dark-300" />
             </button>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-bold text-dark-100 truncate">{selectedHotspot.area}</h2>
-              <p className="text-xs text-dark-400">{selectedHotspot.count} total incidents</p>
+            <div className="flex-1 min-w-0 h-11 px-4 flex flex-col justify-center" style={PILL}>
+              <h2 className="text-sm font-bold text-dark-100 truncate leading-tight">{selectedHotspot.area}</h2>
+              <p className="text-[10px] text-dark-400 truncate leading-tight">{selectedHotspot.count} total incidents</p>
             </div>
-            
           </div>
 
           {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div
+            className="flex-1 overflow-y-auto p-4 space-y-4"
+            style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 96px)" }}
+          >
             {/* Summary Cards */}
             <div className="grid grid-cols-2 gap-3">
               <div className="glass-sm rounded-xl p-3">
@@ -459,23 +473,23 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
         className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col"
         style={{ paddingTop: "var(--cap-status-bar-height, 0px)" }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary-500/20 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-primary-400" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-dark-100">Incident Hotspots</h2>
-              <p className="text-xs text-dark-400">All-time data • {hotspots.length} areas</p>
-            </div>
-          </div>
+        {/* Header: close chip + title pill, app-wide header style */}
+        <div className="flex items-center gap-2 px-4 pt-3 pb-2 shrink-0">
           <button
             onClick={onClose}
-            className="w-10 h-10 flex items-center justify-center hover:bg-white/10 rounded-lg text-dark-400"
+            aria-label="Close"
+            className="w-11 h-11 flex items-center justify-center active:scale-90 transition-transform shrink-0"
+            style={PILL}
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5 text-dark-300" />
           </button>
+          <div className="flex-1 min-w-0 h-11 px-4 flex items-center gap-2.5" style={PILL}>
+            <TrendingUp className="w-4 h-4 text-primary-400 shrink-0" />
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-dark-100 truncate leading-tight">Incident Hotspots</h2>
+              <p className="text-[10px] text-dark-400 truncate leading-tight">All-time data • {hotspots.length} areas</p>
+            </div>
+          </div>
         </div>
 
         {/* Search */}
@@ -493,7 +507,10 @@ export default function DataAnalyticsPanel({ isOpen, onClose, onSelectArea }: Da
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div
+          className="flex-1 overflow-y-auto p-4"
+          style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 96px)" }}
+        >
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <PejaSpinner className="w-8 h-8" />

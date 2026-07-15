@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
+import { award, awardCommunityBadges } from "../../_achievements";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
     const { user } = await requireUser(req);
-    const { contactId, accept } = await req.json();
+    const { contactId, accept, shareBack } = await req.json();
 
 
     if (!contactId || typeof accept !== "boolean") {
@@ -42,11 +43,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Update status
+    // Update status. On accept, also record whether the responder shares
+    // their location back with the requester (map-home visibility - see
+    // PEJA_MAP_HOME_DESIGN.md; the responder can toggle this later).
     const newStatus = accept ? "accepted" : "declined";
     const { error: updateErr } = await supabaseAdmin
       .from("emergency_contacts")
-      .update({ status: newStatus })
+      .update(
+        accept
+          ? { status: newStatus, share_back: shareBack !== false }
+          : { status: newStatus }
+      )
       .eq("id", contactId);
 
     if (updateErr) {
@@ -54,6 +61,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Failed to update" }, { status: 500 });
     }
 
+
+    if (accept) {
+      await award(supabaseAdmin, user.id, "guardian");
+      await awardCommunityBadges(supabaseAdmin, contact.user_id);
+    }
 
     // Get responder name
     const { data: currentUser } = await supabaseAdmin

@@ -3,6 +3,7 @@
 import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
@@ -24,6 +25,12 @@ function SearchContent() {
 
   const confirm = useConfirm();
   const router = useRouter();
+  const { user: authUser, loading: authLoading } = useAuth();
+
+  // Search is account-only now; guests get the onboarding pitch.
+  useEffect(() => {
+    if (!authLoading && !authUser) router.replace("/welcome");
+  }, [authLoading, authUser, router]);
   const searchParams = useSearchParams();
 
   const [query, setQuery] = useState(searchParams.get("q") || "");

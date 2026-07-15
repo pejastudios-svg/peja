@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useSheetDrag } from "@/hooks/useSheetDrag";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -74,6 +75,51 @@ export function SMLButton() {
   const [cancelClosing, setCancelClosing] = useState(false);
   const [showSharedList, setShowSharedList] = useState(false);
 
+  // Load my sharing circles whenever the share modal opens.
+  useEffect(() => {
+    if (!showShareModal || !user) return;
+    (async () => {
+      // Circles I can share to: ones I OWN, plus ones I'm an accepted
+      // member of where the owner enabled member-visibility. The audience
+      // is everyone else in the circle (owner + accepted members, minus me).
+      const [ownedRes, memberRes] = await Promise.all([
+        supabase
+          .from("contact_groups")
+          .select("id, name, owner_id, contact_group_members(member_user_id, status)")
+          .eq("owner_id", user.id),
+        supabase
+          .from("contact_group_members")
+          .select("status, contact_groups(id, name, owner_id, members_visible, contact_group_members(member_user_id, status))")
+          .eq("member_user_id", user.id)
+          .eq("status", "accepted"),
+      ]);
+      type G = { id: string; name: string; owner_id: string; members_visible?: boolean; contact_group_members: { member_user_id: string; status: string }[] };
+      const raw: G[] = [
+        ...((ownedRes.data as unknown as G[]) || []),
+        ...(((memberRes.data || [])
+          .map((r) => r.contact_groups)
+          .filter(Boolean) as unknown as G[])
+          .filter((g) => g.members_visible)),
+      ];
+      const seen = new Set<string>();
+      setGroups(
+        raw
+          .filter((g) => g && !seen.has(g.id) && seen.add(g.id))
+          .map((g) => {
+            const ids = new Set<string>(
+              (g.contact_group_members || [])
+                .filter((m) => m.status === "accepted")
+                .map((m) => m.member_user_id)
+            );
+            ids.add(g.owner_id); // the creator is part of the audience
+            ids.delete(user.id); // never share to yourself
+            return { id: g.id, name: g.name, memberIds: [...ids] };
+          })
+          .filter((g) => g.memberIds.length > 0)
+      );
+    })();
+  }, [showShareModal, user]);
+
   // My check-in state
   const [myCheckIn, setMyCheckIn] = useState<ActiveCheckIn | null>(() => {
     if (typeof window !== "undefined") {
@@ -101,6 +147,10 @@ export function SMLButton() {
 
   // Share flow
   const [contacts, setContacts] = useState<AcceptedContact[]>([]);
+  // Sharing circles: name + ACCEPTED member ids. Ticking a circle chip
+  // selects/deselects all its members at once (the check-in pipeline
+  // still receives a flat contact_ids list - groups are selection sugar).
+  const [groups, setGroups] = useState<{ id: string; name: string; memberIds: string[] }[]>([]);
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [interval, setInterval_] = useState(60);
   const [starting, setStarting] = useState(false);
@@ -246,6 +296,28 @@ export function SMLButton() {
     }, 200);
   }, []);
 
+  const closeShareModalRef = useRef<() => void>(() => {});
+  const closeActiveModalRef = useRef<() => void>(() => {});
+  const shareDrag = useSheetDrag(() => closeShareModalRef.current());
+  const activeDrag = useSheetDrag(() => closeActiveModalRef.current());
+  // Slide-in via state + inline transition (stale-CSS-proof).
+  const [shareVisible, setShareVisible] = useState(false);
+  const [activeVisible, setActiveVisible] = useState(false);
+  useEffect(() => {
+    if (showShareModal) {
+      const raf = requestAnimationFrame(() => setShareVisible(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    setShareVisible(false);
+  }, [showShareModal]);
+  useEffect(() => {
+    if (showActiveModal) {
+      const raf = requestAnimationFrame(() => setActiveVisible(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    setActiveVisible(false);
+  }, [showActiveModal]);
+
   const closeShareModal = useCallback(() => {
     setShareClosing(true);
     setTimeout(() => { setShowShareModal(false); setShareClosing(false); }, 200);
@@ -254,6 +326,8 @@ export function SMLButton() {
     setActiveClosing(true);
     setTimeout(() => { setShowActiveModal(false); setActiveClosing(false); }, 200);
   }, []);
+  closeShareModalRef.current = closeShareModal;
+  closeActiveModalRef.current = closeActiveModal;
   const closeCancelConfirm = useCallback(() => {
     setCancelClosing(true);
     setTimeout(() => { setShowCancelConfirm(false); setCancelClosing(false); }, 200);
@@ -681,19 +755,28 @@ const handleConfirm = async () => {
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]" onClick={() => closeActiveModal()} />
           <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center pointer-events-none">
             <div
-              className={`w-full max-w-sm rounded-t-3xl sm:rounded-2xl p-5 pointer-events-auto ${activeClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
+              className="w-full max-w-sm rounded-t-3xl sm:rounded-2xl px-5 pb-5 pt-0 pointer-events-auto"
               style={{
                 background: "var(--glass-strong-bg)",
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 -10px 40px rgba(0,0,0,0.5)",
+                transform:
+                  activeDrag.dragY > 0
+                    ? `translateY(${activeDrag.dragY}px)`
+                    : activeClosing || !activeVisible
+                      ? "translateY(110%)"
+                      : "translateY(0)",
+                transition:
+                  activeDrag.dragY > 0 ? "none" : "transform 0.45s cubic-bezier(0.32, 0.72, 0, 1)",
               }}
               onClick={(e) => e.stopPropagation()}
             >
-            <div className="flex justify-center pt-3 pb-1 sm:hidden">
-                <div className="w-10 h-1 rounded-full bg-white/20" />
-              </div>
+              <div {...activeDrag.bind} className="-mx-5 px-5 cursor-grab" style={{ touchAction: "none" }}>
+                <div className="pt-2.5 pb-1.5">
+                  <div className="mx-auto w-10 h-1 rounded-full sheet-handle" />
+                </div>
 
-              <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-3 mb-4">
                 <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isOverdue ? "bg-red-500/15" : "bg-green-500/15"}`}>
                   {isOverdue ? <AlertTriangle className="w-6 h-6 text-red-400" /> : <Radio className="w-6 h-6 text-green-400 animate-pulse" />}
                 </div>
@@ -708,6 +791,7 @@ const handleConfirm = async () => {
                 <div className="ml-auto">
                   <p className={`text-xl font-bold ${isOverdue ? "text-red-400" : "text-green-400"}`}>{timeLeft}</p>
                 </div>
+              </div>
               </div>
 
               <div className="flex gap-2">
@@ -757,19 +841,27 @@ const handleConfirm = async () => {
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998]" onClick={() => closeShareModal()} />
           <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center pointer-events-none">
             <div
-              className={`w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl pointer-events-auto ${shareClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
+              className="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-t-3xl sm:rounded-2xl pointer-events-auto"
               style={{
                 background: "var(--glass-strong-bg)",
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 -10px 40px rgba(0,0,0,0.5)",
+                transform:
+                  shareDrag.dragY > 0
+                    ? `translateY(${shareDrag.dragY}px)`
+                    : shareClosing || !shareVisible
+                      ? "translateY(110%)"
+                      : "translateY(0)",
+                transition:
+                  shareDrag.dragY > 0 ? "none" : "transform 0.45s cubic-bezier(0.32, 0.72, 0, 1)",
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex justify-center pt-3 pb-1 sm:hidden">
-                <div className="w-10 h-1 rounded-full bg-white/20" />
-              </div>
-              <div className="p-5">
-                <div className="flex items-center justify-between mb-5">
+              <div {...shareDrag.bind} className="cursor-grab" style={{ touchAction: "none" }}>
+                <div className="pt-2.5 pb-1">
+                  <div className="mx-auto w-10 h-1 rounded-full sheet-handle" />
+                </div>
+                <div className="flex items-center justify-between px-5 pt-2 pb-4">
                   <div>
                     <h2 className="text-lg font-bold text-dark-100">Share My Location</h2>
                     <p className="text-sm text-dark-400">Alert your emergency contacts</p>
@@ -778,6 +870,39 @@ const handleConfirm = async () => {
                     <X className="w-5 h-5 text-dark-400" />
                   </button>
                 </div>
+              </div>
+                <div className="p-5 pt-0">
+
+                {/* Circles: one tap selects the whole audience */}
+                {groups.length > 0 && (
+                  <div className="mb-3">
+                    <label className="text-sm font-medium text-dark-200 block mb-2">Your circles</label>
+                    <div className="flex flex-wrap gap-2">
+                      {groups.map((g) => {
+                        const allIn = g.memberIds.every((id) => selectedContacts.includes(id));
+                        return (
+                          <button
+                            key={g.id}
+                            onClick={() =>
+                              setSelectedContacts((prev) =>
+                                allIn
+                                  ? prev.filter((id) => !g.memberIds.includes(id))
+                                  : [...new Set([...prev, ...g.memberIds])]
+                              )
+                            }
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all active:scale-95 ${
+                              allIn
+                                ? "bg-primary-600 border-primary-500 text-white"
+                                : "bg-[var(--glass-input-bg)] border-[var(--glass-border)] text-dark-200"
+                            }`}
+                          >
+                            {g.name} · {g.memberIds.length}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Contacts */}
                 <div className="mb-4">

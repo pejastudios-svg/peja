@@ -53,6 +53,29 @@ export interface AuthJsonResult {
   authFailed: boolean;
 }
 
+// Fired after any successful mutation that can change who is in the
+// user's circle. MapHome and CommunityNudge listen and refetch right
+// away instead of waiting out the 45s ambient poll.
+export const CIRCLE_REFRESH_EVENT = "peja-circle-refresh";
+
+/** Tell circle-aware surfaces (map sheet, empty-circle nudge) to refetch
+ * now. Call after any mutation that changes who is in the circle. */
+export function signalCircleRefresh() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(CIRCLE_REFRESH_EVENT));
+  }
+}
+
+const CIRCLE_PATHS = /\/api\/(community|emergency-contacts|contacts)\b/;
+
+function maybeSignalCircleChange(path: string, init: RequestInit, ok: boolean) {
+  const method = (init.method || "GET").toUpperCase();
+  if (!ok || method === "GET") return;
+  if (CIRCLE_PATHS.test(path) || CIRCLE_PATHS.test(apiUrl(path))) {
+    signalCircleRefresh();
+  }
+}
+
 export async function authFetchJson(
   path: string,
   init: RequestInit = {},
@@ -76,6 +99,7 @@ export async function authFetchJson(
 
   let { res, data } = await attempt(await currentToken());
   if (!isAuthFailure(res.status, data)) {
+    maybeSignalCircleChange(path, init, res.ok);
     return { res, data, authFailed: false };
   }
 
@@ -91,5 +115,6 @@ export async function authFetchJson(
   if (!newToken) newToken = await currentToken();
 
   ({ res, data } = await attempt(newToken));
+  maybeSignalCircleChange(path, init, res.ok);
   return { res, data, authFailed: isAuthFailure(res.status, data) };
 }

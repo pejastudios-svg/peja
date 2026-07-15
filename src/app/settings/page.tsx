@@ -892,8 +892,8 @@ export default function SettingsPage() {
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Support</h2>
           <SettingRow
             icon={Users}
-            label="Emergency Contacts"
-            description="Manage SOS contacts"
+            label="Your Community"
+            description="Emergency contacts and invites"
             onClick={() => router.push("/emergency-contacts")}
           />
           <SettingRow
@@ -930,7 +930,7 @@ export default function SettingsPage() {
                 <button
   onClick={() => {
     resetTutorial();
-    window.dispatchEvent(new Event("peja-start-tutorial"));
+    try { localStorage.setItem("peja-replay-welcome", "1"); } catch {}
     router.push("/");
   }}
   className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
@@ -955,7 +955,7 @@ export default function SettingsPage() {
           />
         </section>
 
-        <p className="text-center text-sm text-dark-500 py-4">{nativeVersion || "Peja v1.9.8"}</p>
+        <p className="text-center text-sm text-dark-500 py-4">{nativeVersion || "Peja v1.9.9"}</p>
       </main>
 
       {/* Change Password Modal */}

@@ -480,31 +480,16 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
     tutorialCheckedRef.current = true;
     if (typeof window === "undefined") return;
 
-    const completed = localStorage.getItem(TUTORIAL_COMPLETED_KEY);
-    const dismissed = localStorage.getItem(TUTORIAL_DISMISSED_KEY);
-
-    const hasSeenLogin = localStorage.getItem("peja-has-logged-in");
-    if (!hasSeenLogin) {
-      localStorage.setItem("peja-has-logged-in", "true");
-      if (completed !== "true") {
-        const timer = setTimeout(() => setPhase("welcome"), 2000);
-        return () => clearTimeout(timer);
-      }
-    } else if (completed !== "true" && dismissed !== "true") {
-      const timer = setTimeout(() => setPhase("welcome"), 2000);
-      return () => clearTimeout(timer);
-    }
+    // Superseded by WelcomeSequence (community/WelcomeSequence.tsx). This
+    // provider stays mounted for backwards compat but no longer auto-shows
+    // its feed-era coach marks.
+    return;
   }, [user, authLoading, isHome]);
 
   // Listen for manual trigger from Settings
   useEffect(() => {
-    const handleTrigger = () => {
-      setCurrentStep(0);
-      setPhase("welcome");
-    };
-
-    window.addEventListener("peja-start-tutorial", handleTrigger);
-    return () => window.removeEventListener("peja-start-tutorial", handleTrigger);
+    // The replay event is now handled by WelcomeSequence, not here.
+    return;
   }, []);
 
 const handleStart = useCallback(() => {

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useSheetDrag } from "@/hooks/useSheetDrag";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { createNotifications } from "@/lib/notifications";
@@ -904,6 +905,18 @@ export function SOSButton({ className = "" }: { className?: string }) {
     }
   };
 
+const optionsDrag = useSheetDrag(() => closeOptions());
+  // Slide-in driven by state + inline transition (not CSS classes) so it
+  // can't be broken by a stale cached stylesheet.
+  const [optionsVisible, setOptionsVisible] = useState(false);
+  useEffect(() => {
+    if (showOptions) {
+      const raf = requestAnimationFrame(() => setOptionsVisible(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    setOptionsVisible(false);
+  }, [showOptions]);
+
 const closeOptions = () => {
     setModalClosing(true);
     setTimeout(() => {
@@ -1210,22 +1223,33 @@ const closeOptions = () => {
           <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={closeOptions} />
           
            <div
-            className={`relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-y-auto select-none ${modalClosing ? "animate-bounce-out" : "animate-bounce-in"}`}
+            className="relative w-full max-w-lg rounded-t-3xl sm:rounded-3xl overflow-y-auto select-none"
             style={{
               maxHeight: "calc(100dvh - var(--cap-status-bar-height, 0px) - env(safe-area-inset-bottom, 0px) - 32px)",
               background: "var(--glass-strong-bg)",
               border: "1px solid rgba(239, 68, 68, 0.25)",
               boxShadow: "0 0 80px rgba(239, 68, 68, 0.12), 0 -20px 60px rgba(0,0,0,0.25)",
+              transform:
+                optionsDrag.dragY > 0
+                  ? `translateY(${optionsDrag.dragY}px)`
+                  : modalClosing || !optionsVisible
+                    ? "translateY(110%)"
+                    : "translateY(0)",
+              transition:
+                optionsDrag.dragY > 0 ? "none" : "transform 0.45s cubic-bezier(0.32, 0.72, 0, 1)",
             }}
           >
-            {/* Header */}
-            <div
-              className="flex items-center justify-between px-5 py-4"
-              style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
-            >
-              <button onClick={closeOptions} className="p-2 hover:bg-white/10 rounded-xl transition-colors">
-                <ArrowLeft className="w-5 h-5 text-dark-300" />
-              </button>
+            {/* drag handle - pull down to dismiss, like the map sheet */}
+            {/* Grab zone: handle + header. Drag to dismiss, tap to close. */}
+            <div {...optionsDrag.bind} className="cursor-grab" style={{ touchAction: "none" }}>
+              <div className="pt-2.5 pb-1">
+                <div className="mx-auto w-10 h-1 rounded-full sheet-handle" />
+              </div>
+              {/* Header */}
+              <div
+                className="flex items-center justify-center px-5 pt-1 pb-4"
+                style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+              >
               <div className="flex items-center gap-2">
                 <div
                   className="w-8 h-8 rounded-full flex items-center justify-center"
@@ -1238,7 +1262,7 @@ const closeOptions = () => {
                 </div>
                 <h3 className="text-lg font-bold text-dark-100">Emergency SOS</h3>
               </div>
-              <div className="w-9" />
+              </div>
             </div>
 
             <div className="p-5 space-y-5">

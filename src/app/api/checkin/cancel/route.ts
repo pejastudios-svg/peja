@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { requireUser, authErrorResponse } from "../../_auth";
+import { award } from "../../_achievements";
 import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function POST(req: NextRequest) {
@@ -35,6 +36,8 @@ export async function POST(req: NextRequest) {
       !isNaN(triggeredAt.getTime()) &&
       new Date(checkin.created_at) > triggeredAt
     ) {
+      await award(supabaseAdmin, user.id, "night_watch");
+
       return NextResponse.json({ ok: true, skipped: "stale_cancel" });
     }
 

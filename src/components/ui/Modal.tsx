@@ -88,26 +88,30 @@ return createPortal(
             : "1px solid var(--glass-border-strong)",
         }}
       >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-6 py-4 shrink-0"
-          style={{
-            borderBottom: neutral
-              ? "1px solid rgba(255,255,255,0.08)"
-              : "1px solid var(--glass-border-sm)",
-          }}
-        >
-          <h3 className="text-lg font-bold text-dark-100">{title}</h3>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-white/10 text-dark-400 hover:text-dark-100 transition-colors"
+        {/* Header — only when there's a title. Titleless modals (e.g. the
+            member card) skip it entirely: no empty bar, no lone X. They
+            still close via backdrop tap / Escape. */}
+        {title ? (
+          <div
+            className="flex items-center justify-between px-6 py-4 shrink-0"
+            style={{
+              borderBottom: neutral
+                ? "1px solid rgba(255,255,255,0.08)"
+                : "1px solid var(--glass-border-sm)",
+            }}
           >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+            <h3 className="text-lg font-bold text-dark-100">{title}</h3>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-white/10 text-dark-400 hover:text-dark-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        ) : null}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className={`flex-1 overflow-y-auto ${title ? "p-6" : "p-5"}`}>
           {children}
         </div>
       </div>

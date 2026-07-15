@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { authFetchJson } from "@/lib/authFetch";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import { BeaconScanner } from "./BeaconScanner";
@@ -122,6 +123,49 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
   const simDigits = sim.replace(/[^\d+]/g, "");
   const markSent = (i: number) => setSentCmds((prev) => new Set(prev).add(i));
 
+  // ── automated provisioning via the SMS gateway ──
+  // The transport is an implementation detail: setup runs by itself and
+  // shows friendly steps. The raw commands only appear if the gateway
+  // fails (setupMode flips to "manual" as the fallback).
+  const [autoSending, setAutoSending] = useState<number | null>(null); // index in flight
+  const [setupMode, setSetupMode] = useState<"auto" | "manual">("auto");
+  const autoStarted = useRef(false);
+  const autoSend = useCallback(async () => {
+    if (!pairedDevice || autoSending != null) return;
+    setAutoSending(0);
+    try {
+      for (let i = 0; i < commands.length; i++) {
+        setAutoSending(i);
+        const { res, data } = await authFetchJson("/api/beacon/sms", {
+          method: "POST",
+          body: JSON.stringify({ deviceId: pairedDevice.id, sms: commands[i].sms }),
+        });
+        if (!res.ok) {
+          setSetupMode("manual");
+          toast.warning(data?.error || "Automatic setup is unavailable. Text the commands below instead.");
+          return;
+        }
+        markSent(i);
+        // The device applies commands in order; give it breathing room.
+        if (i < commands.length - 1) {
+          await new Promise((r) => setTimeout(r, 8000));
+        }
+      }
+      toast.success("Setup sent. The Beacon will restart and connect on its own.");
+    } finally {
+      setAutoSending(null);
+    }
+  }, [pairedDevice, commands, autoSending, toast]);
+
+  // Kick off automatically when the configure step appears (ref-guarded
+  // so StrictMode's double effect can't start two loops).
+  useEffect(() => {
+    if (step !== "configure" || commands.length === 0 || autoStarted.current) return;
+    autoStarted.current = true;
+    autoSend();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, commands]);
+
   const back = () => {
     if (step === "scan") setStep("intro");
     else if (step === "sim") setStep("scan");
@@ -163,7 +207,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
             <div className="absolute inset-0 rounded-full bg-primary-500/10 beacon-radar-ring" />
             <div className="absolute inset-0 rounded-full bg-primary-500/10 beacon-radar-ring" style={{ animationDelay: "0.8s" }} />
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-24 h-24 rounded-[28px] bg-gradient-to-b from-dark-700 to-dark-800 border border-dark-600 shadow-2xl flex items-center justify-center beacon-breathe">
+              <div className="w-24 h-24 rounded-[28px] bg-dark-800/80 border border-dark-600 shadow-2xl flex items-center justify-center beacon-breathe">
                 <Radio className="w-10 h-10 beacon-accent-text" />
               </div>
             </div>
@@ -337,18 +381,41 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
             <div className="absolute inset-0 rounded-full bg-primary-500/10 beacon-radar-ring" style={{ animationDelay: "0.8s" }} />
             <div className="absolute inset-0 rounded-full bg-primary-500/10 beacon-radar-ring" style={{ animationDelay: "1.6s" }} />
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-20 h-20 rounded-3xl bg-gradient-to-b from-dark-700 to-dark-800 border border-dark-600 flex items-center justify-center beacon-breathe">
+              <div className="w-20 h-20 rounded-3xl bg-dark-800/80 border border-dark-600 flex items-center justify-center beacon-breathe">
                 <Radio className="w-8 h-8 beacon-accent-text" />
               </div>
             </div>
           </div>
           <div className="text-center space-y-1.5">
-            <h2 className="text-xl font-bold text-dark-50">Waiting for your Beacon</h2>
+            <h2 className="text-xl font-bold text-dark-50">
+              {setupMode === "auto" ? "Setting up your Beacon" : "Waiting for your Beacon"}
+            </h2>
             <p className="text-sm text-dark-400 px-4">
-              Text these commands to the Beacon&apos;s SIM, in order, about 10
-              seconds apart. It will connect on its own after the restart.
+              {setupMode === "auto"
+                ? "Sending the setup to your Beacon over the air. Keep this screen open, it takes about a minute."
+                : "Text these commands to the Beacon's SIM, in order, about 10 seconds apart. It will connect on its own after the restart."}
             </p>
           </div>
+
+          {setupMode === "manual" && (
+            <button
+              onClick={autoSend}
+              disabled={autoSending != null}
+              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.985] transition-transform disabled:opacity-70"
+            >
+              {autoSending != null ? (
+                <>
+                  <PejaSpinner className="w-4 h-4" />
+                  Retrying automatically...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  Try automatic setup again
+                </>
+              )}
+            </button>
+          )}
 
           <div className="space-y-2">
             {commands.map((cmd, i) => {
@@ -361,14 +428,21 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
                   }`}
                   style={{ animationDelay: `${0.08 * i + 0.1}s` }}
                 >
-                  <div className="flex items-center gap-2 mb-1.5">
+                  <div className={`flex items-center gap-2 ${setupMode === "manual" ? "mb-1.5" : ""}`}>
                     <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 ${
                       sent ? "bg-green-500 text-white" : "bg-dark-700 text-dark-300"
                     }`}>
-                      {sent ? <Check className="w-3 h-3" /> : i + 1}
+                      {sent ? (
+                        <Check className="w-3 h-3" />
+                      ) : autoSending === i ? (
+                        <PejaSpinner className="w-3 h-3" />
+                      ) : (
+                        i + 1
+                      )}
                     </div>
-                    <p className="text-xs text-dark-400 flex-1">{cmd.label}</p>
+                    <p className={`text-xs flex-1 ${sent ? "text-dark-300" : autoSending === i ? "beacon-accent-text font-semibold" : "text-dark-400"}`}>{cmd.label}</p>
                   </div>
+                  {setupMode === "manual" && (
                   <div className="flex items-center gap-2">
                     <code className="flex-1 text-[13px] text-dark-100 font-mono bg-dark-900/70 rounded-lg px-2.5 py-2 overflow-x-auto whitespace-nowrap">
                       {cmd.sms}
@@ -393,6 +467,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
                       <Send className="w-4 h-4 text-white" />
                     </a>
                   </div>
+                  )}
                 </div>
               );
             })}

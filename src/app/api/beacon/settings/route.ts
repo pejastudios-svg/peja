@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { requireUser, authErrorResponse } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { canUseBeacon, settingsCommands } from "@/lib/beacon";
+import { notifyAdminIfBalanceLow, sendTermiiSms, termiiConfigured } from "../../_termii";
+import { isRateLimitedDurable } from "../../_rateLimit";
 
 /**
  * Update a paired Beacon's settings. App-side toggles (fall alerts, ack
- * tone, name) apply instantly; hardware settings (volume, contacts,
- * intercom) also return the SMS commands that must reach the device.
+ * tone, name) apply instantly. Hardware settings (volume, contacts,
+ * intercom) are delivered to the device SILENTLY over the SMS gateway
+ * after the response (the SMS transport is an implementation detail the
+ * user never sees). `delivery` tells the client what happened:
+ *   "auto"      commands are being sent in the background; show nothing
+ *   "manual"    gateway unavailable; client falls back to the manual modal
+ *   "throttled" too many changes too fast; user should wait and re-apply
+ *   "none"      nothing hardware-side changed
  */
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +31,7 @@ export async function POST(req: NextRequest) {
     const supabaseAdmin = getSupabaseAdmin();
     const { data: device } = await supabaseAdmin
       .from("devices")
-      .select("id, user_id, volume, family1_contact_id, family2_contact_id, intercom_enabled")
+      .select("id, user_id, volume, family1_contact_id, family2_contact_id, intercom_enabled, sim_msisdn")
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -87,7 +96,46 @@ export async function POST(req: NextRequest) {
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    return NextResponse.json({ device: updated, commands: settingsCommands(cmdChanges) });
+    const commands = settingsCommands(cmdChanges);
+    if (commands.length === 0) {
+      return NextResponse.json({ device: updated, commands: [], delivery: "none" });
+    }
+    if (!termiiConfigured() || !device.sim_msisdn) {
+      // No gateway: hand the commands back for the manual fallback modal.
+      return NextResponse.json({ device: updated, commands, delivery: "manual" });
+    }
+    // Backstop against settings spam eating the SMS wallet (the client
+    // also debounces): 4 change-batches per device per 5 minutes.
+    if (await isRateLimitedDurable(`beacon-settings-sms:${device.id}`, 4, 300)) {
+      return NextResponse.json({ device: updated, commands: [], delivery: "throttled" });
+    }
+
+    // Deliver silently after the response; the device wants ~8s between
+    // commands. Failures notify the owner instead of surfacing mid-save.
+    const sim = device.sim_msisdn as string;
+    const ownerId = user.id;
+    after(async () => {
+      for (let i = 0; i < commands.length; i++) {
+        const result = await sendTermiiSms(sim, commands[i].sms);
+        if (!result.ok) {
+          console.error("[beacon/settings] background send failed:", result.error);
+          await supabaseAdmin.from("notifications").insert({
+            user_id: ownerId,
+            type: "system",
+            title: "Beacon update didn't go through",
+            body: "A settings change couldn't reach your Beacon. Open Beacon settings and set it again.",
+            data: { type: "beacon_sms_failed" },
+            is_read: false,
+          });
+          return;
+        }
+        notifyAdminIfBalanceLow(result.balance).catch(() => {});
+        if (i < commands.length - 1) {
+          await new Promise((r) => setTimeout(r, 8000));
+        }
+      }
+    });
+    return NextResponse.json({ device: updated, commands: [], delivery: "auto" });
   } catch (error) {
     return (
       authErrorResponse(error) ??

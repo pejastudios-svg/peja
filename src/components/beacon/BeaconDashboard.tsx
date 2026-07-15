@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
+import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { authFetchJson } from "@/lib/authFetch";
 import { Modal } from "@/components/ui/Modal";
 import { formatDistanceToNow } from "date-fns";
@@ -55,6 +56,31 @@ export function BeaconDashboard({
   const [device, setDevice] = useState<BeaconDevice>(initial);
   const [contactNames, setContactNames] = useState<Map<string, string>>(new Map());
   const [pendingCommands, setPendingCommands] = useState<BeaconCommand[] | null>(null);
+  // Auto-send pending hardware commands through the Termii gateway.
+  const [smsSending, setSmsSending] = useState<number | null>(null);
+  const sendPendingViaGateway = useCallback(async () => {
+    const cmds = pendingCommands || [];
+    if (!cmds.length || smsSending != null) return;
+    setSmsSending(0);
+    try {
+      for (let i = 0; i < cmds.length; i++) {
+        setSmsSending(i);
+        const { res, data } = await authFetchJson("/api/beacon/sms", {
+          method: "POST",
+          body: JSON.stringify({ deviceId: device.id, sms: cmds[i].sms }),
+        });
+        if (!res.ok) {
+          toast.warning(data?.error || "SMS gateway failed. Text it manually instead.");
+          return;
+        }
+        if (i < cmds.length - 1) await new Promise((r) => setTimeout(r, 8000));
+      }
+      toast.success("Sent to your Beacon.");
+      setPendingCommands(null);
+    } finally {
+      setSmsSending(null);
+    }
+  }, [pendingCommands, smsSending, device.id, toast]);
   const [confirmUnpair, setConfirmUnpair] = useState(false);
   const [unpairing, setUnpairing] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
@@ -68,11 +94,15 @@ export function BeaconDashboard({
   // Keep telemetry fresh while the screen is open.
   useEffect(() => {
     const refresh = async () => {
+      const startedAt = Date.now();
       const { data } = await supabase
         .from("devices")
         .select("*")
         .eq("id", initial.id)
         .maybeSingle();
+      // A poll that started before the newest save is stale: applying it
+      // would bounce the UI old -> new (the volume flicker). Discard.
+      if (startedAt < lastMutationAt.current) return;
       if (data && data.status !== "unpaired") {
         setDevice(data as BeaconDevice);
         // Surface a live SOS (and hide it once resolved anywhere else).
@@ -167,9 +197,29 @@ export function BeaconDashboard({
     })();
   }, [user, device.family1_contact_id, device.family2_contact_id]);
 
+  // Volume taps settle for 1.2s before saving, so tapping across the
+  // scale sends ONE command for the final choice, not one per tap.
+  const [volDraft, setVolDraft] = useState<number | null>(null);
+  const volTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setVolume = (v: number) => {
+    setVolDraft(v);
+    if (volTimer.current) clearTimeout(volTimer.current);
+    volTimer.current = setTimeout(() => {
+      // Hold the draft THROUGH the save round-trip: clearing it first
+      // let the UI fall back to the old value for a beat (the bounce).
+      if (v === device.volume) { setVolDraft(null); return; }
+      save({ volume: v }, "volume").finally(() => setVolDraft(null));
+    }, 1200);
+  };
+  useEffect(() => () => { if (volTimer.current) clearTimeout(volTimer.current); }, []);
+
+  // See refresh(): poll results older than the last save are discarded.
+  const lastMutationAt = useRef(0);
+
   const save = useCallback(
     async (patch: Record<string, unknown>, key: string) => {
       setSaving(key);
+      lastMutationAt.current = Date.now();
       try {
         const { res, data } = await authFetchJson("/api/beacon/settings", {
           method: "POST",
@@ -179,9 +229,18 @@ export function BeaconDashboard({
           toast.warning(data?.error || "Could not save");
           return;
         }
+        lastMutationAt.current = Date.now(); // commit time
         setDevice(data.device as BeaconDevice);
-        const cmds = (data.commands || []) as BeaconCommand[];
-        if (cmds.length > 0) setPendingCommands(cmds);
+        // Hardware changes deliver silently over the gateway; the manual
+        // modal is strictly the no-gateway fallback.
+        if (data.delivery === "auto") {
+          toast.success("Saved. Updating your Beacon...");
+        } else if (data.delivery === "throttled") {
+          toast.info("Too many quick changes. Give it a minute, then set it again.");
+        } else if (data.delivery === "manual") {
+          const cmds = (data.commands || []) as BeaconCommand[];
+          if (cmds.length > 0) setPendingCommands(cmds);
+        }
       } catch {
         toast.warning("Network error");
       } finally {
@@ -277,13 +336,13 @@ export function BeaconDashboard({
       )}
 
       {/* ── Status hero ── */}
-      <div className="beacon-step-in relative overflow-hidden rounded-3xl border border-dark-700 bg-gradient-to-b from-dark-800 to-dark-900 p-6">
+      <div className="beacon-step-in relative overflow-hidden rounded-3xl border border-dark-700 bg-dark-800/50 p-6">
         <div className="flex items-center gap-4">
           <div className="relative w-16 h-16 shrink-0">
             {device.status === "connected" && (
               <div className="absolute inset-0 rounded-2xl bg-primary-500/10 beacon-radar-ring" />
             )}
-            <div className="relative w-16 h-16 rounded-2xl bg-gradient-to-b from-dark-600 to-dark-800 border border-dark-600 flex items-center justify-center">
+            <div className="relative w-16 h-16 rounded-2xl bg-dark-800/80 border border-dark-600 flex items-center justify-center">
               <Radio className="w-7 h-7 beacon-accent-text" />
             </div>
           </div>
@@ -404,7 +463,7 @@ export function BeaconDashboard({
               className="absolute top-1 bottom-1 rounded-xl bg-primary-600"
               style={{
                 width: "calc(20% - 4px)",
-                left: `calc(${device.volume * 20}% + 2px)`,
+                left: `calc(${(volDraft ?? device.volume) * 20}% + 2px)`,
                 transition: "left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
               }}
             />
@@ -412,9 +471,9 @@ export function BeaconDashboard({
               <button
                 key={v}
                 disabled={saving === "volume"}
-                onClick={() => v !== device.volume && save({ volume: v }, "volume")}
+                onClick={() => setVolume(v)}
                 className={`relative flex-1 py-2 text-sm font-semibold transition-colors ${
-                  device.volume === v ? "text-white" : "text-dark-400"
+                  (volDraft ?? device.volume) === v ? "text-white" : "text-dark-400"
                 }`}
               >
                 {v}
@@ -453,6 +512,23 @@ export function BeaconDashboard({
           <p className="text-sm text-dark-400">
             Text this to the Beacon&apos;s SIM to apply the change on the device:
           </p>
+          <button
+            onClick={sendPendingViaGateway}
+            disabled={smsSending != null}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.985] transition-transform disabled:opacity-70"
+          >
+            {smsSending != null ? (
+              <>
+                <PejaSpinner className="w-4 h-4" />
+                Sending {smsSending + 1} of {(pendingCommands || []).length}...
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                Send automatically
+              </>
+            )}
+          </button>
           {(pendingCommands || []).map((cmd, i) => (
             <div key={i} className="rounded-2xl border border-dark-700 bg-dark-800/60 p-3.5">
               <p className="text-xs text-dark-400 mb-1.5">{cmd.label}</p>

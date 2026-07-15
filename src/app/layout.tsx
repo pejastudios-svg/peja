@@ -3,6 +3,8 @@ import { Suspense } from "react";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/context/AuthContext";
+import { PresenceCapture } from "@/components/community/PresenceCapture";
+import { AchievementCelebration } from "@/components/community/AchievementCelebration";
 import { FeedProvider } from "@/context/FeedContext";
 import AnalyticsTracker from "@/components/analytics/AnalyticsTracker";
 import { ConfirmProvider } from "@/context/ConfirmContext";
@@ -43,7 +45,7 @@ import { EmergencyContactsBootstrap } from "@/components/system/EmergencyContact
 
 const poppins = Poppins({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600", "700", "800", "900"],
   variable: "--font-poppins",
   display: "swap",
 });
@@ -87,7 +89,7 @@ export default function RootLayout({
             theme toggles still animate smoothly. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("peja-theme");var v=(t==="light"||t==="dark")?t:"dark";var d=document.documentElement;d.setAttribute("data-theme",v);d.classList.add("theme-preload");requestAnimationFrame(function(){requestAnimationFrame(function(){d.classList.remove("theme-preload");});});}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`,
+            __html: `(function(){try{var t=localStorage.getItem("peja-theme");var v=(t==="light"||t==="dark")?t:"light";var d=document.documentElement;d.setAttribute("data-theme",v);d.classList.add("theme-preload");requestAnimationFrame(function(){requestAnimationFrame(function(){d.classList.remove("theme-preload");});});}catch(e){document.documentElement.setAttribute("data-theme","light");}})();`,
           }}
         />
         {/* Status-bar height fallback for PWAs / mobile browsers where
@@ -202,6 +204,8 @@ export default function RootLayout({
                         <ChatBootstrap />
                         <OutboxBootstrap />
                         <EmergencyContactsBootstrap />
+                        <PresenceCapture />
+                        <AchievementCelebration />
                         <AnalyticsTracker />
                         <RoutePrefetcher />
                         <GlobalScrollManager />

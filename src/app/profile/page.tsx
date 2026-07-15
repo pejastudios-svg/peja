@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { BadgeGrid } from "@/components/community/BadgeGrid";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Header } from "@/components/layout/Header";
 import { Post } from "@/lib/types";
@@ -389,6 +390,8 @@ export default function ProfilePage() {
         </div>
 
         <div className="max-w-2xl mx-auto px-4 py-4">
+          <BadgeGrid />
+
           <div className="glass-card mb-4">
             <h3 className="text-sm font-medium text-dark-300 mb-3">Information</h3>
             <div className="space-y-3">

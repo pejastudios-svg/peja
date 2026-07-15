@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import { authFetchJson } from "@/lib/authFetch";
+import { createMotionTracker } from "@/lib/motion";
 import { supabase } from "@/lib/supabase";
 import { createNotification } from "@/lib/notifications";
 
@@ -93,6 +94,7 @@ useEffect(() => {
   }, [user, checkStatus]);
 
   // Background location tracking when check-in is active
+  const trackMotion = useRef(createMotionTracker());
   const locationWatchRef = useRef<number | null>(null);
   const locationPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeRef = useRef(false);
@@ -128,11 +130,28 @@ useEffect(() => {
   useEffect(() => {
     if (!user?.id) return;
 
-    const sendLocation = (lat: number, lng: number) => {
+    const sendLocation = (lat: number, lng: number, speedKmh?: number | null) => {
       authFetchJson("/api/checkin/location/", {
         method: "POST",
-        body: JSON.stringify({ latitude: lat, longitude: lng }),
+        body: JSON.stringify({
+          latitude: lat,
+          longitude: lng,
+          speed_kmh: speedKmh != null ? Math.round(speedKmh * 10) / 10 : null,
+        }),
       }).catch(() => {});
+    };
+
+    // Same motion engine as the map; the localStorage cooldown inside it
+    // keeps this and MapHome from double-alerting on the same drive.
+    const feedMotion = (pos: GeolocationPosition): number | null => {
+      const m = trackMotion.current(pos);
+      if (m.speedingTrigger && m.speedKmh != null) {
+        authFetchJson("/api/motion/speeding", {
+          method: "POST",
+          body: JSON.stringify({ speed_kmh: Math.round(m.speedKmh) }),
+        }).catch(() => {});
+      }
+      return m.speedKmh;
     };
 
     const startTracking = async (checkinId: string) => {
@@ -173,20 +192,20 @@ useEffect(() => {
       if (!navigator.geolocation) return;
 
       navigator.geolocation.getCurrentPosition(
-        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude, feedMotion(pos)),
         () => {},
         { enableHighAccuracy: true, timeout: 10000 }
       );
 
       locationWatchRef.current = navigator.geolocation.watchPosition(
-        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+        (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude, feedMotion(pos)),
         () => {},
         { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
       );
 
       locationPollRef.current = setInterval(() => {
         navigator.geolocation.getCurrentPosition(
-          (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude),
+          (pos) => sendLocation(pos.coords.latitude, pos.coords.longitude, feedMotion(pos)),
           () => {},
           { enableHighAccuracy: true, maximumAge: 5000, timeout: 8000 }
         );

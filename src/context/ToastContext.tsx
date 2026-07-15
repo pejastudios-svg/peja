@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { X, AlertTriangle, CheckCircle2, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 
 type ToastType = "info" | "success" | "warning" | "danger";
 
@@ -141,17 +141,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   {t.message}
                 </p>
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    dismiss(t.id);
-                  }}
-                  className="p-1 rounded-full hover:bg-white/10 text-dark-400 shrink-0"
-                  aria-label="Dismiss"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
               </div>
             </div>
           ))}

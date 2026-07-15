@@ -15,6 +15,8 @@ const PUBLIC_PATHS = [
   "/login",
   "/signup",
   "/forgot-password",
+  "/welcome",
+  "/join",
   "/terms",
   "/privacy",
   "/help",
@@ -162,11 +164,11 @@ export function LoginPrompt() {
           {/* Content */}
           <div className="p-6 text-center">
             <h2 className="text-lg font-bold text-dark-100 mb-2">
-              Join Your Community
+              Your people, on one safe map
             </h2>
             <p className="text-sm text-dark-400 leading-relaxed mb-6">
-              Sign up to report incidents, receive safety alerts, and help keep
-              your community safe.
+              Sign up to see your circle in real time, get help in an emergency
+              with one button, and know what's happening around you.
             </p>
 
             <button
@@ -207,7 +209,7 @@ export function LoginPrompt() {
               onClick={handleDismiss}
               className="w-full py-3 mt-2 text-sm text-dark-500 hover:text-dark-300 transition-colors"
             >
-              Browse as guest
+              Not now
             </button>
           </div>
         </div>

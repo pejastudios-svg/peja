@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Home, Map, PlusCircle, Radio, Search } from "lucide-react";
+import { Map, Newspaper, PlusCircle, Radio, Search } from "lucide-react";
 import { SOSButton } from "../sos/SOSButton";
 import { useAuth } from "@/context/AuthContext";
 import { SMLButton } from "../safety/SMLButton";
@@ -19,20 +19,16 @@ import { canUseBeacon } from "@/lib/beacon";
 const PEJA_LOGO = "/peja-logo.png.png";
 
 const navItems = [
-  { href: "/", icon: Home, label: "Home" },
-  { href: "/map", icon: Map, label: "Map" },
+  { href: "/", icon: Map, label: "Map" },
+  { href: "/feed", icon: Newspaper, label: "Feed" },
   { href: "/create", icon: PlusCircle, label: "Report" },
   { href: "/search", icon: Search, label: "Search" },
 ];
 
-// Opaque, no backdrop-filter. A blur(40px) on a fixed bar was the heaviest
-// compositing trigger in the app and stamped black tiles onto the scrolling
-// content on some Android GPUs. --glass-footer-bg is now a solid colour.
-const GLASS: React.CSSProperties = {
-  background: "var(--glass-footer-bg)",
-  border: "1px solid var(--glass-border)",
-  boxShadow: "var(--glass-shadow-footer)",
-};
+// Banner surface styles live inline on the <nav> container. Still opaque,
+// still no backdrop-filter: a blur(40px) on a fixed bar was the heaviest
+// compositing trigger in the app and stamped black tiles onto the
+// scrolling content on some Android GPUs.
 
 export function BottomNav() {
   const router = useRouter();
@@ -67,14 +63,18 @@ export function BottomNav() {
     }, 300);
   }, []);
 
-  // BottomNav is allowlist-only: just the Home and Search pages. Every
-  // other route (Map, Notifications, Create, Post detail, Chat detail,
+  // BottomNav is allowlist-only: the map home, the feed, and Search.
+  // Every other route (Notifications, Create, Post detail, Chat detail,
   // Profile, Settings, etc.) renders without it.
-  const isHidden = !(pathname === "/" || pathname.startsWith("/search"));
+  const isHidden = !(
+    pathname === "/" ||
+    pathname.startsWith("/feed") ||
+    pathname.startsWith("/search")
+  );
 
   const activeIndex = useMemo(() => {
     if (pathname === "/" || pathname === "") return 0;
-    if (pathname.startsWith("/map")) return 1;
+    if (pathname.startsWith("/feed")) return 1;
     if (pathname.startsWith("/create")) return 2;
     if (pathname.startsWith("/search")) return 3;
     return -1;
@@ -189,12 +189,17 @@ export function BottomNav() {
           <Icon
             ref={(el: SVGSVGElement | null) => { iconRefs.current[index] = el; }}
             className="w-[22px] h-[22px]"
+            // Filled glyphs: closed shapes take the icon color; inner
+            // detail lines engrave in the nav surface color so they stay
+            // readable. A magnifying glass needs a hollow lens to read as
+            // one, so Search stays outline at a heavier weight instead.
+            fill={item.href === "/search" ? "none" : "currentColor"}
+            stroke={item.href === "/search" ? "currentColor" : "var(--glass-footer-bg)"}
             style={{
               color: isActive ? "var(--color-primary-600)" : "var(--color-dark-400)",
-              filter: isActive ? "drop-shadow(0 0 6px rgba(167,139,250,0.5))" : "none",
               transition: "all 0.3s ease",
             }}
-            strokeWidth={isActive ? 2.8 : 2.2}
+            strokeWidth={item.href === "/search" ? 2.6 : 1.6}
           />
         </div>
         <span
@@ -279,22 +284,27 @@ export function BottomNav() {
         className="fixed bottom-0 left-0 right-0 z-50"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
-        <div className="px-4 pb-2 relative">
+        <div className="relative">
 
-          {/* ── Full nav ── */}
+          {/* ── Full nav: full-width banner (Life360-style), calmer than
+              the old floating pill. Top hairline + footer surface. ── */}
           <div>
             <div
               ref={navRef}
-              className="relative flex items-center h-[60px]"
-              style={{ ...GLASS, borderRadius: "9999px" }}
+              className="relative flex items-center h-[62px]"
+              style={{
+                background: "var(--glass-footer-bg)",
+                borderTop: "1px solid var(--glass-border)",
+                boxShadow: "var(--glass-shadow-footer)",
+              }}
             >
               {/* Sliding active pill — fills the active item with a soft
                   primary tint and animates between tabs. Sits BEHIND the
                   icon/label (z 0) which render at z 10. */}
               {indicator && activeIndex >= 0 && (() => {
-                // Short active-tab line, centered over the icon. ~28px
-                // wide — close to the icon glyph itself — so it reads
-                // as "this tab" rather than "this whole column".
+                // Active state: the filled icon carries the weight; the
+                // only extra cue is a short sliding line at the top edge.
+                // (Glow filter and tint pill removed by design.)
                 const LINE_WIDTH = 28;
                 return (
                   <div
@@ -303,12 +313,11 @@ export function BottomNav() {
                     style={{
                       left: indicator.left + indicator.width / 2 - LINE_WIDTH / 2,
                       width: LINE_WIDTH,
-                      top: 0,
+                      top: -1,
                       height: 3,
                       borderRadius: "9999px",
                       background: "var(--color-primary-600)",
-                      transition:
-                        "left 0.35s cubic-bezier(0.4, 0.0, 0.2, 1)",
+                      transition: "left 0.35s cubic-bezier(0.4, 0.0, 0.2, 1)",
                       zIndex: 20,
                     }}
                   />
@@ -319,15 +328,17 @@ export function BottomNav() {
               {renderNavItem(navItems[0], 0)}
               {renderNavItem(navItems[1], 1)}
 
-              {/* Center spacer for logo */}
-              <div className="w-[68px] shrink-0" />
 
               {/* Right items: Report, Search */}
               {renderNavItem(navItems[2], 2)}
               {renderNavItem(navItems[3], 3)}
             </div>
 
-            {/* ── Center Peja Logo + SOS/SML fan ── */}
+            {/* ── Center Peja Logo + SOS/SML fan ── HIDDEN (product
+                decision): SOS / Check-in / Beacon now live in the map
+                sheet's quick-actions. Kept in tree, disabled, for easy
+                restore. ── */}
+            {false && (
             <div
               className="absolute left-1/2 -translate-x-1/2"
               style={{ bottom: 18, zIndex: 60 }}
@@ -513,6 +524,7 @@ export function BottomNav() {
                 )}
               </button>
             </div>
+            )}
           </div>
         </div>
       </nav>

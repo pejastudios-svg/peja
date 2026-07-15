@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { BADGE_MIN_KMH, SPEEDING_KMH, stillLabel } from "@/lib/motion";
 import MapGL, { Marker, MapRef } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
@@ -26,6 +27,8 @@ interface SharedUser {
   longitude: number | null;
   address: string | null;
   lastUpdated: string | null;
+  speedKmh: number | null;
+  stillSince: string | null;
 }
 
 export default function SharedLocationsPage() {
@@ -49,7 +52,7 @@ export default function SharedLocationsPage() {
     try {
       const { data: checkins } = await supabase
         .from("safety_checkins")
-        .select("id, user_id, status, next_check_in_at, latitude, longitude, address, location_updated_at")
+        .select("id, user_id, status, next_check_in_at, latitude, longitude, address, location_updated_at, speed_kmh, still_since")
         .contains("contact_ids", [user.id])
         .in("status", ["active", "missed"]);
 
@@ -81,6 +84,8 @@ export default function SharedLocationsPage() {
           longitude: c.longitude || userData?.last_longitude || null,
           address: c.address || null,
           lastUpdated: c.location_updated_at,
+          speedKmh: c.speed_kmh ?? null,
+          stillSince: c.still_since ?? null,
         };
       });
 
@@ -121,6 +126,8 @@ export default function SharedLocationsPage() {
                     longitude: updated.longitude ?? s.longitude,
                     address: updated.address ?? s.address,
                     lastUpdated: updated.location_updated_at ?? s.lastUpdated,
+                    speedKmh: updated.speed_kmh ?? null,
+                    stillSince: updated.still_since ?? null,
                   }
                 : s
             )
@@ -325,7 +332,15 @@ export default function SharedLocationsPage() {
                         boxShadow: `0 2px 8px ${overdue ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.3)"}`,
                       }}
                     >
-                      {u.fullName.split(" ")[0]}
+                      {(() => {
+                        const first = u.fullName.split(" ")[0];
+                        if (u.speedKmh != null && u.speedKmh >= BADGE_MIN_KMH) {
+                          const kmh = Math.round(u.speedKmh);
+                          return `${first} · ${kmh} km/h${kmh > SPEEDING_KMH ? " !" : ""}`;
+                        }
+                        const still = stillLabel(u.stillSince);
+                        return still ? `${first} · ${still}` : first;
+                      })()}
                     </div>
                   </div>
                 </Marker>

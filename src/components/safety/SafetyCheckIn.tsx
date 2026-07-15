@@ -513,7 +513,7 @@ if (checkingStatus) {
             >
               {/* Handle bar (mobile) */}
               <div className="flex justify-center pt-3 pb-1 sm:hidden">
-                <div className="w-10 h-1 rounded-full bg-white/20" />
+                <div className="w-10 h-1 rounded-full sheet-handle" />
               </div>
 
               <div className="p-6">

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { requireUser, authErrorResponse } from "../../_auth";
+import { award } from "../../_achievements";
 import { sendPushToUser } from "../../_firebaseAdmin";
 
 export async function POST(req: NextRequest) {
@@ -96,6 +97,9 @@ export async function POST(req: NextRequest) {
         data: { type: "safety_checkin_started", checkin_id: checkin.id, user_id: user.id },
       })
     ));
+
+    await award(supabaseAdmin, user.id, "always_ready");
+
 
     return NextResponse.json({ ok: true, checkin });
   } catch (error: any) {

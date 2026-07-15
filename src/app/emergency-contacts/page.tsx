@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { signalCircleRefresh } from "@/lib/authFetch";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useToast } from "@/context/ToastContext";
@@ -23,7 +24,6 @@ import {
   CheckCircle,
   Clock,
   X,
-  Share2,
   Check,
   XCircle,
 } from "lucide-react";
@@ -31,6 +31,8 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { Header } from "@/components/layout/Header";
+import { InvitePanel } from "@/components/community/InvitePanel";
+import { CirclesSection } from "@/components/community/CirclesSection";
 
 interface EmergencyContact {
   id: string;
@@ -212,7 +214,15 @@ export default function EmergencyContactsPage() {
       fetchProtectingFor();
     };
     window.addEventListener("peja-emergency-contact-responded", handleRefresh);
-    return () => window.removeEventListener("peja-emergency-contact-responded", handleRefresh);
+    // Near-realtime: pending -> accepted flips while the page is open,
+    // no manual refresh needed.
+    const t = setInterval(handleRefresh, 12_000);
+    window.addEventListener("focus", handleRefresh);
+    return () => {
+      window.removeEventListener("peja-emergency-contact-responded", handleRefresh);
+      window.removeEventListener("focus", handleRefresh);
+      clearInterval(t);
+    };
   }, []);
 
   const fetchContacts = async () => {
@@ -309,7 +319,6 @@ export default function EmergencyContactsPage() {
   const handleAddContact = async () => {
     if (!selectedUser) { setError("Please select a user"); return; }
     if (!relationship) { setError("Please select a relationship"); return; }
-    if (contacts.length >= 10) { setError("Maximum 10 emergency contacts allowed"); return; }
 
     // Check if already in active contacts (pending or accepted)
     const existing = contacts.find(c => c.contact_user_id === selectedUser.id);
@@ -400,6 +409,10 @@ export default function EmergencyContactsPage() {
     }
   };
 
+  // Share-back (map-home visibility) is pre-checked at accept; this set
+  // tracks invites where the user UNticked it. See PEJA_MAP_HOME_DESIGN.md.
+  const [shareBackOff, setShareBackOff] = useState<Set<string>>(new Set());
+
   const handleRespondToInvite = async (inviteId: string, accept: boolean) => {
     setRespondingId(inviteId);
     try {
@@ -412,7 +425,7 @@ export default function EmergencyContactsPage() {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ contactId: inviteId, accept }),
+        body: JSON.stringify({ contactId: inviteId, accept, shareBack: !shareBackOff.has(inviteId) }),
       });
 
       const result = await res.json();
@@ -430,6 +443,7 @@ export default function EmergencyContactsPage() {
       setPendingInvites(prev => prev.filter(i => i.id !== inviteId));
       toast.success(accept ? "Accepted! You're now their emergency contact." : "Declined.");
       window.dispatchEvent(new Event("peja-emergency-contact-responded"));
+      signalCircleRefresh();
     } catch {
       toast.danger("Failed to respond. Try again.");
     } finally {
@@ -439,6 +453,13 @@ export default function EmergencyContactsPage() {
 
   const handleDeleteContact = async () => {
     if (!deleteId) return;
+    // Optimistic: the row disappears NOW; a failed request restores it.
+    const doomedId = deleteId;
+    const contactsSnapshot = contacts;
+    const protectingSnapshot = protectingFor;
+    setContacts(prev => prev.filter(c => c.id !== doomedId));
+    setProtectingFor(prev => prev.filter(c => c.id !== doomedId));
+    setDeleteId(null);
     setDeleting(true);
     try {
       const { data: session } = await supabase.auth.getSession();
@@ -450,21 +471,23 @@ export default function EmergencyContactsPage() {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ contactId: deleteId }),
+        body: JSON.stringify({ contactId: doomedId }),
       });
 
       const result = await res.json();
 
       if (!res.ok) {
+        setContacts(contactsSnapshot);
+        setProtectingFor(protectingSnapshot);
         toast.danger(result.error || "Failed to remove contact.");
         return;
       }
 
-      setContacts(prev => prev.filter(c => c.id !== deleteId));
-      setProtectingFor(prev => prev.filter(c => c.id !== deleteId));
-      setDeleteId(null);
       toast.success("Contact removed.");
+      signalCircleRefresh();
     } catch {
+      setContacts(contactsSnapshot);
+      setProtectingFor(protectingSnapshot);
       toast.danger("Failed to remove contact.");
     } finally {
       setDeleting(false);
@@ -474,17 +497,6 @@ export default function EmergencyContactsPage() {
   const handleCloseModal = () => {
     setShowAddModal(false); setSearchQuery(""); setSearchResults([]);
     setSelectedUser(null); setRelationship(""); setError(""); setShowNotOnPeja(false);
-  };
-
-  const handleShare = async () => {
-    const text = "Join Peja - Stay safe with real-time incident alerts!";
-    const url = "https://peja.life";
-    if (navigator.share) {
-      try { await navigator.share({ title: "Peja", text, url }); } catch {}
-    } else {
-      await navigator.clipboard.writeText(`${text} ${url}`);
-      toast.success("Link copied!");
-    }
   };
 
   const statusBadge = (status: string) => {
@@ -502,7 +514,7 @@ export default function EmergencyContactsPage() {
   if (authLoading || loading) {
     return (
       <div className="min-h-screen pb-20">
-        <Header variant="back" title="Emergency Contacts" onBack={() => router.back()} />
+        <Header variant="back" title="Your Community" onBack={() => router.back()} />
         <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6 space-y-3">
           <Skeleton className="h-16 w-full rounded-2xl" />
           {Array.from({ length: 3 }).map((_, i) => (
@@ -518,11 +530,14 @@ export default function EmergencyContactsPage() {
 
   return (
     <div className="min-h-screen pb-20">
-      <Header variant="back" title="Emergency Contacts" onBack={() => router.back()} />
+      <Header variant="back" title="Your Community" onBack={() => router.back()} />
 
       <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6">
         {/* Safety Check-In */}
         <SafetyCheckIn contacts={contacts} />
+
+        {/* Circles: grouped sharing audiences + pending circle invites */}
+        <CirclesSection />
 
         {/* Tabs */}
         <div className="flex border-b border-white/10 mb-6">
@@ -598,7 +613,6 @@ export default function EmergencyContactsPage() {
                 Add Emergency Contact
               </Button>
             )}
-            {contacts.length >= 10 && <p className="text-center text-sm text-dark-500">Maximum 10 contacts reached</p>}
           </>
         )}
 
@@ -627,6 +641,29 @@ export default function EmergencyContactsPage() {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-dark-100 text-sm">{invite.requester?.full_name || "Unknown"}</p>
                         <p className="text-xs text-dark-500">Wants you as: {invite.relationship}</p>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShareBackOff(prev => {
+                              const next = new Set(prev);
+                              if (next.has(invite.id)) next.delete(invite.id);
+                              else next.add(invite.id);
+                              return next;
+                            })
+                          }
+                          className="mt-1.5 flex items-center gap-1.5 text-xs text-dark-400 active:scale-95 transition-transform"
+                        >
+                          <span
+                            className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                              shareBackOff.has(invite.id)
+                                ? "border-dark-500"
+                                : "border-primary-500 bg-primary-600"
+                            }`}
+                          >
+                            {!shareBackOff.has(invite.id) && <Check className="w-3 h-3 text-white" />}
+                          </span>
+                          Share my location back
+                        </button>
                       </div>
                       <div className="flex gap-2 shrink-0">
                         <button
@@ -726,10 +763,13 @@ export default function EmergencyContactsPage() {
               )}
 
               {showNotOnPeja && !searching && (
-                <div className="mt-4 p-4 glass-sm rounded-xl text-center">
-                  <p className="text-dark-300 mb-3">No users found.</p>
-                  <p className="text-sm text-dark-400 mb-4">Your contact must be on Peja to receive SOS alerts.</p>
-                  <Button variant="secondary" onClick={handleShare} leftIcon={<Share2 className="w-4 h-4" />}>Share Peja</Button>
+                <div className="mt-4 p-4 glass-sm rounded-xl">
+                  <p className="text-dark-300 mb-1 text-center font-medium">They&apos;re not on peja yet</p>
+                  <p className="text-sm text-dark-400 mb-4 text-center">
+                    Invite them - when they join from your link, your request
+                    reaches them automatically.
+                  </p>
+                  <InvitePanel compact />
                 </div>
               )}
             </div>

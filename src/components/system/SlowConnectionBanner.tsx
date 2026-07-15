@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Wifi, WifiOff, X } from "lucide-react";
+import { Wifi, WifiOff } from "lucide-react";
 
 export function SlowConnectionBanner() {
   const [show, setShow] = useState(false);
@@ -125,8 +125,10 @@ export function SlowConnectionBanner() {
         paddingTop: "calc(env(safe-area-inset-top, 0px) + var(--cap-status-bar-height, 8px))",
       }}
     >
-      <div
-        className="mx-4 mt-2 flex items-center gap-2 px-3 py-1.5 rounded-full max-w-md w-fit"
+      {/* Whole pill dismisses on tap - same rule as the action toasts. */}
+      <button
+        onClick={handleDismiss}
+        className="mx-4 mt-2 flex items-center gap-2 px-3 py-1.5 rounded-full max-w-md w-fit cursor-pointer active:scale-95 transition-transform"
         style={{
           background: isSlow ? "#eab308" : "#22c55e",
           boxShadow: isSlow
@@ -143,16 +145,7 @@ export function SlowConnectionBanner() {
         <p className="text-xs font-semibold text-white whitespace-nowrap">
           {isSlow ? "Slow connection" : "Back online"}
         </p>
-        {isSlow && (
-          <button
-            onClick={handleDismiss}
-            className="ml-0.5 -mr-1 p-1 rounded-full hover:bg-white/15 shrink-0"
-            aria-label="Dismiss"
-          >
-            <X className="w-3 h-3 text-white" />
-          </button>
-        )}
-      </div>
+      </button>
     </div>
   );
 }

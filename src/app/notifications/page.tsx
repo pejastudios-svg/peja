@@ -7,6 +7,7 @@ import { useFeedCache } from "@/context/FeedContext";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
+import { authFetchJson } from "@/lib/authFetch";
 import { markAllAsRead } from "@/lib/notifications";
 import { Header } from "@/components/layout/Header";
 import { SOS_TAGS } from "@/lib/types";
@@ -25,6 +26,7 @@ import {
   Check,
   Heart,
   UserPlus,
+  Users,
   UserCheck,
   UserX,
   User,
@@ -60,6 +62,7 @@ interface AccountStatusModalData {
 }
 
 function NotificationRowSkeleton() {
+
   return (
     <div className="glass-card p-4">
       <div className="flex gap-3">
@@ -99,6 +102,13 @@ export default function NotificationsPage() {
 
   const [notifError, setNotifError] = useState(false);
   const [inviteModal, setInviteModal] = useState<InviteModalData | null>(null);
+  const [groupInvite, setGroupInvite] = useState<{
+    memberRowId: string;
+    groupName: string;
+    fromName: string;
+    notificationId: string;
+  } | null>(null);
+  const [groupResponding, setGroupResponding] = useState(false);
   const [responding, setResponding] = useState<"accept" | "decline" | null>(null);
   const [accountStatusModal, setAccountStatusModal] =
     useState<AccountStatusModalData | null>(null);
@@ -309,6 +319,16 @@ export default function NotificationsPage() {
     // Handle emergency contact invite — open modal optimistically, then fetch
     // the current status so we can render the right state (pending vs already
     // accepted/declined vs deleted).
+    if (data.type === "group_invite" && data.member_row_id) {
+      setGroupInvite({
+        memberRowId: data.member_row_id,
+        groupName: data.group_name || "a circle",
+        fromName: data.from_name || "Someone",
+        notificationId: notification.id,
+      });
+      return;
+    }
+
     if (data.type === "emergency_contact_invite") {
       const contactId = data.contact_id;
       setInviteModal({
@@ -444,9 +464,32 @@ export default function NotificationsPage() {
     }
   };
 
+  const handleGroupInviteResponse = async (accept: boolean) => {
+    if (!groupInvite || groupResponding) return;
+    setGroupResponding(true);
+    try {
+      const { res, data } = await authFetchJson("/api/community/groups", {
+        method: "POST",
+        body: JSON.stringify({ action: "respond", memberRowId: groupInvite.memberRowId, accept }),
+      });
+      if (!res.ok && res.status !== 409) {
+        toast.danger(data?.error || "Couldn't respond");
+        return;
+      }
+      handleMarkAsRead(groupInvite.notificationId);
+      toast.success(accept ? `You're in ${groupInvite.groupName}` : "Declined");
+      setGroupInvite(null);
+    } finally {
+      setGroupResponding(false);
+    }
+  };
+
   const getNotificationIcon = (notification: Notification) => {
     const data = notification.data || {};
 
+    if (data.type === "group_invite") {
+      return <Users className="w-5 h-5 text-primary-400" />;
+    }
     if (data.type === "emergency_contact_invite") {
       return <UserPlus className="w-5 h-5 text-yellow-400" />;
     }
@@ -747,6 +790,39 @@ export default function NotificationsPage() {
                   </Button>
                 </div>
               ) : null}
+            </div>
+          )}
+        </Modal>
+
+        {/* Circle invite response */}
+        <Modal
+          isOpen={Boolean(groupInvite)}
+          onClose={() => setGroupInvite(null)}
+          title="Circle invite"
+        >
+          {groupInvite && (
+            <div className="space-y-4">
+              <p className="text-sm text-dark-300 leading-relaxed">
+                {groupInvite.fromName} added you to their{" "}
+                <span className="font-semibold text-dark-100">{groupInvite.groupName}</span> circle.
+                Accepting also makes you their emergency contact if you aren&apos;t already.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleGroupInviteResponse(false)}
+                  disabled={groupResponding}
+                  className="flex-1 py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+                >
+                  Decline
+                </button>
+                <button
+                  onClick={() => handleGroupInviteResponse(true)}
+                  disabled={groupResponding}
+                  className="flex-1 py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+                >
+                  Accept
+                </button>
+              </div>
             </div>
           )}
         </Modal>

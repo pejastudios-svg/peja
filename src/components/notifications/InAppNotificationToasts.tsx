@@ -223,6 +223,16 @@ export default function InAppNotificationToasts() {
                 i === 0 ? "toastIn 180ms ease-out" : undefined,
             }}
             onClick={() => handleClick(n)}
+            onTouchStart={(e) => {
+              (e.currentTarget as HTMLElement).dataset.swipeY = String(e.touches[0].clientY);
+            }}
+            onTouchMove={(e) => {
+              const start = Number((e.currentTarget as HTMLElement).dataset.swipeY || 0);
+              if (start && start - e.touches[0].clientY > 32) {
+                delete (e.currentTarget as HTMLElement).dataset.swipeY;
+                dismiss(n.id);
+              }
+            }}
           >
             <div className="p-3 flex items-start gap-3">
               <div className="p-2 rounded-xl bg-dark-800/60 shrink-0">{getIcon(n.type)}</div>

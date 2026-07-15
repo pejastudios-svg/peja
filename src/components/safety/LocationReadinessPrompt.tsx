@@ -129,7 +129,7 @@ export function LocationReadinessPrompt() {
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex justify-center pt-1 pb-2 sm:hidden">
-            <div className="w-10 h-1 rounded-full bg-white/20" />
+            <div className="w-10 h-1 rounded-full sheet-handle" />
           </div>
 
           <div className="flex items-center gap-3 mb-1">
