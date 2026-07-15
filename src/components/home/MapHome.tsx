@@ -110,6 +110,30 @@ export default function MapHome() {
   const lastPresenceWrite = useRef(0);
   // ── long-press pin: hold the map, get a place + directions ──
   const [pin, setPin] = useState<{ lat: number; lng: number; name: string | null; loading: boolean } | null>(null);
+  // A flight requested before the map finished loading (deep link).
+  const pendingFly = useRef<{ lat: number; lng: number } | null>(null);
+
+  // Deep link from post cards: /?flyto=lat,lng&label=... drops the pin
+  // card (name + directions) on the incident and flies there.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const flyto = params.get("flyto");
+      if (!flyto) return;
+      const [latS, lngS] = flyto.split(",");
+      const lat = Number(latS);
+      const lng = Number(lngS);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      const label = params.get("label");
+      setPin({ lat, lng, name: label || null, loading: false });
+      didCenterOnUser.current = true; // the deep link owns the camera
+      pendingFly.current = { lat, lng };
+      mapRef.current?.flyTo({ center: [lng, lat], zoom: 15, duration: 900 });
+      // Clean the URL so refresh/back doesn't replay the flight.
+      window.history.replaceState({}, "", "/");
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const press = useRef<{ x: number; y: number; timer: ReturnType<typeof setTimeout> } | null>(null);
 
   const cancelPress = useCallback(() => {
@@ -780,6 +804,13 @@ export default function MapHome() {
         attributionControl={false}
         style={{ width: "100%", height: "100%" }}
         onRotate={(e) => setMapBearing(e.viewState.bearing)}
+        onLoad={() => {
+          if (pendingFly.current) {
+            const { lat, lng } = pendingFly.current;
+            pendingFly.current = null;
+            mapRef.current?.flyTo({ center: [lng, lat], zoom: 15, duration: 900 });
+          }
+        }}
         onMouseDown={(e) => startPress(e.point.x, e.point.y, e.lngLat.lat, e.lngLat.lng)}
         onMouseMove={(e) => movePress(e.point.x, e.point.y)}
         onMouseUp={cancelPress}

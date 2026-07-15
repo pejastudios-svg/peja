@@ -15,7 +15,7 @@ import { authFetchJson } from "@/lib/authFetch";
 import { useToast } from "@/context/ToastContext";
 import { CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
-import { AlertTriangle, ChevronRight, ChevronUp, Plus, Radio, User, UserPlus, Users } from "lucide-react";
+import { AlertTriangle, ChevronRight, ChevronUp, Plus, Radio, Search as SearchIcon, User, UserPlus, Users, X } from "lucide-react";
 
 export interface CircleMember {
   id: string;
@@ -75,7 +75,13 @@ export function CircleSheet({
   const [expanded, setExpanded] = useState(true); // default open (product decision)
   const [inviteOpen, setInviteOpen] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  // Progressive reveal (professional-app style): 4 -> +10 per tap ->
+  // "Show less" resets. Same pattern inside expanded circles.
+  const [visibleCount, setVisibleCount] = useState(4);
+  const [circleVisible, setCircleVisible] = useState<Record<string, number>>({});
+  // Animated search across people, circles, and people inside circles.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [openCircle, setOpenCircle] = useState<string | null>(null);
   const [addToCircle, setAddToCircle] = useState<{ id: string; name: string; memberIds: string[]; owned: boolean } | null>(null);
   const toast = useToast();
@@ -362,9 +368,45 @@ export function CircleSheet({
             </div>
           </div>
 
-          <p className="text-xs font-bold uppercase tracking-wider text-dark-500 mb-2 mt-1">
-            Your people
-          </p>
+          <div className="flex items-center justify-between mb-2 mt-1 gap-2">
+            <p className="text-xs font-bold uppercase tracking-wider text-dark-500 shrink-0">
+              Your people
+            </p>
+            <div className="flex items-center gap-1 min-w-0">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search people or circles"
+                className="rounded-full bg-dark-800/70 border border-dark-700 text-xs text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500"
+                style={{
+                  width: searchOpen ? 170 : 0,
+                  opacity: searchOpen ? 1 : 0,
+                  paddingLeft: searchOpen ? 12 : 0,
+                  paddingRight: searchOpen ? 12 : 0,
+                  paddingTop: 6,
+                  paddingBottom: 6,
+                  transition: "width 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s, padding 0.3s",
+                }}
+              />
+              <button
+                onClick={() => {
+                  setSearchOpen((v) => {
+                    if (v) setQuery("");
+                    return !v;
+                  });
+                }}
+                aria-label="Search"
+                className="w-7 h-7 rounded-full flex items-center justify-center bg-dark-800/70 border border-dark-700 active:scale-90 transition-transform shrink-0"
+              >
+                {searchOpen ? (
+                  <X className="w-3.5 h-3.5 text-dark-400" />
+                ) : (
+                  <SearchIcon className="w-3.5 h-3.5 text-dark-400" />
+                )}
+              </button>
+            </div>
+          </div>
           {members.length === 0 ? (
             <button
               onClick={() => setInviteOpen(true)}
@@ -375,19 +417,38 @@ export function CircleSheet({
             </button>
           ) : (
             <div className="space-y-1.5">
-              {(showAll ? members : members.slice(0, 4)).map((m) => memberRow(m))}
-              {members.length > 4 && (
-                <button
-                  onClick={() => setShowAll((v) => !v)}
-                  className="w-full flex items-center justify-center gap-1 py-2.5 rounded-2xl text-sm font-semibold beacon-accent-text active:scale-[0.98] transition-transform"
-                >
-                  {showAll ? "Show less" : `See all ${members.length}`}
-                  <ChevronRight
-                    className="w-4 h-4 transition-transform duration-300"
-                    style={{ transform: showAll ? "rotate(-90deg)" : "rotate(90deg)" }}
-                  />
-                </button>
-              )}
+              {(() => {
+                const q = query.trim().toLowerCase();
+                const list = q ? members.filter((m) => m.name.toLowerCase().includes(q)) : members;
+                const shown = q ? list : list.slice(0, visibleCount);
+                const remaining = list.length - shown.length;
+                return (
+                  <>
+                    {shown.map((m) => memberRow(m))}
+                    {q && list.length === 0 && (
+                      <p className="text-xs text-dark-500 text-center py-2">No one matches</p>
+                    )}
+                    {!q && remaining > 0 && (
+                      <button
+                        onClick={() => setVisibleCount((c) => c + 10)}
+                        className="w-full flex items-center justify-center gap-1 py-2.5 rounded-2xl text-sm font-semibold beacon-accent-text active:scale-[0.98] transition-transform"
+                      >
+                        See more ({remaining})
+                        <ChevronRight className="w-4 h-4 rotate-90" />
+                      </button>
+                    )}
+                    {!q && remaining <= 0 && list.length > 4 && (
+                      <button
+                        onClick={() => setVisibleCount(4)}
+                        className="w-full flex items-center justify-center gap-1 py-2.5 rounded-2xl text-sm font-semibold beacon-accent-text active:scale-[0.98] transition-transform"
+                      >
+                        Show less
+                        <ChevronRight className="w-4 h-4 -rotate-90" />
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -407,7 +468,19 @@ export function CircleSheet({
                 <p className="flex-1 text-left text-sm font-medium text-dark-300">New circle</p>
               </button>
               <div className="space-y-1.5">
-                {circles.map((c) => (
+                {(() => {
+                  const q = query.trim().toLowerCase();
+                  const list = q
+                    ? circles.filter(
+                        (c) =>
+                          c.name.toLowerCase().includes(q) ||
+                          c.members.some((m) => m.name.toLowerCase().includes(q))
+                      )
+                    : circles;
+                  if (q && list.length === 0) {
+                    return <p className="text-xs text-dark-500 text-center py-2">No circles match</p>;
+                  }
+                  return list.map((c) => (
                   <div key={c.id}>
                     <button
                       onClick={() => setOpenCircle((v) => (v === c.id ? null : c.id))}
@@ -424,9 +497,34 @@ export function CircleSheet({
                         style={{ transform: openCircle === c.id ? "rotate(90deg)" : "none" }}
                       />
                     </button>
-                    {openCircle === c.id && (
+                    {(openCircle === c.id || query.trim() !== "") && (
                       <div className="space-y-1.5 mt-1.5 ml-3 pl-3 border-l border-dark-700/60">
-                        {c.members.map((m) => memberRow(m))}
+                        {(() => {
+                          const q = query.trim().toLowerCase();
+                          const nameHit = q && c.name.toLowerCase().includes(q);
+                          const all = q && !nameHit
+                            ? c.members.filter((m) => m.name.toLowerCase().includes(q))
+                            : c.members;
+                          const cap = circleVisible[c.id] ?? 6;
+                          const shown = q ? all : all.slice(0, cap);
+                          const remaining = all.length - shown.length;
+                          return (
+                            <>
+                              {shown.map((m) => memberRow(m))}
+                              {!q && remaining > 0 && (
+                                <button
+                                  onClick={() =>
+                                    setCircleVisible((prev) => ({ ...prev, [c.id]: cap + 10 }))
+                                  }
+                                  className="w-full flex items-center justify-center gap-1 py-2 rounded-2xl text-xs font-semibold beacon-accent-text active:scale-[0.98] transition-transform"
+                                >
+                                  See more ({remaining})
+                                  <ChevronRight className="w-3.5 h-3.5 rotate-90" />
+                                </button>
+                              )}
+                            </>
+                          );
+                        })()}
                         {c.owned && (
                           <button
                             onClick={() =>
@@ -445,7 +543,8 @@ export function CircleSheet({
                       </div>
                     )}
                   </div>
-                ))}
+                  ));
+                })()}
               </div>
             </>
           )}

@@ -763,7 +763,7 @@ export default function Home() {
 
   // Calculate tab blend ratio for swipe animation (0 = nearby active, 1 = trending active)
   return (
-    <div className="min-h-screen pb-[calc(5rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
+    <div className="min-h-screen pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]">
       <Header onCreateClick={() => router.push("/create")} />
 
       <PullToRefresh onRefresh={handleRefresh}>

@@ -33,7 +33,8 @@ interface EligibleContact {
  * accepted contacts. Members consent per circle; a circle then becomes a
  * one-tap audience in Share My Location.
  */
-export function CirclesSection() {
+export function CirclesSection({ query = "" }: { query?: string } = {}) {
+  const q = query.trim().toLowerCase();
   const { user } = useAuth();
   const toast = useToast();
   const [circles, setCircles] = useState<Circle[]>([]);
@@ -409,7 +410,14 @@ export function CirclesSection() {
         </button>
       ) : (
         <div className="space-y-2">
-          {circles.map((c) => (
+          {circles
+            .filter(
+              (c) =>
+                !q ||
+                c.name.toLowerCase().includes(q) ||
+                c.members.some((m) => (m.name || "").toLowerCase().includes(q))
+            )
+            .map((c) => (
             <button
               key={c.id}
               onClick={() => setManage(c)}
@@ -452,7 +460,9 @@ export function CirclesSection() {
             Circles you&apos;re in
           </p>
           <div className="space-y-2">
-            {memberOf.map((m) => (
+            {memberOf
+              .filter((m) => !q || m.name.toLowerCase().includes(q) || m.ownerName.toLowerCase().includes(q))
+              .map((m) => (
               <div key={m.groupId} className="glass-card !p-3.5 flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
                   <Users className="beacon-ok-text w-4.5 h-4.5" />

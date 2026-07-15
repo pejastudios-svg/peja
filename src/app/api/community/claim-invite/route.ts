@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     const { data: referrer } = await supabaseAdmin
       .from("users")
-      .select("id, full_name")
+      .select("id, full_name, avatar_url")
       .eq("id", ref)
       .maybeSingle();
     if (!referrer) {
@@ -46,15 +46,37 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { error } = await supabaseAdmin.from("emergency_contacts").insert({
-      user_id: ref,
-      contact_user_id: user.id,
-      relationship: "friend",
-      status: "pending",
-    });
+    const { data: contactRow, error } = await supabaseAdmin
+      .from("emergency_contacts")
+      .insert({
+        user_id: ref,
+        contact_user_id: user.id,
+        relationship: "friend",
+        status: "pending",
+      })
+      .select("id")
+      .single();
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
+
+    // Durable invite notification for the JOINER too - the post-login
+    // toast is easy to miss, and this gives them the same tap-to-accept
+    // modal every other contact request gets.
+    await supabaseAdmin.from("notifications").insert({
+      user_id: user.id,
+      type: "system",
+      title: "Emergency Contact Request",
+      body: `${referrer.full_name || "Someone"} wants to add you as their emergency contact (friend).`,
+      data: {
+        type: "emergency_contact_invite",
+        contact_id: contactRow.id,
+        requester_name: referrer.full_name,
+        requester_avatar: referrer.avatar_url,
+        relationship: "friend",
+      },
+      is_read: false,
+    });
 
     // Tell the referrer their invite worked - this is the reward moment
     // that makes people send more invites.

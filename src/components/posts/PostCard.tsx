@@ -291,11 +291,11 @@ const handleShareClick = async (e: React.MouseEvent) => {
 
         {distanceText && post.location && (
           <Link
-            href={`/map?post=${post.id}&lat=${post.location.latitude}&lng=${post.location.longitude}`}
+            href={`/?flyto=${post.location.latitude},${post.location.longitude}&label=${encodeURIComponent(post.address || "Incident location")}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-600/15 border border-primary-600/40 text-primary-600 text-[11px] font-bold shrink-0 hover:bg-primary-600/25 transition-colors"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-semibold beacon-accent-text shrink-0 hover:bg-primary-500/10 active:scale-95 transition-all"
           >
-            <MapPin className="w-2.5 h-2.5" />
+            <MapPin className="w-3 h-3" />
             {distanceText}
           </Link>
         )}

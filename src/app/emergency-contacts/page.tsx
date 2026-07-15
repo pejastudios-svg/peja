@@ -8,7 +8,6 @@ import { signalCircleRefresh } from "@/lib/authFetch";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import { useToast } from "@/context/ToastContext";
-import { SafetyCheckIn } from "@/components/safety/SafetyCheckIn";
 import {
   readEmergencyContactsCache,
   readProtectingCache,
@@ -149,6 +148,8 @@ export default function EmergencyContactsPage() {
   const [respondingId, setRespondingId] = useState<string | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
+  // Page-wide filter: your contacts, people protecting you, and circles.
+  const [peopleFilter, setPeopleFilter] = useState("");
   const [searchResults, setSearchResults] = useState<SearchUser[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedUser, setSelectedUser] = useState<SearchUser | null>(null);
@@ -533,11 +534,33 @@ export default function EmergencyContactsPage() {
       <Header variant="back" title="Your Community" onBack={() => router.back()} />
 
       <main className="pt-app-header-pill max-w-2xl mx-auto px-4 py-6">
-        {/* Safety Check-In */}
-        <SafetyCheckIn contacts={contacts} />
+        {/* Safety Check-In banner hidden here: check-ins live on the map
+            sheet's quick actions now, and this page is about managing
+            people, not starting sessions. Component kept for easy restore. */}
+
+        {/* Find anyone across contacts and circles */}
+        <div className="relative mb-5">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" />
+          <input
+            type="text"
+            value={peopleFilter}
+            onChange={(e) => setPeopleFilter(e.target.value)}
+            placeholder="Search your people and circles"
+            className="w-full pl-10 pr-9 py-2.5 rounded-2xl bg-dark-800/70 border border-dark-700 text-sm text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500"
+          />
+          {peopleFilter && (
+            <button
+              onClick={() => setPeopleFilter("")}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-dark-500 active:scale-90 transition-transform"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
 
         {/* Circles: grouped sharing audiences + pending circle invites */}
-        <CirclesSection />
+        <CirclesSection query={peopleFilter} />
 
         {/* Tabs */}
         <div className="flex border-b border-white/10 mb-6">
@@ -586,7 +609,12 @@ export default function EmergencyContactsPage() {
                   <p className="text-sm text-dark-500 mb-4">Add Peja users who should be notified in emergencies</p>
                 </div>
               ) : (
-                contacts.map(contact => (
+                contacts
+                  .filter((c) =>
+                    !peopleFilter.trim() ||
+                    (c.contact_user?.full_name || "").toLowerCase().includes(peopleFilter.trim().toLowerCase())
+                  )
+                  .map(contact => (
                   <div key={contact.id} className="glass-card flex items-center gap-4">
                     <AvatarImage
                       src={contact.contact_user?.avatar_url}
@@ -631,7 +659,12 @@ export default function EmergencyContactsPage() {
               <div className="mb-6">
                 <h3 className="text-sm font-semibold text-dark-400 uppercase mb-3">Pending Requests</h3>
                 <div className="space-y-3">
-                  {pendingInvites.map(invite => (
+                  {pendingInvites
+                    .filter((i) =>
+                      !peopleFilter.trim() ||
+                      (i.requester?.full_name || "").toLowerCase().includes(peopleFilter.trim().toLowerCase())
+                    )
+                    .map(invite => (
                     <div key={invite.id} className="glass-card flex items-center gap-4">
                       <AvatarImage
                         src={invite.requester?.avatar_url}
@@ -696,7 +729,12 @@ export default function EmergencyContactsPage() {
                   <p className="text-sm text-dark-500">When someone adds you and you accept, they'll appear here</p>
                 </div>
               ) : (
-                protectingFor.map(row => (
+                protectingFor
+                  .filter((r) =>
+                    !peopleFilter.trim() ||
+                    (r.requester?.full_name || "").toLowerCase().includes(peopleFilter.trim().toLowerCase())
+                  )
+                  .map(row => (
                   <div key={row.id} className="glass-card flex items-center gap-4">
                     <AvatarImage
                       src={row.requester?.avatar_url}
