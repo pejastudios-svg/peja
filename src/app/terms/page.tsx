@@ -94,7 +94,31 @@ export default function TermsPage() {
           </section>
 
           <section className="mb-8">
-            <h2 className="text-xl font-semibold text-dark-100 mb-3">8. Account Termination</h2>
+            <h2 className="text-xl font-semibold text-dark-100 mb-3">8. Location Accuracy and Availability</h2>
+            <p className="text-dark-300 leading-relaxed">
+              Peja makes its best effort to determine and share your location as accurately
+              as possible, using GPS and the other positioning signals your device provides.
+              However, location accuracy depends on factors outside our control, including your
+              device, GPS signal, network coverage, weather, buildings, and your surroundings.
+              In some areas or conditions a precise position simply cannot be obtained.
+            </p>
+            <p className="text-dark-300 leading-relaxed mt-3">
+              Because of this, peja does not guarantee that any location shown is exact,
+              current, or available at all times. A location may be approximate, delayed, or
+              unavailable, and we label how fresh or rough a position is wherever we can. Live
+              location updates require the app to be open and running; when the app is closed
+              or the device is offline, your circle sees your last known position, not a live one.
+            </p>
+            <p className="text-dark-300 leading-relaxed mt-3">
+              You should treat any location as a guide, not a precise or guaranteed fix, and
+              never rely on it alone in an emergency. Peja is not liable for any loss, harm, or
+              decision resulting from location that is inaccurate, delayed, approximate, or
+              unavailable.
+            </p>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="text-xl font-semibold text-dark-100 mb-3">9. Account Termination</h2>
             <p className="text-dark-300 leading-relaxed">
               We reserve the right to suspend or terminate accounts that violate these 
               terms without prior notice. You may also delete your account at any time 
@@ -103,7 +127,7 @@ export default function TermsPage() {
           </section>
 
           <section className="mb-8">
-            <h2 className="text-xl font-semibold text-dark-100 mb-3">9. Changes to Terms</h2>
+            <h2 className="text-xl font-semibold text-dark-100 mb-3">10. Changes to Terms</h2>
             <p className="text-dark-300 leading-relaxed">
               We may update these terms from time to time. Continued use of the service 
               after changes constitutes acceptance of the new terms.
@@ -111,7 +135,7 @@ export default function TermsPage() {
           </section>
 
           <section className="mb-8">
-  <h2 className="text-xl font-semibold text-dark-100 mb-3">10. Emergency Response Disclaimer</h2>
+  <h2 className="text-xl font-semibold text-dark-100 mb-3">11. Emergency Response Disclaimer</h2>
   <div className="text-dark-300 leading-relaxed space-y-4">
     <p>
       Peja is a community-driven platform designed to facilitate communication and awareness 
@@ -177,7 +201,7 @@ export default function TermsPage() {
 </section>
 
 <section className="mb-8">
-  <h2 className="text-xl font-semibold text-dark-100 mb-3">11. Indemnification</h2>
+  <h2 className="text-xl font-semibold text-dark-100 mb-3">12. Indemnification</h2>
   <p className="text-dark-300 leading-relaxed">
     You agree to indemnify, defend, and hold harmless Peja, its parent company, officers, 
     directors, employees, agents, and affiliates from and against any and all claims, damages, 
@@ -191,7 +215,7 @@ export default function TermsPage() {
 </section>
 
 <section className="mb-8">
-            <h2 className="text-xl font-semibold text-dark-100 mb-3">12. Contact Us</h2>
+            <h2 className="text-xl font-semibold text-dark-100 mb-3">13. Contact Us</h2>
             <p className="text-dark-300 leading-relaxed">
               If you have questions about these terms, contact us at:
               <br />
