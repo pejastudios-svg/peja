@@ -31,6 +31,7 @@ export interface CircleMember {
   batteryPct: number | null;
   speedKmh?: number | null;
   stillSince?: string | null;
+  accuracyM?: number | null;
 }
 
 export interface NearbyIncident {

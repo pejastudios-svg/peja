@@ -96,6 +96,7 @@ export default function MapHome() {
   const [motion, setMotion] = useState<{ speedKmh: number | null; heading: number | null; stillSince: string | null }>({ speedKmh: null, heading: null, stillSince: null });
   const [speedWarn, setSpeedWarn] = useState<number | null>(null);
   const [mapBearing, setMapBearing] = useState(0);
+  const [mapZoom, setMapZoom] = useState(13);
   // Compass heading (deviceorientation) for the radar cone while still;
   // GPS course takes over once moving. Throttled: orientation events fire
   // at ~60Hz and would re-render the whole map.
@@ -406,6 +407,10 @@ export default function MapHome() {
             batteryPct: p?.battery_pct ?? null,
             speedKmh,
             stillSince,
+            // Honesty: how coarse is the fix behind this dot? Live SOS/SML
+            // positions are treated as good; ambient falls back to the
+            // presence row's reported accuracy.
+            accuracyM: sos || sml ? null : p?.accuracy_m ?? null,
           };
         });
         out.sort((a, b) => Number(b.sosActive) - Number(a.sosActive));
@@ -817,7 +822,10 @@ export default function MapHome() {
         onTouchStart={(e) => startPress(e.point.x, e.point.y, e.lngLat.lat, e.lngLat.lng)}
         onTouchMove={(e) => movePress(e.point.x, e.point.y)}
         onTouchEnd={cancelPress}
-        onMove={cancelPress}
+        onMove={(e) => {
+          cancelPress();
+          setMapZoom(Math.round(e.viewState.zoom * 10) / 10);
+        }}
       >
         {/* ── you: the protagonist bubble (Life360-style, with tail) ── */}
         {center && (() => {
@@ -919,6 +927,19 @@ export default function MapHome() {
                 }}
                 className="flex flex-col items-center active:scale-90 transition-transform"
               >
+                {/* honesty halo: a coarse fix renders as "somewhere in this
+                    area", sized to the REAL reported accuracy at the
+                    current zoom, instead of a confidently wrong pin. */}
+                {(m.accuracyM ?? 0) > 150 && (() => {
+                  const mpp = (156543.03392 * Math.cos(((m.lat as number) * Math.PI) / 180)) / Math.pow(2, mapZoom);
+                  const px = Math.min(320, Math.max(28, ((m.accuracyM as number) * 2) / mpp));
+                  return (
+                    <div
+                      className="absolute rounded-full border border-primary-400/40 bg-primary-500/10 pointer-events-none"
+                      style={{ width: px, height: px, bottom: 20 - px / 2, left: "50%", transform: "translateX(-50%)" }}
+                    />
+                  );
+                })()}
                 <div className="relative w-10 h-10">
                   {(m.sosActive || m.smlOverdue) && <div className="absolute -inset-1 rounded-full sos-glow-ring" />}
                   {!m.sosActive && !m.smlOverdue && m.smlActive && (
@@ -956,7 +977,8 @@ export default function MapHome() {
                     if (m.speedKmh != null && m.speedKmh >= BADGE_MIN_KMH) return ` · ${Math.round(m.speedKmh)} km/h`;
                     const still = stillLabel(m.stillSince);
                     if (still) return ` · ${still}`;
-                    return m.freshLabel ? ` · ${m.freshLabel}` : "";
+                    const approx = (m.accuracyM ?? 0) > 150 ? " · approx" : "";
+                    return (m.freshLabel ? ` · ${m.freshLabel}` : "") + approx;
                   })()}
                 </span>
               </button>

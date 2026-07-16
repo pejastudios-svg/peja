@@ -34,13 +34,45 @@ export function PresenceCapture() {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           try {
-            // One-shot ambient fix: no filter history to lean on, so just
-            // refuse outright junk (distant cell towers). A wrong ambient
-            // position is worse than a slightly stale one.
-            if ((pos.coords.accuracy ?? 0) > 800) {
-              busyRef.current = false;
-              return;
-            }
+            // Ambient one-shot fixes are the jumpy kind (cold GPS falls
+            // back to cell/Wi-Fi, hundreds of meters off). Persistent
+            // filter via localStorage since each capture is a fresh run:
+            //  - coarse fixes (>200m) only pass after 15 min blind
+            //    (stale-good beats fresh-garbage for ambient)
+            //  - >800m never passes
+            //  - teleports (>300 km/h vs last write) with WORSE accuracy
+            //    than the last fix are noise, not movement
+            const acc = pos.coords.accuracy ?? 100;
+            if (acc > 800) { busyRef.current = false; return; }
+            try {
+              const lastRaw = localStorage.getItem("peja-ambient-last-fix");
+              const last = lastRaw ? JSON.parse(lastRaw) : null;
+              const blindMs = last ? Date.now() - last.t : Infinity;
+              if (acc > 200 && blindMs < 15 * 60_000) {
+                busyRef.current = false;
+                return;
+              }
+              if (last && blindMs < 30 * 60_000) {
+                const R = 6371000;
+                const dLat = ((pos.coords.latitude - last.lat) * Math.PI) / 180;
+                const dLng = ((pos.coords.longitude - last.lng) * Math.PI) / 180;
+                const h =
+                  Math.sin(dLat / 2) ** 2 +
+                  Math.cos((last.lat * Math.PI) / 180) *
+                    Math.cos((pos.coords.latitude * Math.PI) / 180) *
+                    Math.sin(dLng / 2) ** 2;
+                const distM = 2 * R * Math.asin(Math.sqrt(h));
+                const kmh = (distM / Math.max(1, blindMs / 1000)) * 3.6;
+                if (kmh > 300 && acc > (last.acc ?? 100)) {
+                  busyRef.current = false;
+                  return;
+                }
+              }
+              localStorage.setItem(
+                "peja-ambient-last-fix",
+                JSON.stringify({ lat: pos.coords.latitude, lng: pos.coords.longitude, t: Date.now(), acc })
+              );
+            } catch {}
             const battery = await batteryPct();
             const { error } = await supabase.from("presence").upsert({
               user_id: user.id,

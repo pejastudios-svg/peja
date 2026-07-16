@@ -10,7 +10,7 @@ import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Modal } from "@/components/ui/Modal";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import {
-  AlertTriangle, BatteryLow, Battery, HeartHandshake, MessageCircle, Navigation, Phone, User,
+  AlertTriangle, BatteryLow, Battery, HeartHandshake, MapPinned, MessageCircle, Navigation, Phone, User,
 } from "lucide-react";
 import type { CircleMember } from "./CircleSheet";
 
@@ -181,6 +181,18 @@ export function MemberCard({
               {member.name.split(" ")[0]} missed their safety check-in and hasn&apos;t
               confirmed they&apos;re okay. Their emergency contacts have been
               alerted. Reach out to them now.
+            </p>
+          </div>
+        )}
+
+        {/* honesty: a coarse fix is an AREA, not a point */}
+        {(member.accuracyM ?? 0) > 150 && (
+          <div className="flex items-start gap-2.5 rounded-2xl bg-primary-500/10 border border-primary-500/25 p-3 mb-4">
+            <MapPinned className="beacon-accent-text w-4.5 h-4.5 shrink-0 mt-0.5" />
+            <p className="text-xs text-dark-300 leading-relaxed">
+              {member.name.split(" ")[0]} is somewhere within about{" "}
+              {Math.round((member.accuracyM as number) / 50) * 50} meters of this spot. Their phone
+              could only get a rough position, so treat the pin as an area, not an exact point.
             </p>
           </div>
         )}

@@ -54,7 +54,8 @@ export function AndroidInstallBanner() {
     if (isCapacitor()) return; // inside the app
     if (isStandalone()) return; // already installed as a PWA
     try {
-      if (localStorage.getItem(DISMISS_KEY)) return;
+      const dismissedAt = Number(localStorage.getItem(DISMISS_KEY) || 0);
+      if (dismissedAt && Date.now() - dismissedAt < 14 * 86400_000) return;
     } catch {}
     setPlatform(detectPlatform());
     const onPrompt = (e: Event) => {
@@ -82,7 +83,7 @@ export function AndroidInstallBanner() {
 
   const dismiss = () => {
     try {
-      localStorage.setItem(DISMISS_KEY, "1");
+      localStorage.setItem(DISMISS_KEY, String(Date.now()));
     } catch {}
     setPlatform(null);
   };

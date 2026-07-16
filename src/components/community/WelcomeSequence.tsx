@@ -180,7 +180,7 @@ export function WelcomeSequence() {
       title: locState === "granted" ? "Location is on" : "This is your safety map",
       body:
         locState === "granted"
-          ? "Your people can find you in an emergency. You control who sees you, person by person."
+          ? "Your people can find you in an emergency. Peja tracks gently to protect your battery, because a dead phone cannot call for help, and speeds up automatically when it matters. You control who sees you, person by person."
           : locState === "denied"
             ? "Location is blocked for peja. Allow it in settings and this will turn green by itself."
             : "The dot in the middle is you. Hold the SOS button any time you need help, and turn on location so your people can find you in an emergency.",

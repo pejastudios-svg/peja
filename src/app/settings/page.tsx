@@ -689,8 +689,11 @@ export default function SettingsPage() {
             </SettingRow>
             {ambientOn && (
               <p className="text-xs text-dark-500 mt-2 ml-1">
-                Gentle updates every few minutes. Turn it off any time, or use
-                the Pause button on the notification.
+                Peja tracks gently on purpose: aggressive tracking drains your
+                battery, and a dead phone cannot call for help. Updates come
+                every few minutes here, and speed up automatically during SOS
+                and check-ins, when they matter most. Turn this off any time,
+                or use the Pause button on the notification.
               </p>
             )}
           </section>
