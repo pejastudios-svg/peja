@@ -251,7 +251,7 @@ export default function MapHome() {
             setCenter(c);
             centerOnUserOnce(c.lat, c.lng);
             try {
-              localStorage.setItem("peja-map-center", JSON.stringify(c));
+              localStorage.setItem("peja-map-center", JSON.stringify({ ...c, acc: f.accuracyM, t: Date.now() }));
               // Live proof that location permission works (the welcome
               // card reads this instead of guessing from the flaky
               // Permissions API, which Safari half-supports).

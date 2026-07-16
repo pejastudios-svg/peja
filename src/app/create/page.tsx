@@ -161,6 +161,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+  const videoCaptureRef = useRef<HTMLInputElement>(null);
 
   // Pre-upload: maps each File → promise of its temp storage result
   type PreUploadResult = {
@@ -501,65 +502,54 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       if (!isMounted.current) return;
       const { address, state, countryCode } = await getAddressFromCoords(latitude, longitude);
       if (isMounted.current) {
-        setLocation({
-          latitude,
-          longitude,
-          address,
-          state,
-          countryCode,
-          accuracy,
-        });
+        setLocation({ latitude, longitude, address, state, countryCode, accuracy });
         setLocationLoading(false);
       }
     };
 
-    // Staged acquisition: fresh-fix-or-die stranded indoor phones on
-    // "Could not get location" and coarse desktop fixes on "Lagos State".
-    //  1. Fresh high-accuracy fix (best case, 12s).
-    //  2. Any recent cached fix (up to 5 min old beats an error).
-    //  3. The map's last FILTERED position from this device - it passed
-    //     the accuracy gates, which an IP-based desktop guess never did.
-    const tryStoredCenter = (): boolean => {
-      try {
-        const v = localStorage.getItem("peja-map-center");
-        if (!v) return false;
+    // The map already solves this: a ONE-SHOT fix grabs the first
+    // (usually coarse network) position, which reverse-geocodes to just
+    // "Lagos State". So mirror the map - WATCH for a few seconds and keep
+    // the most accurate fix, seeded by the map's last filtered position.
+    let best: { lat: number; lng: number; acc: number } | null = null;
+    try {
+      const v = localStorage.getItem("peja-map-center");
+      if (v) {
         const c = JSON.parse(v);
-        if (!Number.isFinite(c?.lat) || !Number.isFinite(c?.lng)) return false;
-        apply(c.lat, c.lng, null);
-        return true;
-      } catch {
-        return false;
+        // Trust the stored center only if recent (< 3 min) - the map
+        // filtered it, so it beats a fresh coarse guess.
+        if (Number.isFinite(c?.lat) && Number.isFinite(c?.lng) && c.t && Date.now() - c.t < 180000) {
+          best = { lat: c.lat, lng: c.lng, acc: typeof c.acc === "number" ? c.acc : 60 };
+        }
+      }
+    } catch {}
+
+    let watchId: number | null = null;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      if (best) apply(best.lat, best.lng, best.acc);
+      else if (isMounted.current) {
+        setError("Could not get location. Please enable location services.");
+        setLocationLoading(false);
       }
     };
 
-    navigator.geolocation.getCurrentPosition(
+    watchId = navigator.geolocation.watchPosition(
       (position) => {
         const { latitude, longitude, accuracy } = position.coords;
-        // A very coarse fix (IP/Wi-Fi guess, > 1.5km) reverse-geocodes to
-        // "Lagos State" - the map's last real position is more honest.
-        if ((accuracy ?? 0) > 1500 && tryStoredCenter()) return;
-        apply(latitude, longitude, typeof accuracy === "number" ? accuracy : null);
+        const acc = typeof accuracy === "number" ? accuracy : 9999;
+        if (!best || acc < best.acc) best = { lat: latitude, lng: longitude, acc };
+        // Good enough (street level): stop early, don't drain GPS.
+        if (acc <= 35) finish();
       },
-      () => {
-        // Stage 2: accept a cached position rather than failing.
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            const { latitude, longitude, accuracy } = position.coords;
-            apply(latitude, longitude, typeof accuracy === "number" ? accuracy : null);
-          },
-          () => {
-            // Stage 3: the map's last good fix, then give up honestly.
-            if (tryStoredCenter()) return;
-            if (isMounted.current) {
-              setError("Could not get location. Please enable location services.");
-              setLocationLoading(false);
-            }
-          },
-          { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
-        );
-      },
+      () => { if (!best) finish(); },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
+    // Take the best fix collected within 8s regardless.
+    setTimeout(finish, 8000);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1212,6 +1202,7 @@ setToast("Processing video...");
         <div className="glass-card mb-4">
           <input type="file" ref={cameraInputRef} onChange={handleFileSelect} accept="image/*" capture="environment" className="hidden" />
           <input type="file" ref={videoInputRef} onChange={handleFileSelect} accept="video/*" className="hidden" />
+          <input type="file" ref={videoCaptureRef} onChange={handleFileSelect} accept="video/*" capture="environment" className="hidden" />
 
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -1290,7 +1281,17 @@ setToast("Processing video...");
 
             <button
               type="button"
-              onClick={() => setShowRecorder(true)}
+              onClick={() => {
+                const ua = navigator.userAgent;
+                const isIOS = /iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
+                const standalone =
+                  window.matchMedia("(display-mode: standalone)").matches ||
+                  Boolean((navigator as unknown as { standalone?: boolean }).standalone);
+                // iOS Home Screen app: getUserMedia video is unreliable ->
+                // record with the phone's own camera, which always works.
+                if (isIOS && standalone) videoCaptureRef.current?.click();
+                else setShowRecorder(true);
+              }}
               className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
               style={{
                 background: "rgba(239, 68, 68, 0.08)",
