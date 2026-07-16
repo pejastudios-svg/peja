@@ -107,6 +107,20 @@ export async function sendPushNotification(params: {
         body: params.body || "",
         channelId: channelId,
       },
+      // Web/iOS-PWA tokens: FCM needs an explicit webpush block or the
+      // browser receives a silent data blob and shows nothing.
+      webpush: {
+        headers: {
+          TTL: String(Math.max(60, Math.floor(ttl / 1000))),
+          ...(collapseKey ? { Topic: collapseKey } : {}),
+        },
+        notification: {
+          title: params.title,
+          body: params.body || "",
+          icon: "/android-chrome-192x192.png",
+          badge: "/android-chrome-192x192.png",
+        },
+      },
       android: {
         priority: "high",
         ttl,

@@ -44,6 +44,7 @@ import { OutboxBootstrap } from "@/components/system/OutboxBootstrap";
 import { EmergencyContactsBootstrap } from "@/components/system/EmergencyContactsBootstrap";
 import { AmbientTrackerBootstrap } from "@/components/system/AmbientTrackerBootstrap";
 import { AndroidInstallBanner } from "@/components/system/AndroidInstallBanner";
+import { WebPushSetup } from "@/components/system/WebPushSetup";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -215,6 +216,7 @@ export default function RootLayout({
                         <EmergencyContactsBootstrap />
                         <AmbientTrackerBootstrap />
                         <AndroidInstallBanner />
+                        <WebPushSetup />
                         <PresenceCapture />
                         <AchievementCelebration />
                         <AnalyticsTracker />

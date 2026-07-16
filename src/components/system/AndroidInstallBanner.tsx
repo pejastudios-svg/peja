@@ -72,9 +72,9 @@ export function AndroidInstallBanner() {
 
   const act = () => {
     if (platform === "android") {
-      const p = deferredPrompt.current;
-      if (p) p.prompt().catch(() => window.open(PLAY_URL, "_blank"));
-      else window.open(PLAY_URL, "_blank");
+      // Native app only: it has the SOS/SML services and background
+      // tracking a PWA can't offer on Android.
+      window.open(PLAY_URL, "_blank");
     } else {
       setIosHelpOpen(true);
     }

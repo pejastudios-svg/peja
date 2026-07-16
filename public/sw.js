@@ -553,3 +553,40 @@ self.addEventListener("message", (event) => {
 self.addEventListener("sync", (event) => {
   if (event.tag === "peja-offline-sync") event.waitUntil(replayQueue());
 });
+
+// ── Web push (iOS Home Screen PWA + desktop browsers) ──
+// FCM webpush messages carrying a `notification` payload are displayed
+// by the browser itself; this handler covers data-only payloads so
+// nothing ever arrives silently.
+self.addEventListener("push", (event) => {
+  if (!event.data) return;
+  let msg = {};
+  try { msg = event.data.json(); } catch { return; }
+  if (msg.notification) return; // declarative path: browser already shows it
+  const data = msg.data || msg;
+  const title = data.title || "peja";
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || "",
+      icon: "/android-chrome-192x192.png",
+      badge: "/android-chrome-192x192.png",
+      data: { url: "/notifications" },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/notifications";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ("focus" in c) {
+          c.navigate(url);
+          return c.focus();
+        }
+      }
+      return clients.openWindow(url);
+    })
+  );
+});

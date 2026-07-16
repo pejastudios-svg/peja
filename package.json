@@ -33,6 +33,7 @@
     "capacitor-voice-recorder": "^7.0.6",
     "cloudinary": "^2.9.0",
     "date-fns": "^4.1.0",
+    "firebase": "^12.16.0",
     "firebase-admin": "^13.6.1",
     "heic2any": "^0.0.4",
     "hls.js": "^1.6.15",
