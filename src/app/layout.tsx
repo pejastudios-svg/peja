@@ -45,6 +45,7 @@ import { EmergencyContactsBootstrap } from "@/components/system/EmergencyContact
 import { AmbientTrackerBootstrap } from "@/components/system/AmbientTrackerBootstrap";
 import { AndroidInstallBanner } from "@/components/system/AndroidInstallBanner";
 import { WebPushSetup } from "@/components/system/WebPushSetup";
+import { PwaRealityNotice } from "@/components/system/PwaRealityNotice";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -217,6 +218,7 @@ export default function RootLayout({
                         <AmbientTrackerBootstrap />
                         <AndroidInstallBanner />
                         <WebPushSetup />
+                        <PwaRealityNotice />
                         <PresenceCapture />
                         <AchievementCelebration />
                         <AnalyticsTracker />
