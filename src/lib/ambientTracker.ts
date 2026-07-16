@@ -1,4 +1,4 @@
-import { registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
 
 // JS bridge to the native always-on presence service (Android). The
 // service beats the user's location to /api/presence/beat every ~3 min,
@@ -21,5 +21,11 @@ export const AMBIENT_KEY_STORAGE = "peja-ambient-device-key";
 export const AMBIENT_CHANGED_EVENT = "peja-ambient-changed";
 
 export function isCapacitor(): boolean {
-  return typeof window !== "undefined" && "Capacitor" in window;
+  // NOT `"Capacitor" in window`: importing @capacitor/core defines the
+  // global in ordinary browsers too. isNativePlatform() is the truth.
+  try {
+    return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
 }

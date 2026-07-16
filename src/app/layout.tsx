@@ -55,6 +55,13 @@ const poppins = Poppins({
 export const metadata: Metadata = {
   title: "Peja - Your Brother's Keeper",
   description: "Real-time incident alerts for your community",
+  // iOS Add-to-Home-Screen: open standalone (no Safari chrome), dark
+  // status bar blending, proper name under the icon.
+  appleWebApp: {
+    capable: true,
+    title: "peja",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export const viewport: Viewport = {
