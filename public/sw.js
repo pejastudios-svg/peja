@@ -559,15 +559,18 @@ self.addEventListener("sync", (event) => {
 // by the browser itself; this handler covers data-only payloads so
 // nothing ever arrives silently.
 self.addEventListener("push", (event) => {
-  if (!event.data) return;
+  // ALWAYS show something: Safari/iOS never auto-displays (and revokes
+  // the subscription if a push produces no notification), and the server
+  // sends webpush data-only so Chrome won't double-display.
   let msg = {};
-  try { msg = event.data.json(); } catch { return; }
-  if (msg.notification) return; // declarative path: browser already shows it
-  const data = msg.data || msg;
-  const title = data.title || "peja";
+  try { msg = event.data ? event.data.json() : {}; } catch { msg = {}; }
+  const n = msg.notification || {};
+  const data = msg.data || msg || {};
+  const title = n.title || data.title || "peja";
+  const body = n.body || data.body || "";
   event.waitUntil(
     self.registration.showNotification(title, {
-      body: data.body || "",
+      body,
       icon: "/android-chrome-192x192.png",
       badge: "/android-chrome-192x192.png",
       data: { url: "/notifications" },

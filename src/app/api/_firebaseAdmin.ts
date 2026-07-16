@@ -107,18 +107,15 @@ export async function sendPushNotification(params: {
         body: params.body || "",
         channelId: channelId,
       },
-      // Web/iOS-PWA tokens: FCM needs an explicit webpush block or the
-      // browser receives a silent data blob and shows nothing.
+      // Web/iOS-PWA tokens: DATA-ONLY on purpose. Safari never
+      // auto-displays pushes (the SW must call showNotification), and
+      // Chrome auto-displays only when webpush.notification is present -
+      // which would DOUBLE with the SW's display. Data-only + SW display
+      // = exactly one notification on every browser.
       webpush: {
         headers: {
           TTL: String(Math.max(60, Math.floor(ttl / 1000))),
           ...(collapseKey ? { Topic: collapseKey } : {}),
-        },
-        notification: {
-          title: params.title,
-          body: params.body || "",
-          icon: "/android-chrome-192x192.png",
-          badge: "/android-chrome-192x192.png",
         },
       },
       android: {
