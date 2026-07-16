@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { setAppBadgeCount } from "@/lib/appBadge";
 
 interface Notification {
   id: string;
@@ -101,6 +102,12 @@ export default function NotificationsPage() {
   });
 
   const [notifError, setNotifError] = useState(false);
+
+  // Keep the app-icon badge honest as reads/deletes happen on this page.
+  useEffect(() => {
+    setAppBadgeCount(notifications.filter((n) => !n.is_read).length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifications]);
   const [inviteModal, setInviteModal] = useState<InviteModalData | null>(null);
   const [groupInvite, setGroupInvite] = useState<{
     memberRowId: string;

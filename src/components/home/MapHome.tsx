@@ -11,6 +11,7 @@ import { BADGE_MIN_KMH, SPEEDING_KMH, createMotionTracker, stillLabel } from "@/
 import { createPositionFilter } from "@/lib/positionFilter";
 import { batteryPct } from "@/lib/battery";
 import { openDirections } from "@/lib/directions";
+import { setAppBadgeCount } from "@/lib/appBadge";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import { CommunityNudge } from "@/components/community/CommunityNudge";
 import { CircleSheet, type CircleMember, type NearbyIncident } from "./CircleSheet";
@@ -190,7 +191,10 @@ export default function MapHome() {
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
         .eq("is_read", false);
-      if (!stop && !error) setUnreadCount(count || 0);
+      if (!stop && !error) {
+        setUnreadCount(count || 0);
+        setAppBadgeCount(count || 0);
+      }
     };
     fetchUnread();
     const t = setInterval(fetchUnread, 30_000);

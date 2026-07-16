@@ -89,6 +89,8 @@ export async function sendPushNotification(params: {
   data?: Record<string, string>;
   ttlMs?: number;
   collapseKey?: string;
+  /** Unread count for the app-icon badge (web Badging API + Android). */
+  badge?: number;
 }): Promise<SendResult> {
   try {
     const firebaseApp = getFirebaseAdmin();
@@ -106,6 +108,7 @@ export async function sendPushNotification(params: {
         title: params.title,
         body: params.body || "",
         channelId: channelId,
+        ...(params.badge != null ? { badge: String(params.badge) } : {}),
       },
       // Web/iOS-PWA tokens: DATA-ONLY on purpose. Safari never
       // auto-displays pushes (the SW must call showNotification), and
@@ -130,7 +133,7 @@ export async function sendPushNotification(params: {
           visibility: "public",
           icon: "ic_notification",
           defaultVibrateTimings: true,
-          notificationCount: 1,
+          notificationCount: params.badge ?? 1,
         },
       },
     });
@@ -255,6 +258,19 @@ export async function sendPushToUser(params: {
     return 0;
   }
 
+  // App-icon badge: the push is sent right after its notification row is
+  // inserted, so this count includes it. Best-effort - a missing badge
+  // just means the icon count lags until the app next opens.
+  let badge: number | undefined;
+  try {
+    const { count } = await supabaseAdmin
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", params.userId)
+      .eq("is_read", false);
+    if (typeof count === "number") badge = count;
+  } catch {}
+
   let sentCount = 0;
   const invalidTokenIds: string[] = [];
 
@@ -266,6 +282,7 @@ export async function sendPushToUser(params: {
       data: params.data,
       ttlMs: params.ttlMs,
       collapseKey: params.collapseKey,
+      badge,
     });
 
     if (result === "sent") {

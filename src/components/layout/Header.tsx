@@ -7,6 +7,7 @@ import { Bell, ArrowLeft, MessageCircle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useChatStore } from "@/features/chat/store";
 import { supabase } from "@/lib/supabase";
+import { setAppBadgeCount } from "@/lib/appBadge";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 
 interface HeaderProps {
@@ -133,7 +134,10 @@ export function Header({
         .select("*", { count: "exact", head: true })
         .eq("user_id", user.id)
         .eq("is_read", false);
-      if (!error) setUnreadCount(count || 0);
+      if (!error) {
+        setUnreadCount(count || 0);
+        setAppBadgeCount(count || 0);
+      }
     } catch {}
   };
 

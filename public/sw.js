@@ -568,6 +568,14 @@ self.addEventListener("push", (event) => {
   const data = msg.data || msg || {};
   const title = n.title || data.title || "peja";
   const body = n.body || data.body || "";
+  // App-icon badge (iOS 16.4+ Home Screen apps, installed Android PWAs).
+  try {
+    const badge = Number(data.badge);
+    if (Number.isFinite(badge) && "setAppBadge" in self.navigator) {
+      if (badge > 0) self.navigator.setAppBadge(badge);
+      else self.navigator.clearAppBadge();
+    }
+  } catch (e) {}
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
