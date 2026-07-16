@@ -497,39 +497,68 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
       return;
     }
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        if (!isMounted.current) return;
-        const { latitude, longitude, accuracy } = position.coords;
-        const { address, state, countryCode } = await getAddressFromCoords(
+    const apply = async (latitude: number, longitude: number, accuracy: number | null) => {
+      if (!isMounted.current) return;
+      const { address, state, countryCode } = await getAddressFromCoords(latitude, longitude);
+      if (isMounted.current) {
+        setLocation({
           latitude,
-          longitude
-        );
-        if (isMounted.current) {
-          setLocation({
-            latitude,
-            longitude,
-            address,
-            state,
-            countryCode,
-            accuracy: typeof accuracy === "number" ? accuracy : null,
-          });
-          setLocationLoading(false);
-        }
+          longitude,
+          address,
+          state,
+          countryCode,
+          accuracy,
+        });
+        setLocationLoading(false);
+      }
+    };
+
+    // Staged acquisition: fresh-fix-or-die stranded indoor phones on
+    // "Could not get location" and coarse desktop fixes on "Lagos State".
+    //  1. Fresh high-accuracy fix (best case, 12s).
+    //  2. Any recent cached fix (up to 5 min old beats an error).
+    //  3. The map's last FILTERED position from this device - it passed
+    //     the accuracy gates, which an IP-based desktop guess never did.
+    const tryStoredCenter = (): boolean => {
+      try {
+        const v = localStorage.getItem("peja-map-center");
+        if (!v) return false;
+        const c = JSON.parse(v);
+        if (!Number.isFinite(c?.lat) || !Number.isFinite(c?.lng)) return false;
+        apply(c.lat, c.lng, null);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        // A very coarse fix (IP/Wi-Fi guess, > 1.5km) reverse-geocodes to
+        // "Lagos State" - the map's last real position is more honest.
+        if ((accuracy ?? 0) > 1500 && tryStoredCenter()) return;
+        apply(latitude, longitude, typeof accuracy === "number" ? accuracy : null);
       },
       () => {
-        if (isMounted.current) {
-          setError("Could not get location. Please enable location services.");
-          setLocationLoading(false);
-        }
+        // Stage 2: accept a cached position rather than failing.
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            const { latitude, longitude, accuracy } = position.coords;
+            apply(latitude, longitude, typeof accuracy === "number" ? accuracy : null);
+          },
+          () => {
+            // Stage 3: the map's last good fix, then give up honestly.
+            if (tryStoredCenter()) return;
+            if (isMounted.current) {
+              setError("Could not get location. Please enable location services.");
+              setLocationLoading(false);
+            }
+          },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
+        );
       },
-      // maximumAge: 0 forces a fresh GPS fix every time. The previous
-      // 60s window let the device hand back an old position from up
-      // to a minute ago, which is how reports ended up pinned at "the
-      // bus stop I walked past" instead of where the user actually
-      // is. Higher timeout (15s vs 10s) gives cold-fix devices a
-      // chance to acquire satellites indoors / under cover.
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   };
 

@@ -58,6 +58,7 @@ export function VideoRecorder({
   const [initializing, setInitializing] = useState(false);
 
   const videoElRef = useRef<HTMLVideoElement | null>(null);
+  const fallbackInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -95,10 +96,19 @@ export function VideoRecorder({
           throw new Error("Camera not supported on this device");
         }
         stopStream();
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: mode } },
-          audio: true,
-        });
+        // iOS Home Screen web apps have a WebKit bug where this promise
+        // can hang forever (neither resolves nor rejects) - the watchdog
+        // turns the hang into a catchable failure so the native-camera
+        // fallback below can take over.
+        const stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: mode } },
+            audio: true,
+          }),
+          new Promise<MediaStream>((_, reject) =>
+            setTimeout(() => reject(new Error("Camera took too long to start")), 8000)
+          ),
+        ]);
         streamRef.current = stream;
         if (videoElRef.current) {
           videoElRef.current.srcObject = stream;
@@ -383,9 +393,37 @@ export function VideoRecorder({
 
         {/* Error overlay */}
         {error && (
-          <div className="absolute inset-x-4 top-24 p-3 rounded-xl bg-red-500/20 border border-red-500/40 backdrop-blur-md flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-red-300 mt-0.5 shrink-0" />
-            <p className="text-sm text-red-100">{error}</p>
+          <div className="absolute inset-x-4 top-24 p-3 rounded-xl bg-red-500/20 border border-red-500/40 backdrop-blur-md space-y-3">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-red-300 mt-0.5 shrink-0" />
+              <p className="text-sm text-red-100">{error}</p>
+            </div>
+            {/* The phone's own camera app always works, even where the
+                in-app preview can't (iOS Home Screen apps especially). */}
+            <button
+              onClick={() => fallbackInputRef.current?.click()}
+              className="w-full py-2.5 rounded-xl bg-white text-black text-sm font-semibold active:scale-[0.98] transition-transform"
+            >
+              Record with your phone camera instead
+            </button>
+            <input
+              ref={fallbackInputRef}
+              type="file"
+              accept="video/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                if (f.size > maxSizeBytes) {
+                  setError(`Video is too large (max ${maxSizeMB} MB). Try a shorter clip.`);
+                  e.target.value = "";
+                  return;
+                }
+                onCapture(f);
+                onClose();
+              }}
+            />
           </div>
         )}
 
