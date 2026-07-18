@@ -33,7 +33,6 @@ import {
   Eye,
   EyeOff,
   KeyRound,
-  Copy,
   ShieldCheck,
   Trash2,
   RefreshCw,
@@ -121,8 +120,6 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [pwCode, setPwCode] = useState("");
-  const [pwCodeDisplay, setPwCodeDisplay] = useState<string | null>(null);
-  const [pwCopied, setPwCopied] = useState(false);
   const [showPwOld, setShowPwOld] = useState(false);
   const [showPwNew, setShowPwNew] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
@@ -434,10 +431,6 @@ export default function SettingsPage() {
         return;
       }
 
-      // Show code from response + notification
-      if (data.code) {
-        setPwCodeDisplay(data.code);
-      }
       setPwStep(2);
     } catch {
       setPwError("Connection error. Try again.");
@@ -483,32 +476,12 @@ export default function SettingsPage() {
         setNewPassword("");
         setConfirmNewPassword("");
         setPwCode("");
-        setPwCodeDisplay(null);
         setPwSuccess(false);
       }, 2500);
     } catch {
       setPwError("Connection error. Try again.");
     } finally {
       setPwLoading(false);
-    }
-  };
-
-  const copyCode = async () => {
-    if (!pwCodeDisplay) return;
-    try {
-      await navigator.clipboard.writeText(pwCodeDisplay);
-      setPwCopied(true);
-      setTimeout(() => setPwCopied(false), 2000);
-    } catch {
-      // Fallback
-      const ta = document.createElement("textarea");
-      ta.value = pwCodeDisplay;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      ta.remove();
-      setPwCopied(true);
-      setTimeout(() => setPwCopied(false), 2000);
     }
   };
 
@@ -519,10 +492,8 @@ export default function SettingsPage() {
     setNewPassword("");
     setConfirmNewPassword("");
     setPwCode("");
-    setPwCodeDisplay(null);
     setPwError("");
     setPwSuccess(false);
-    setPwCopied(false);
   };
 
   const ToggleSwitch = ({
@@ -1163,34 +1134,16 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  {/* Code display with copy button */}
-                  {pwCodeDisplay && (
-                    <div className="p-4 rounded-xl bg-primary-600/10 border border-primary-500/30">
-                      <p className="text-xs text-dark-400 mb-2 text-center">
-                        Your verification code
+                  {/* The code goes to email, never on screen - showing it
+                      would defeat the verification. */}
+                  {pwStep === 2 && (
+                    <div className="p-4 rounded-xl bg-primary-600/10 border border-primary-500/30 text-center">
+                      <p className="text-sm text-dark-200 font-medium">
+                        Check your email
                       </p>
-                      <div className="flex items-center justify-center gap-3">
-                        <span className="text-2xl font-mono font-bold text-primary-400 tracking-[0.3em]">
-                          {pwCodeDisplay}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={copyCode}
-                          className={`p-2 rounded-lg transition-colors ${
-                            pwCopied
-                              ? "bg-green-500/20 text-green-400"
-                              : "bg-white/5 text-dark-400 hover:bg-white/10"
-                          }`}
-                        >
-                          {pwCopied ? (
-                            <Check className="w-4 h-4" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-                      <p className="text-xs text-dark-500 mt-2 text-center">
-                        Also sent to your notifications. Expires in 5 minutes.
+                      <p className="text-xs text-dark-400 mt-1">
+                        We sent a 6-digit code to your inbox. Enter it below to
+                        confirm your new password. It expires in 5 minutes.
                       </p>
                     </div>
                   )}
@@ -1236,8 +1189,7 @@ export default function SettingsPage() {
                     onClick={() => {
                       setPwStep(1);
                       setPwCode("");
-                      setPwCodeDisplay(null);
-                      setPwError("");
+                                    setPwError("");
                     }}
                     className="w-full text-sm text-dark-400 hover:text-dark-200 py-2"
                   >

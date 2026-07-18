@@ -567,17 +567,38 @@ export default function MapHome() {
     };
 
     load();
+    // Poll stays as a safety net; realtime does the live work below. A
+    // slower net is fine now that pushes carry the instant updates.
     const t = setInterval(load, REFRESH_MS);
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
     // Instant refetch when a circle mutation happens anywhere in the app
     // (add, accept, remove) instead of waiting out the ambient poll.
     window.addEventListener(CIRCLE_REFRESH_EVENT, onFocus);
+
+    // ── Realtime: the map goes LIVE. Any presence / check-in / SOS write
+    // pushes here (RLS limits us to rows we may see), and we reload -
+    // debounced so a burst of writes is one refetch, not many. This is
+    // what makes all three modes update constantly instead of every 45s.
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const liveReload = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => { if (!stop) load(); }, 800);
+    };
+    const channel = supabase
+      .channel(`map-live-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "presence" }, liveReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "safety_checkins" }, liveReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sos_alerts" }, liveReload)
+      .subscribe();
+
     return () => {
       stop = true;
       clearInterval(t);
+      if (debounce) clearTimeout(debounce);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener(CIRCLE_REFRESH_EVENT, onFocus);
+      supabase.removeChannel(channel);
     };
   }, [user]);
 

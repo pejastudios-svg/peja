@@ -81,15 +81,48 @@ export async function POST(req: NextRequest) {
     expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
   });
 
-  // Insert notification (shows as toast + in notifications page)
-  await supabaseAdmin.from("notifications").insert({
-    user_id: userId,
-    type: "system",
-    title: "Password Change Verification",
-    body: `Your verification code: ${code}`,
-    data: { code, type: "password_change" },
-    is_read: false,
-  });
+  // Email the code (same channel as forgot-password). The code MUST NOT
+  // appear in-app or in the API response - a code the app shows you
+  // verifies nothing. Only someone with access to the account's email
+  // should be able to complete a password change.
+  const webhookUrl = process.env.APPS_SCRIPT_EMAIL_WEBHOOK_URL;
+  const webhookSecret = process.env.APPS_SCRIPT_WEBHOOK_SECRET;
+  if (webhookUrl) {
+    const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+  <div style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:20px;border-radius:12px 12px 0 0;text-align:center">
+    <h1 style="margin:0;font-size:22px">Password Change</h1>
+    <p style="margin:4px 0 0;opacity:.9">Peja Security</p>
+  </div>
+  <div style="background:#1a1a2e;color:#e0e0e0;padding:24px;border:1px solid #333">
+    <p>You requested to change your password. Use this code to confirm:</p>
+    <div style="text-align:center;margin:24px 0">
+      <div style="display:inline-block;background:#0f0a1e;border:2px solid #7c3aed;border-radius:12px;padding:16px 32px;font-size:32px;font-family:monospace;letter-spacing:8px;color:#a855f7;font-weight:bold">
+        ${code}
+      </div>
+    </div>
+    <p style="text-align:center;color:#888;font-size:13px">This code expires in 5 minutes.</p>
+    <p style="margin-top:16px;color:#888;font-size:13px">If you didn't request this, ignore this email and consider changing your password. Your password won't change without this code.</p>
+  </div>
+  <div style="background:#111;color:#555;padding:12px;border-radius:0 0 12px 12px;text-align:center;font-size:11px">
+    Peja Security System
+  </div>
+</div>`;
+    try {
+      await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          secret: webhookSecret,
+          to: userEmail,
+          subject: `${code} is your Peja password change code`,
+          html,
+        }),
+      });
+    } catch {}
+  }
 
-  return NextResponse.json({ ok: true, code });
+  // Never returns the code. `emailed` tells the client whether the code
+  // actually went out (webhook configured) so it can guide the user.
+  return NextResponse.json({ ok: true, emailed: Boolean(webhookUrl) });
 }
