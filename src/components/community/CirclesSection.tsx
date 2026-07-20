@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { authFetchJson } from "@/lib/authFetch";
 import { AvatarImage } from "@/components/ui/AvatarImage";
 import { Modal } from "@/components/ui/Modal";
-import { Check, Clock, Pencil, Plus, Trash2, User, Users, X } from "lucide-react";
+import { Check, ChevronRight, Clock, Pencil, Plus, Trash2, User, Users, X } from "lucide-react";
 
 interface Circle {
   id: string;
@@ -39,7 +39,11 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
   const toast = useToast();
   const [circles, setCircles] = useState<Circle[]>([]);
   const [pending, setPending] = useState<PendingGroupInvite[]>([]);
-  const [memberOf, setMemberOf] = useState<{ groupId: string; name: string; ownerName: string }[]>([]);
+  const [memberOf, setMemberOf] = useState<
+    { groupId: string; name: string; ownerName: string; membersVisible: boolean; members: { userId: string; name: string; avatar: string | null }[] }[]
+  >([]);
+  // Which member-of circle's roster modal is open.
+  const [rosterOpen, setRosterOpen] = useState<string | null>(null);
   const [eligible, setEligible] = useState<EligibleContact[]>([]);
   const [manage, setManage] = useState<Circle | null>(null);
   const [creating, setCreating] = useState(false);
@@ -69,7 +73,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
         .order("created_at"),
       supabase
         .from("contact_group_members")
-        .select("id, status, contact_groups(id, name, owner_id)")
+        .select("id, status, contact_groups(id, name, owner_id, members_visible, contact_group_members(member_user_id, status))")
         .eq("member_user_id", user.id)
         .in("status", ["pending", "accepted"]),
       supabase
@@ -85,6 +89,12 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
       for (const m of (g.contact_group_members as { member_user_id: string }[]) || []) {
         memberIds.add(m.member_user_id);
       }
+    }
+    // Co-members of visible circles I belong to also need names resolved.
+    for (const r of pend.data || []) {
+      const cg = r.contact_groups as unknown as { owner_id?: string; contact_group_members?: { member_user_id: string }[] } | null;
+      if (cg?.owner_id) memberIds.add(cg.owner_id);
+      for (const m of cg?.contact_group_members || []) memberIds.add(m.member_user_id);
     }
     const peerIds = new Set(
       (rels.data || []).flatMap((r) => [r.user_id, r.contact_user_id]).filter((id) => id !== user.id)
@@ -139,11 +149,29 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
       (pend.data || [])
         .filter((p) => p.status === "accepted")
         .map((p) => {
-          const g = p.contact_groups as unknown as { id: string; name: string; owner_id: string } | null;
+          const g = p.contact_groups as unknown as {
+            id: string; name: string; owner_id: string; members_visible?: boolean;
+            contact_group_members?: { member_user_id: string; status: string }[];
+          } | null;
+          // Roster = owner + accepted members, minus me, deduped. RLS only
+          // returns co-members when the circle is visible, so a hidden
+          // circle naturally yields just the owner.
+          const ids = new Set<string>();
+          if (g?.owner_id) ids.add(g.owner_id);
+          for (const m of g?.contact_group_members || []) {
+            if (m.status === "accepted") ids.add(m.member_user_id);
+          }
+          ids.delete(user.id);
           return {
             groupId: g?.id || "",
             name: g?.name || "a circle",
             ownerName: g ? nameById.get(g.owner_id)?.name || "Someone" : "Someone",
+            membersVisible: Boolean(g?.members_visible),
+            members: [...ids].map((id) => ({
+              userId: id,
+              name: nameById.get(id)?.name || "Member",
+              avatar: nameById.get(id)?.avatar || null,
+            })),
           };
         })
     );
@@ -467,10 +495,22 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
                 <div className="w-9 h-9 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
                   <Users className="beacon-ok-text w-4.5 h-4.5" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-dark-100 truncate">{m.name}</p>
-                  <p className="text-xs text-dark-500">{m.ownerName}&apos;s circle</p>
-                </div>
+                <button
+                  onClick={() => m.membersVisible && setRosterOpen(m.groupId)}
+                  disabled={!m.membersVisible}
+                  className="flex-1 min-w-0 text-left disabled:cursor-default"
+                >
+                  <p className="font-medium text-dark-100 truncate flex items-center gap-1.5">
+                    {m.name}
+                    {m.membersVisible && <ChevronRight className="w-3.5 h-3.5 text-dark-500 shrink-0" />}
+                  </p>
+                  <p className="text-xs text-dark-500">
+                    {m.ownerName}&apos;s circle
+                    {m.membersVisible
+                      ? ` · ${m.members.length + 1} ${m.members.length + 1 === 1 ? "person" : "people"}`
+                      : " · members hidden"}
+                  </p>
+                </button>
                 <button
                   onClick={async () => {
                     setMemberOf((prev) => prev.filter((x) => x.groupId !== m.groupId));
@@ -664,6 +704,32 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
           </div>
         )}
       </Modal>
+      {/* Roster of a circle you belong to (owner enabled visibility) */}
+      {rosterOpen && (() => {
+        const c = memberOf.find((m) => m.groupId === rosterOpen);
+        if (!c) return null;
+        const roster = [{ userId: "__owner__", name: `${c.ownerName} (owner)`, avatar: null }, ...c.members];
+        return (
+          <Modal isOpen onClose={() => setRosterOpen(null)} title={c.name}>
+            <div className="space-y-2">
+              <p className="text-xs text-dark-500 mb-1">Everyone in this circle</p>
+              {roster.map((mem) => (
+                <div key={mem.userId} className="flex items-center gap-3 p-2.5 rounded-2xl bg-dark-800/50 border border-dark-700">
+                  <div className="w-9 h-9 rounded-full overflow-hidden bg-dark-700 flex items-center justify-center shrink-0">
+                    {mem.avatar ? (
+                      <AvatarImage src={mem.avatar} wrapperClassName="w-full h-full" />
+                    ) : (
+                      <User className="w-4.5 h-4.5 text-dark-400" />
+                    )}
+                  </div>
+                  <p className="text-sm text-dark-100 truncate">{mem.name}</p>
+                </div>
+              ))}
+            </div>
+          </Modal>
+        );
+      })()}
     </div>
+
   );
 }

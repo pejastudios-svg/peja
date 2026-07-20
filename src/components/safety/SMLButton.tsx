@@ -94,12 +94,14 @@ export function SMLButton() {
           .eq("status", "accepted"),
       ]);
       type G = { id: string; name: string; owner_id: string; members_visible?: boolean; contact_group_members: { member_user_id: string; status: string }[] };
+      // members_visible only controls whether members can SEE each other,
+      // not whether the circle is shareable. A member can still share
+      // their location to a circle whose member list is hidden.
       const raw: G[] = [
         ...((ownedRes.data as unknown as G[]) || []),
-        ...(((memberRes.data || [])
+        ...((memberRes.data || [])
           .map((r) => r.contact_groups)
-          .filter(Boolean) as unknown as G[])
-          .filter((g) => g.members_visible)),
+          .filter(Boolean) as unknown as G[]),
       ];
       const seen = new Set<string>();
       setGroups(
