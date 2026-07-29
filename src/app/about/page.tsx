@@ -80,7 +80,7 @@ const FEATURES = [
 ];
 
 const STEPS = [
-  { n: "1", title: "Add your people", body: "Invite the two or three who would drop everything for you. They accept, and you watch over each other." },
+  { n: "1", title: "Add your people", body: "Invite the people who would drop everything for you. They accept, and you watch over each other." },
   { n: "2", title: "Go about your day", body: "peja sits quietly in the background, gently, without eating your battery." },
   { n: "3", title: "Help knows where you are", body: "SOS, check-in, or a simple glance at the map. When it matters, nobody has to ask where you went." },
 ];
