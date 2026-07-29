@@ -15,7 +15,7 @@ import { registerWebPush, webPushSupported } from "@/lib/firebaseWebPush";
 //    the Play Store app instead, so no pill there.
 
 const DISMISS_KEY = "peja-webpush-dismissed";
-const HIDDEN_PREFIXES = ["/welcome", "/login", "/signup", "/forgot-password", "/join"];
+const HIDDEN_PREFIXES = ["/welcome", "/login", "/signup", "/forgot-password", "/join", "/about"];
 const NAV_ROUTES = ["/", "/feed", "/search"];
 
 function isStandalone(): boolean {

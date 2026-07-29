@@ -17,7 +17,7 @@ import { isCapacitor } from "@/lib/ambientTracker";
 
 const DISMISS_KEY = "peja-install-banner-dismissed";
 const PLAY_URL = "https://play.google.com/store/apps/details?id=com.peja.app";
-const HIDDEN_PREFIXES = ["/welcome", "/login", "/signup", "/forgot-password", "/join"];
+const HIDDEN_PREFIXES = ["/welcome", "/login", "/signup", "/forgot-password", "/join", "/about"];
 const NAV_ROUTES = ["/", "/feed", "/search"];
 
 interface BeforeInstallPromptEvent extends Event {
