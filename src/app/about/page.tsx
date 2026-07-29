@@ -73,7 +73,7 @@ const FEATURES = [
     tag: "Incidents near you",
     title: "Know before you drive into it",
     body:
-      "Real reports from people around you, on the map and in your feed. Traffic, accidents, robbery, protests. Enough to change your route, not enough to keep you scared.",
+      "Real reports from people around you, on the map and in your feed. Traffic, accidents, robbery, protests.",
     points: ["Reports from your own area", "Confirmed by other people nearby", "Tap for directions around it"],
     scene: "incident",
   },
