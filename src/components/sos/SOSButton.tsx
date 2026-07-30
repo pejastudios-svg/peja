@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { createNotifications } from "@/lib/notifications";
 import { Portal } from "@/components/ui/Portal";
+import { authFetchJson } from "@/lib/authFetch";
 import { useToast } from "@/context/ToastContext";
 import { apiUrl } from "@/lib/api";
 import SOSLocation from "@/lib/sosLocation";
@@ -405,19 +406,27 @@ export function SOSButton({ className = "" }: { className?: string }) {
       if (data.tag) setSelectedTag(data.tag);
       if (data.message) setTextMessage(data.message);
       
-      const { count: notifiedCount } = await supabase
-        .from("notifications")
-        .select("*", { count: "exact", head: true })
-        .eq("type", "sos_alert")
-        .contains("data", { sos_id: data.id });
-      
-      if (notifiedCount && notifiedCount > 0) {
-        const status = { contacts: 0, nearby: notifiedCount };
-        setNotifyStatus(status);
-        try {
-          localStorage.setItem('peja-sos-notify-status', JSON.stringify(status));
-        } catch {}
-      }
+      // Ask the server for the real count. A client-side query can never
+      // see it: RLS limits us to our OWN notification rows, while the
+      // alerts belong to the people who were notified. This is why a
+      // Beacon-triggered SOS used to show "0 people notified".
+      try {
+        const { res, data: counts } = await authFetchJson(
+          `/api/sos/notified-count?sosId=${encodeURIComponent(data.id)}`
+        );
+        if (res.ok && counts) {
+          const status = {
+            contacts: Number(counts.contacts) || 0,
+            nearby: Number(counts.nearby) || 0,
+          };
+          if (status.contacts + status.nearby > 0) {
+            setNotifyStatus(status);
+            try {
+              localStorage.setItem('peja-sos-notify-status', JSON.stringify(status));
+            } catch {}
+          }
+        }
+      } catch {}
     }
   };
 
@@ -881,6 +890,10 @@ export function SOSButton({ className = "" }: { className?: string }) {
         .from("sos_alerts")
         .update({ status: "cancelled", resolved_at: new Date().toISOString() })
         .eq("id", idToCancel);
+
+      // All-clear: the people who were alarmed hear that it ended.
+      // Fire-and-forget so a failed notify can never block the cancel.
+      authFetchJson("/api/sos/all-clear", { method: "POST" }).catch(() => {});
 
       try {
         const isCapacitor = typeof (window as any).Capacitor !== 'undefined';

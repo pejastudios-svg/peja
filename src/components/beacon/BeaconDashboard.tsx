@@ -480,15 +480,27 @@ export function BeaconDashboard({
               </button>
             ))}
           </div>
-          {device.volume > 1 && (
-            <div className="beacon-warn mt-2.5 flex items-start gap-2 rounded-xl px-3 py-2.5 beacon-step-in">
-              <AlertTriangle className="beacon-warn-icon w-4 h-4 shrink-0 mt-0.5" />
-              <p className="beacon-warn-text text-xs leading-snug">
-                Louder volumes make the Beacon easy to notice. In an emergency,
-                staying hidden is the point. Level 1 or 0 is recommended.
-              </p>
-            </div>
-          )}
+          {/* Always visible: the trade-off must be understood BEFORE the
+              choice, not flagged after the user has already turned it up. */}
+          <div
+            className={`mt-2.5 flex items-start gap-2 rounded-xl px-3 py-2.5 ${
+              (volDraft ?? device.volume) > 1 ? "beacon-warn" : "bg-dark-800/60 border border-dark-700"
+            }`}
+          >
+            <AlertTriangle
+              className={`w-4 h-4 shrink-0 mt-0.5 ${
+                (volDraft ?? device.volume) > 1 ? "beacon-warn-icon" : "text-dark-400"
+              }`}
+            />
+            <p
+              className={`text-xs leading-snug ${
+                (volDraft ?? device.volume) > 1 ? "beacon-warn-text" : "text-dark-400"
+              }`}
+            >
+              Louder volumes make the Beacon easy to notice. In an emergency,
+              staying hidden is the point. Level 1 or 0 is recommended.
+            </p>
+          </div>
         </div>
       </div>
 

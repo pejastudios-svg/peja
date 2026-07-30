@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, authErrorResponse } from "../../_auth";
+import { notifyAllClear } from "../../_allClear";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { canUseBeacon } from "@/lib/beacon";
 
@@ -46,6 +47,10 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", device.id);
+
+    // All-clear: everyone who was alarmed deserves to hear it ended.
+    // Leaving them with only the alarm is how a safety app burns trust.
+    await notifyAllClear(supabaseAdmin, user.id, "beacon");
 
     return NextResponse.json({ ok: true, cancelled: true });
   } catch (error) {
