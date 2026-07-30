@@ -8,10 +8,11 @@ import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { authFetchJson } from "@/lib/authFetch";
 import { Modal } from "@/components/ui/Modal";
 import { BeaconManual } from "./BeaconManual";
+import { BeaconSharePeople } from "./BeaconSharePeople";
 import { formatDistanceToNow } from "date-fns";
 import {
   Activity, AlertTriangle, Battery, BatteryLow, Check, ChevronRight, Copy,
-  MapPin, Phone, Radio, Send, Trash2, Volume1, VolumeX,
+  MapPin, Phone, Radio, Send, Trash2, Users, Volume1, VolumeX,
 } from "lucide-react";
 import type { BeaconCommand, BeaconDevice } from "@/lib/beacon";
 
@@ -304,8 +305,24 @@ export function BeaconDashboard({
           />
         ),
       },
+      {
+        key: "share",
+        icon: <Users className="w-4.5 h-4.5 beacon-accent-text" />,
+        title: "Show on your circle's map",
+        sub:
+          device.share_with_contacts
+            ? "Your emergency contacts can see where this Beacon is"
+            : "Only you can see it. SOS alerts still reach your contacts",
+        control: (
+          <Toggle
+            on={device.share_with_contacts !== false}
+            disabled={saving === "share"}
+            onChange={(v) => save({ share_with_contacts: v }, "share")}
+          />
+        ),
+      },
     ],
-    [device.fall_alert_enabled, device.sos_ack_tone, saving, save]
+    [device.fall_alert_enabled, device.sos_ack_tone, device.share_with_contacts, saving, save]
   );
 
   return (
@@ -514,6 +531,14 @@ export function BeaconDashboard({
             </p>
           </div>
         </div>
+      </div>
+
+      {/* ── Person-by-person visibility for this Beacon ── */}
+      <div className="beacon-stagger" style={{ animationDelay: "0.18s" }}>
+        <BeaconSharePeople
+          deviceId={device.id}
+          enabled={device.share_with_contacts !== false}
+        />
       </div>
 
       {/* ── How the device works: the manual lives with the device ── */}

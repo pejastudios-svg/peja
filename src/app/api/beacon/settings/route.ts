@@ -43,6 +43,11 @@ export async function POST(req: NextRequest) {
     if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim().slice(0, 40);
     if (typeof body.fall_alert_enabled === "boolean") patch.fall_alert_enabled = body.fall_alert_enabled;
     if (typeof body.sos_ack_tone === "boolean") patch.sos_ack_tone = body.sos_ack_tone;
+    // App-side only: who may SEE the Beacon. No device command needed, so
+    // this never costs an SMS.
+    if (typeof body.share_with_contacts === "boolean") {
+      patch.share_with_contacts = body.share_with_contacts;
+    }
 
     if (typeof body.volume === "number" && body.volume >= 0 && body.volume <= 4) {
       patch.volume = Math.round(body.volume);

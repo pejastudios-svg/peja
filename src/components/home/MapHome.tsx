@@ -80,6 +80,10 @@ export default function MapHome() {
     { user_id: string; name: string; lat: number | null; lng: number | null; created_at: string; sosId: string }[]
   >([]);
   const [beacon, setBeacon] = useState<{ lat: number; lng: number; online: boolean } | null>(null);
+  // Beacons belonging to people in my circle who share theirs with me.
+  const [sharedBeacons, setSharedBeacons] = useState<
+    { id: string; lat: number; lng: number; online: boolean; ownerName: string }[]
+  >([]);
   const [selectedMember, setSelectedMember] = useState<CircleMember | null>(null);
   const [sheetCircles, setSheetCircles] = useState<{ id: string; name: string; members: CircleMember[]; owned: boolean }[]>([]);
   const [incomingPing, setIncomingPing] = useState<
@@ -527,7 +531,7 @@ export default function MapHome() {
         );
       }
 
-      // Own Beacon tracker pin (owner-only on home, per design D5).
+      // Own Beacon tracker pin.
       const { data: dev } = await supabase
         .from("devices")
         .select("last_lat, last_lng, status")
@@ -541,6 +545,32 @@ export default function MapHome() {
         setBeacon(
           dev ? { lat: dev.last_lat, lng: dev.last_lng, online: dev.status === "connected" } : null
         );
+      }
+
+      // Beacons shared with me by people in my circle. RLS returns a row
+      // only when the owner has sharing on and has not hidden from me, so
+      // no permission logic is duplicated here.
+      if (ids.length > 0) {
+        const { data: shared } = await supabase
+          .from("devices")
+          .select("id, user_id, name, last_lat, last_lng, status")
+          .in("user_id", ids)
+          .neq("status", "unpaired")
+          .not("last_lat", "is", null);
+        if (!stop) {
+          const nameFor = new Map(outMembers.map((m) => [m.id, m.name]));
+          setSharedBeacons(
+            (shared || []).map((d) => ({
+              id: d.id as string,
+              lat: d.last_lat as number,
+              lng: d.last_lng as number,
+              online: d.status === "connected",
+              ownerName: (nameFor.get(d.user_id as string) || "Someone").split(" ")[0],
+            })),
+          );
+        }
+      } else if (!stop) {
+        setSharedBeacons([]);
       }
 
       // Latest live incidents with coordinates (marker budget: 50).
@@ -1052,6 +1082,26 @@ export default function MapHome() {
             </div>
           </TweenedMarker>
         )}
+
+        {/* ── Beacons shared with me by my circle ── */}
+        {sharedBeacons.map((b) => (
+          <TweenedMarker key={b.id} latitude={b.lat} longitude={b.lng} anchor="center">
+            <div className="flex flex-col items-center pointer-events-none">
+              <div
+                className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shadow-lg ${
+                  b.online ? "bg-primary-600 border-white" : "bg-dark-700 border-dark-500 opacity-70"
+                }`}
+              >
+                <Radio className="w-4 h-4 text-white" />
+              </div>
+              <span
+                className="mt-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold shadow bg-black/70 text-white whitespace-nowrap"
+              >
+                {b.ownerName}&apos;s Beacon
+              </span>
+            </div>
+          </TweenedMarker>
+        ))}
 
         {/* ── incidents ── */}
         {incidents.map((p) => (

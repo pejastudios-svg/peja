@@ -25,6 +25,8 @@ export interface BeaconDevice {
   fall_alert_enabled: boolean;
   sos_ack_tone: boolean;
   intercom_enabled: boolean;
+  /** Emergency contacts can see this Beacon on their map. Default true. */
+  share_with_contacts: boolean;
   active_sos_alert_id: string | null;
   battery_pct: number | null;
   last_lat: number | null;
