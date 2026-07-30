@@ -386,8 +386,19 @@ export function BeaconDashboard({
               <p className="text-xs text-dark-500">
                 {device.last_fix_at
                   ? formatDistanceToNow(new Date(device.last_fix_at), { addSuffix: true })
-                  : ""}
+                  : "No position yet"}
               </p>
+              {/* An old fix on a CONNECTED device is not a fault: the Beacon
+                  rests when nobody is carrying it, which is what makes the
+                  battery last. Say so, rather than letting it read as broken. */}
+              {device.status === "connected" &&
+                device.last_fix_at &&
+                Date.now() - new Date(device.last_fix_at).getTime() > 6 * 3600_000 && (
+                  <p className="text-xs text-dark-500 mt-1 leading-snug">
+                    Resting to save battery. It reports again as soon as it moves,
+                    or the moment there is an emergency.
+                  </p>
+                )}
             </div>
             <ChevronRight className="w-4 h-4 text-dark-500" />
           </a>

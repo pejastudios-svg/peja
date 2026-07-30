@@ -255,5 +255,18 @@ export async function GET(req: NextRequest) {
       .remove(oldTempFiles.map((f) => `temp/${f.name}`));
   }
 
+  // Heartbeat: proof this safety-critical job actually ran. The
+  // battery-monitor cron checks this and alerts if it goes stale, so the
+  // job can never die quietly again.
+  try {
+    await supabaseAdmin.from("system_heartbeats").upsert({
+      job: "checkin-monitor",
+      last_run_at: new Date().toISOString(),
+      detail: { warned, missed, revived, beaconEscalated },
+    });
+  } catch {
+    // Never fail the run over bookkeeping.
+  }
+
   return NextResponse.json({ ok: true, warned, missed, revived, beaconEscalated, tempCleaned: oldTempFiles.length });
 }

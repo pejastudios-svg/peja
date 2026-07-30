@@ -12,6 +12,7 @@
 
 import { getSupabaseAdmin } from "./_supabaseAdmin";
 import { sendPushToUser } from "./_firebaseAdmin";
+import { sendOpsAlert } from "./_email";
 
 const BASE = () =>
   (process.env.TERMII_BASE_URL || "https://v3.api.termii.com").replace(/\/+$/, "");
@@ -134,6 +135,9 @@ export async function notifyAdminIfBalanceLow(balance: number | null | undefined
       is_read: false,
     });
     sendPushToUser({ userId: admin.id, title, body, data: { type: "termii_low_balance" } }).catch(() => {});
+    // Also email: a wallet running dry breaks Beacon setup silently, and
+    // an unopened app notification is not a warning.
+    sendOpsAlert(title, body).catch(() => {});
   } catch {
     // Alerting must never break a send.
   }

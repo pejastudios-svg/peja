@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { sendPushToUser } from "../../_firebaseAdmin";
+import { sendOpsAlert } from "../../_email";
 
 // Low-battery watch. A safety device that quietly dies is a safety device
 // that is not there when it matters, so somebody must be told BEFORE it
@@ -196,5 +197,78 @@ export async function GET(req: NextRequest) {
     console.error("[battery-monitor] phone pass failed:", e);
   }
 
-  return NextResponse.json({ ok: true, beaconsWarned, phonesWarned });
+  // ── 3. Watchdog: is the safety-critical cron still alive? ───────────
+  // checkin-monitor drives missed check-in alerts and SOS escalation. It
+  // once got disabled by the scheduler after repeated failures and went
+  // unnoticed for ten days. This runs in a DIFFERENT job on purpose: a
+  // dead job cannot report its own death.
+  let watchdogAlerted = false;
+  try {
+    const { data: hb } = await supabaseAdmin
+      .from("system_heartbeats")
+      .select("last_run_at")
+      .eq("job", "checkin-monitor")
+      .maybeSingle();
+
+    const lastRun = hb?.last_run_at ? new Date(hb.last_run_at).getTime() : 0;
+    const staleMin = lastRun ? Math.round((Date.now() - lastRun) / 60_000) : null;
+    // It runs every minute; 20 minutes of silence means something is wrong.
+    if (staleMin === null || staleMin > 20) {
+      const { data: admin } = await supabaseAdmin
+        .from("users")
+        .select("id")
+        .eq("is_admin", true)
+        .limit(1)
+        .maybeSingle();
+      const title = "Safety monitor is not running";
+      const body =
+        staleMin === null
+          ? "The check-in monitor has never reported in. Missed check-in alerts and SOS escalation are not running."
+          : `The check-in monitor last ran ${staleMin} minutes ago. Missed check-in alerts and SOS escalation are not running.`;
+
+      // Dedupe on the admin's notification history when we have one;
+      // without an admin row, still email rather than stay silent.
+      const alreadyWarned = admin?.id
+        ? await alertedRecently(
+            supabaseAdmin,
+            admin.id,
+            "cron_stalled",
+            "job",
+            "checkin-monitor",
+            6,
+          )
+        : false;
+
+      if (!alreadyWarned) {
+        // EMAIL FIRST. An in-app notification cannot reliably tell you the
+        // app is broken, and only arrives when you happen to open peja.
+        await sendOpsAlert(
+          title,
+          `${body}<br/><br/>Check the cron schedule at cron-job.org and the latest Vercel deployment.`,
+        );
+
+        if (admin?.id) {
+          await supabaseAdmin.from("notifications").insert({
+            user_id: admin.id,
+            type: "system",
+            title,
+            body,
+            data: { type: "cron_stalled", job: "checkin-monitor", stale_minutes: staleMin },
+            is_read: false,
+          });
+          sendPushToUser({
+            userId: admin.id,
+            title,
+            body,
+            data: { type: "cron_stalled", job: "checkin-monitor" },
+          }).catch(() => {});
+        }
+        watchdogAlerted = true;
+      }
+    }
+  } catch (e) {
+    console.error("[battery-monitor] watchdog failed:", e);
+  }
+
+  return NextResponse.json({ ok: true, beaconsWarned, phonesWarned, watchdogAlerted });
 }
