@@ -65,10 +65,35 @@ export default function MapHome() {
     return { ...FALLBACK, known: false };
   });
   const didCenterOnUser = useRef(false);
+  // Follow mode: the map trails the user so their dot never drifts off
+  // screen. Turned off the moment they pan (they are looking at something
+  // else on purpose), back on when they tap recenter.
+  const followRef = useRef(true);
   const centerOnUserOnce = useCallback((lat: number, lng: number) => {
     if (didCenterOnUser.current) return;
     didCenterOnUser.current = true;
     mapRef.current?.flyTo({ center: [lng, lat], zoom: 16, duration: 700 });
+  }, []);
+
+  // Keep the user in view while following. Small, quick eases so it feels
+  // like the map is trailing them rather than yanking.
+  const keepInView = useCallback((lat: number, lng: number) => {
+    if (!followRef.current) return;
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    // Only move when they approach the edge, so a stationary dot does not
+    // cause constant tiny animations.
+    const b = map.getBounds();
+    const sw = b.getSouthWest();
+    const ne = b.getNorthEast();
+    const padLat = (ne.lat - sw.lat) * 0.22;
+    const padLng = (ne.lng - sw.lng) * 0.22;
+    const outside =
+      lat < sw.lat + padLat ||
+      lat > ne.lat - padLat ||
+      lng < sw.lng + padLng ||
+      lng > ne.lng - padLng;
+    if (outside) map.easeTo({ center: [lng, lat], duration: 800 });
   }, []);
   // Always-fresh copy of `center` for use inside the load() closure (which
   // is memoized on [user] and otherwise can't see live position updates).
@@ -133,6 +158,7 @@ export default function MapHome() {
       const label = params.get("label");
       setPin({ lat, lng, name: label || null, loading: false });
       didCenterOnUser.current = true; // the deep link owns the camera
+      followRef.current = false;
       pendingFly.current = { lat, lng };
       mapRef.current?.flyTo({ center: [lng, lat], zoom: 15, duration: 900 });
       // Clean the URL so refresh/back doesn't replay the flight.
@@ -254,6 +280,7 @@ export default function MapHome() {
             centerRef.current = c;
             setCenter(c);
             centerOnUserOnce(c.lat, c.lng);
+            keepInView(c.lat, c.lng);
             try {
               localStorage.setItem("peja-map-center", JSON.stringify({ ...c, acc: f.accuracyM, t: Date.now() }));
               // Live proof that location permission works (the welcome
@@ -881,6 +908,10 @@ export default function MapHome() {
           cancelPress();
           setMapZoom(Math.round(e.viewState.zoom * 10) / 10);
         }}
+        onDragStart={() => {
+          // They are looking somewhere else deliberately; stop trailing.
+          followRef.current = false;
+        }}
       >
         {/* ── you: the protagonist bubble (Life360-style, with tail) ── */}
         {center && (() => {
@@ -1229,7 +1260,10 @@ export default function MapHome() {
               </button>
               {center && (
                 <button
-                  onClick={() => flyTo(center.lat, center.lng, 14)}
+                  onClick={() => {
+                    followRef.current = true; // resume trailing
+                    flyTo(center.lat, center.lng, 16);
+                  }}
                   aria-label="Center on me"
                   className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                   style={surface}

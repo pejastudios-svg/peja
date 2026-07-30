@@ -9,6 +9,7 @@ import { authFetchJson } from "@/lib/authFetch";
 import { Modal } from "@/components/ui/Modal";
 import { BeaconManual } from "./BeaconManual";
 import { BeaconSharePeople } from "./BeaconSharePeople";
+import { Toggle } from "@/components/ui/Toggle";
 import { formatDistanceToNow } from "date-fns";
 import {
   Activity, AlertTriangle, Battery, BatteryLow, Check, ChevronRight, Copy,
@@ -23,28 +24,6 @@ const STATUS_META: Record<string, { label: string; dot: string; text: string }> 
   pairing: { label: "Pairing", dot: "bg-amber-500 animate-pulse", text: "beacon-wait-text" },
   unpaired: { label: "Unpaired", dot: "bg-dark-500", text: "text-dark-400" },
 };
-
-function Toggle({ on, onChange, disabled }: { on: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      role="switch"
-      aria-checked={on}
-      disabled={disabled}
-      onClick={() => onChange(!on)}
-      className={`relative w-[50px] h-[30px] rounded-full transition-colors duration-300 shrink-0 ${
-        on ? "bg-green-500" : "bg-dark-600"
-      } ${disabled ? "opacity-50" : ""}`}
-    >
-      <span
-        className="absolute top-[3px] w-6 h-6 rounded-full bg-white shadow-md"
-        style={{
-          left: on ? 23 : 3,
-          transition: "left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-        }}
-      />
-    </button>
-  );
-}
 
 export function BeaconDashboard({
   device: initial,

@@ -7,6 +7,7 @@ import { AvatarImage } from "@/components/ui/AvatarImage";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { useToast } from "@/context/ToastContext";
 import { authFetchJson } from "@/lib/authFetch";
+import { Toggle } from "@/components/ui/Toggle";
 
 // Person-by-person control over who sees this Beacon. Everyone is on by
 // default; switching someone off hides the device from them only. Kept
@@ -127,19 +128,11 @@ export function BeaconSharePeople({
                     )}
                   </div>
                   <p className="flex-1 min-w-0 text-sm text-dark-100 truncate">{r.name}</p>
-                  <button
-                    onClick={() => toggle(r)}
+                  <Toggle
+                    on={r.visible}
                     disabled={busy === r.id}
-                    aria-label={r.visible ? `Hide from ${r.name}` : `Show to ${r.name}`}
-                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 disabled:opacity-60 ${
-                      r.visible ? "bg-green-500" : "bg-dark-600"
-                    }`}
-                  >
-                    <span
-                      className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform"
-                      style={{ transform: r.visible ? "translateX(22px)" : "translateX(2px)" }}
-                    />
-                  </button>
+                    onChange={() => toggle(r)}
+                  />
                 </div>
               ))}
             </div>
