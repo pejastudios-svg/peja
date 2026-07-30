@@ -49,6 +49,9 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
   const trackRef = useRef<MediaStreamTrack | null>(null);
   const foundRef = useRef(false);
   const [mode, setMode] = useState<"starting" | "scanning" | "manual">("starting");
+  // Why manual entry is showing, so the user is not left guessing.
+  const [fallbackReason, setFallbackReason] = useState<"unsupported" | "denied" | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [manualValue, setManualValue] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -59,7 +62,10 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
     let raf = 0;
 
     async function start() {
+      // Safari has no BarcodeDetector, so live scanning is Chrome-only.
+      // iOS users get the photo path plus manual entry instead.
       if (!window.BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
+        setFallbackReason("unsupported");
         setMode("manual");
         return;
       }
@@ -122,7 +128,10 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
         };
         raf = requestAnimationFrame(tick);
       } catch {
-        if (!cancelled) setMode("manual");
+        if (!cancelled) {
+          setFallbackReason("denied");
+          setMode("manual");
+        }
       }
     }
 
@@ -152,6 +161,18 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
           <p className="text-sm text-dark-400">
             It&apos;s the number printed under the QR code on the back of the device.
           </p>
+          {fallbackReason === "unsupported" && (
+            <p className="text-xs text-dark-500 pt-1">
+              Live scanning is not supported in this browser. Type the number
+              below, or open peja in Chrome to scan the code.
+            </p>
+          )}
+          {fallbackReason === "denied" && (
+            <p className="text-xs text-dark-500 pt-1">
+              We could not open the camera. Allow camera access to scan, or
+              type the number below.
+            </p>
+          )}
         </div>
         <input
           inputMode="numeric"
