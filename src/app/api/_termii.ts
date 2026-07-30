@@ -93,14 +93,25 @@ export async function termiiBalance(): Promise<number | null> {
 export async function notifyAdminIfBalanceLow(balance: number | null | undefined) {
   if (balance == null || balance >= 100) return;
   try {
+    // NEVER trust the balance echoed by the send response: Termii v4
+    // returns "balance": 0 on a successful send even when the wallet is
+    // funded, which fired a false "wallet empty" alarm. Treat the hint as
+    // a trigger to VERIFY against the real balance endpoint, and only
+    // alert when that confirms it. A failed check means stay quiet.
+    const verified = await termiiBalance();
+    if (verified == null || verified >= 100) return;
+    balance = verified;
+
     const supabaseAdmin = getSupabaseAdmin();
+    // Admin only, always. This is an internal business alert; a regular
+    // user must never see anything about the SMS wallet.
     const { data: admin } = await supabaseAdmin
       .from("users")
       .select("id")
       .eq("is_admin", true)
       .limit(1)
       .maybeSingle();
-    if (!admin) return;
+    if (!admin?.id) return;
 
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: recent } = await supabaseAdmin
