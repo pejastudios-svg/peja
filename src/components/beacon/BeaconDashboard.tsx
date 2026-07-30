@@ -7,6 +7,7 @@ import { useToast } from "@/context/ToastContext";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { authFetchJson } from "@/lib/authFetch";
 import { Modal } from "@/components/ui/Modal";
+import { BeaconManual } from "./BeaconManual";
 import { formatDistanceToNow } from "date-fns";
 import {
   Activity, AlertTriangle, Battery, BatteryLow, Check, ChevronRight, Copy,
@@ -502,6 +503,11 @@ export function BeaconDashboard({
             </p>
           </div>
         </div>
+      </div>
+
+      {/* ── How the device works: the manual lives with the device ── */}
+      <div className="beacon-stagger" style={{ animationDelay: "0.2s" }}>
+        <BeaconManual />
       </div>
 
       {/* ── Unpair ── */}

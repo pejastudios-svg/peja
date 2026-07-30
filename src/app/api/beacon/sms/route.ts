@@ -14,7 +14,7 @@ import { isRateLimitedDurable } from "../../_rateLimit";
 
 // Only the tracker's own command grammar may pass through this route, so
 // a leaked session can't turn our Termii wallet into a spam cannon.
-const COMMAND_SHAPE = /^(adminip|md|falldown|familynum|admin|vol|interon|reset|check)123456( [\w+. ]{1,80})?$/;
+const COMMAND_SHAPE = /^(adminip|md|falldown|lowbattery|familynum|admin|vol|interon|reset|check)123456( [\w+. ]{1,80})?$/;
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,9 +22,9 @@ export async function POST(req: NextRequest) {
     if (!canUseBeacon(user.email)) {
       return NextResponse.json({ error: "Beacon is in a closed pilot" }, { status: 403 });
     }
-    // A full pairing is 7 commands; 15 per 10 min leaves retry room while
-    // stopping anything that would drain the SMS wallet.
-    if (await isRateLimitedDurable(`beacon-sms:${user.id}`, 15, 600)) {
+    // A full pairing is up to 9 commands; 20 per 10 min leaves room for a
+    // retry while stopping anything that would drain the SMS wallet.
+    if (await isRateLimitedDurable(`beacon-sms:${user.id}`, 20, 600)) {
       return NextResponse.json(
         { error: "Too many Beacon messages right now. Wait a few minutes and try again." },
         { status: 429 },

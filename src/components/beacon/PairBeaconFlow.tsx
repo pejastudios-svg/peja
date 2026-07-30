@@ -85,7 +85,9 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
       if (data?.status === "connected") {
         setConnected(true);
         if (navigator.vibrate) navigator.vibrate([15, 70, 30]);
-        setStep("done");
+        // Deliberately NOT advancing here. The first command is what makes
+        // the Beacon connect, so jumping now would leave the remaining
+        // commands sending blind, and closing the app would break setup.
       }
     }, 2500);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
@@ -130,6 +132,14 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
   const [autoSending, setAutoSending] = useState<number | null>(null); // index in flight
   const [setupMode, setSetupMode] = useState<"auto" | "manual">("auto");
   const autoStarted = useRef(false);
+
+  // Setup is only truly finished when the Beacon is online AND every
+  // command has been delivered.
+  const allSent = commands.length > 0 && sentCmds.size >= commands.length && autoSending == null;
+  useEffect(() => {
+    if (step === "configure" && connected && allSent) setStep("done");
+  }, [step, connected, allSent]);
+
   const autoSend = useCallback(async () => {
     if (!pairedDevice || autoSending != null) return;
     setAutoSending(0);
@@ -473,9 +483,31 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
             })}
           </div>
 
+          {/* Online but still sending: let the impatient move on, while
+              being honest that closing the app now breaks setup. */}
+          {connected && !allSent && (
+            <div className="rounded-2xl border border-dark-700 bg-dark-800/60 p-3.5 space-y-2.5">
+              <p className="text-xs text-dark-400 leading-relaxed">
+                Your Beacon is online and the rest of the setup is still
+                sending. Keep peja open until it finishes, or continue now and
+                leave this running in the background.
+              </p>
+              <button
+                onClick={() => setStep("done")}
+                className="w-full py-2.5 rounded-xl border border-dark-600 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform"
+              >
+                Continue, keep peja open
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center justify-center gap-2 text-dark-500 text-xs">
             <MessageCircle className="w-3.5 h-3.5" />
-            <span>Listening for the Beacon... this can take a couple of minutes</span>
+            <span>
+              {connected
+                ? `Beacon is online. Finishing setup, ${Math.max(0, commands.length - sentCmds.size)} to go`
+                : "Listening for the Beacon... this can take a couple of minutes"}
+            </span>
           </div>
         </div>
       )}

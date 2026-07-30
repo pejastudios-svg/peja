@@ -84,6 +84,11 @@ export function pairingCommands(opts: {
     // would silently do nothing. Whether anyone is NOTIFIED stays
     // controlled by devices.fall_alert_enabled in the app.
     { label: "Enable fall detection", sms: "falldown123456 1" },
+    // The device's own low-battery alarm. peja also watches the reported
+    // level server-side (cron/battery-monitor), but this makes the DEVICE
+    // speak up to whoever is wearing it, which is the person who can
+    // actually go and charge it.
+    { label: "Warn when the battery is low", sms: "lowbattery123456 on" },
   ];
   if (opts.family1Phone) {
     const f1 = devicePhone(opts.family1Phone);

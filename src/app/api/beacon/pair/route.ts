@@ -31,14 +31,20 @@ export async function POST(req: NextRequest) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
+    // One Beacon belongs to exactly one account at a time. Look up ANY
+    // row for this device id (not just active ones) so we can tell the
+    // difference between "someone else owns it" and "it was released and
+    // is free to claim".
     const { data: existing } = await supabaseAdmin
       .from("devices")
       .select("id, user_id, status")
       .eq("device_id", deviceId)
-      .neq("status", "unpaired")
       .maybeSingle();
-    if (existing && existing.user_id !== user.id) {
-      return NextResponse.json({ error: "This Beacon is already paired to another account" }, { status: 409 });
+    if (existing && existing.user_id !== user.id && existing.status !== "unpaired") {
+      return NextResponse.json(
+        { error: "This Beacon is already paired to another account. Ask the current owner to unpair it first." },
+        { status: 409 },
+      );
     }
 
     // Resolve chosen contacts to phone numbers. Contacts must be the
@@ -85,16 +91,22 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     };
 
-    // Re-pairing a device the same user unpaired earlier reuses the row.
+    // Re-pairing a row we are allowed to claim (our own, or one the
+    // previous owner released) updates it. Otherwise INSERT, never a blind
+    // upsert: an upsert would let two simultaneous pairings overwrite each
+    // other's owner. A unique violation here means someone won the race.
     const { data: device, error } = existing
       ? await supabaseAdmin.from("devices").update(row).eq("id", existing.id).select().single()
-      : await supabaseAdmin
-          .from("devices")
-          .upsert({ ...row }, { onConflict: "device_id" })
-          .select()
-          .single();
+      : await supabaseAdmin.from("devices").insert(row).select().single();
     if (error || !device) {
-      return NextResponse.json({ error: error?.message || "Could not save device" }, { status: 500 });
+      if (error?.code === "23505") {
+        return NextResponse.json(
+          { error: "This Beacon was just paired to another account." },
+          { status: 409 },
+        );
+      }
+      console.error("[beacon/pair] save failed:", error?.message);
+      return NextResponse.json({ error: "Could not save device" }, { status: 500 });
     }
 
     const commands = pairingCommands({
