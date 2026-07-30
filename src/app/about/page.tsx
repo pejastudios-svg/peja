@@ -578,8 +578,9 @@ export default function LandingPage() {
           <div className="pt-6 text-xs" style={{ borderTop: `1px solid ${C.border}`, color: C.dim }}>
             <p className="mb-1">
               PEJA STUDIOS LIMITED, registered in Nigeria with the Corporate
-              Affairs Commission. Lagos, Nigeria.
+              Affairs Commission.
             </p>
+            <p className="mb-1">Ipaye Road, Ojo, Iba, Lagos, Nigeria.</p>
             <p>peja.life</p>
           </div>
         </div>
