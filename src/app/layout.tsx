@@ -46,6 +46,7 @@ import { AmbientTrackerBootstrap } from "@/components/system/AmbientTrackerBoots
 import { AndroidInstallBanner } from "@/components/system/AndroidInstallBanner";
 import { WebPushSetup } from "@/components/system/WebPushSetup";
 import { PwaRealityNotice } from "@/components/system/PwaRealityNotice";
+import { EmailVerificationGate } from "@/components/system/EmailVerificationGate";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -219,6 +220,7 @@ export default function RootLayout({
                         <AndroidInstallBanner />
                         <WebPushSetup />
                         <PwaRealityNotice />
+                        <EmailVerificationGate />
                         <PresenceCapture />
                         <AchievementCelebration />
                         <AnalyticsTracker />

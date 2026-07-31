@@ -106,12 +106,12 @@ function SignupPageInner() {
       // Full-page nav for `next` so we render the real /post/[id] page rather
       // than the (.)post modal interceptor on top of /signup. Replace history
       // first so back from the destination lands on home.
+      // Straight to email confirmation. The gate would bounce them here
+      // anyway; going directly avoids a pointless flash of the map.
       if (next) {
-        try { window.history.replaceState(null, "", "/"); } catch {}
-        window.location.href = next;
-      } else {
-        router.push("/");
+        try { window.history.replaceState(null, "", next); } catch {}
       }
+      router.push("/verify-email");
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred");
       setLoading(false);

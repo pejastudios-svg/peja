@@ -758,7 +758,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             avatar_url: meta.avatar_url || meta.picture || "",
             phone: meta.phone || "",
             status: "active",
-            email_verified: !!authUser.email_confirmed_at,
+            // peja runs its OWN email verification (a code we email), so a
+            // fresh profile always starts unverified. Seeding this from
+            // Supabase's email_confirmed_at would mark everyone verified,
+            // since built-in confirmation is off and it is set at signup.
+            email_verified: false,
           };
           // insert (not upsert): if a row somehow already exists but was hidden
           // from our SELECT (e.g. RLS), the conflict is ignored rather than
