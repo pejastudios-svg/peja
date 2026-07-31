@@ -7,7 +7,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { CIRCLE_REFRESH_EVENT } from "@/lib/authFetch";
-import { BADGE_MIN_KMH, SPEEDING_KMH, createMotionTracker, stillLabel } from "@/lib/motion";
+import { BADGE_MIN_KMH, SPEEDING_KMH, createMotionTracker, haversineM, stillLabel } from "@/lib/motion";
 import { createPositionFilter } from "@/lib/positionFilter";
 import { batteryPct } from "@/lib/battery";
 import { openDirections } from "@/lib/directions";
@@ -75,25 +75,35 @@ export default function MapHome() {
     mapRef.current?.flyTo({ center: [lng, lat], zoom: 16, duration: 700 });
   }, []);
 
-  // Keep the user in view while following. Small, quick eases so it feels
-  // like the map is trailing them rather than yanking.
+  // The map TRAILS the user: as they walk, the map walks with them, so
+  // their dot never leaves the screen. Not edge-triggered, which let the
+  // dot wander most of the viewport (and off it) before anything moved.
+  //
+  // Two refinements that make it feel right rather than twitchy:
+  //   - a small movement threshold, so GPS jitter while standing still
+  //     does not animate the map continuously
+  //   - bottom padding equal to the sheet, so "centred" means centred in
+  //     the part of the map you can actually SEE, not underneath the sheet
+  const lastFollowAt = useRef<{ lat: number; lng: number } | null>(null);
+  const sheetPadRef = useRef(158);
+
   const keepInView = useCallback((lat: number, lng: number) => {
     if (!followRef.current) return;
     const map = mapRef.current?.getMap();
     if (!map) return;
-    // Only move when they approach the edge, so a stationary dot does not
-    // cause constant tiny animations.
-    const b = map.getBounds();
-    const sw = b.getSouthWest();
-    const ne = b.getNorthEast();
-    const padLat = (ne.lat - sw.lat) * 0.22;
-    const padLng = (ne.lng - sw.lng) * 0.22;
-    const outside =
-      lat < sw.lat + padLat ||
-      lat > ne.lat - padLat ||
-      lng < sw.lng + padLng ||
-      lng > ne.lng - padLng;
-    if (outside) map.easeTo({ center: [lng, lat], duration: 800 });
+
+    const prev = lastFollowAt.current;
+    // ~8m of real movement before we bother moving the camera.
+    if (prev && haversineM(prev, { lat, lng }) < 8) return;
+    lastFollowAt.current = { lat, lng };
+
+    const h = map.getContainer().clientHeight || 0;
+    const bottom = Math.min(sheetPadRef.current, Math.max(0, h * 0.45));
+    map.easeTo({
+      center: [lng, lat],
+      duration: 900,
+      padding: { top: 0, right: 0, bottom, left: 0 },
+    });
   }, []);
   // Always-fresh copy of `center` for use inside the load() closure (which
   // is memoized on [user] and otherwise can't see live position updates).
@@ -235,6 +245,15 @@ export default function MapHome() {
       window.removeEventListener("focus", fetchUnread);
     };
   }, [user]);
+
+  // Mirror the sheet's height into a ref so the follow camera can centre
+  // the user in the VISIBLE part of the map, above the sheet.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const expandedTop = 62 + Math.min(window.innerHeight * 0.62, 520);
+    sheetPadRef.current =
+      sheetLiveTop != null ? sheetLiveTop : sheetExpanded ? expandedTop : 158;
+  }, [sheetExpanded, sheetLiveTop]);
 
   // Re-render every 30s so "Here for Xm" labels age in place.
   const [, setLabelTick] = useState(0);
@@ -1262,6 +1281,7 @@ export default function MapHome() {
                 <button
                   onClick={() => {
                     followRef.current = true; // resume trailing
+                    lastFollowAt.current = null;
                     flyTo(center.lat, center.lng, 16);
                   }}
                   aria-label="Center on me"
