@@ -29,6 +29,11 @@ const DataAnalyticsPanel = dynamic(() => import("@/components/map/DataAnalyticsP
 // Lagos: sensible fallback center until we know where the user is.
 const FALLBACK = { lat: 6.5244, lng: 3.3792 };
 const REFRESH_MS = 45_000;
+// "Near you" must mean near YOU, wherever you are. Distance decides, not
+// country: a post in Manila is near a Manila user and invisible to a
+// Lagos user, and the reverse. Anything further away belongs in Trending,
+// not on your map.
+const NEARBY_RADIUS_M = 5_000;
 const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2-dark/style.json?key=${process.env.NEXT_PUBLIC_MAPTILER_KEY}`;
 
 const SEVERITY_COLOR: Record<string, string> = {
@@ -619,26 +624,47 @@ export default function MapHome() {
         setSharedBeacons([]);
       }
 
-      // Latest live incidents with coordinates (marker budget: 50).
-      const { data: posts } = await supabase
-        .from("posts")
-        .select("id, category, latitude, longitude, created_at, address")
-        .in("status", ["live", "resolved"])
-        .not("latitude", "is", null)
-        .not("longitude", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (!stop && posts) {
-        setIncidents(
-          posts.map((p) => ({
-            id: p.id,
-            category: p.category,
-            lat: p.latitude,
-            lng: p.longitude,
-            createdAt: p.created_at,
-            address: p.address || null,
-          }))
-        );
+      // Incidents near the user. Without a position we cannot honestly
+      // call anything "near you", so we show nothing rather than the
+      // whole world's reports. A bounding box narrows it in the query
+      // (cheap, index friendly) and haversine makes it a true circle.
+      const me = centerRef.current;
+      if (!me) {
+        if (!stop) setIncidents([]);
+      } else {
+        const dLat = NEARBY_RADIUS_M / 111_320;
+        const dLng =
+          NEARBY_RADIUS_M / (111_320 * Math.max(0.1, Math.cos((me.lat * Math.PI) / 180)));
+        const { data: posts } = await supabase
+          .from("posts")
+          .select("id, category, latitude, longitude, created_at, address")
+          .in("status", ["live", "resolved"])
+          .gte("latitude", me.lat - dLat)
+          .lte("latitude", me.lat + dLat)
+          .gte("longitude", me.lng - dLng)
+          .lte("longitude", me.lng + dLng)
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (!stop && posts) {
+          setIncidents(
+            posts
+              .filter(
+                (p) =>
+                  p.latitude != null &&
+                  p.longitude != null &&
+                  haversineM(me, { lat: p.latitude, lng: p.longitude }) <= NEARBY_RADIUS_M,
+              )
+              .slice(0, 50)
+              .map((p) => ({
+                id: p.id,
+                category: p.category,
+                lat: p.latitude,
+                lng: p.longitude,
+                createdAt: p.created_at,
+                address: p.address || null,
+              })),
+          );
+        }
       }
     };
 

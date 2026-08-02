@@ -18,10 +18,12 @@ import { usePageCache } from "@/context/PageCacheContext";
 import { preloadFeedVideos, getVideoThumbnailUrl } from "@/lib/videoThumbnail";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { profileCompletion } from "@/lib/profileComplete";
-import { isNigeriaPost } from "@/lib/notifications";
 
 // Nearby tab radius. Hard-coded by product: no toggle, no slider.
-const NEARBY_RADIUS_KM = 50;
+// DISTANCE decides what is "near", never country. A post in Manila is
+// near a Manila user and invisible to a Lagos user, and the reverse. One
+// rule that works anywhere peja is opened.
+const NEARBY_RADIUS_KM = 5;
 
 type FeedTab = "nearby" | "trending";
 type TrendingMode = "recommended" | "top";
@@ -400,14 +402,16 @@ export default function Home() {
           // post leaking into a Nigerian feed) regardless of whether we
           // know the user's lat/lng. Uses stored country_code when present,
           // bbox fallback for legacy rows.
-          const inCountry = formattedPosts.filter((p) =>
-            isNigeriaPost(p.country_code, p.location?.latitude, p.location?.longitude),
-          );
+          // No country gate: it hard-coded Nigeria, so it both leaked
+          // Nigerian posts to users abroad (paired with the fallback
+          // below) and would hide a genuinely local post from anyone
+          // outside Nigeria. Distance answers both correctly.
+          const candidates = formattedPosts;
 
           if (userLat != null && userLng != null) {
-            // Radius gate. Posts with no coords are dropped here — the
+            // Radius gate. Posts with no coords are dropped here: the
             // Nearby tab is by definition about proximity.
-            const withinRadius = inCountry.filter((p) => {
+            const withinRadius = candidates.filter((p) => {
               const lat = p.location?.latitude ?? 0;
               const lng = p.location?.longitude ?? 0;
               if (!lat || !lng) return false;
@@ -434,16 +438,12 @@ export default function Home() {
 
             finalPosts = finalPosts.slice(0, 30);
           } else {
-            // No user location yet — keep the country gate but skip the
-            // radius filter so the feed isn't empty on first paint.
-            finalPosts = [...inCountry]
-              .sort((a, b) => {
-                const pa = categoryPriority(a);
-                const pb = categoryPriority(b);
-                if (pa !== pb) return pa - pb;
-                return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-              })
-              .slice(0, 30);
+            // No location, no claim. Showing a country's worth of posts
+            // under the heading "Nearby" is how someone in another
+            // country ended up looking at Nigerian incidents as if they
+            // were down the road. An empty state that explains itself is
+            // better than a confident lie.
+            finalPosts = [];
           }
         } else {
           finalPosts = [...formattedPosts]
@@ -585,11 +585,19 @@ export default function Home() {
       // On new post — prepend to both tabs so cross-device inserts show up immediately.
       async (newPost) => {
         if (newPost.status !== "live") return;
-        // The feed only ever renders Nigeria posts (country gate below in the
-        // fetch path). Bail before the two enrichment queries for anything
-        // that could never appear here — otherwise every connected client
-        // runs post_media + post_tags lookups for every insert worldwide.
-        if (!isNigeriaPost(newPost.country_code, newPost.latitude, newPost.longitude)) return;
+        // Distance, not country: bail before the two enrichment queries
+        // for anything that could never appear in THIS user's feed, so a
+        // connected client is not running post_media + post_tags lookups
+        // for every insert worldwide. A post with no coordinates cannot
+        // be placed, so it is dropped here too.
+        {
+          const uLat = userRef.current?.last_latitude ?? null;
+          const uLng = userRef.current?.last_longitude ?? null;
+          const pLat = newPost.latitude;
+          const pLng = newPost.longitude;
+          if (uLat == null || uLng == null || !pLat || !pLng) return;
+          if (distanceKm(uLat, uLng, pLat, pLng) > NEARBY_RADIUS_KM) return;
+        }
         const formatted = await formatPost(newPost);
         if (!formatted) return;
 
