@@ -892,6 +892,12 @@ export default function MapHome() {
 
   // How open the sheet is RIGHT NOW (0 collapsed .. 1 expanded), live
   // during drags so dependent UI moves with the finger, not after snap.
+  // Top banners stack instead of fighting for one slot. Every one stays
+  // reachable: hiding the "are you OK?" prompt whenever an SOS was active
+  // meant it could not be answered at the exact moment answering matters
+  // most.
+  const bannerTop = (index: number) =>
+    `calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 12px) + ${64 + index * 74}px)`;
   const sheetOpenness = (() => {
     if (typeof window === "undefined") return sheetExpanded ? 1 : 0;
     const expandedTop = 62 + Math.min(window.innerHeight * 0.62, 520);
@@ -926,6 +932,12 @@ export default function MapHome() {
     SEVERITY_COLOR[CATEGORIES.find((c) => c.id === cid)?.color || "info"];
 
   const activeSos = circleSos[0] ?? null;
+
+  let bannerSlot = 0;
+  const speedingSlot = speedWarn != null ? bannerSlot++ : -1;
+  const sosSlot = activeSos ? bannerSlot++ : -1;
+  const pingSlot = incomingPing ? bannerSlot++ : -1;
+
 
   return (
     <div className="fixed inset-0 bg-dark-950">
@@ -1402,7 +1414,7 @@ export default function MapHome() {
         <button
           onClick={() => router.push(`/map?sos=${activeSos.sosId}`)}
           className="absolute left-4 right-4 rounded-2xl bg-red-600 text-white px-4 py-3 shadow-2xl beacon-step-in active:scale-[0.98] transition-transform"
-          style={{ top: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 12px) + 64px)" }}
+          style={{ top: bannerTop(sosSlot), zIndex: 41 }}
         >
           <p className="font-bold text-sm text-left">{activeSos.name} needs help</p>
           <p className="text-xs text-red-100 text-left">
@@ -1433,7 +1445,7 @@ export default function MapHome() {
       {speedWarn != null && (
         <div
           className="absolute left-4 right-4 rounded-2xl bg-red-600 text-white px-4 py-3 shadow-2xl beacon-step-in"
-          style={{ top: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 12px) + 8px)", zIndex: 40 }}
+          style={{ top: bannerTop(speedingSlot), zIndex: 40 }}
         >
           <p className="text-sm font-bold">You are doing {speedWarn} km/h</p>
           <p className="text-xs text-red-100">Please slow down. Your people need you home.</p>
@@ -1441,10 +1453,10 @@ export default function MapHome() {
       )}
 
       {/* ── incoming ping: the I'm OK banner ── */}
-      {incomingPing && !activeSos && (
+      {incomingPing && (
         <div
           className="absolute left-4 right-4 rounded-2xl glass-card !p-3.5 beacon-step-in"
-          style={{ top: "calc(max(var(--app-top-inset, env(safe-area-inset-top, 0px)), 12px) + 64px)" }}
+          style={{ top: bannerTop(pingSlot), zIndex: 42 }}
         >
           <div className="flex items-center gap-3">
             <div className="flex-1 min-w-0">
