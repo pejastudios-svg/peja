@@ -111,15 +111,21 @@ useEffect(() => {
 
   useEffect(() => {
     tokenRef.current = session?.access_token;
-    // Push a refreshed token to the already-running native service so a long
-    // check-in (up to 4h) keeps authenticating after the original token
-    // expires (~1h) — WITHOUT restarting the service.
+    // Push the rotated session pair to the already-running native service so
+    // a long check-in (up to 4h) keeps authenticating after the original
+    // token expires (~1h), WITHOUT restarting the service. The refresh token
+    // matters as much as the access token: Supabase rotates it on every
+    // JS-side refresh, and the native service refreshes its own session with
+    // it once the WebView is backgrounded or killed.
     if (activeRef.current && session?.access_token) {
       const isCapacitor = typeof (window as any).Capacitor !== "undefined";
       if (isCapacitor) {
         import("@/lib/smlLocation")
           .then(({ default: SMLLocation }) =>
-            SMLLocation.updateToken?.({ accessToken: session.access_token })
+            SMLLocation.updateToken?.({
+              accessToken: session.access_token,
+              refreshToken: session.refresh_token,
+            })
           )
           .catch(() => {});
       }
@@ -168,9 +174,11 @@ useEffect(() => {
       // Fresh token for the native service — the ref can hold a stale
       // one right after app-resume. getSession() refreshes if needed.
       let token = tokenRef.current;
+      let refreshToken: string | undefined;
       try {
         const { data: sess } = await supabase.auth.getSession();
         if (sess.session?.access_token) token = sess.session.access_token;
+        refreshToken = sess.session?.refresh_token;
       } catch {}
       if (!token) return;
       activeRef.current = true;
@@ -184,13 +192,26 @@ useEffect(() => {
         const isCapacitor = typeof (window as any).Capacitor !== "undefined";
         if (isCapacitor) {
           const { default: SMLLocation } = await import("@/lib/smlLocation");
-          await SMLLocation.startTracking({
+          const result = await SMLLocation.startTracking({
             checkinId,
             supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || "",
             supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
             accessToken: token,
+            refreshToken,
           });
-          return;
+          if (result?.started !== false) {
+            // Native service owns tracking now. Clear any web watchers left
+            // over from an earlier refused start.
+            stopWebFallback();
+            return;
+          }
+          // The plugin resolved { started: false }: Android refused the
+          // foreground-service start (12+ blocks background FGS starts, and
+          // eligibility can be lost between our visibility check and this
+          // call). Leave the ref false so the next 30s poll or
+          // visibilitychange retries the native start, and run the web
+          // fallback meanwhile so locations keep flowing.
+          activeRef.current = false;
         }
       } catch {
         // Plugin not available or failed — drop through to web fallback.
@@ -199,6 +220,9 @@ useEffect(() => {
       // Web fallback: watchPosition + polling. Only fires while the WebView
       // is in the foreground — browsers don't support real background tracking.
       if (!navigator.geolocation) return;
+      // Already registered from a previous refused native start, don't stack
+      // duplicate watchers.
+      if (locationWatchRef.current !== null || locationPollRef.current) return;
 
       navigator.geolocation.getCurrentPosition(handleFix, () => {}, {
         enableHighAccuracy: true,
@@ -220,6 +244,17 @@ useEffect(() => {
       }, 15000);
     };
 
+    const stopWebFallback = () => {
+      if (locationWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(locationWatchRef.current);
+        locationWatchRef.current = null;
+      }
+      if (locationPollRef.current) {
+        clearInterval(locationPollRef.current);
+        locationPollRef.current = null;
+      }
+    };
+
     const stopTracking = async () => {
       activeRef.current = false;
 
@@ -232,15 +267,7 @@ useEffect(() => {
         }
       } catch {}
 
-      // Stop web fallback
-      if (locationWatchRef.current !== null) {
-        navigator.geolocation.clearWatch(locationWatchRef.current);
-        locationWatchRef.current = null;
-      }
-      if (locationPollRef.current) {
-        clearInterval(locationPollRef.current);
-        locationPollRef.current = null;
-      }
+      stopWebFallback();
     };
 
     const checkAndTrack = async () => {
@@ -258,8 +285,12 @@ useEffect(() => {
           // Only an explicit "no active check-in" stops tracking. A
           // transient error (auth hiccup, 5xx) must NEVER tear down the
           // foreground location service mid-share — that silently stops
-          // sharing for a user who believes they are protected.
-          if (activeRef.current) stopTracking();
+          // sharing for a user who believes they are protected. The web
+          // fallback can be running with activeRef false (after a refused
+          // native start), so check the watcher refs too.
+          if (activeRef.current || locationWatchRef.current !== null || locationPollRef.current) {
+            stopTracking();
+          }
         }
       } catch {}
     };

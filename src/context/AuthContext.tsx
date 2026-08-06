@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
-import { supabase, restoreNativeSession, clearNativeSession } from "@/lib/supabase";
+import { supabase, restoreNativeSession, clearNativeSession, adoptNativeSessionIfNewer, isCapacitorNative } from "@/lib/supabase";
 import { presenceManager } from "@/lib/presence";
 import { User as SupabaseUser, Session } from "@supabase/supabase-js";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -418,6 +418,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Step 1: On Capacitor, restore session from native storage into localStorage
         await restoreNativeSession();
 
+        // Step 1b: If a native location service refreshed the session while
+        // the app was killed, adopt its rotated pair BEFORE getSession can
+        // refresh with our stale copy. Replaying a consumed refresh token
+        // revokes the whole session family (forced logout mid check-in/SOS).
+        await adoptNativeSessionIfNewer();
+
         // Step 2: Get session from localStorage
         const { data: { session: currentSession } } = await supabase.auth.getSession();
 
@@ -474,9 +480,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, newSession) => {
 
-        // TOKEN_REFRESHED: just update session reference, do nothing else
+        // TOKEN_REFRESHED: update the session reference and push the rotated
+        // pair to the native location services' shared token store. Supabase
+        // rotates the refresh token on every refresh; without this push a
+        // running SML/SOS foreground service would keep a consumed refresh
+        // token and its next native refresh would kill the whole session.
+        // One call covers both services (they share one store). Gated on a
+        // service actually tracking so users who never share location don't
+        // accumulate a live token pair in the native store.
         if (event === 'TOKEN_REFRESHED') {
-          if (newSession) setSession(newSession);
+          if (newSession) {
+            setSession(newSession);
+            if (isCapacitorNative()) {
+              (async () => {
+                try {
+                  const [{ default: SMLLocation }, { default: SOSLocation }] =
+                    await Promise.all([
+                      import("@/lib/smlLocation"),
+                      import("@/lib/sosLocation"),
+                    ]);
+                  const [sml, sos] = await Promise.all([
+                    SMLLocation.isTracking().catch(() => ({ tracking: false })),
+                    SOSLocation.isTracking().catch(() => ({ tracking: false })),
+                  ]);
+                  if (!sml?.tracking && !sos?.tracking) return;
+                  await SMLLocation.updateToken({
+                    accessToken: newSession.access_token,
+                    refreshToken: newSession.refresh_token,
+                  });
+                } catch {}
+              })();
+            }
+          }
           return;
         }
 
@@ -526,6 +561,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             try { localStorage.removeItem(PROFILE_LS_KEY); } catch {}
             locationTracker.stop();
             presenceManager.stop();
+            // Real sign-out (server revocation, reuse detection): wipe the
+            // native backup and the services' shared token store too, so a
+            // dead pair is not restored or retried on the next launch.
+            void clearNativeSession();
           }
         }
       }
@@ -549,6 +588,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await new Promise((r) => setTimeout(r, 1000));
 
       try {
+        // If a native location service rotated the session while we were
+        // backgrounded, adopt its pair before getSession/refreshSession can
+        // replay our stale refresh token and revoke the session family.
+        await adoptNativeSessionIfNewer();
+
         const { data: { session: currentSession } } = await supabase.auth.getSession();
 
         if (!currentSession) {
@@ -812,6 +856,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(profile);
 
       if (profile.status === "banned") {
+  await clearNativeSession();
   await supabase.auth.signOut();
   setUser(null);
   setSupabaseUser(null);
@@ -1031,6 +1076,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (status === "banned") {
       // Immediately sign out and block entry
+      await clearNativeSession();
       await supabase.auth.signOut();
 
       // show in-app toast (works even on login screen)

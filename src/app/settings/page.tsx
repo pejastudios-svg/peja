@@ -981,7 +981,7 @@ export default function SettingsPage() {
           />
         </section>
 
-        <p className="text-center text-sm text-dark-500 py-4">{nativeVersion || "Peja v2.0.2"}</p>
+        <p className="text-center text-sm text-dark-500 py-4">{nativeVersion || "Peja v2.0.3"}</p>
       </main>
 
       {/* Change Password Modal */}

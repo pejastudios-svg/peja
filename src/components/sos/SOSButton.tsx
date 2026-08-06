@@ -841,13 +841,21 @@ export function SOSButton({ className = "" }: { className?: string }) {
           const { data: authData } = await supabase.auth.getSession();
           const token = authData.session?.access_token;
           if (token) {
-            await SOSLocation.startTracking({
+            const nativeStart = await SOSLocation.startTracking({
               sosId: sosData.id,
               supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
               supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
               accessToken: token,
+              refreshToken: authData.session?.refresh_token,
               mode: 'activator',
             });
+            if (nativeStart?.started === false) {
+              // Android refused the foreground-service start. Rare here (we
+              // run from a user gesture in the foreground), but never let it
+              // stay silent: the JS-side tracker keeps updating the alert
+              // while the app is open.
+              console.warn('[SOS] Native tracking refused to start; relying on in-app location updates');
+            }
           }
         }
       } catch (e) {}

@@ -96,6 +96,14 @@ public class SMLLocationService extends Service {
             .readTimeout(10, TimeUnit.SECONDS)
             .build();
 
+    // Consecutive failed Supabase writes. At the threshold (~90s of dead
+    // writes at the 15s cadence) the notification flips to an honest "needs
+    // attention" state; any successful write flips it back.
+    private static final int FAILURE_NOTIFY_THRESHOLD = 6;
+    private final java.util.concurrent.atomic.AtomicInteger writeFailures =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+    private volatile boolean degradedNotified = false;
+
     private String checkinId = "";
     private String supabaseUrl = "";
     private String supabaseKey = "";
@@ -117,7 +125,11 @@ public class SMLLocationService extends Service {
         // ForegroundServiceDidNotStartInTimeException. So promote to foreground
         // FIRST, before any branching, then stop afterward if needed.
         try {
-            startForeground(NOTIFICATION_ID, buildNotification());
+            // Pass the LIVE degraded flag: onStartCommand is re-delivered to a
+            // running instance (revive pushes, JS re-start after a WebView
+            // reload), and hardcoding a healthy notification here would mask
+            // an active "writes are failing" state with no way back.
+            startForeground(NOTIFICATION_ID, buildNotification(degradedNotified));
         } catch (Exception e) {
             // Android 12+ may refuse a background start (ForegroundServiceStart-
             // NotAllowedException); Android 14+ throws SecurityException without
@@ -383,22 +395,14 @@ public class SMLLocationService extends Service {
                         "\"updated_at\":\"" + timestamp + "\"" +
                         "}";
 
-                // Read the freshest token from prefs (the JS layer pushes a
-                // refreshed token here when Supabase rotates it), falling back
-                // to the token captured at start.
-                String token = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                        .getString("access_token", accessToken);
-
-                Request request = new Request.Builder()
+                Request.Builder builder = new Request.Builder()
                         .url(supabaseUrl + "/rest/v1/safety_checkins?id=eq." + checkinId)
                         .patch(RequestBody.create(json, JSON_TYPE))
                         .addHeader("apikey", supabaseKey)
-                        .addHeader("Authorization", "Bearer " + token)
                         .addHeader("Content-Type", "application/json")
-                        .addHeader("Prefer", "return=minimal")
-                        .build();
+                        .addHeader("Prefer", "return=minimal");
 
-                Response response = httpClient.newCall(request).execute();
+                Response response = executeAuthed(builder);
                 int code = response.code();
                 if (code >= 400) {
                     String body = response.body() != null ? response.body().string() : "";
@@ -407,13 +411,75 @@ public class SMLLocationService extends Service {
                     Log.d(TAG, "SML location updated: " + code);
                 }
                 response.close();
+                noteWriteResult(code < 400);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to update SML location", e);
+                noteWriteResult(false);
             }
         }).start();
     }
 
-    private Notification buildNotification() {
+    /**
+     * Execute a Supabase request with a self-refreshing session. Uses the
+     * shared token store (kept fresh by PejaSupabaseAuth, which refreshes
+     * natively before expiry), and on a 401 forces one refresh and retries
+     * once. This is what keeps a multi-hour check-in writing locations long
+     * after the original one-hour token has expired.
+     */
+    private Response executeAuthed(Request.Builder builder) throws java.io.IOException {
+        String token = PejaSupabaseAuth.getValidAccessToken(
+                this, httpClient, supabaseUrl, supabaseKey, accessToken);
+        Response response = httpClient.newCall(
+                builder.header("Authorization", "Bearer " + token).build()).execute();
+        // 401 only: PostgREST returns 403 for RLS denial with a perfectly
+        // valid token, and refreshing on it would rotate the session on
+        // every 15s tick without ever fixing the failure.
+        if (response.code() == 401) {
+            response.close();
+            String fresh = PejaSupabaseAuth.forceRefresh(
+                    this, httpClient, supabaseUrl, supabaseKey, token);
+            String retryToken = (fresh != null && !fresh.isEmpty()) ? fresh : token;
+            response = httpClient.newCall(
+                    builder.header("Authorization", "Bearer " + retryToken).build()).execute();
+        }
+        return response;
+    }
+
+    /**
+     * Track consecutive Supabase write failures so the notification stays
+     * honest: after ~90s of failed writes the text flips to a "needs
+     * attention" state instead of claiming the location is being shared,
+     * and flips back the moment a write lands again.
+     */
+    private void noteWriteResult(boolean ok) {
+        if (ok) {
+            writeFailures.set(0);
+            if (degradedNotified) {
+                degradedNotified = false;
+                refreshNotification(false);
+            }
+        } else {
+            int failures = writeFailures.incrementAndGet();
+            if (failures >= FAILURE_NOTIFY_THRESHOLD && !degradedNotified) {
+                degradedNotified = true;
+                refreshNotification(true);
+            }
+        }
+    }
+
+    private void refreshNotification(boolean degraded) {
+        try {
+            NotificationManager manager =
+                    (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                manager.notify(NOTIFICATION_ID, buildNotification(degraded));
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to update notification state", e);
+        }
+    }
+
+    private Notification buildNotification(boolean degraded) {
         Intent openIntent = getPackageManager().getLaunchIntentForPackage(getPackageName());
         PendingIntent openPending = PendingIntent.getActivity(
                 this, 0, openIntent,
@@ -427,9 +493,14 @@ public class SMLLocationService extends Service {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
+        String title = degraded ? "Location sharing needs attention" : "Location Sharing Active";
+        String text = degraded
+                ? "Updates are not reaching your contacts. Open Peja to fix this."
+                : "Peja is tracking your location for safety";
+
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Location Sharing Active")
-                .setContentText("Peja is tracking your location for safety")
+                .setContentTitle(title)
+                .setContentText(text)
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setOngoing(true)
                 .setContentIntent(openPending)

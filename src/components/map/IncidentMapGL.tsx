@@ -1054,16 +1054,23 @@ if (milestoneToFire) {
           const { data: authData } = await supabase.auth.getSession();
           const token = authData.session?.access_token;
           if (token) {
-            await SOSLocation.startTracking({
+            const nativeStart = await SOSLocation.startTracking({
               sosId: sos.id,
               supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
               supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
               accessToken: token,
+              refreshToken: authData.session?.refresh_token,
               mode: 'helper',
               helperId: user.id,
               sosOwnerId: sos.user_id,
               helperName: helperName,
             });
+            if (nativeStart?.started === false) {
+              // Android refused the foreground-service start. The milestone
+              // tracker started above keeps helper updates flowing while the
+              // app is open, so log rather than fail the help flow.
+              console.warn('[SOS] Native helper tracking refused to start; relying on in-app milestone updates');
+            }
           }
         }
       } catch (e) {
