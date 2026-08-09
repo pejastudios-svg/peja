@@ -335,7 +335,7 @@ const handleDeleteSOSRecord = async (e: React.MouseEvent, sosId: string) => {
                <div
                   key={sos.id}
                   onClick={() => { setSelectedSOS(sos); setShowModal(true); fetchSOSUserContacts(sos.user_id); }}
-                  className={`hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-all group relative overflow-hidden ${
+                  className={`hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-ui group relative overflow-hidden ${
                      sos.status === "active" ? "border-red-500/40 bg-red-500/5" : ""
                   }`}
                >

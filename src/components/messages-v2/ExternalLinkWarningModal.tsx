@@ -48,7 +48,7 @@ export function ExternalLinkWarningModal({ url, onCancel, onConfirm }: Props) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-[var(--page-bg)] border border-white/10 rounded-2xl max-w-sm w-full p-5 shadow-2xl"
+        className="bg-[var(--page-bg)] border border-[var(--hairline-strong)] rounded-2xl max-w-sm w-full p-5 shadow-2xl"
       >
         <div className="flex items-start gap-3">
           <div className="shrink-0 w-10 h-10 rounded-full bg-yellow-500/15 flex items-center justify-center">
@@ -62,7 +62,7 @@ export function ExternalLinkWarningModal({ url, onCancel, onConfirm }: Props) {
               This link will take you to an outside site. Make sure you trust
               the sender and that the destination is safe before continuing.
             </p>
-            <div className="mt-3 p-2.5 rounded-lg bg-white/5 border border-white/10">
+            <div className="mt-3 p-2.5 rounded-lg bg-[var(--soft-surface)] border border-[var(--hairline-strong)]">
               <p className="text-[11px] uppercase tracking-wide text-dark-500">
                 Destination
               </p>
@@ -77,7 +77,7 @@ export function ExternalLinkWarningModal({ url, onCancel, onConfirm }: Props) {
           <button
             type="button"
             onClick={onCancel}
-            className="shrink-0 w-8 h-8 rounded-full hover:bg-white/5 flex items-center justify-center"
+            className="shrink-0 w-8 h-8 rounded-full hover:bg-[var(--soft-surface)] flex items-center justify-center"
             aria-label="Close"
           >
             <X className="w-4 h-4 text-dark-300" />
@@ -87,7 +87,7 @@ export function ExternalLinkWarningModal({ url, onCancel, onConfirm }: Props) {
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 h-10 rounded-xl bg-white/5 hover:bg-white/10 text-dark-100 text-sm font-medium transition-colors"
+            className="flex-1 h-10 rounded-xl bg-[var(--soft-surface)] hover:bg-[var(--soft-surface-strong)] text-dark-100 text-sm font-medium transition-colors"
           >
             Cancel
           </button>

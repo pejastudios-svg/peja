@@ -477,7 +477,7 @@ export default function EditProfilePage() {
 
               <div className="h-1.5 rounded-full bg-dark-700 overflow-hidden mb-3">
                 <div
-                  className="h-full rounded-full transition-all duration-300"
+                  className="h-full rounded-full transition-ui duration-300"
                   style={{
                     width: `${pct}%`,
                     background: allDone ? "#22c55e" : "#7c3aed",

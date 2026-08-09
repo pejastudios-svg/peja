@@ -15,7 +15,7 @@ import { Bell, Check, MapPin, ShieldCheck, Users, X } from "lucide-react";
 // the route SVG draws in (preserveAspectRatio="none"), so dotted routes
 // always land exactly under the bubbles they connect, at any card size.
 
-const EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
+const EASE = "var(--ease-sheet)";
 
 // ── building blocks ──
 
@@ -428,14 +428,14 @@ export default function WelcomePage() {
             </p>
             <button
               onClick={() => setStep(1)}
-              className="welcome-rise w-full py-4 rounded-2xl bg-primary-600 text-white text-[17px] font-bold active:scale-[0.98] transition-transform shadow-xl"
+              className="welcome-rise w-full py-4 rounded-2xl bg-primary-600 text-white text-[17px] font-bold active:scale-[0.97] transition-transform shadow-xl"
               style={{ animationDelay: "0.4s", boxShadow: "0 12px 32px rgba(124,58,237,0.35)" }}
             >
               Get started
             </button>
             <button
               onClick={() => router.push("/login")}
-              className="welcome-rise w-full py-4 text-sm font-semibold text-dark-400 active:scale-[0.98] transition-transform"
+              className="welcome-rise w-full py-4 text-sm font-semibold text-dark-400 active:scale-[0.97] transition-transform"
               style={{ animationDelay: "0.5s" }}
             >
               Already have an account? <span className="text-primary-500 font-bold">Sign in</span>
@@ -453,14 +453,14 @@ export default function WelcomePage() {
             <button
               onClick={prev}
               aria-label="Back"
-              className="p-2 -ml-2 rounded-full text-dark-400 active:scale-90 transition-transform rotate-180"
+              className="p-2 -ml-2 rounded-full text-dark-400 active:scale-[0.97] transition-transform rotate-180"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
             </button>
             <button
               onClick={() => router.push("/signup")}
               aria-label="Skip to sign up"
-              className="p-2 -mr-2 rounded-full text-dark-400 active:scale-90 transition-transform"
+              className="p-2 -mr-2 rounded-full text-dark-400 active:scale-[0.97] transition-transform"
             >
               <X className="w-5 h-5" />
             </button>
@@ -497,7 +497,7 @@ export default function WelcomePage() {
             </div>
             <button
               onClick={next}
-              className="w-full py-4 rounded-2xl bg-primary-600 text-white text-[17px] font-bold active:scale-[0.98] transition-transform"
+              className="w-full py-4 rounded-2xl bg-primary-600 text-white text-[17px] font-bold active:scale-[0.97] transition-transform"
               style={{ boxShadow: "0 12px 32px rgba(124,58,237,0.35)" }}
             >
               {isLast ? "Create your account" : "Next"}
@@ -505,7 +505,7 @@ export default function WelcomePage() {
             {isLast && (
               <button
                 onClick={() => router.push("/login")}
-                className="w-full py-3.5 text-sm font-semibold text-dark-400 active:scale-[0.98] transition-transform"
+                className="w-full py-3.5 text-sm font-semibold text-dark-400 active:scale-[0.97] transition-transform"
               >
                 Already have an account? <span className="text-primary-500 font-bold">Sign in</span>
               </button>

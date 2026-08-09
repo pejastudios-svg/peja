@@ -228,7 +228,7 @@ export function WelcomeSequence() {
             {cards.map((_, i) => (
               <span
                 key={i}
-                className={`h-1.5 rounded-full transition-all ${
+                className={`h-1.5 rounded-full transition-ui ${
                   i === step ? "w-5 bg-primary-500" : "w-1.5 bg-dark-600"
                 }`}
               />
@@ -244,14 +244,14 @@ export function WelcomeSequence() {
           <button
             onClick={c.onCta}
             disabled={Boolean((c as { ctaDisabled?: boolean }).ctaDisabled)}
-            className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+            className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-transform disabled:opacity-60"
           >
             {c.cta}
           </button>
           {c.secondary && (
             <button
               onClick={c.secondary.onClick}
-              className="w-full mt-2 py-2.5 text-sm font-medium text-dark-400 active:scale-[0.98] transition-transform"
+              className="w-full mt-2 py-2.5 text-sm font-medium text-dark-400 active:scale-[0.97] transition-transform"
             >
               {c.secondary.label}
             </button>

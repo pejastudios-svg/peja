@@ -145,7 +145,7 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
           // `--glass-border` for the outline. Keeps the voice-note
           // row visually consistent with the rest of the SOS form
           // in both dark and light mode.
-          className="w-full flex items-center gap-3 p-3 rounded-xl transition-all active:scale-[0.97]"
+          className="w-full flex items-center gap-3 p-3 rounded-xl transition-ui active:scale-[0.97]"
           style={{
             background: "var(--glass-input-bg)",
             border: "1px solid var(--glass-border)",
@@ -182,7 +182,7 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
           </div>
           <button
             onClick={stopRecording}
-            className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 text-sm font-medium active:scale-95 transition-transform"
+            className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 text-sm font-medium active:scale-[0.97] transition-transform"
           >
             Stop
           </button>
@@ -199,7 +199,7 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
         >
           <button
             onClick={togglePlayback}
-            className="w-9 h-9 rounded-full bg-green-500/20 flex items-center justify-center active:scale-90 transition-transform"
+            className="w-9 h-9 rounded-full bg-green-500/20 flex items-center justify-center active:scale-[0.97] transition-transform"
           >
             {playing ? (
               <svg className="w-4 h-4 text-green-400" viewBox="0 0 24 24" fill="currentColor">
@@ -217,7 +217,7 @@ function VoiceNote({ onRecorded }: { onRecorded: (blob: Blob | null) => void }) 
           </div>
           <button
             onClick={deleteRecording}
-            className="p-2 rounded-lg hover:bg-white/10 text-dark-400 active:scale-90 transition-transform"
+            className="p-2 rounded-lg hover:bg-[var(--soft-surface-strong)] text-dark-400 active:scale-[0.97] transition-transform"
           >
             <X className="w-4 h-4" />
           </button>
@@ -1040,14 +1040,14 @@ const closeOptions = () => {
 
               {/* Don't show again */}
               <label
-                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors hover:bg-white/5"
+                className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors hover:bg-[var(--soft-surface)]"
                 style={{
                   background: "var(--glass-input-bg)",
                   border: "1px solid var(--glass-border)",
                 }}
               >
                 <div
-                  className="w-5 h-5 rounded flex items-center justify-center shrink-0 transition-all"
+                  className="w-5 h-5 rounded flex items-center justify-center shrink-0 transition-ui"
                   style={{
                     background: dontShowAgain
                       ? "#7c3aed"
@@ -1074,7 +1074,7 @@ const closeOptions = () => {
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={closeDisclosure}
-                  className="flex-1 py-3 rounded-xl font-semibold text-dark-100 transition-all hover:bg-white/5 active:scale-[0.98]"
+                  className="flex-1 py-3 rounded-xl font-semibold text-dark-100 transition-ui hover:bg-[var(--soft-surface)] active:scale-[0.97]"
                   style={{
                     background: "var(--glass-input-bg)",
                     border: "1px solid var(--glass-border)",
@@ -1084,7 +1084,7 @@ const closeOptions = () => {
                 </button>
                 <button
                   onClick={handleDisclosureAccept}
-                  className="flex-1 py-3 rounded-xl font-bold text-white transition-all active:scale-[0.98]"
+                  className="flex-1 py-3 rounded-xl font-bold text-white transition-ui active:scale-[0.97]"
                   style={{
                     background: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
                     boxShadow: "0 4px 20px rgba(239,68,68,0.3)",
@@ -1257,7 +1257,7 @@ const closeOptions = () => {
                     ? "translateY(110%)"
                     : "translateY(0)",
               transition:
-                optionsDrag.dragY > 0 ? "none" : "transform 0.45s cubic-bezier(0.32, 0.72, 0, 1)",
+                optionsDrag.dragY > 0 ? "none" : "transform 0.45s var(--ease-sheet)",
             }}
           >
             {/* drag handle - pull down to dismiss, like the map sheet */}
@@ -1300,7 +1300,7 @@ const closeOptions = () => {
                       <button
                         key={tag.id}
                         onClick={() => setSelectedTag(isSelected ? null : tag.id)}
-                        className="relative p-3 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.92]"
+                        className="relative p-3 rounded-xl text-left transition-ui duration-200 hover:scale-[1.02] active:scale-[0.97]"
                         style={{
                           background: isSelected
                             ? `${tag.color}15`
@@ -1371,7 +1371,7 @@ const closeOptions = () => {
                   onTouchStart={handleHoldStart}
                   onTouchEnd={handleHoldEnd}
                   onContextMenu={(e) => e.preventDefault()}
-                  className="relative w-full py-5 rounded-2xl font-bold text-lg text-white transition-all overflow-hidden select-none active:scale-[0.96]"
+                  className="relative w-full py-5 rounded-2xl font-bold text-lg text-white transition-ui overflow-hidden select-none active:scale-[0.97]"
                   style={{
                     background: isHolding
                       ? "#991b1b"
@@ -1386,7 +1386,7 @@ const closeOptions = () => {
                 >
                   {isHolding && (
                     <div 
-                      className="absolute inset-y-0 left-0 transition-all duration-100"
+                      className="absolute inset-y-0 left-0 transition-ui duration-100"
                       style={{
                         width: `${holdProgress}%`,
                         background: "linear-gradient(90deg, rgba(239,68,68,0.8), rgba(239,68,68,0.6))",
@@ -1469,7 +1469,7 @@ const closeOptions = () => {
                 </div>
                 <button
                   onClick={() => setShowActivePopup(false)}
-                  className="p-2 hover:bg-white/10 rounded-xl transition-colors"
+                  className="p-2 hover:bg-[var(--soft-surface-strong)] rounded-xl transition-colors"
                 >
                   <X className="w-5 h-5 text-dark-400" />
                 </button>
@@ -1532,7 +1532,7 @@ const closeOptions = () => {
               <div className="flex gap-2">
                 <a
                   href="tel:112"
-                  className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium transition-all active:scale-95"
+                  className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium transition-ui active:scale-[0.97]"
                   style={{
                     background: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
                     boxShadow: "0 4px 15px rgba(239,68,68,0.25)",
@@ -1543,7 +1543,7 @@ const closeOptions = () => {
                 </a>
                 <a
                   href="tel:767"
-                  className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium transition-all active:scale-95"
+                  className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-medium transition-ui active:scale-[0.97]"
                   style={{
                     background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
                     boxShadow: "0 4px 15px rgba(239,68,68,0.25)",
@@ -1557,7 +1557,7 @@ const closeOptions = () => {
               <button
                 onClick={cancelSOS}
                 disabled={loading}
-                className="w-full py-3 rounded-xl font-medium text-dark-300 transition-all hover:bg-white/5 active:scale-[0.98]"
+                className="w-full py-3 rounded-xl font-medium text-dark-300 transition-ui hover:bg-[var(--soft-surface)] active:scale-[0.97]"
                 style={{
                   background: "var(--glass-input-bg)",
                   border: "1px solid var(--glass-border)",
@@ -1586,7 +1586,7 @@ const closeOptions = () => {
       onClick={handleButtonTap}
       disabled={loading}
      className={`relative w-full h-full rounded-full shadow-lg flex items-center justify-center bg-gradient-to-br from-red-500 to-red-700 select-none ${
-        sosActive ? "sos-button-active" : "active:scale-[0.95] transition-transform"
+        sosActive ? "sos-button-active" : "active:scale-[0.97] transition-transform"
       } ${className}`}
       style={{
         WebkitUserSelect: "none",

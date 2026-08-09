@@ -495,17 +495,17 @@ useEffect(() => {
               {query && (
                 <button
                   onClick={() => setQuery("")}
-                  className="p-1 hover:bg-white/10 rounded"
+                  className="active:scale-[0.97] p-1 hover:bg-[var(--soft-surface-strong)] rounded"
                 >
                   <X className="w-4 h-4 text-dark-400" />
                 </button>
               )}
               <button
                 onClick={() => setShowFilters(!showFilters)}
-                className={`p-2 rounded-lg transition-colors ${
+                className={`active:scale-[0.97] p-2 rounded-lg transition-colors ${
                   showFilters || hasActiveFilters
                     ? "bg-primary-600/20 text-primary-400"
-                    : "hover:bg-white/10 text-dark-400"
+                    : "hover:bg-[var(--soft-surface-strong)] text-dark-400"
                 }`}
               >
                 <SlidersHorizontal className="w-4 h-4" />
@@ -521,7 +521,7 @@ useEffect(() => {
                 {hasActiveFilters && (
                   <button
                     onClick={clearFilters}
-                    className="text-sm text-primary-400"
+                    className="active:opacity-70 text-sm text-primary-400"
                   >
                     Clear all
                   </button>
@@ -540,10 +540,10 @@ useEffect(() => {
                       onClick={() =>
                         setSelectedCategory(selectedCategory === cat.id ? null : cat.id)
                       }
-                      className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                      className={`active:scale-[0.97] px-3 py-1.5 rounded-lg text-sm transition-colors ${
                         selectedCategory === cat.id
                           ? "bg-primary-600 text-white"
-                          : "glass-sm text-dark-300 hover:bg-white/10"
+                          : "glass-sm text-dark-300 hover:bg-[var(--soft-surface-strong)]"
                       }`}
                     >
                       {cat.name}
@@ -574,7 +574,7 @@ useEffect(() => {
                   <button
                     type="button"
                     onClick={addTagFilter}
-                    className="shrink-0 px-3 py-1.5 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-500 transition-colors"
+                    className="active:scale-[0.97] shrink-0 px-3 py-1.5 rounded-lg text-sm bg-primary-600 text-white hover:bg-primary-500 transition-colors"
                   >
                     Add
                   </button>
@@ -618,10 +618,10 @@ useEffect(() => {
                     <button
                       key={option.value}
                       onClick={() => setDateRange(option.value as any)}
-                      className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
+                      className={`active:scale-[0.97] px-3 py-1.5 rounded-lg text-sm transition-colors ${
                         dateRange === option.value
                           ? "bg-primary-600 text-white"
-                          : "glass-sm text-dark-300 hover:bg-white/10"
+                          : "glass-sm text-dark-300 hover:bg-[var(--soft-surface-strong)]"
                       }`}
                     >
                       {option.label}

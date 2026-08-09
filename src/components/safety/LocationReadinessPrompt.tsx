@@ -174,7 +174,7 @@ export function LocationReadinessPrompt() {
 
           <button
             onClick={close}
-            className="w-full mt-4 py-3 rounded-xl text-sm font-semibold bg-white/5 text-dark-200 border border-white/10 active:scale-[0.98] transition-transform"
+            className="w-full mt-4 py-3 rounded-xl text-sm font-semibold bg-[var(--soft-surface)] text-dark-200 border border-[var(--hairline-strong)] active:scale-[0.97] transition-transform"
           >
             {batteryOk && locationOk ? "All set" : "Not now"}
           </button>
@@ -200,7 +200,7 @@ function ReadinessRow({
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/[0.07] transition-colors text-left"
+      className="w-full flex items-center gap-3 p-3 rounded-xl bg-[var(--soft-surface)] border border-[var(--hairline-strong)] hover:bg-white/[0.07] transition-colors text-left"
     >
       <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${tint}`}>
         {icon}

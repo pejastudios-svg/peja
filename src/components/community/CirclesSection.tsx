@@ -396,7 +396,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
                 <button
                   onClick={() => respond(p.rowId, true)}
                   disabled={respondingId === p.rowId}
-                  className="p-2 bg-green-600/20 text-green-400 rounded-lg active:scale-90 transition-transform"
+                  className="p-2 bg-green-600/20 text-green-400 rounded-lg active:scale-[0.97] transition-transform"
                   aria-label="Accept"
                 >
                   <Check className="w-4 h-4" />
@@ -404,7 +404,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
                 <button
                   onClick={() => respond(p.rowId, false)}
                   disabled={respondingId === p.rowId}
-                  className="p-2 bg-red-600/20 text-red-400 rounded-lg active:scale-90 transition-transform"
+                  className="p-2 bg-red-600/20 text-red-400 rounded-lg active:scale-[0.97] transition-transform"
                   aria-label="Decline"
                 >
                   <X className="w-4 h-4" />
@@ -420,7 +420,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
         <p className="text-xs font-bold uppercase tracking-wider text-dark-500">Your circles</p>
         <button
           onClick={() => setCreating(true)}
-          className="flex items-center gap-1 text-xs font-semibold beacon-accent-text active:scale-95 transition-transform"
+          className="flex items-center gap-1 text-xs font-semibold beacon-accent-text active:scale-[0.97] transition-transform"
         >
           <Plus className="w-3.5 h-3.5" /> New circle
         </button>
@@ -429,7 +429,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
       {circles.length === 0 ? (
         <button
           onClick={() => setCreating(true)}
-          className="w-full rounded-2xl border border-dashed border-primary-500/40 p-4 text-center active:scale-[0.98] transition-transform"
+          className="w-full rounded-2xl border border-dashed border-primary-500/40 p-4 text-center active:scale-[0.97] transition-transform"
         >
           <p className="text-sm text-dark-300 font-medium">Group your people into circles</p>
           <p className="text-xs text-dark-500 mt-0.5">
@@ -449,7 +449,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
             <button
               key={c.id}
               onClick={() => setManage(c)}
-              className="w-full glass-card !p-3.5 flex items-center gap-3 active:scale-[0.985] transition-transform"
+              className="w-full glass-card !p-3.5 flex items-center gap-3 active:scale-[0.97] transition-transform"
             >
               <div className="flex-1 min-w-0 text-left">
                 <p className="font-medium text-dark-100">{c.name}</p>
@@ -523,7 +523,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
                       toast.warning("Couldn't leave");
                     }
                   }}
-                  className="text-xs font-semibold text-dark-500 px-2.5 py-1.5 rounded-lg active:scale-95 transition-transform shrink-0"
+                  className="text-xs font-semibold text-dark-500 px-2.5 py-1.5 rounded-lg active:scale-[0.97] transition-transform shrink-0"
                 >
                   Leave
                 </button>
@@ -548,7 +548,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
           <button
             onClick={createCircle}
             disabled={!newName.trim() || busy}
-            className="w-full py-3 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-transform disabled:opacity-40"
+            className="w-full py-3 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-transform disabled:opacity-40"
           >
             Create
           </button>
@@ -575,14 +575,14 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
                   <button
                     onClick={() => renameCircle(manage.id, renameVal)}
                     disabled={!renameVal.trim()}
-                    className="p-2 rounded-lg bg-primary-600/20 beacon-accent-text active:scale-90 transition-transform disabled:opacity-40"
+                    className="p-2 rounded-lg bg-primary-600/20 beacon-accent-text active:scale-[0.97] transition-transform disabled:opacity-40"
                     aria-label="Save name"
                   >
                     <Check className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => setRenaming(false)}
-                    className="p-2 rounded-lg bg-dark-700/60 text-dark-300 active:scale-90 transition-transform"
+                    className="p-2 rounded-lg bg-dark-700/60 text-dark-300 active:scale-[0.97] transition-transform"
                     aria-label="Cancel rename"
                   >
                     <X className="w-4 h-4" />
@@ -591,7 +591,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
               ) : (
                 <button
                   onClick={() => { setRenameVal(manage.name); setRenaming(true); }}
-                  className="flex items-center gap-1.5 text-xs font-semibold beacon-accent-text active:scale-95 transition-transform"
+                  className="flex items-center gap-1.5 text-xs font-semibold beacon-accent-text active:scale-[0.97] transition-transform"
                 >
                   <Pencil className="w-3.5 h-3.5" /> Rename circle
                 </button>
@@ -636,7 +636,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
                   {member ? (
                     <button
                       onClick={() => removeMember(manage.id, c.userId)}
-                      className="p-2 rounded-lg bg-red-600/15 text-red-400 active:scale-90 transition-transform shrink-0"
+                      className="p-2 rounded-lg bg-red-600/15 text-red-400 active:scale-[0.97] transition-transform shrink-0"
                       aria-label="Remove"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -644,7 +644,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
                   ) : (
                     <button
                       onClick={() => addMember(manage.id, c.userId)}
-                      className="p-2 rounded-lg bg-primary-600/20 beacon-accent-text active:scale-90 transition-transform shrink-0"
+                      className="p-2 rounded-lg bg-primary-600/20 beacon-accent-text active:scale-[0.97] transition-transform shrink-0"
                       aria-label="Add"
                     >
                       <Plus className="w-4 h-4" />
@@ -674,7 +674,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
                   className="absolute top-[3px] w-[22px] h-[22px] rounded-full bg-white shadow-md"
                   style={{
                     left: manage.membersVisible ? 21 : 3,
-                    transition: "left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                    transition: "left 0.3s var(--ease-spring)",
                   }}
                 />
               </button>
@@ -697,7 +697,7 @@ export function CirclesSection({ query = "" }: { query?: string } = {}) {
                   load();
                 }
               }}
-              className="w-full mt-2 py-2.5 rounded-2xl border border-red-500/30 beacon-bad-text text-sm font-semibold active:scale-[0.98] transition-transform"
+              className="w-full mt-2 py-2.5 rounded-2xl border border-red-500/30 beacon-bad-text text-sm font-semibold active:scale-[0.97] transition-transform"
             >
               Delete circle
             </button>

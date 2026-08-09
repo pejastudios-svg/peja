@@ -137,7 +137,7 @@ export function UserNotificationPopup() {
 
   return (
     <div className="fixed bottom-4 right-4 z-[9999999] max-w-sm animate-[slideUp_200ms_ease-out]">
-      <div className="bg-dark-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+      <div className="bg-dark-900/95 backdrop-blur-xl border border-[var(--hairline-strong)] rounded-2xl shadow-2xl overflow-hidden">
         <div className="flex items-start gap-3 px-4 py-3">
           <div className="p-2 rounded-xl bg-dark-800 shrink-0">{getIcon()}</div>
 
@@ -150,7 +150,7 @@ export function UserNotificationPopup() {
           <button
             type="button"
             onClick={() => setPopup(null)}
-            className="p-1.5 rounded-lg hover:bg-white/10 text-dark-400"
+            className="p-1.5 rounded-lg hover:bg-[var(--soft-surface-strong)] text-dark-400"
           >
             <X className="h-4 w-4" />
           </button>

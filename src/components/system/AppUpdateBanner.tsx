@@ -117,7 +117,7 @@ export function AppUpdateBanner() {
         <button
           type="button"
           onClick={openStore}
-          className="text-xs font-semibold px-3 py-1 rounded-full shrink-0 active:scale-95 transition-transform"
+          className="text-xs font-semibold px-3 py-1 rounded-full shrink-0 active:scale-[0.97] transition-transform"
           style={{ background: "#7c3aed", color: "#ffffff" }}
         >
           Update
@@ -126,7 +126,7 @@ export function AppUpdateBanner() {
           type="button"
           onClick={() => close(true)}
           aria-label="Dismiss"
-          className="p-1 rounded-full hover:bg-white/10 active:bg-white/20 transition-colors shrink-0"
+          className="p-1 rounded-full hover:bg-[var(--soft-surface-strong)] active:bg-[var(--surface-3)] transition-colors shrink-0"
           style={{ color: "rgba(196, 181, 253, 0.85)" }}
         >
           <X className="w-3 h-3" />

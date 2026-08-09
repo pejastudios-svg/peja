@@ -322,12 +322,12 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen pb-20 pt-app-header-pill">
         <Header variant="back" title="Profile" onBack={() => router.back()} />
-        <div className="glass border-b border-white/5 px-4 py-6">
+        <div className="glass border-b border-[var(--hairline)] px-4 py-6">
           <div className="max-w-2xl mx-auto flex items-center gap-4">
-            <div className="w-20 h-20 rounded-full bg-white/5 animate-pulse" />
+            <div className="w-20 h-20 rounded-full bg-[var(--soft-surface)] animate-pulse" />
             <div className="flex-1 space-y-2">
-              <div className="h-5 w-32 bg-white/5 rounded animate-pulse" />
-              <div className="h-4 w-24 bg-white/5 rounded animate-pulse" />
+              <div className="h-5 w-32 bg-[var(--soft-surface)] rounded animate-pulse" />
+              <div className="h-4 w-24 bg-[var(--soft-surface)] rounded animate-pulse" />
             </div>
           </div>
         </div>
@@ -350,7 +350,7 @@ export default function ProfilePage() {
       <Header variant="back" title="Profile" onBack={() => router.back()} />
 
       <main className="pt-app-header-pill">
-        <div className="glass border-b border-white/5 px-4 py-6">
+        <div className="glass border-b border-[var(--hairline)] px-4 py-6">
           <div className="max-w-2xl mx-auto">
             <div className="flex items-center gap-4">
               <div className="relative">
@@ -362,7 +362,7 @@ export default function ProfilePage() {
                 />
                 <button
                   onClick={() => router.push("/profile/edit")}
-                  className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center border-2 border-dark-950"
+                  className="active:scale-[0.97] absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center border-2 border-dark-950"
                 >
                   <Camera className="w-4 h-4 text-white" />
                 </button>
@@ -421,7 +421,7 @@ export default function ProfilePage() {
             <div className="space-y-1">
               <button
                 onClick={() => router.push("/settings")}
-                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
+                className="active:scale-[0.97] w-full flex items-center justify-between p-3 rounded-lg hover:bg-[var(--soft-surface)] transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <Settings className="w-5 h-5 text-dark-400" />
@@ -431,7 +431,7 @@ export default function ProfilePage() {
               </button>
               <button
                 onClick={() => router.push("/become-guardian")}
-                className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
+                className="active:scale-[0.97] w-full flex items-center justify-between p-3 rounded-lg hover:bg-[var(--soft-surface)] transition-colors"
               >
                 <div className="flex items-center gap-3">
                   <Shield className="w-5 h-5 text-dark-400" />
@@ -443,7 +443,7 @@ export default function ProfilePage() {
           </div>
 
           <div className="mb-4">
-            <div className="flex border-b border-white/10 mb-4">
+            <div className="flex border-b border-[var(--hairline-strong)] mb-4">
               <button
                 onClick={() => setActiveTab("posts")}
                 className={`flex-1 py-3 text-sm font-medium transition-colors ${

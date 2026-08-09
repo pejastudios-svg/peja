@@ -1530,7 +1530,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
                     type="button"
                     onClick={() => onPreviewClose?.()}
                     aria-label="Close preview"
-                    className="ml-auto text-dark-400 hover:text-dark-200 leading-none text-lg shrink-0"
+                    className="active:scale-[0.97] ml-auto text-dark-400 hover:text-dark-200 leading-none text-lg shrink-0"
                   >
                     ×
                   </button>
@@ -1553,7 +1553,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
                 <button
                   type="button"
                   onClick={() => onPostClick(post.id)}
-                  className="w-full py-2 rounded-lg text-xs font-semibold text-white"
+                  className="active:scale-[0.97] w-full py-2 rounded-lg text-xs font-semibold text-white"
                   style={{ background: color }}
                 >
                   Open full report
@@ -1580,19 +1580,19 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
             style={{ paddingTop: "var(--cap-status-bar-height, 0px)" }}
           >
             {/* User Info Header */}
-            <div className="border-b border-white/10 p-4 shrink-0">
+            <div className="border-b border-[var(--hairline-strong)] p-4 shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xl font-bold text-dark-100">
                   {isOwnSOS ? "Your SOS Alert" : "SOS Alert"}
                 </h3>
                 <button
                   onClick={() => setSelectedSOS(null)}
-                  className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-dark-400 text-xl"
+                  className="active:scale-[0.97] w-8 h-8 flex items-center justify-center hover:bg-[var(--soft-surface-strong)] rounded-lg text-dark-400 text-xl"
                 >
                   ×
                 </button>
               </div>
-              <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+              <div className="flex items-center gap-3 p-3 bg-[var(--soft-surface)] rounded-xl">
                 <div className="w-14 h-14 rounded-full overflow-hidden border-3 border-red-500 shrink-0 sos-avatar-glow">
                   <img
                     src={selectedSOS.user?.avatar_url || "https://ui-avatars.com/api/?name=User"}
@@ -1704,7 +1704,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
               <div className="flex gap-3 pt-2">
                 <button
                   onClick={() => setSelectedSOS(null)}
-                  className="flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium"
+                  className="active:scale-[0.97] flex-1 py-3 bg-dark-700 text-dark-300 rounded-xl font-medium"
                 >
                   Back
                 </button>
@@ -1712,7 +1712,7 @@ const handleMove = useCallback((evt: { viewState: ViewState }) => {
                   <button
                     onClick={() => handleICanHelp(selectedSOS)}
                     disabled={sendingHelp}
-                    className="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
+                    className="active:scale-[0.97] flex-1 py-3 bg-green-600 text-white rounded-xl font-medium disabled:opacity-50"
                   >
                     {sendingHelp ? "Sending..." : "I Can Help"}
                   </button>

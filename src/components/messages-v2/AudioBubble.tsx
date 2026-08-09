@@ -406,7 +406,7 @@ export function AudioBubble({
   // bubble is primary-600, so we use white surfaces. On "theirs" the
   // bubble is white/10, so we use slightly brighter neutrals.
   const playBg =
-    variant === "mine" ? "bg-white/25" : "bg-[var(--chat-control-other-bg)]";
+    variant === "mine" ? "bg-[var(--surface-3)]" : "bg-[var(--chat-control-other-bg)]";
   const playFg = variant === "mine" ? "text-white" : "text-dark-100";
   const barColor =
     variant === "mine" ? "bg-white/40" : "bg-[var(--chat-control-other-track)]";
@@ -492,7 +492,7 @@ export function AudioBubble({
         <button
           type="button"
           onClick={togglePlay}
-          className={`shrink-0 w-11 h-11 rounded-full ${playBg} ${playFg} flex items-center justify-center active:scale-90 transition-transform`}
+          className={`shrink-0 w-11 h-11 rounded-full ${playBg} ${playFg} flex items-center justify-center active:scale-[0.97] transition-transform`}
           aria-label={
             isLoading ? "Loading" : isPlaying ? "Pause" : "Play"
           }

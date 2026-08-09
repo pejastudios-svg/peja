@@ -196,7 +196,7 @@ export function StoryViewer({
             )}
             <button
               onClick={() => { onClose(); router.push(`/post/${story.id}`); }}
-              className="mt-6 inline-flex items-center gap-1 px-5 py-2.5 rounded-full bg-white text-black font-semibold text-sm active:scale-95 transition-transform z-20 relative"
+              className="mt-6 inline-flex items-center gap-1 px-5 py-2.5 rounded-full bg-white text-black font-semibold text-sm active:scale-[0.97] transition-transform z-20 relative"
             >
               View full report <ChevronRight className="w-4 h-4" />
             </button>

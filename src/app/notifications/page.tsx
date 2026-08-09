@@ -583,7 +583,7 @@ export default function NotificationsPage() {
               {unreadCount > 0 && (
                 <button
                   onClick={handleMarkAllAsRead}
-                  className="flex items-center gap-1 text-sm text-primary-400 hover:text-primary-300 py-2 px-3 rounded-lg active:bg-white/10"
+                  className="flex items-center gap-1 text-sm text-primary-400 hover:text-primary-300 py-2 px-3 rounded-lg active:bg-[var(--soft-surface-strong)]"
                 >
                   <Check className="w-4 h-4" />
                   Mark all read
@@ -632,7 +632,7 @@ export default function NotificationsPage() {
                         handleNotificationClick(notification);
                       }
                     }}
-                    className={`glass-card p-4 cursor-pointer transition-all active:scale-[0.98] active:bg-[var(--soft-surface-strong)] hover:bg-[var(--soft-surface-strong)] select-none ${
+                    className={`glass-card p-4 cursor-pointer transition-ui active:scale-[0.97] active:bg-[var(--soft-surface-strong)] hover:bg-[var(--soft-surface-strong)] select-none ${
                       !notification.is_read ? "border-l-4 border-l-primary-500" : ""
                     }`}
                     style={{ WebkitTapHighlightColor: "transparent" }}
@@ -660,7 +660,7 @@ export default function NotificationsPage() {
 
                           <button
                             onClick={(e) => handleDeleteNotification(e, notification.id)}
-                            className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-400 active:bg-white/20 shrink-0"
+                            className="p-2 hover:bg-[var(--soft-surface-strong)] rounded-lg text-dark-500 hover:text-red-400 active:bg-[var(--surface-3)] shrink-0"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -761,7 +761,7 @@ export default function NotificationsPage() {
               )}
 
               {inviteModal.status === "missing" && (
-                <div className="p-3 rounded-lg bg-dark-700/40 border border-white/10 flex gap-3">
+                <div className="p-3 rounded-lg bg-dark-700/40 border border-[var(--hairline-strong)] flex gap-3">
                   <AlertTriangle className="w-5 h-5 text-dark-300 shrink-0 mt-0.5" />
                   <p className="text-sm text-dark-300">
                     This request no longer exists. It may have been cancelled or deleted.
@@ -849,14 +849,14 @@ export default function NotificationsPage() {
                     <button
                       onClick={() => handleGroupInviteResponse(false)}
                       disabled={groupResponding}
-                      className="flex-1 py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+                      className="flex-1 py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.97] transition-transform disabled:opacity-60"
                     >
                       Decline
                     </button>
                     <button
                       onClick={() => handleGroupInviteResponse(true)}
                       disabled={groupResponding}
-                      className="flex-1 py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+                      className="flex-1 py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.97] transition-transform disabled:opacity-60"
                     >
                       Accept
                     </button>
@@ -873,7 +873,7 @@ export default function NotificationsPage() {
                   </p>
                   <button
                     onClick={() => setGroupInvite(null)}
-                    className="w-full py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform"
+                    className="w-full py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.97] transition-transform"
                   >
                     Close
                   </button>
@@ -902,7 +902,7 @@ export default function NotificationsPage() {
               </div>
 
               {accountStatusModal.reason && (
-                <div className="p-3 rounded-lg bg-dark-700/40 border border-white/10">
+                <div className="p-3 rounded-lg bg-dark-700/40 border border-[var(--hairline-strong)]">
                   <p className="text-xs uppercase tracking-wide text-dark-400 mb-1">
                     Reason
                   </p>

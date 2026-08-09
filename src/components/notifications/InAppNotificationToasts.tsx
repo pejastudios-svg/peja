@@ -204,7 +204,7 @@ export default function InAppNotificationToasts() {
         {toasts.map((n, i) => (
           <div
             key={n.id}
-            className="glass-float rounded-2xl border border-white/10 shadow-xl overflow-hidden cursor-pointer transition-all duration-200 ease-out"
+            className="glass-float rounded-2xl border border-[var(--hairline-strong)] shadow-xl overflow-hidden cursor-pointer transition-ui duration-200 ease-out"
             style={{
               // Front toast (i=0) stays in the document flow so it
               // dictates the container's height; deeper cards layer
@@ -245,7 +245,7 @@ export default function InAppNotificationToasts() {
                   e.stopPropagation();
                   dismiss(n.id);
                 }}
-                className="p-2 rounded-lg hover:bg-white/10 text-dark-400"
+                className="p-2 rounded-lg hover:bg-[var(--soft-surface-strong)] text-dark-400"
               >
                 <X className="w-4 h-4" />
               </button>

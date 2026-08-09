@@ -351,7 +351,7 @@ export default function SharedLocationsPage() {
       </div>
 
       {/* User list */}
-      <div className="shrink-0 max-h-[35vh] overflow-y-auto bg-dark-950 border-t border-white/5">
+      <div className="shrink-0 max-h-[35vh] overflow-y-auto bg-dark-950 border-t border-[var(--hairline)]">
         <div className="p-3 space-y-1.5">
           {sharedUsers.length === 0 && !loading && (
             <div className="text-center py-6">
@@ -373,7 +373,7 @@ export default function SharedLocationsPage() {
                     setSelectedUserId(u.userId);
                   }
                 }}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-all ${
+                className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-ui ${
                   isSelected
                     ? "bg-primary-600/10 border border-primary-500/30"
                     : "bg-white/[0.03] border border-transparent hover:bg-white/[0.06]"

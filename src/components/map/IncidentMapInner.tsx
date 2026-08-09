@@ -783,21 +783,21 @@ export default function IncidentMapInner({
             className="relative glass-strong w-full h-full max-w-lg overflow-hidden flex flex-col"
           >
             {/* User Info Header - Always at top */}
-            <div className="border-b border-white/10 p-4 shrink-0">
+            <div className="border-b border-[var(--hairline-strong)] p-4 shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-xl font-bold text-dark-100">
                   {isOwnSOS ? "Your SOS Alert" : "SOS Alert"}
                 </h3>
                 <button
                   onClick={() => setSelectedSOS(null)}
-                  className="w-8 h-8 flex items-center justify-center hover:bg-white/10 rounded-lg text-dark-400 text-xl"
+                  className="w-8 h-8 flex items-center justify-center hover:bg-[var(--soft-surface-strong)] rounded-lg text-dark-400 text-xl"
                 >
                   ×
                 </button>
               </div>
               
               {/* User Profile - At top of modal */}
-              <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+              <div className="flex items-center gap-3 p-3 bg-[var(--soft-surface)] rounded-xl">
                 <div className="w-14 h-14 rounded-full overflow-hidden border-3 border-red-500 shrink-0 sos-avatar-glow">
                   <img
                     src={selectedSOS.user?.avatar_url || "https://ui-avatars.com/api/?name=User"}
@@ -834,7 +834,7 @@ export default function IncidentMapInner({
               )}
 
               {selectedSOS.message && (
-                <div className="p-3 bg-white/5 rounded-xl">
+                <div className="p-3 bg-[var(--soft-surface)] rounded-xl">
                   <p className="text-sm text-dark-400 mb-1">Message:</p>
                   <p className="text-dark-100">{selectedSOS.message}</p>
                 </div>

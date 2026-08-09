@@ -196,7 +196,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
           <button
             onClick={back}
             disabled={step === "configure"}
-            className="w-9 h-9 rounded-full bg-dark-800 flex items-center justify-center active:scale-90 transition-transform disabled:opacity-0"
+            className="w-9 h-9 rounded-full bg-dark-800 flex items-center justify-center active:scale-[0.97] transition-transform disabled:opacity-0"
             aria-label="Back"
           >
             <ArrowLeft className="w-4.5 h-4.5 text-dark-300" />
@@ -204,7 +204,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
           <div className="flex-1 h-1 rounded-full bg-dark-800 overflow-hidden">
             <div
               className="h-full rounded-full bg-primary-500"
-              style={{ width: `${progress * 100}%`, transition: "width 0.6s cubic-bezier(0.32, 0.72, 0, 1)" }}
+              style={{ width: `${progress * 100}%`, transition: "width 0.6s var(--ease-sheet)" }}
             />
           </div>
           <div className="w-9" />
@@ -247,7 +247,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
           </div>
           <button
             onClick={() => setStep("scan")}
-            className="beacon-stagger w-full py-4 rounded-2xl bg-primary-600 text-white font-semibold text-[15px] shadow-lg shadow-primary-900/40 active:scale-[0.98] transition-transform"
+            className="beacon-stagger w-full py-4 rounded-2xl bg-primary-600 text-white font-semibold text-[15px] shadow-lg shadow-primary-900/40 active:scale-[0.97] transition-transform"
             style={{ animationDelay: "0.38s" }}
           >
             Pair your Beacon
@@ -298,7 +298,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
           <button
             onClick={() => setStep("contacts")}
             disabled={!validSim}
-            className="w-full py-4 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-all disabled:opacity-40"
+            className="w-full py-4 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-ui disabled:opacity-40"
           >
             Continue
           </button>
@@ -340,7 +340,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
                           key={c.id}
                           disabled={disabled}
                           onClick={() => setter(selected && slot === 1 ? null : c.id)}
-                          className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-all active:scale-[0.985] ${
+                          className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-ui active:scale-[0.97] ${
                             selected
                               ? "border-primary-500 bg-primary-500/10"
                               : "border-dark-700 bg-dark-800/60"
@@ -358,7 +358,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
                             </p>
                           </div>
                           <div
-                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                            className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-ui ${
                               selected ? "border-primary-400 bg-primary-500" : "border-dark-600"
                             }`}
                           >
@@ -376,7 +376,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
           <button
             onClick={startPairing}
             disabled={pairing}
-            className="w-full py-4 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+            className="w-full py-4 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-ui disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {pairing ? "Setting up..." : "Set up my Beacon"}
             {!pairing && <ChevronRight className="w-4 h-4" />}
@@ -411,7 +411,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
             <button
               onClick={autoSend}
               disabled={autoSending != null}
-              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.985] transition-transform disabled:opacity-70"
+              className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.97] transition-transform disabled:opacity-70"
             >
               {autoSending != null ? (
                 <>
@@ -463,7 +463,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
                         markSent(i);
                         toast.success("Copied");
                       }}
-                      className="w-9 h-9 rounded-xl bg-dark-700 flex items-center justify-center active:scale-90 transition-transform shrink-0"
+                      className="w-9 h-9 rounded-xl bg-dark-700 flex items-center justify-center active:scale-[0.97] transition-transform shrink-0"
                       aria-label="Copy command"
                     >
                       <Copy className="w-4 h-4 text-dark-300" />
@@ -471,7 +471,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
                     <a
                       href={`sms:${simDigits}?body=${encodeURIComponent(cmd.sms)}`}
                       onClick={() => markSent(i)}
-                      className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center active:scale-90 transition-transform shrink-0"
+                      className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center active:scale-[0.97] transition-transform shrink-0"
                       aria-label="Send as SMS"
                     >
                       <Send className="w-4 h-4 text-white" />
@@ -494,7 +494,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
               </p>
               <button
                 onClick={() => setStep("done")}
-                className="w-full py-2.5 rounded-xl border border-dark-600 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform"
+                className="w-full py-2.5 rounded-xl border border-dark-600 text-dark-200 text-sm font-semibold active:scale-[0.97] transition-transform"
               >
                 Continue, keep peja open
               </button>

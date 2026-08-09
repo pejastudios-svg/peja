@@ -579,7 +579,7 @@ const confirmRevokeGuardian = async () => {
               <button
                 key={k}
                 onClick={() => setAppFilter(k as any)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold border uppercase tracking-wider transition-all ${
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold border uppercase tracking-wider transition-ui ${
                   appFilter === k
                     ? "bg-white/10 border-white/20 text-white shadow-sm"
                     : "border-transparent text-dark-500 hover:bg-white/5"
@@ -607,7 +607,7 @@ const confirmRevokeGuardian = async () => {
                     setSelected(a);
                     setModalOpen(true);
                   }}
-                  className="hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-all flex items-center gap-4 group"
+                  className="hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-ui flex items-center gap-4 group"
                 >
                   <AvatarImage
                     src={a.user?.avatar_url}
@@ -649,7 +649,7 @@ const confirmRevokeGuardian = async () => {
               value={guardianSearch}
               onChange={(e) => setGuardianSearch(e.target.value)}
               placeholder="Search active guardians..."
-              className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-all"
+              className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-ui"
             />
           </div>
 
@@ -740,7 +740,7 @@ const confirmRevokeGuardian = async () => {
               <button
                 key={k}
                 onClick={() => setActionFilter(k as any)}
-                className={`px-4 py-1.5 rounded-lg text-xs font-bold border uppercase tracking-wider transition-all ${
+                className={`px-4 py-1.5 rounded-lg text-xs font-bold border uppercase tracking-wider transition-ui ${
                   actionFilter === k
                     ? "bg-white/10 border-white/20 text-white shadow-sm"
                     : "border-transparent text-dark-500 hover:bg-white/5"

@@ -22,7 +22,7 @@ export function QuotedReplyBlock({
   variant,
   onJumpToOriginal,
 }: Props) {
-  // Bumped from `bg-white/15` to `bg-white/25` for "mine" — at 15%
+  // Bumped from `bg-[var(--soft-surface-strong)]` to `bg-[var(--surface-3)]` for "mine" — at 15%
   // the inset block was washed out against the purple bubble (esp.
   // in light mode where the purple stays vibrant and the
   // semi-transparent white nearly disappears). 25% reads as a
@@ -30,7 +30,7 @@ export function QuotedReplyBlock({
   // bleed through.
   const accentBorder = variant === "mine" ? "border-white" : "border-primary-400";
   const surface =
-    variant === "mine" ? "bg-white/25" : "bg-[var(--chat-control-other-bg)]";
+    variant === "mine" ? "bg-[var(--surface-3)]" : "bg-[var(--chat-control-other-bg)]";
   return (
     <button
       type="button"

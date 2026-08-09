@@ -88,7 +88,7 @@ export function DragSheet({
             transition:
               drag.current || dragY > 0
                 ? "none"
-                : "transform 0.45s cubic-bezier(0.32, 0.72, 0, 1)",
+                : "transform 0.45s var(--ease-sheet)",
           }}
         >
           {/* drag handle zone (the grabbable strip) */}

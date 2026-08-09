@@ -182,15 +182,15 @@ function LoginPageInner() {
 </Button>
 
           <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px bg-white/10" />
+            <div className="flex-1 h-px bg-[var(--soft-surface-strong)]" />
             <span className="text-xs text-dark-500">or</span>
-            <div className="flex-1 h-px bg-white/10" />
+            <div className="flex-1 h-px bg-[var(--soft-surface-strong)]" />
           </div>
 
           <button
             type="button"
             onClick={handleGoogleSignIn}
-            className="w-full flex items-center justify-center gap-3 py-3 rounded-xl font-medium text-dark-100 transition-all active:scale-[0.98] hover:bg-white/10"
+            className="w-full flex items-center justify-center gap-3 py-3 rounded-xl font-medium text-dark-100 transition-ui active:scale-[0.97] hover:bg-[var(--soft-surface-strong)]"
             style={{
               background: "var(--glass-input-bg)",
               border: "1px solid var(--glass-border)",

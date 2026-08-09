@@ -178,7 +178,7 @@ export function LoginPrompt() {
                 handleClose();
                 setTimeout(() => router.push(href), 300);
               }}
-              className="w-full py-3.5 rounded-xl font-semibold text-white transition-all active:scale-[0.98] mb-3 flex items-center justify-center gap-2"
+              className="w-full py-3.5 rounded-xl font-semibold text-white transition-ui active:scale-[0.97] mb-3 flex items-center justify-center gap-2"
               style={{
                 background:
                   "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
@@ -195,7 +195,7 @@ export function LoginPrompt() {
                 handleClose();
                 setTimeout(() => router.push(href), 300);
               }}
-              className="w-full py-3 rounded-xl text-sm font-medium text-primary-400 transition-colors hover:bg-white/5 active:bg-white/10 flex items-center justify-center gap-2"
+              className="w-full py-3 rounded-xl text-sm font-medium text-primary-400 transition-colors hover:bg-[var(--soft-surface)] active:bg-[var(--soft-surface-strong)] flex items-center justify-center gap-2"
               style={{
                 border: "1px solid rgba(139, 92, 246, 0.2)",
               }}

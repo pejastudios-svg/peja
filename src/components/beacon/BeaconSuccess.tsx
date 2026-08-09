@@ -67,7 +67,7 @@ export function BeaconSuccess({
 
       <button
         onClick={onContinue}
-        className="beacon-stagger w-full py-4 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-transform"
+        className="beacon-stagger w-full py-4 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-transform"
         style={{ animationDelay: "1s" }}
       >
         Open my Beacon

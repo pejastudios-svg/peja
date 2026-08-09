@@ -34,7 +34,7 @@ export function PostDetailSkeleton() {
         </div>
 
         {/* comments */}
-        <div className="border-t border-white/5 p-4 space-y-4">
+        <div className="border-t border-[var(--hairline)] p-4 space-y-4">
           <Skeleton className="h-5 w-36" />
 
           {Array.from({ length: 6 }).map((_, i) => (

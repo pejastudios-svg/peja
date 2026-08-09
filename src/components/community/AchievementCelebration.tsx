@@ -125,14 +125,14 @@ export function AchievementCelebration() {
         <p className="text-sm text-dark-400 leading-relaxed mb-5">{def.description}</p>
         <button
           onClick={dismiss}
-          className="w-full py-3 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-transform"
+          className="w-full py-3 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-transform"
         >
           Nice
         </button>
         {queue.length > 1 && (
           <button
             onClick={dismissAll}
-            className="w-full mt-2 py-2 text-sm font-medium text-dark-400 active:scale-[0.98] transition-transform"
+            className="w-full mt-2 py-2 text-sm font-medium text-dark-400 active:scale-[0.97] transition-transform"
           >
             Dismiss all ({queue.length})
           </button>

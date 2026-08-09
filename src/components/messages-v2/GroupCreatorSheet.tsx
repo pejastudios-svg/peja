@@ -214,7 +214,7 @@ export function GroupCreatorSheet({ currentUserId, onClose }: Props) {
           <button
             type="button"
             onClick={handleClose}
-            className="w-9 h-9 rounded-full bg-[var(--chat-input-bg)] flex items-center justify-center"
+            className="active:scale-[0.97] w-9 h-9 rounded-full bg-[var(--chat-input-bg)] flex items-center justify-center"
             aria-label="Close"
           >
             <ArrowLeft className="w-5 h-5 text-dark-200" />
@@ -250,7 +250,7 @@ export function GroupCreatorSheet({ currentUserId, onClose }: Props) {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="shrink-0 relative w-16 h-16 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center group"
+              className="active:scale-[0.97] shrink-0 relative w-16 h-16 rounded-full overflow-hidden bg-[var(--chat-other-bg)] flex items-center justify-center group"
               aria-label={avatarPreview ? "Change group photo" : "Pick a group photo"}
             >
               {avatarPreview ? (
@@ -270,7 +270,7 @@ export function GroupCreatorSheet({ currentUserId, onClose }: Props) {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="text-sm text-primary-300 font-medium"
+                className="active:opacity-70 text-sm text-primary-300 font-medium"
               >
                 {avatarPreview ? "Change photo" : "Choose from gallery"}
               </button>
@@ -278,7 +278,7 @@ export function GroupCreatorSheet({ currentUserId, onClose }: Props) {
                 <button
                   type="button"
                   onClick={() => setAvatarFile(null)}
-                  className="inline-flex items-center gap-1 text-[11px] text-dark-400 hover:text-dark-200"
+                  className="active:opacity-70 inline-flex items-center gap-1 text-[11px] text-dark-400 hover:text-dark-200"
                 >
                   <XIcon className="w-3 h-3" />
                   Remove
@@ -345,7 +345,7 @@ export function GroupCreatorSheet({ currentUserId, onClose }: Props) {
                     <button
                       type="button"
                       onClick={() => toggle(u.id)}
-                      className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-[var(--chat-input-hover)] text-left"
+                      className="active:scale-[0.97] w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-[var(--chat-input-hover)] text-left"
                     >
                       <AvatarImage
                         src={u.avatar_url}
@@ -397,7 +397,7 @@ export function GroupCreatorSheet({ currentUserId, onClose }: Props) {
           disabled={
             submitting || !name.trim() || selected.size === 0
           }
-          className="w-full h-11 rounded-xl bg-primary-600 text-white font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+          className="active:scale-[0.97] w-full h-11 rounded-xl bg-primary-600 text-white font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50"
         >
           {submitting
             ? "Creating…"

@@ -157,7 +157,7 @@ export function SOSLoadingAnimation({
                 {STEPS.map((step, index) => (
                   <div
                     key={step.id}
-                    className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                    className={`w-2 h-2 rounded-full transition-ui duration-300 ${
                       index < currentStep 
                         ? "bg-primary-500 scale-100" 
                         : index === currentStep 

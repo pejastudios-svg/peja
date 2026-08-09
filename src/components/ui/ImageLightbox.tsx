@@ -210,7 +210,7 @@ const { user } = useAuth();
           className="flex-1 relative"
           style={{ 
             transform: `translateY(${dragOffset}px) scale(${scale})`,
-            transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
+            transition: isDragging ? 'none' : 'transform 0.3s var(--ease-out)'
           }}
           onClick={(e) => e.stopPropagation()}
           onTouchStart={onTouchStart}
@@ -276,7 +276,7 @@ const { user } = useAuth();
             {mediaItems.map((_, i) => (
               <div 
                 key={i} 
-                className={`h-2 rounded-full transition-all duration-300 ${
+                className={`h-2 rounded-full transition-ui duration-300 ${
                   i === index 
                     ? "bg-white w-6" 
                     : "bg-white/40 w-2"

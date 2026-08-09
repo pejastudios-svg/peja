@@ -206,7 +206,7 @@ export function CircleSheet({
     <button
       key={m.id}
       onClick={() => { onMemberTap(m); setExpanded(false); }}
-      className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-dark-800/50 border border-dark-700/60 active:scale-[0.985] transition-transform"
+      className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-dark-800/50 border border-dark-700/60 active:scale-[0.97] transition-transform"
     >
       <div
         className={`w-10 h-10 rounded-full overflow-hidden border-2 bg-dark-700 flex items-center justify-center shrink-0 ${
@@ -258,7 +258,7 @@ export function CircleSheet({
             offset != null
               ? `translateY(${offset}px)`
               : `translateY(calc(100% - ${PEEK_PX}px))`,
-          transition: dragY != null ? "none" : "transform 0.45s cubic-bezier(0.32, 0.72, 0, 1)",
+          transition: dragY != null ? "none" : "transform 0.45s var(--ease-sheet)",
         }}
       >
         {/* ── peek ──
@@ -317,7 +317,7 @@ export function CircleSheet({
             ))}
             <button
               onClick={(e) => { e.stopPropagation(); setQuickAddOpen(true); }}
-              className="w-8 h-8 rounded-full border-2 border-dashed border-primary-500/60 flex items-center justify-center active:scale-90 transition-transform"
+              className="w-8 h-8 rounded-full border-2 border-dashed border-primary-500/60 flex items-center justify-center active:scale-[0.97] transition-transform"
               aria-label="Add to community"
             >
               <Plus className="beacon-accent-text w-4 h-4" />
@@ -349,7 +349,7 @@ export function CircleSheet({
                   onClick={() => router.push("/beacon")}
                   aria-label="Beacon"
                   style={{ width: 52, height: 52 }}
-                  className="rounded-full bg-dark-800 border border-primary-500/40 shadow-lg flex items-center justify-center active:scale-90 transition-transform"
+                  className="rounded-full bg-dark-800 border border-primary-500/40 shadow-lg flex items-center justify-center active:scale-[0.97] transition-transform"
                 >
                   <Radio className="beacon-accent-text w-5 h-5" />
                 </button>
@@ -361,7 +361,7 @@ export function CircleSheet({
                 onClick={() => setQuickAddOpen(true)}
                 aria-label="Add people"
                 style={{ width: 52, height: 52 }}
-                className="rounded-full bg-primary-600 shadow-lg shadow-primary-900/40 flex items-center justify-center active:scale-90 transition-transform"
+                className="rounded-full bg-primary-600 shadow-lg shadow-primary-900/40 flex items-center justify-center active:scale-[0.97] transition-transform"
               >
                 <UserPlus className="w-5 h-5 text-white" />
               </button>
@@ -387,7 +387,7 @@ export function CircleSheet({
                   paddingRight: searchOpen ? 12 : 0,
                   paddingTop: 6,
                   paddingBottom: 6,
-                  transition: "width 0.3s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.2s, padding 0.3s",
+                  transition: "width 0.3s var(--ease-sheet), opacity 0.2s, padding 0.3s",
                 }}
               />
               <button
@@ -398,7 +398,7 @@ export function CircleSheet({
                   });
                 }}
                 aria-label="Search"
-                className="w-7 h-7 rounded-full flex items-center justify-center bg-dark-800/70 border border-dark-700 active:scale-90 transition-transform shrink-0"
+                className="w-7 h-7 rounded-full flex items-center justify-center bg-dark-800/70 border border-dark-700 active:scale-[0.97] transition-transform shrink-0"
               >
                 {searchOpen ? (
                   <X className="w-3.5 h-3.5 text-dark-400" />
@@ -411,7 +411,7 @@ export function CircleSheet({
           {members.length === 0 ? (
             <button
               onClick={() => setInviteOpen(true)}
-              className="w-full rounded-2xl border border-dashed border-primary-500/40 p-4 text-center active:scale-[0.98] transition-transform"
+              className="w-full rounded-2xl border border-dashed border-primary-500/40 p-4 text-center active:scale-[0.97] transition-transform"
             >
               <p className="text-sm text-dark-300 font-medium">No one here yet</p>
               <p className="text-xs text-dark-500 mt-0.5">Invite the people who should know you&apos;re safe</p>
@@ -432,7 +432,7 @@ export function CircleSheet({
                     {!q && remaining > 0 && (
                       <button
                         onClick={() => setVisibleCount((c) => c + 10)}
-                        className="w-full flex items-center justify-center gap-1 py-2.5 rounded-2xl text-sm font-semibold beacon-accent-text active:scale-[0.98] transition-transform"
+                        className="w-full flex items-center justify-center gap-1 py-2.5 rounded-2xl text-sm font-semibold beacon-accent-text active:scale-[0.97] transition-transform"
                       >
                         See more ({remaining})
                         <ChevronRight className="w-4 h-4 rotate-90" />
@@ -441,7 +441,7 @@ export function CircleSheet({
                     {!q && remaining <= 0 && list.length > 4 && (
                       <button
                         onClick={() => setVisibleCount(4)}
-                        className="w-full flex items-center justify-center gap-1 py-2.5 rounded-2xl text-sm font-semibold beacon-accent-text active:scale-[0.98] transition-transform"
+                        className="w-full flex items-center justify-center gap-1 py-2.5 rounded-2xl text-sm font-semibold beacon-accent-text active:scale-[0.97] transition-transform"
                       >
                         Show less
                         <ChevronRight className="w-4 h-4 -rotate-90" />
@@ -461,7 +461,7 @@ export function CircleSheet({
               </p>
               <button
                 onClick={() => setCreateOpen(true)}
-                className="w-full flex items-center gap-3 p-2.5 mb-1.5 rounded-2xl border border-dashed border-primary-500/50 active:scale-[0.985] transition-transform"
+                className="w-full flex items-center gap-3 p-2.5 mb-1.5 rounded-2xl border border-dashed border-primary-500/50 active:scale-[0.97] transition-transform"
               >
                 <div className="w-9 h-9 rounded-full border border-dashed border-primary-500/60 flex items-center justify-center shrink-0">
                   <Plus className="beacon-accent-text w-4 h-4" />
@@ -485,7 +485,7 @@ export function CircleSheet({
                   <div key={c.id}>
                     <button
                       onClick={() => setOpenCircle((v) => (v === c.id ? null : c.id))}
-                      className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-dark-800/50 border border-dark-700/60 active:scale-[0.985] transition-transform"
+                      className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-dark-800/50 border border-dark-700/60 active:scale-[0.97] transition-transform"
                     >
                       <div className="w-9 h-9 rounded-full bg-primary-500/15 flex items-center justify-center shrink-0">
                         <Users className="beacon-accent-text w-4.5 h-4.5" />
@@ -517,7 +517,7 @@ export function CircleSheet({
                                   onClick={() =>
                                     setCircleVisible((prev) => ({ ...prev, [c.id]: cap + 10 }))
                                   }
-                                  className="w-full flex items-center justify-center gap-1 py-2 rounded-2xl text-xs font-semibold beacon-accent-text active:scale-[0.98] transition-transform"
+                                  className="w-full flex items-center justify-center gap-1 py-2 rounded-2xl text-xs font-semibold beacon-accent-text active:scale-[0.97] transition-transform"
                                 >
                                   See more ({remaining})
                                   <ChevronRight className="w-3.5 h-3.5 rotate-90" />
@@ -536,7 +536,7 @@ export function CircleSheet({
                                 owned: true,
                               })
                             }
-                            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-2xl border border-dashed border-primary-500/40 text-xs font-semibold beacon-accent-text active:scale-95 transition-transform"
+                            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-2xl border border-dashed border-primary-500/40 text-xs font-semibold beacon-accent-text active:scale-[0.97] transition-transform"
                           >
                             <Plus className="w-3.5 h-3.5" /> Add people
                           </button>
@@ -561,7 +561,7 @@ export function CircleSheet({
                 <button
                   key={i.id}
                   onClick={() => onIncidentTap(i)}
-                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-dark-800/50 border border-dark-700/60 active:scale-[0.985] transition-transform"
+                  className="w-full flex items-center gap-3 p-2.5 rounded-2xl bg-dark-800/50 border border-dark-700/60 active:scale-[0.97] transition-transform"
                 >
                   <div className="w-9 h-9 rounded-full bg-amber-500/15 flex items-center justify-center shrink-0">
                     <AlertTriangle className="beacon-wait-text w-4 h-4" />
@@ -603,7 +603,7 @@ export function CircleSheet({
           <button
             onClick={createCircle}
             disabled={!newCircleName.trim() || creating}
-            className="w-full py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+            className="w-full py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.97] transition-transform disabled:opacity-60"
           >
             {creating ? "Creating..." : "Create and add people"}
           </button>

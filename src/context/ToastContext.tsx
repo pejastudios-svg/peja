@@ -126,9 +126,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   dismiss(t.id);
                 }
               }}
-              className={`inline-flex max-w-[90vw] glass-float rounded-full border border-white/10 shadow-xl overflow-hidden cursor-pointer select-none ${
+              className={`inline-flex max-w-[90vw] glass-float rounded-full border border-[var(--hairline-strong)] shadow-xl overflow-hidden cursor-pointer select-none ${
                 t.leaving
-                  ? "animate-[toastOut_220ms_cubic-bezier(0.32,0.72,0,1)_forwards]"
+                  ? "animate-[toastOut_220ms_var(--ease-sheet)_forwards]"
                   : "animate-[toastIn_180ms_ease-out]"
               }`}
             >

@@ -220,7 +220,7 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
         <button
           onClick={() => setCollapsedPersist(false)}
           aria-label="Show stories"
-          className="beacon-pop flex items-center gap-1.5 rounded-full pl-1.5 pr-2.5 py-1.5 active:scale-95 transition-transform"
+          className="beacon-pop flex items-center gap-1.5 rounded-full pl-1.5 pr-2.5 py-1.5 active:scale-[0.97] transition-transform"
           style={{ background: "rgba(0,0,0,0.45)" }}
         >
           <div className="flex items-center">
@@ -258,7 +258,7 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
             <button
               key={g.id}
               onClick={() => openGroup(g, groups.indexOf(g))}
-              className="beacon-pop flex flex-col items-center gap-1 shrink-0 active:scale-95 transition-transform"
+              className="beacon-pop flex flex-col items-center gap-1 shrink-0 active:scale-[0.97] transition-transform"
               style={{ animationDelay: `${Math.min(gi * 0.04, 0.3)}s` }}
             >
               <div
@@ -285,7 +285,7 @@ export function StoryRail({ incidents }: { incidents: NearbyIncident[] }) {
         <button
           onClick={() => setCollapsedPersist(true)}
           aria-label="Minimize stories"
-          className="shrink-0 self-start mt-2.5 w-7 h-7 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+          className="shrink-0 self-start mt-2.5 w-7 h-7 rounded-full flex items-center justify-center active:scale-[0.97] transition-transform"
           style={{ background: "rgba(0,0,0,0.45)" }}
         >
           <ChevronUp className="w-4 h-4 text-white/80" />

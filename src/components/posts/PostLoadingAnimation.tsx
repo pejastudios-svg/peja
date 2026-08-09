@@ -104,7 +104,7 @@ export function PostLoadingAnimation({
               {/* Progress bar */}
               <div className="w-full bg-dark-700/50 rounded-full h-1.5 mb-5 overflow-hidden">
                 <div
-                  className="h-1.5 rounded-full transition-all duration-500"
+                  className="h-1.5 rounded-full transition-ui duration-500"
                   style={{ 
                     width: `${uploadProgress}%`,
                     background: `linear-gradient(90deg, #7c3aed, ${currentColor})`,

@@ -102,14 +102,14 @@ export function WebPushSetup() {
         <button
           onClick={enable}
           disabled={busy}
-          className="px-3 py-1.5 rounded-full bg-primary-600 text-white text-xs font-bold active:scale-95 transition-transform shrink-0 disabled:opacity-60"
+          className="px-3 py-1.5 rounded-full bg-primary-600 text-white text-xs font-bold active:scale-[0.97] transition-transform shrink-0 disabled:opacity-60"
         >
           {busy ? "..." : "Turn on"}
         </button>
         <button
           onClick={dismiss}
           aria-label="Dismiss"
-          className="p-1.5 rounded-full text-dark-400 active:scale-90 transition-transform shrink-0"
+          className="p-1.5 rounded-full text-dark-400 active:scale-[0.97] transition-transform shrink-0"
         >
           <X className="w-4 h-4" />
         </button>

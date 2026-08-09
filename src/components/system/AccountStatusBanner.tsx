@@ -44,7 +44,7 @@ export default function AccountStatusBanner() {
         <button
           type="button"
           onClick={() => setDismissed(true)}
-          className="p-2 rounded-lg hover:bg-white/10 text-dark-400"
+          className="p-2 rounded-lg hover:bg-[var(--soft-surface-strong)] text-dark-400"
           aria-label="Dismiss"
         >
           <X className="w-4 h-4" />

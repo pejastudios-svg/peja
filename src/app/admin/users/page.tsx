@@ -250,7 +250,7 @@ const deleteUser = async (userId: string, userName: string) => {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, email, or phone..."
-              className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500/50 transition-all"
+              className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500/50 transition-ui"
             />
           </div>
 
@@ -259,7 +259,7 @@ const deleteUser = async (userId: string, userName: string) => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="w-full h-11 pl-4 pr-10 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-dark-200 focus:outline-none focus:border-primary-500/50 appearance-none transition-all cursor-pointer"
+              className="w-full h-11 pl-4 pr-10 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-dark-200 focus:outline-none focus:border-primary-500/50 appearance-none transition-ui cursor-pointer"
             >
               <option value="all">All Status</option>
               <option value="active">Active</option>
@@ -292,7 +292,7 @@ const deleteUser = async (userId: string, userName: string) => {
                   key={user.id}
                    id={`user-row-${user.id}`}   
                   onClick={() => router.push(`/admin/users/${user.id}`)}
-                  className="group flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer hover:shadow-lg hover:shadow-black/20"
+                  className="group flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-ui cursor-pointer hover:shadow-lg hover:shadow-black/20"
                 >
                   <div className="flex items-center gap-3">
                     {/* Avatar */}

@@ -101,7 +101,7 @@ export function ConfirmConfetti({
               // No box-shadow glow: the soft coloured halo is exactly what
               // lingered as stuck GPU tiles on affected devices.
               boxShadow: "none",
-              animation: `confetti-burst 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards`,
+              animation: `confetti-burst 0.65s var(--ease-out) forwards`,
               // Custom properties for the animation
               ["--dx" as any]: `${dx}px`,
               ["--dy" as any]: `${dy}px`,

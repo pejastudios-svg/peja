@@ -72,7 +72,7 @@ export function useSheetDrag(onDismiss: () => void) {
     },
     style: {
       transform: dragY > 0 ? `translateY(${dragY}px)` : undefined,
-      transition: dragY > 0 ? "none" : "transform 0.4s cubic-bezier(0.32, 0.72, 0, 1)",
+      transition: dragY > 0 ? "none" : "transform 0.4s var(--ease-sheet)",
     } as React.CSSProperties,
   };
 }

@@ -411,7 +411,7 @@ if (checkingStatus) {
           <div className="px-4 pb-3 flex gap-2">
             <button
               onClick={handleConfirm}
-              className={`flex-1 py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+              className={`flex-1 py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-ui active:scale-[0.97] ${
                 isOverdue
                   ? "bg-red-600 text-white"
                   : "bg-green-600 text-white"
@@ -422,7 +422,7 @@ if (checkingStatus) {
             </button>
             <button
               onClick={() => setShowCancelConfirm(true)}
-              className="px-4 py-3 rounded-xl text-sm font-medium glass-sm text-dark-300 hover:bg-white/10"
+              className="px-4 py-3 rounded-xl text-sm font-medium glass-sm text-dark-300 hover:bg-[var(--soft-surface-strong)]"
             >
               Stop
             </button>
@@ -450,7 +450,7 @@ if (checkingStatus) {
                 <div className="flex gap-3">
                   <button
                     onClick={() => setShowCancelConfirm(false)}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-white/10"
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium glass-sm text-dark-200 hover:bg-[var(--soft-surface-strong)]"
                   >
                     Keep Sharing
                   </button>
@@ -481,7 +481,7 @@ if (checkingStatus) {
           setShowSetup(true);
           setSelectedContacts([]);
         }}
-        className="w-full mb-6 p-4 rounded-2xl flex items-center gap-4 transition-all active:scale-[0.98] hover:bg-white/5"
+        className="w-full mb-6 p-4 rounded-2xl flex items-center gap-4 transition-ui active:scale-[0.97] hover:bg-[var(--soft-surface)]"
         style={{
           background: "rgba(139, 92, 246, 0.08)",
           border: "1px solid rgba(139, 92, 246, 0.2)",
@@ -523,7 +523,7 @@ if (checkingStatus) {
                     <h2 className="text-lg font-bold text-dark-100">Safety Check-In</h2>
                     <p className="text-sm text-dark-400">Share your location and set a check-in timer</p>
                   </div>
-                  <button onClick={() => setShowSetup(false)} className="p-1.5 rounded-lg hover:bg-white/10">
+                  <button onClick={() => setShowSetup(false)} className="p-1.5 rounded-lg hover:bg-[var(--soft-surface-strong)]">
                     <X className="w-5 h-5 text-dark-400" />
                   </button>
                 </div>
@@ -628,7 +628,7 @@ if (checkingStatus) {
                 <button
                   onClick={handleStart}
                   disabled={starting || selectedContacts.length === 0}
-                  className="w-full py-4 rounded-xl font-semibold text-white disabled:opacity-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                  className="w-full py-4 rounded-xl font-semibold text-white disabled:opacity-50 transition-ui active:scale-[0.97] flex items-center justify-center gap-2"
                   style={{
                     background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
                     boxShadow: "0 4px 20px rgba(124, 58, 237, 0.3)",

@@ -33,7 +33,7 @@ export function PasswordStrength({ password }: { password: string }) {
     <div className="space-y-2 mt-2">
       <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
         <div
-          className={`h-full ${barColor} transition-all duration-300 rounded-full`}
+          className={`h-full ${barColor} transition-ui duration-300 rounded-full`}
           style={{ width: `${percent}%` }}
         />
       </div>

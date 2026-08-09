@@ -345,7 +345,7 @@ export function VideoRecorder({
       <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 pt-4 pb-3">
         <button
           onClick={handleClose}
-          className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center active:scale-95 transition-transform"
+          className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center active:scale-[0.97] transition-transform"
         >
           <X className="w-5 h-5 text-white" />
         </button>
@@ -353,7 +353,7 @@ export function VideoRecorder({
           <button
             onClick={handleFlip}
             disabled={isRecording || initializing}
-            className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40"
+            className="w-10 h-10 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center active:scale-[0.97] transition-transform disabled:opacity-40"
           >
             <RotateCcw className="w-5 h-5 text-white" />
           </button>
@@ -402,7 +402,7 @@ export function VideoRecorder({
                 in-app preview can't (iOS Home Screen apps especially). */}
             <button
               onClick={() => fallbackInputRef.current?.click()}
-              className="w-full py-2.5 rounded-xl bg-white text-black text-sm font-semibold active:scale-[0.98] transition-transform"
+              className="w-full py-2.5 rounded-xl bg-white text-black text-sm font-semibold active:scale-[0.97] transition-transform"
             >
               Record with your phone camera instead
             </button>
@@ -467,7 +467,7 @@ export function VideoRecorder({
           <div className="flex items-center justify-center gap-8 pb-4">
             <button
               onClick={handleRetake}
-              className="flex flex-col items-center gap-1.5 px-6 py-2 active:scale-95 transition-transform"
+              className="flex flex-col items-center gap-1.5 px-6 py-2 active:scale-[0.97] transition-transform"
             >
               <div className="w-14 h-14 rounded-full bg-white/10 border border-white/20 flex items-center justify-center">
                 <RefreshCw className="w-6 h-6 text-white" />
@@ -476,7 +476,7 @@ export function VideoRecorder({
             </button>
             <button
               onClick={handleUse}
-              className="flex flex-col items-center gap-1.5 px-6 py-2 active:scale-95 transition-transform"
+              className="flex flex-col items-center gap-1.5 px-6 py-2 active:scale-[0.97] transition-transform"
             >
               <div
                 className="w-14 h-14 rounded-full flex items-center justify-center"
@@ -495,7 +495,7 @@ export function VideoRecorder({
             <button
               onClick={isRecording ? stopRecording : startRecording}
               disabled={!!error || initializing}
-              className="relative w-20 h-20 rounded-full flex items-center justify-center active:scale-95 transition-transform disabled:opacity-40"
+              className="relative w-20 h-20 rounded-full flex items-center justify-center active:scale-[0.97] transition-transform disabled:opacity-40"
               aria-label={isRecording ? "Stop recording" : "Start recording"}
             >
               <div className={`absolute inset-0 rounded-full border-4 ${isRecording ? "border-red-500" : "border-white"}`} />

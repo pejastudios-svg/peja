@@ -166,7 +166,7 @@ export function QuickAddSheet({ open, onClose }: { open: boolean; onClose: () =>
                     <button
                       onClick={() => sendRequest(r)}
                       disabled={sent || sendingTo === r.id}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 active:scale-95 transition-all ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 active:scale-[0.97] transition-ui ${
                         sent
                           ? "bg-green-500/15 beacon-ok-text"
                           : "bg-primary-600 text-white"
@@ -202,7 +202,7 @@ export function QuickAddSheet({ open, onClose }: { open: boolean; onClose: () =>
             onClose();
             router.push("/emergency-contacts");
           }}
-          className="w-full flex items-center justify-center gap-1 py-2.5 text-sm font-semibold beacon-accent-text active:scale-[0.98] transition-transform"
+          className="w-full flex items-center justify-center gap-1 py-2.5 text-sm font-semibold beacon-accent-text active:scale-[0.97] transition-transform"
         >
           View all contacts and circles
           <ChevronRight className="w-4 h-4" />

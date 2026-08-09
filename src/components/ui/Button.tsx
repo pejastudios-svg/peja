@@ -28,7 +28,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const baseStyles =
-      "inline-flex items-center justify-center font-medium transition-all duration-200 " +
+      "inline-flex items-center justify-center font-medium transition-ui duration-200 " +
       "active:scale-[0.97] disabled:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed " +
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/60";
 
@@ -36,8 +36,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       primary:
         "bg-primary-600 hover:bg-primary-700 text-white shadow-lg hover:shadow-xl",
       secondary:
-        "glass-sm text-dark-100 hover:bg-white/10",
-      ghost: "text-dark-100 hover:bg-white/5",
+        "glass-sm text-dark-100 hover:bg-[var(--soft-surface-strong)]",
+      ghost: "text-dark-100 hover:bg-[var(--soft-surface)]",
       danger:
         "bg-red-600 hover:bg-red-700 text-white shadow-lg",
     };

@@ -343,7 +343,7 @@ export default function BecomeGuardianPage() {
                   className={`p-3 rounded-xl text-sm transition-colors ${
                     hoursPerWeek === option
                       ? "bg-primary-600 text-white"
-                      : "glass-sm text-dark-300 hover:bg-white/10"
+                      : "glass-sm text-dark-300 hover:bg-[var(--soft-surface-strong)]"
                   }`}
                 >
                   {option}
@@ -365,7 +365,7 @@ export default function BecomeGuardianPage() {
                   className={`p-2 rounded-lg text-xs transition-colors ${
                     selectedAreas.includes(state)
                       ? "bg-primary-600/20 text-primary-400 border border-primary-500/50"
-                      : "glass-sm text-dark-300 hover:bg-white/5"
+                      : "glass-sm text-dark-300 hover:bg-[var(--soft-surface)]"
                   }`}
                 >
                   {state}

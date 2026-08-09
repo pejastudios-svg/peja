@@ -80,7 +80,7 @@ return createPortal(
 
       {/* Modal Panel — black on dark, white on light, purple outline */}
       <div
-        className={`relative w-full ${sizeClasses[size]} shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[90vh] transition-all duration-300 ease-out ${getAnimationClass()}`}
+        className={`relative w-full ${sizeClasses[size]} shadow-2xl rounded-2xl overflow-hidden flex flex-col max-h-[90vh] transition-ui duration-300 ease-out ${getAnimationClass()}`}
         style={{
           background: "var(--glass-strong-bg)",
           border: neutral
@@ -103,7 +103,7 @@ return createPortal(
             <h3 className="text-lg font-bold text-dark-100">{title}</h3>
             <button
               onClick={onClose}
-              className="p-2 rounded-full hover:bg-white/10 text-dark-400 hover:text-dark-100 transition-colors"
+              className="p-2 rounded-full hover:bg-[var(--soft-surface-strong)] text-dark-400 hover:text-dark-100 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>

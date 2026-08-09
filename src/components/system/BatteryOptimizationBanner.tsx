@@ -124,7 +124,7 @@ export function BatteryOptimizationBanner() {
           <button
             onClick={handleDismiss}
             aria-label="Dismiss"
-            className="shrink-0 -mr-1 -mt-1 p-1.5 rounded-lg text-dark-500 hover:text-dark-300 hover:bg-white/5 transition-colors"
+            className="shrink-0 -mr-1 -mt-1 p-1.5 rounded-lg text-dark-500 hover:text-dark-300 hover:bg-[var(--soft-surface)] transition-colors"
           >
             <X className="w-4 h-4" />
           </button>

@@ -148,7 +148,7 @@ export default function AdminCirclesPage() {
         <button
           onClick={() => window.print()}
           aria-label="Export as PDF"
-          className="no-print shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-xl border border-dark-700 bg-dark-800/60 text-sm font-semibold text-dark-200 active:scale-95 transition-transform"
+          className="no-print shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-xl border border-dark-700 bg-dark-800/60 text-sm font-semibold text-dark-200 active:scale-[0.97] transition-transform"
         >
           <FileDown className="w-4 h-4" />
           Export PDF
@@ -193,7 +193,7 @@ export default function AdminCirclesPage() {
             <button
               key={f.key}
               onClick={() => setFilter(f.key)}
-              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors active:scale-95 ${
+              className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors active:scale-[0.97] ${
                 filter === f.key
                   ? "bg-primary-600 text-white"
                   : "bg-dark-700/60 text-dark-300 hover:text-dark-100"

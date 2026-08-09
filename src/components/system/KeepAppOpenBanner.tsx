@@ -91,7 +91,8 @@ export function KeepAppOpenBanner() {
           animation: closing ? undefined : "slideDown 0.3s ease-out",
           opacity: closing ? 0 : 1,
           transform: closing ? "translateY(-8px)" : "translateY(0)",
-          transition: "opacity 0.25s ease-in, transform 0.25s ease-in",
+          transition:
+            "opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out)",
         }}
       >
         <div
@@ -109,7 +110,7 @@ export function KeepAppOpenBanner() {
         <button
           type="button"
           onClick={hide}
-          className="p-1.5 rounded-full hover:bg-white/15 active:bg-white/25 transition-colors shrink-0"
+          className="p-1.5 rounded-full hover:bg-[var(--soft-surface-strong)] active:bg-[var(--surface-3)] transition-colors shrink-0"
           aria-label="Dismiss"
           style={{ color: "rgba(255,255,255,0.9)" }}
         >

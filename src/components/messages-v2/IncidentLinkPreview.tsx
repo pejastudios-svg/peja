@@ -200,7 +200,7 @@ export function IncidentLinkPreview({ postId, variant }: Props) {
       <div
         className={`mt-2 w-[260px] max-w-full rounded-xl overflow-hidden border ${
           variant === "mine"
-            ? "border-white/15 bg-white/5"
+            ? "border-[var(--hairline-strong)] bg-[var(--soft-surface)]"
             : "border-[var(--chat-input-border)] bg-[var(--chat-input-bg)]"
         }`}
       >
@@ -226,9 +226,9 @@ export function IncidentLinkPreview({ postId, variant }: Props) {
         e.stopPropagation();
         router.push(`/post/${post.id}`);
       }}
-      className={`mt-2 block w-[260px] max-w-full text-left rounded-xl overflow-hidden border transition-colors active:scale-[0.99] ${
+      className={`mt-2 block w-[260px] max-w-full text-left rounded-xl overflow-hidden border transition-colors active:scale-[0.97] ${
         variant === "mine"
-          ? "border-white/15 bg-white/5 hover:bg-white/10"
+          ? "border-[var(--hairline-strong)] bg-[var(--soft-surface)] hover:bg-[var(--soft-surface-strong)]"
           : "border-[var(--chat-input-border)] bg-[var(--chat-input-bg)] hover:bg-[var(--chat-input-hover)]"
       }`}
       aria-label="Open incident"
@@ -258,7 +258,7 @@ export function IncidentLinkPreview({ postId, variant }: Props) {
         <div
           className={`aspect-[16/9] w-full flex items-center justify-center ${
             variant === "mine"
-              ? "bg-white/5"
+              ? "bg-[var(--soft-surface)]"
               : "bg-[var(--chat-other-bg)]"
           }`}
         >
@@ -273,7 +273,7 @@ export function IncidentLinkPreview({ postId, variant }: Props) {
         {category && (
           <span
             className={`inline-block text-[10px] uppercase font-bold tracking-wide px-1.5 py-0.5 rounded-full mb-1 ${
-              variant === "mine" ? "bg-white/15 text-white/90" : "bg-primary-500/15 text-primary-300"
+              variant === "mine" ? "bg-[var(--soft-surface-strong)] text-white/90" : "bg-primary-500/15 text-primary-300"
             }`}
           >
             {category.name}

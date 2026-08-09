@@ -125,7 +125,7 @@ export function OfflineBanner() {
         <button
           type="button"
           onClick={dismiss}
-          className="p-1 rounded-full hover:bg-white/10 active:bg-white/20 transition-colors shrink-0"
+          className="p-1 rounded-full hover:bg-[var(--soft-surface-strong)] active:bg-[var(--surface-3)] transition-colors shrink-0"
           aria-label="Dismiss"
           style={{
             color: offline ? "rgba(252, 165, 165, 0.85)" : "rgba(134, 239, 172, 0.85)",

@@ -273,7 +273,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
 
   return (
     <article
-      className="glass-card-feed overflow-hidden cursor-pointer sm:hover:ring-1 sm:hover:ring-white/10 transition-all active:scale-[0.99] duration-200"
+      className="glass-card-feed overflow-hidden cursor-pointer sm:hover:ring-1 sm:hover:ring-white/10 transition-ui active:scale-[0.97] duration-200"
       onClick={handleCardClick}
     >
       {/* Top section — padded so header chips don't touch the edge */}
@@ -293,7 +293,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
           <Link
             href={`/?flyto=${post.location.latitude},${post.location.longitude}&label=${encodeURIComponent(post.address || "Incident location")}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-semibold beacon-accent-text shrink-0 hover:bg-primary-500/10 active:scale-95 transition-all"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-semibold beacon-accent-text shrink-0 hover:bg-primary-500/10 active:scale-[0.97] transition-ui"
           >
             <MapPin className="w-3 h-3" />
             {distanceText}
@@ -501,14 +501,14 @@ const handleShareClick = async (e: React.MouseEvent) => {
       </div>
 
       {/* Actions. Uses the theme-aware --soft-surface-strong (white tint in
-          dark, black tint in light) instead of bg-white/10 + border-white/5,
+          dark, black tint in light) instead of bg-[var(--soft-surface-strong)] + border-[var(--hairline)],
           which are invisible on the light theme's white background. */}
       <div className="flex gap-2 pt-3 border-t border-[var(--soft-surface-strong)]">
 <button
   ref={confirmBtnRef}
   onClick={handleConfirmClick}
   data-tutorial="post-confirm"
-  className={`relative flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all active:scale-95 ${
+  className={`relative flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-ui active:scale-[0.97] ${
     isConfirmed ? "bg-primary-600 text-white" : "action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)]"
   }`}
 >
@@ -519,7 +519,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
 
         <button
           onClick={handleAddInfo}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)] active:scale-90 transition-transform duration-150"
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)] active:scale-[0.97] transition-transform duration-150"
         >
           <MessageCircle className="w-4 h-4" />
           <span>Comment</span>
@@ -531,7 +531,7 @@ const handleShareClick = async (e: React.MouseEvent) => {
               e.stopPropagation();
               setForwardSheetOpen(true);
             }}
-            className="p-2 rounded-xl action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)] active:scale-90 transition-transform duration-150"
+            className="p-2 rounded-xl action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)] active:scale-[0.97] transition-transform duration-150"
             aria-label="Send to chat"
           >
             <Send className="w-4 h-4" />

@@ -235,12 +235,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 className="relative w-9 h-9 flex items-center justify-center rounded-full hover:bg-white/5 transition-colors"
               >
                 <span
-                  className={`absolute block h-[2px] w-5 bg-white rounded-full transition-all duration-300 ease-out ${
+                  className={`absolute block h-[2px] w-5 bg-white rounded-full transition-ui duration-300 ease-out ${
                     menuOpen ? "rotate-45 translate-y-0" : "-translate-y-[4px]"
                   }`}
                 />
                 <span
-                  className={`absolute block h-[2px] w-5 bg-white rounded-full transition-all duration-300 ease-out ${
+                  className={`absolute block h-[2px] w-5 bg-white rounded-full transition-ui duration-300 ease-out ${
                     menuOpen ? "-rotate-45 translate-y-0" : "translate-y-[4px]"
                   }`}
                 />
@@ -249,7 +249,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
             {/* Dropdown panel */}
             <div
-              className={`absolute top-full mt-2 left-1/2 -translate-x-1/2 w-[min(20rem,calc(100vw-1.5rem))] origin-top transition-all duration-200 ease-out ${
+              className={`absolute top-full mt-2 left-1/2 -translate-x-1/2 w-[min(20rem,calc(100vw-1.5rem))] origin-top transition-ui duration-200 ease-out ${
                 menuOpen ? "opacity-100 scale-100 pointer-events-auto" : "opacity-0 scale-95 pointer-events-none"
               }`}
             >

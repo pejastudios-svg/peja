@@ -514,7 +514,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
               if (selectMode) clearSelection();
               else setSelectMode(true);
             }}
-            className={`text-xs font-mono px-3 py-1.5 rounded-lg transition-all ${
+            className={`text-xs font-mono px-3 py-1.5 rounded-lg transition-ui ${
               selectMode
                 ? "bg-primary-600/20 text-primary-400 border border-primary-500/30"
                 : "bg-white/5 text-dark-400 border border-white/10 hover:bg-white/10"
@@ -538,14 +538,14 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             placeholder="Search content or location..."
-            className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-white placeholder:text-dark-500 focus:outline-none focus:border-primary-500/50 transition-all relative z-0"
+            className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-white placeholder:text-dark-500 focus:outline-none focus:border-primary-500/50 transition-ui relative z-0"
           />
         </div>
         <div className="lg:col-span-3 relative">
           <select
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-            className="w-full h-11 pl-4 pr-10 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-all hover:bg-white/5"
+            className="w-full h-11 pl-4 pr-10 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-ui hover:bg-white/5"
           >
             <option value="all" className="bg-[#1c1c1f] text-white">All Status</option>
             <option value="live" className="bg-[#1c1c1f] text-white">Live</option>
@@ -558,7 +558,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
           <select
             value={categoryFilter}
             onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
-            className="w-full h-11 pl-4 pr-10 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-all hover:bg-white/5"
+            className="w-full h-11 pl-4 pr-10 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm text-white focus:outline-none focus:border-primary-500/50 appearance-none cursor-pointer transition-ui hover:bg-white/5"
           >
             <option value="all" className="bg-[#1c1c1f] text-white">All Categories</option>
             {CATEGORIES.filter(cat => ["kidnapping", "terrorist", "general"].includes(cat.id)).map(cat => (
@@ -627,7 +627,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                       setCurrentMediaIndex(0);
                     }
                   }}
-                  className={`hud-panel p-0 relative group overflow-hidden cursor-pointer transition-all flex flex-col h-full ${
+                  className={`hud-panel p-0 relative group overflow-hidden cursor-pointer transition-ui flex flex-col h-full ${
                     isSelected
                       ? "ring-2 ring-primary-500"
                       : "hover:border-primary-500/40"
@@ -640,7 +640,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                         e.stopPropagation();
                         toggleSelect(post.id);
                       }}
-                      className={`absolute top-3 right-3 z-20 w-7 h-7 rounded-lg flex items-center justify-center transition-all border ${
+                      className={`absolute top-3 right-3 z-20 w-7 h-7 rounded-lg flex items-center justify-center transition-ui border ${
                         isSelected
                           ? "bg-primary-600 border-primary-500"
                           : "bg-black/50 border-white/20 backdrop-blur-md hover:bg-black/70"
@@ -761,7 +761,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
             <div className="w-px h-8 bg-white/10" />
             <button
               onClick={() => setConfirmBulkDelete(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all hover:scale-105 active:scale-95"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-ui hover:scale-105 active:scale-[0.97]"
               style={{
                 background: "rgba(239, 68, 68, 0.15)",
                 border: "1px solid rgba(239, 68, 68, 0.25)",
@@ -827,7 +827,7 @@ const handleStatusChange = async (postId: string, newStatus: string) => {
                       <button
                         key={i}
                         onClick={() => setCurrentMediaIndex(i)}
-                        className={`w-2 h-2 rounded-full transition-all ${i === currentMediaIndex ? "bg-white scale-125" : "bg-white/30 hover:bg-white/60"}`}
+                        className={`w-2 h-2 rounded-full transition-ui ${i === currentMediaIndex ? "bg-white scale-125" : "bg-white/30 hover:bg-white/60"}`}
                       />
                     ))}
                   </div>

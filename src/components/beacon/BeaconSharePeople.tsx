@@ -79,7 +79,7 @@ export function BeaconSharePeople({
       <button
         onClick={() => setOpen(true)}
         disabled={!enabled}
-        className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-dark-800/50 border border-dark-700 active:scale-[0.985] transition-transform disabled:opacity-50"
+        className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-dark-800/50 border border-dark-700 active:scale-[0.97] transition-transform disabled:opacity-50"
       >
         <div className="w-9 h-9 rounded-full bg-primary-500/15 flex items-center justify-center shrink-0">
           <Users className="beacon-accent-text w-4.5 h-4.5" />
@@ -140,7 +140,7 @@ export function BeaconSharePeople({
 
           <button
             onClick={() => setOpen(false)}
-            className="w-full py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform"
+            className="w-full py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.97] transition-transform"
           >
             Done
           </button>

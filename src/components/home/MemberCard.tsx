@@ -202,7 +202,7 @@ export function MemberCard({
           {phone ? (
             <a
               href={`sms:${phone}`}
-              className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-dark-800/60 border border-dark-700 active:scale-95 transition-transform"
+              className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-dark-800/60 border border-dark-700 active:scale-[0.97] transition-transform"
             >
               <MessageCircle className="beacon-accent-text w-5 h-5" />
               <span className="text-[11px] font-semibold text-dark-200">Text</span>
@@ -216,7 +216,7 @@ export function MemberCard({
           {phone ? (
             <a
               href={`tel:${phone}`}
-              className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-dark-800/60 border border-dark-700 active:scale-95 transition-transform"
+              className="flex flex-col items-center gap-1.5 py-3 rounded-2xl bg-dark-800/60 border border-dark-700 active:scale-[0.97] transition-transform"
             >
               <Phone className="beacon-ok-text w-5 h-5" />
               <span className="text-[11px] font-semibold text-dark-200">Call</span>
@@ -230,7 +230,7 @@ export function MemberCard({
           <button
             onClick={askCheckIn}
             disabled={busy === "ping" || pinged}
-            className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border active:scale-95 transition-all disabled:opacity-70 ${
+            className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border active:scale-[0.97] transition-ui disabled:opacity-70 ${
               pinged
                 ? "bg-green-500/10 border-green-500/30"
                 : "bg-dark-800/60 border-dark-700"
@@ -251,7 +251,7 @@ export function MemberCard({
         {member.lat != null && member.lng != null && (
           <button
             onClick={() => openDirections({ lat: member.lat as number, lng: member.lng as number }, origin)}
-            className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold mb-4 active:scale-[0.985] transition-transform"
+            className="w-full flex items-center justify-center gap-2 p-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold mb-4 active:scale-[0.97] transition-transform"
           >
             <Navigation className="w-4 h-4" />
             Directions to {member.name.split(" ")[0]}
@@ -262,7 +262,7 @@ export function MemberCard({
         <button
           onClick={toggleShare}
           disabled={sharing === null}
-          className="w-full flex items-center gap-3 p-3 rounded-2xl bg-dark-800/60 border border-dark-700 active:scale-[0.985] transition-transform disabled:opacity-50"
+          className="w-full flex items-center gap-3 p-3 rounded-2xl bg-dark-800/60 border border-dark-700 active:scale-[0.97] transition-transform disabled:opacity-50"
         >
           <div className="flex-1 text-left">
             <p className="text-sm font-medium text-dark-100">Share my location</p>
@@ -283,7 +283,7 @@ export function MemberCard({
               className="absolute top-[3px] w-[22px] h-[22px] rounded-full bg-white shadow-md"
               style={{
                 left: sharing ? 21 : 3,
-                transition: "left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                transition: "left 0.3s var(--ease-spring)",
               }}
             />
           </div>

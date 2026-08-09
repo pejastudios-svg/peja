@@ -455,7 +455,7 @@ export function WatchCommentSheet({
         onClick={handleTap}
       >
         <div 
-           className="w-8 h-8 rounded-full bg-white/10 shrink-0 overflow-hidden"
+           className="w-8 h-8 rounded-full bg-[var(--soft-surface-strong)] shrink-0 overflow-hidden"
            onPointerDown={(e) => {
               e.stopPropagation();
               if (comment.user_avatar && onViewAvatar) {
@@ -480,10 +480,10 @@ export function WatchCommentSheet({
         </div>
         <div className="flex-1">
            <div className="flex items-baseline gap-2">
-              <span className="text-xs font-bold text-white/90">{comment.user_name}</span>
-              <span className="text-[10px] text-white/40">{formatDistanceToNow(new Date(comment.created_at))} ago</span>
+              <span className="text-xs font-bold text-dark-100">{comment.user_name}</span>
+              <span className="text-[10px] text-dark-500">{formatDistanceToNow(new Date(comment.created_at))} ago</span>
            </div>
-           <p className="text-sm text-white/90 mt-0.5 leading-snug">
+           <p className="text-sm text-dark-100 mt-0.5 leading-snug">
               {isReply && comment.reply_to_name && (
                 <span className="text-primary-400 mr-1">@{comment.reply_to_name}</span>
               )}
@@ -492,12 +492,12 @@ export function WatchCommentSheet({
            <div className="flex items-center gap-4 mt-2">
               <button 
                 onClick={(e) => { e.stopPropagation(); handleLike(comment.id); }}
-                className={`flex items-center gap-1 text-xs ${comment.isLiked ? "text-red-500" : "text-white/40"}`}
+                className={`flex items-center gap-1 text-xs ${comment.isLiked ? "text-red-500" : "text-dark-500"}`}
               >
                  <Heart className={`w-3.5 h-3.5 ${comment.isLiked ? "fill-current" : ""}`} /> 
                  {comment.likes_count > 0 && comment.likes_count}
               </button>
-              <button className="text-xs text-white/40 font-medium">Reply</button>
+              <button className="text-xs text-dark-500 font-medium">Reply</button>
            </div>
         </div>
       </div>
@@ -509,14 +509,14 @@ export function WatchCommentSheet({
       <div className="space-y-6 px-2 mt-4">
         {[1, 2, 3, 4, 5].map((i) => (
           <div key={i} className="flex gap-3 animate-pulse">
-            <div className="w-8 h-8 rounded-full bg-white/5 shrink-0" />
+            <div className="w-8 h-8 rounded-full bg-[var(--soft-surface)] shrink-0" />
             <div className="flex-1 space-y-2">
               <div className="flex items-center gap-2">
-                <div className="h-3 w-24 bg-white/10 rounded-full" />
-                <div className="h-2 w-12 bg-white/5 rounded-full" />
+                <div className="h-3 w-24 bg-[var(--soft-surface-strong)] rounded-full" />
+                <div className="h-2 w-12 bg-[var(--soft-surface)] rounded-full" />
               </div>
-              <div className="h-3 w-3/4 bg-white/10 rounded-full" />
-              <div className="h-3 w-1/2 bg-white/10 rounded-full" />
+              <div className="h-3 w-3/4 bg-[var(--soft-surface-strong)] rounded-full" />
+              <div className="h-3 w-1/2 bg-[var(--soft-surface-strong)] rounded-full" />
             </div>
           </div>
         ))}
@@ -530,7 +530,7 @@ export function WatchCommentSheet({
   return (
     <>
       <div 
-        className={`fixed inset-x-0 bottom-0 z-50000 bg-dark-950 rounded-t-3xl flex flex-col border-t border-white/10 ${
+        className={`fixed inset-x-0 bottom-0 z-50000 bg-dark-950 rounded-t-3xl flex flex-col border-t border-[var(--hairline-strong)] ${
           isOpen ? "translate-y-0" : "translate-y-full"
         }`}
         style={{ 
@@ -542,13 +542,13 @@ export function WatchCommentSheet({
       >
         {/* Drag Handle Area */}
         <div 
-          className="w-full h-10 flex items-center justify-center shrink-0 cursor-pointer border-b border-white/5 active:bg-white/5 touch-none"
+          className="w-full h-10 flex items-center justify-center shrink-0 cursor-pointer border-b border-[var(--hairline)] active:bg-[var(--soft-surface)] touch-none"
           onClick={onClose}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <div className="w-12 h-1.5 bg-white/20 rounded-full" />
+          <div className="w-12 h-1.5 bg-[var(--surface-3)] rounded-full" />
         </div>
 
         {/* SINGLE SCROLLABLE CONTAINER */}
@@ -576,20 +576,20 @@ export function WatchCommentSheet({
         >
             
             {/* 1. Description Section */}
-            <div className="px-4 py-3 border-b border-white/5">
+            <div className="px-4 py-3 border-b border-[var(--hairline)]">
                 <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-bold text-dark-100">
                         @{post.is_anonymous ? "Anonymous" : (postAuthor?.name || "User")}
                     </span>
-                    <span className="text-xs text-white/50">{formatDistanceToNow(new Date(post.created_at))} ago</span>
+                    <span className="text-xs text-dark-400">{formatDistanceToNow(new Date(post.created_at))} ago</span>
                 </div>
                 
                 <div onClick={() => setDescExpanded(!descExpanded)}>
-                    <p className={`text-sm text-white/90 wrap-break-word whitespace-pre-wrap ${descExpanded ? '' : 'line-clamp-2'}`}>
+                    <p className={`text-sm text-dark-100 wrap-break-word whitespace-pre-wrap ${descExpanded ? '' : 'line-clamp-2'}`}>
                         {post.comment}
                     </p>
                     {post.comment && post.comment.length > 100 && (
-                        <button className="text-xs text-white/50 mt-0.5 font-medium">
+                        <button className="text-xs text-dark-400 mt-0.5 font-medium">
                             {descExpanded ? "Hide" : "View more"}
                         </button>
                     )}
@@ -597,9 +597,9 @@ export function WatchCommentSheet({
             </div>
 
             {/* 2. Sort Controls */}
-            <div className="sticky top-0 bg-dark-950/95 backdrop-blur-sm z-10 px-4 py-2 border-b border-white/5 flex justify-end gap-2">
-                <button onClick={() => setSortBy("top")} className={`text-xs px-3 py-1.5 rounded-full transition-colors ${sortBy === "top" ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10"}`}>Top</button>
-                <button onClick={() => setSortBy("recent")} className={`text-xs px-3 py-1.5 rounded-full transition-colors ${sortBy === "recent" ? "bg-white/20 text-white" : "text-white/50 hover:bg-white/10"}`}>New</button>
+            <div className="sticky top-0 bg-dark-950/95 backdrop-blur-sm z-10 px-4 py-2 border-b border-[var(--hairline)] flex justify-end gap-2">
+                <button onClick={() => setSortBy("top")} className={`text-xs px-3 py-1.5 rounded-full transition-colors ${sortBy === "top" ? "bg-[var(--surface-3)] text-dark-50" : "text-dark-400 hover:bg-[var(--soft-surface-strong)]"}`}>Top</button>
+                <button onClick={() => setSortBy("recent")} className={`text-xs px-3 py-1.5 rounded-full transition-colors ${sortBy === "recent" ? "bg-[var(--surface-3)] text-dark-50" : "text-dark-400 hover:bg-[var(--soft-surface-strong)]"}`}>New</button>
             </div>
 
             {/* 3. Comments List */}
@@ -607,7 +607,7 @@ export function WatchCommentSheet({
                 {loading ? (
                     <CommentSkeleton />
                 ) : parentComments.length === 0 ? (
-                    <div className="text-center text-white/40 py-10 text-sm">No comments yet.</div>
+                    <div className="text-center text-dark-500 py-10 text-sm">No comments yet.</div>
                 ) : (
                     parentComments.map(parent => {
                         const replies = getReplies(parent.id);
@@ -623,11 +623,11 @@ export function WatchCommentSheet({
                                                 View {replies.length} {replies.length === 1 ? "reply" : "replies"}
                                             </button>
                                         ) : (
-                                            <div className="border-l-2 border-white/10 ml-2 pl-4 pb-2">
+                                            <div className="border-l-2 border-[var(--hairline-strong)] ml-2 pl-4 pb-2">
                                                 {replies.map(reply => (
                                                     <RenderCommentRow key={reply.id} comment={reply} isReply={true} />
                                                 ))}
-                                                <button onClick={() => toggleThread(parent.id)} className="ml-7 mt-2 flex items-center gap-1 text-xs text-white/40 hover:text-white transition-colors">
+                                                <button onClick={() => toggleThread(parent.id)} className="ml-7 mt-2 flex items-center gap-1 text-xs text-dark-500 hover:text-white transition-colors">
                                                     <ChevronUp className="w-3.5 h-3.5" />
                                                     Hide replies
                                                 </button>
@@ -644,7 +644,7 @@ export function WatchCommentSheet({
 
         {/* Fixed Input Area. Profile-incomplete users see a CTA instead of
             the composer; everyone else gets the normal input. */}
-        <div className="p-3 border-t border-white/10 bg-dark-1000 pb-safe">
+        <div className="p-3 border-t border-[var(--hairline-strong)] bg-dark-1000 pb-safe">
             {user && !profileCompletion(user as any).complete ? (
               <div className="flex items-center justify-between gap-3 px-2">
                 <p className="text-xs text-dark-300 min-w-0 flex-1">
@@ -662,10 +662,10 @@ export function WatchCommentSheet({
                 {replyingTo && (
                   <div className="flex items-center justify-between px-2 mb-2 text-xs text-primary-400">
                     <span>Replying to @{replyingTo.name}</span>
-                    <button onClick={() => setReplyingTo(null)} className="text-white/50 hover:text-white"><X className="w-3 h-3" /></button>
+                    <button onClick={() => setReplyingTo(null)} className="text-dark-400 hover:text-dark-50"><X className="w-3 h-3" /></button>
                   </div>
                 )}
-                <div className="flex items-center gap-2 bg-white/5 rounded-full px-4 py-2 border border-white/5">
+                <div className="flex items-center gap-2 bg-[var(--soft-surface)] rounded-full px-4 py-2 border border-[var(--hairline)]">
                   <input
                     ref={inputRef}
                     value={newComment}

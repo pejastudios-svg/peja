@@ -65,7 +65,7 @@ export function ReactionBadges({
               e.stopPropagation();
               onToggle(b.emoji);
             }}
-            className={`peja-pop-in inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[12px] leading-none transition-transform active:scale-95 ${
+            className={`peja-pop-in inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[12px] leading-none transition-transform active:scale-[0.97] ${
               b.mine
                 ? "bg-primary-500/25 ring-1 ring-primary-400 text-dark-100"
                 : "bg-[var(--chat-other-bg)] text-dark-100"

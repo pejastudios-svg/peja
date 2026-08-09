@@ -246,7 +246,7 @@ useEffect(() => {
       <div className="flex-1 relative">
         {/* Soft reconnect indicator; the 15s poll recovers on its own. */}
         {reconnecting && (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-full bg-dark-900/90 border border-white/10 flex items-center gap-2">
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-full bg-dark-900/90 border border-[var(--hairline-strong)] flex items-center gap-2">
             <Loader2 className="w-3.5 h-3.5 text-primary-400 animate-spin" />
             <span className="text-xs text-dark-300">Reconnecting...</span>
           </div>
@@ -275,7 +275,7 @@ useEffect(() => {
       </div>
 
       {/* Info panel */}
-      <div className="relative z-20 border-t border-white/10 bg-dark-950/95 backdrop-blur-lg"
+      <div className="relative z-20 border-t border-[var(--hairline-strong)] bg-dark-950/95 backdrop-blur-lg"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
         <div className="p-4">

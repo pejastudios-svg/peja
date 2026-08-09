@@ -85,7 +85,7 @@ export function PwaRealityNotice() {
         </p>
         <button
           onClick={close}
-          className="w-full py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform"
+          className="w-full py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.97] transition-transform"
         >
           Got it
         </button>

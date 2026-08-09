@@ -325,7 +325,7 @@ export function BeaconDashboard({
           <button
             onClick={cancelSos}
             disabled={cancellingSos}
-            className="mt-3.5 w-full py-3 rounded-2xl bg-white text-red-700 text-sm font-bold active:scale-[0.98] transition-transform disabled:opacity-60"
+            className="mt-3.5 w-full py-3 rounded-2xl bg-white text-red-700 text-sm font-bold active:scale-[0.97] transition-transform disabled:opacity-60"
           >
             {cancellingSos ? "Cancelling..." : "I'm safe. Cancel this SOS"}
           </button>
@@ -372,7 +372,7 @@ export function BeaconDashboard({
             href={`https://maps.google.com/?q=${device.last_lat},${device.last_lng}`}
             target="_blank"
             rel="noreferrer"
-            className="mt-4 flex items-center gap-2.5 rounded-2xl bg-dark-800/80 border border-dark-700 p-3 active:scale-[0.985] transition-transform"
+            className="mt-4 flex items-center gap-2.5 rounded-2xl bg-dark-800/80 border border-dark-700 p-3 active:scale-[0.97] transition-transform"
           >
             <div className="w-8 h-8 rounded-full bg-primary-500/15 flex items-center justify-center shrink-0">
               <MapPin className="w-4 h-4 beacon-accent-text" />
@@ -472,7 +472,7 @@ export function BeaconDashboard({
               style={{
                 width: "calc(20% - 4px)",
                 left: `calc(${(volDraft ?? device.volume) * 20}% + 2px)`,
-                transition: "left 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                transition: "left 0.35s var(--ease-spring)",
               }}
             />
             {[0, 1, 2, 3, 4].map((v) => (
@@ -528,7 +528,7 @@ export function BeaconDashboard({
       {/* ── Unpair ── */}
       <button
         onClick={() => setConfirmUnpair(true)}
-        className="beacon-stagger w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-red-500/40 beacon-bad-text text-sm font-semibold active:scale-[0.98] transition-transform"
+        className="beacon-stagger w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-red-500/40 beacon-bad-text text-sm font-semibold active:scale-[0.97] transition-transform"
         style={{ animationDelay: "0.24s" }}
       >
         <Trash2 className="w-4 h-4" />
@@ -548,7 +548,7 @@ export function BeaconDashboard({
           <button
             onClick={sendPendingViaGateway}
             disabled={smsSending != null}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.985] transition-transform disabled:opacity-70"
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.97] transition-transform disabled:opacity-70"
           >
             {smsSending != null ? (
               <>
@@ -574,14 +574,14 @@ export function BeaconDashboard({
                     navigator.clipboard?.writeText(cmd.sms);
                     toast.success("Copied");
                   }}
-                  className="w-9 h-9 rounded-xl bg-dark-700 flex items-center justify-center active:scale-90 transition-transform shrink-0"
+                  className="w-9 h-9 rounded-xl bg-dark-700 flex items-center justify-center active:scale-[0.97] transition-transform shrink-0"
                   aria-label="Copy"
                 >
                   <Copy className="w-4 h-4 text-dark-300" />
                 </button>
                 <a
                   href={`sms:${simDigits}?body=${encodeURIComponent(cmd.sms)}`}
-                  className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center active:scale-90 transition-transform shrink-0"
+                  className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center active:scale-[0.97] transition-transform shrink-0"
                   aria-label="Send as SMS"
                 >
                   <Send className="w-4 h-4 text-white" />
@@ -591,7 +591,7 @@ export function BeaconDashboard({
           ))}
           <button
             onClick={() => setPendingCommands(null)}
-            className="w-full py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform flex items-center justify-center gap-2"
+            className="w-full py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.97] transition-transform flex items-center justify-center gap-2"
           >
             <Check className="w-4 h-4" /> Done
           </button>
@@ -628,7 +628,7 @@ export function BeaconDashboard({
                   setPickerSlot(null);
                   await save(patch, "contacts");
                 }}
-                className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-all active:scale-[0.985] ${
+                className={`w-full flex items-center gap-3 p-3 rounded-2xl border transition-ui active:scale-[0.97] ${
                   selected ? "border-primary-500 bg-primary-500/10" : "border-dark-700 bg-dark-800/60"
                 } ${disabled ? "opacity-35" : ""}`}
               >
@@ -647,7 +647,7 @@ export function BeaconDashboard({
                 setPickerSlot(null);
                 await save({ family2_contact_id: null }, "contacts");
               }}
-              className="w-full p-3 rounded-2xl border border-dark-700 text-sm text-dark-400 active:scale-[0.985] transition-transform"
+              className="w-full p-3 rounded-2xl border border-dark-700 text-sm text-dark-400 active:scale-[0.97] transition-transform"
             >
               Clear button 2
             </button>
@@ -665,14 +665,14 @@ export function BeaconDashboard({
           <div className="flex gap-3">
             <button
               onClick={() => setConfirmUnpair(false)}
-              className="flex-1 py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.98] transition-transform"
+              className="flex-1 py-3 rounded-2xl bg-dark-700 text-dark-200 text-sm font-semibold active:scale-[0.97] transition-transform"
             >
               Keep it
             </button>
             <button
               onClick={unpair}
               disabled={unpairing}
-              className="flex-1 py-3 rounded-2xl bg-red-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform disabled:opacity-60"
+              className="flex-1 py-3 rounded-2xl bg-red-600 text-white text-sm font-semibold active:scale-[0.97] transition-transform disabled:opacity-60"
             >
               {unpairing ? "Unpairing..." : "Unpair"}
             </button>

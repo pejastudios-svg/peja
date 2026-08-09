@@ -81,7 +81,7 @@ export function KebabMenu({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
+        className="relative p-2 rounded-xl active:bg-[var(--soft-surface-strong)] transition-colors"
         aria-label="Chat menu"
         aria-haspopup="menu"
         aria-expanded={open}

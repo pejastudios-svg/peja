@@ -849,7 +849,7 @@ export default function Home() {
               style={{
                 width: "200%",
                 transform: `translateX(calc(${activeTab === "trending" ? "-50%" : "0%"} + ${swipeOffset}px))`,
-                transition: isSwiping ? "none" : "transform 0.35s cubic-bezier(0.32, 0.72, 0, 1)",
+                transition: isSwiping ? "none" : "transform 0.35s var(--ease-sheet)",
                 willChange: isSwiping ? "transform" : "auto",
               }}
             >

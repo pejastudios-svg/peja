@@ -265,7 +265,7 @@ function ReportCard({
               extra={
                 <span className="inline-flex items-center gap-1">
                   {reportedIsMvp && (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300">
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 beacon-wait-text">
                       <Star className="w-2.5 h-2.5" />
                       MVP
                     </span>
@@ -281,7 +281,7 @@ function ReportCard({
                       className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                         reportedStatus === "banned"
                           ? "bg-red-500/20 text-red-300"
-                          : "bg-amber-500/20 text-amber-300"
+                          : "bg-amber-500/20 beacon-wait-text"
                       }`}
                     >
                       {reportedStatus}
@@ -332,7 +332,7 @@ function ReportCard({
           <button
             type="button"
             onClick={() => onAction("suspend")}
-            className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-medium inline-flex items-center gap-1"
+            className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 beacon-wait-text text-xs font-medium inline-flex items-center gap-1"
           >
             <Clock className="w-3.5 h-3.5" />
             Suspend
@@ -349,7 +349,7 @@ function ReportCard({
             <button
               type="button"
               onClick={() => onAction("revoke-mvp")}
-              className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 text-xs font-medium inline-flex items-center gap-1"
+              className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 beacon-wait-text text-xs font-medium inline-flex items-center gap-1"
             >
               <ShieldOff className="w-3.5 h-3.5" />
               Revoke MVP

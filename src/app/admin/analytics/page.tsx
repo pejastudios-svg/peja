@@ -194,7 +194,7 @@ function KpiTile({
   };
   return (
     <div
-      className={`hud-panel p-4 transition-all duration-300 ${
+      className={`hud-panel p-4 transition-ui duration-300 ${
         flash ? "ring-2 ring-primary-400/60 scale-[1.02]" : ""
       }`}
     >
@@ -2029,7 +2029,7 @@ const res = await fetch("/api/sos-helpers", {
                 <button
                   key={opt.value}
                   onClick={() => setReportRange(opt.value)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-ui border ${
                     reportRange === opt.value
                       ? "bg-primary-600/20 text-primary-300 border-primary-500/30"
                       : "bg-white/5 text-dark-400 border-white/10 hover:bg-white/10"
@@ -2127,7 +2127,7 @@ const res = await fetch("/api/sos-helpers", {
             <button
               onClick={fetchActivityLog}
               disabled={activityLoading}
-              className="p-2 rounded-lg bg-white/5 border border-white/10 text-dark-400 hover:text-white hover:bg-white/10 transition-all disabled:opacity-50"
+              className="p-2 rounded-lg bg-white/5 border border-white/10 text-dark-400 hover:text-white hover:bg-white/10 transition-ui disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${activityLoading ? "animate-spin" : ""}`} />
             </button>
@@ -2146,7 +2146,7 @@ const res = await fetch("/api/sos-helpers", {
             <button
               key={f.value}
               onClick={() => { setActivityFilter(f.value); setActivityPage(1); }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-ui border ${
                 activityFilter === f.value
                   ? "bg-primary-600/20 text-primary-300 border-primary-500/30"
                   : "bg-white/5 text-dark-400 border-white/10 hover:bg-white/10"
@@ -2380,7 +2380,7 @@ const res = await fetch("/api/sos-helpers", {
                   {/* Relative bar */}
                   <div className="h-1.5 bg-dark-800 rounded-full overflow-hidden">
                     <div
-                      className="h-full rounded-full transition-all duration-500"
+                      className="h-full rounded-full transition-ui duration-500"
                       style={{
                         width: `${barWidth}%`,
                         background: h.topCategoryColor,
@@ -2459,7 +2459,7 @@ const res = await fetch("/api/sos-helpers", {
                   </div>
                   <div className="h-2 bg-dark-800 rounded-full overflow-hidden">
                     <div
-                      className="h-full rounded-full transition-all duration-700"
+                      className="h-full rounded-full transition-ui duration-700"
                       style={{
                         width: `${Math.max(item.pct, item.value > 0 ? 3 : 0)}%`,
                         background: item.color,
@@ -2560,7 +2560,7 @@ const res = await fetch("/api/sos-helpers", {
                       </span>
                       <div className="flex-1 h-2 bg-dark-800 rounded-full overflow-hidden">
                         <div
-                          className="h-full rounded-full transition-all duration-500"
+                          className="h-full rounded-full transition-ui duration-500"
                           style={{
                             width: `${Math.max(f.pct, 3)}%`,
                             background: color,

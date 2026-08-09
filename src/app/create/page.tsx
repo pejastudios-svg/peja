@@ -1267,7 +1267,7 @@ setToast("Processing video...");
             <button
               type="button"
               onClick={() => cameraInputRef.current?.click()}
-              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
+              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-ui hover:scale-[1.02] active:scale-[0.97]"
               style={{
                 background: "rgba(139, 92, 246, 0.08)",
                 border: "1px dashed rgba(139, 92, 246, 0.3)",
@@ -1292,7 +1292,7 @@ setToast("Processing video...");
                 if (isIOS && standalone) videoCaptureRef.current?.click();
                 else setShowRecorder(true);
               }}
-              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
+              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-ui hover:scale-[1.02] active:scale-[0.97]"
               style={{
                 background: "rgba(239, 68, 68, 0.08)",
                 border: "1px dashed rgba(239, 68, 68, 0.35)",
@@ -1307,7 +1307,7 @@ setToast("Processing video...");
             <button
               type="button"
               onClick={() => videoInputRef.current?.click()}
-              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all hover:scale-[1.02] active:scale-95"
+              className="aspect-square rounded-xl flex flex-col items-center justify-center gap-1.5 transition-ui hover:scale-[1.02] active:scale-[0.97]"
               style={{
                 background: "rgba(139, 92, 246, 0.08)",
                 border: "1px dashed rgba(139, 92, 246, 0.3)",
@@ -1378,7 +1378,7 @@ setToast("Processing video...");
                   key={cat.id}
                   type="button"
                   onClick={() => setCategory(cat.id)}
-                  className="relative p-2.5 sm:p-3 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+                  className="relative p-2.5 sm:p-3 rounded-xl text-left transition-ui duration-200 hover:scale-[1.02] active:scale-[0.97]"
                   style={{
                     background: isSelected ? colors.bg : "var(--glass-input-bg)",
                     border: `1px solid ${isSelected ? colors.border : "var(--glass-border)"}`,
@@ -1479,10 +1479,10 @@ setToast("Processing video...");
           <button
             type="button"
             onClick={() => setIsSensitive(!isSensitive)}
-            className="w-full flex items-center gap-3 transition-all active:scale-[0.98]"
+            className="w-full flex items-center gap-3 transition-ui active:scale-[0.97]"
           >
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all"
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-ui"
               style={{
                 background: isSensitive ? "rgba(249, 115, 22, 0.15)" : "var(--glass-input-bg)",
                 border: `1px solid ${isSensitive ? "rgba(249, 115, 22, 0.3)" : "var(--glass-border)"}`,
@@ -1503,13 +1503,13 @@ setToast("Processing video...");
               </p>
             </div>
             <div
-              className="w-11 h-6 rounded-full relative transition-all shrink-0"
+              className="w-11 h-6 rounded-full relative transition-ui shrink-0"
               style={{
                 background: isSensitive ? "rgba(249, 115, 22, 0.5)" : "var(--glass-border)",
               }}
             >
               <div
-                className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
+                className="absolute top-0.5 w-5 h-5 rounded-full transition-ui"
                 style={{
                   left: isSensitive ? "calc(100% - 22px)" : "2px",
                   background: isSensitive ? "#fb923c" : "#64748b",
@@ -1530,7 +1530,7 @@ setToast("Processing video...");
             setShowPreview(true);
           }}
           disabled={isLoading || submitted || !category || media.length === 0}
-          className="w-full py-3.5 rounded-xl font-semibold text-white transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:hover:scale-100"
+          className="w-full py-3.5 rounded-xl font-semibold text-white transition-ui hover:scale-[1.01] active:scale-[0.97] disabled:opacity-50 disabled:hover:scale-100"
           style={{
             background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
             boxShadow: "0 4px 20px rgba(124, 58, 237, 0.4), 0 0 40px rgba(124, 58, 237, 0.1)",
@@ -1564,7 +1564,7 @@ setToast("Processing video...");
               >
                 {/* Handle bar */}
                 <div className="flex justify-center pt-3 pb-1 sm:hidden">
-                  <div className="w-10 h-1 rounded-full bg-white/20" />
+                  <div className="w-10 h-1 rounded-full bg-[var(--surface-3)]" />
                 </div>
 
                 <div className="p-5">
@@ -1668,10 +1668,10 @@ setToast("Processing video...");
                   )}
 
                   {/* Action buttons */}
-                  <div className="flex gap-3 pt-4 border-t border-white/10">
+                  <div className="flex gap-3 pt-4 border-t border-[var(--hairline-strong)]">
                     <button
                       onClick={() => { setShowPreview(false); if (previewVideoUrl) { URL.revokeObjectURL(previewVideoUrl); setPreviewVideoUrl(null); } }}
-                      className="flex-1 py-3 rounded-xl text-sm font-medium text-dark-300 hover:bg-white/5 transition-colors"
+                      className="flex-1 py-3 rounded-xl text-sm font-medium text-dark-300 hover:bg-[var(--soft-surface)] transition-colors"
                       style={{
                         background: "var(--glass-input-bg)",
                         border: "1px solid var(--glass-border)",

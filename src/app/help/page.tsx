@@ -148,7 +148,7 @@ export default function HelpPage() {
                 setSupportOpen((v) => !v);
                 if (supportResult) setSupportResult(null);
               }}
-              className="w-full flex items-center gap-3 p-4 text-left"
+              className="active:scale-[0.97] w-full flex items-center gap-3 p-4 text-left"
               aria-expanded={supportOpen}
             >
               <div className="p-2 rounded-lg bg-primary-600/20">
@@ -181,7 +181,7 @@ export default function HelpPage() {
                     <button
                       type="button"
                       onClick={copyTicketNumber}
-                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-mono"
+                      className="active:scale-[0.97] inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-mono"
                       style={{
                         background: "var(--glass-input-bg)",
                         border: "1px solid var(--glass-border)",
@@ -195,7 +195,7 @@ export default function HelpPage() {
                       <button
                         type="button"
                         onClick={() => setSupportResult(null)}
-                        className="text-sm font-medium text-primary-500 hover:underline"
+                        className="active:opacity-70 text-sm font-medium text-primary-500 hover:underline"
                       >
                         Send another
                       </button>
@@ -240,7 +240,7 @@ export default function HelpPage() {
                       disabled={
                         supportSending || !supportTitle.trim() || !supportMessage.trim()
                       }
-                      className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors disabled:opacity-50"
+                      className="active:scale-[0.97] mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-white bg-primary-600 hover:bg-primary-700 transition-colors disabled:opacity-50"
                     >
                       {supportSending ? (
                         <PejaSpinner className="w-4 h-4" />
@@ -270,7 +270,7 @@ export default function HelpPage() {
                 <div key={index} className="glass-card overflow-hidden">
                   <button
                     onClick={() => setExpandedIndex(isExpanded ? null : index)}
-                    className="w-full flex items-center justify-between p-4 text-left"
+                    className="active:scale-[0.97] w-full flex items-center justify-between p-4 text-left"
                   >
                     <div className="flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-dark-700">
@@ -315,7 +315,7 @@ export default function HelpPage() {
                 const target = document.getElementById("support-contact");
                 target?.scrollIntoView({ behavior: "smooth", block: "start" });
               }}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-700 rounded-xl text-white font-medium transition-colors"
+              className="active:scale-[0.97] inline-flex items-center gap-2 px-6 py-3 bg-primary-600 hover:bg-primary-700 rounded-xl text-white font-medium transition-colors"
             >
               <Mail className="w-5 h-5" />
               Contact Support

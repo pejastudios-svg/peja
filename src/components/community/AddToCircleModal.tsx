@@ -125,7 +125,7 @@ export function AddToCircleModal({
                 <button
                   onClick={() => add(f)}
                   disabled={isMember || busyId === f.userId}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 active:scale-95 transition-all ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 active:scale-[0.97] transition-ui ${
                     isMember ? "bg-green-500/15 beacon-ok-text" : "bg-primary-600 text-white"
                   }`}
                 >

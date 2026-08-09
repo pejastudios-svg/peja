@@ -187,7 +187,7 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
         <button
           onClick={submitManual}
           disabled={!manualValue.trim()}
-          className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-transform disabled:opacity-40"
+          className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-transform disabled:opacity-40"
         >
           Continue
         </button>
@@ -206,7 +206,7 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
         />
         {/* viewfinder frame */}
         <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-6 rounded-2xl border-2 border-white/25" />
+          <div className="absolute inset-6 rounded-2xl border-2 border-[var(--hairline-strong)]" />
           {["top-5 left-5 border-t-[3px] border-l-[3px] rounded-tl-2xl",
             "top-5 right-5 border-t-[3px] border-r-[3px] rounded-tr-2xl",
             "bottom-5 left-5 border-b-[3px] border-l-[3px] rounded-bl-2xl",
@@ -232,7 +232,7 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
                   setZoom(z);
                   if (trackRef.current) tuneTrack(trackRef.current, z);
                 }}
-                className={`w-9 h-7 rounded-full text-xs font-bold transition-all ${
+                className={`w-9 h-7 rounded-full text-xs font-bold transition-ui ${
                   zoom === z ? "bg-white text-black scale-105" : "text-white/80"
                 }`}
               >
@@ -248,7 +248,7 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
       </p>
       <button
         onClick={() => setMode("manual")}
-        className="mx-auto flex items-center gap-2 text-sm beacon-accent-text font-medium py-2 px-4 rounded-full active:scale-95 transition-transform"
+        className="mx-auto flex items-center gap-2 text-sm beacon-accent-text font-medium py-2 px-4 rounded-full active:scale-[0.97] transition-transform"
       >
         <Keyboard className="w-4 h-4" />
         Type the ID instead

@@ -339,9 +339,9 @@ export function VoiceNotePlayer({
       <button
         onClick={togglePlay}
         disabled={isLoading && !isPlaying}
-        className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
+        className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-ui active:scale-[0.97] ${
           isMine
-            ? "bg-white/20 hover:bg-white/30"
+            ? "bg-[var(--surface-3)] hover:bg-[var(--surface-3)]"
             : "bg-primary-600/30 hover:bg-primary-600/40"
         }`}
       >
@@ -382,8 +382,8 @@ export function VoiceNotePlayer({
                         ? "bg-white"
                         : "bg-primary-400"
                       : isMine
-                      ? "bg-white/30"
-                      : "bg-white/20"
+                      ? "bg-[var(--surface-3)]"
+                      : "bg-[var(--surface-3)]"
                   }`}
                   style={{
                     height: `${Math.max(12, Math.min(80, amplitude * 80))}%`,

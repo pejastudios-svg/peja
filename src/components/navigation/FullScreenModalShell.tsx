@@ -148,7 +148,7 @@ export default function FullScreenModalShell({
         className={[
           "absolute inset-0 bg-dark-950",
           scrollable ? "overflow-y-auto overscroll-contain" : "overflow-hidden",
-          "transition-all duration-300 cubic-bezier(0.32, 0.72, 0, 1)", // Native iOS-like easing
+          "transition-ui duration-300 var(--ease-sheet)", // Native iOS-like easing
           getAnimationClasses(),
         ].join(" ")}
         style={{

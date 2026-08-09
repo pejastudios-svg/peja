@@ -195,7 +195,7 @@ function WelcomeScreen({ onStart, onSkip }: { onStart: () => void; onSkip: () =>
 
           <button
             onClick={onStart}
-            className="w-full py-3.5 rounded-xl font-semibold text-white transition-all active:scale-[0.98] mb-3"
+            className="w-full py-3.5 rounded-xl font-semibold text-white transition-ui active:scale-[0.97] mb-3"
             style={{
               background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
               boxShadow: "0 4px 20px rgba(124, 58, 237, 0.4)",
@@ -206,7 +206,7 @@ function WelcomeScreen({ onStart, onSkip }: { onStart: () => void; onSkip: () =>
 
           <button
             onClick={onSkip}
-            className="w-full py-3 rounded-xl text-sm font-medium text-dark-500 transition-colors hover:text-dark-300 active:bg-white/5"
+            className="w-full py-3 rounded-xl text-sm font-medium text-dark-500 transition-colors hover:text-dark-300 active:bg-[var(--soft-surface)]"
           >
             Skip for now
           </button>
@@ -404,7 +404,7 @@ function SpotlightOverlay({
                 {currentStep + 1} of {steps.length}
               </span>
             </div>
-            <button onClick={onSkip} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+            <button onClick={onSkip} className="p-1.5 rounded-lg hover:bg-[var(--soft-surface-strong)] transition-colors">
               <X className="w-4 h-4 text-dark-500" />
             </button>
           </div>
@@ -419,7 +419,7 @@ function SpotlightOverlay({
               {steps.map((_, i) => (
                 <div
                   key={i}
-                  className="h-1 rounded-full transition-all duration-300"
+                  className="h-1 rounded-full transition-ui duration-300"
                   style={{
                     width: i === currentStep ? "20px" : "6px",
                     background:
@@ -435,7 +435,7 @@ function SpotlightOverlay({
 
             <button
               onClick={isLast ? onFinish : onNext}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.96]"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-ui active:scale-[0.97]"
               style={{
                 background: isLast
                   ? "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)"

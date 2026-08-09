@@ -427,7 +427,7 @@ export default function MessagesV2Page() {
             <button
               type="button"
               onClick={() => setSearchOpen(true)}
-              className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
+              className="relative p-2 rounded-xl active:bg-[var(--soft-surface-strong)] transition-colors"
               aria-label="Search messages"
             >
               <Search
@@ -477,7 +477,7 @@ export default function MessagesV2Page() {
                     <span
                       className={`text-[10px] tabular-nums px-1 rounded-full ${
                         active
-                          ? "bg-white/20 text-white"
+                          ? "bg-[var(--surface-3)] text-white"
                           : "bg-[var(--page-bg)] text-dark-400"
                       }`}
                     >
@@ -609,9 +609,9 @@ export default function MessagesV2Page() {
                 style={{
                   bottom: "calc(env(safe-area-inset-bottom, 0px) + 162px)",
                   transition:
-                    "transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 180ms ease",
+                    "transform 240ms var(--ease-spring), opacity 180ms ease",
                 }}
-                className={`fixed right-5 z-40 h-11 px-4 rounded-full bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] text-dark-100 text-sm font-medium shadow-lg flex items-center gap-2 active:scale-95 ${
+                className={`fixed right-5 z-40 h-11 px-4 rounded-full bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] text-dark-100 text-sm font-medium shadow-lg flex items-center gap-2 active:scale-[0.97] ${
                   fabMenuOpen && !selectMode
                     ? "scale-100 opacity-100"
                     : "scale-0 opacity-0 pointer-events-none"
@@ -630,9 +630,9 @@ export default function MessagesV2Page() {
                 style={{
                   bottom: "calc(env(safe-area-inset-bottom, 0px) + 110px)",
                   transition:
-                    "transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1) 40ms, opacity 180ms ease 40ms",
+                    "transform 240ms var(--ease-spring) 40ms, opacity 180ms ease 40ms",
                 }}
-                className={`fixed right-5 z-40 h-11 px-4 rounded-full bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] text-dark-100 text-sm font-medium shadow-lg flex items-center gap-2 active:scale-95 ${
+                className={`fixed right-5 z-40 h-11 px-4 rounded-full bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] text-dark-100 text-sm font-medium shadow-lg flex items-center gap-2 active:scale-[0.97] ${
                   fabMenuOpen && !selectMode
                     ? "scale-100 opacity-100"
                     : "scale-0 opacity-0 pointer-events-none"
@@ -654,7 +654,7 @@ export default function MessagesV2Page() {
                 setNewDmOpen(true);
               }
             }}
-            className={`fixed right-5 z-40 w-14 h-14 rounded-full bg-primary-600 text-white flex items-center justify-center shadow-xl active:scale-95 ${
+            className={`fixed right-5 z-40 w-14 h-14 rounded-full bg-primary-600 text-white flex items-center justify-center shadow-xl active:scale-[0.97] ${
               selectMode
                 ? "scale-0 opacity-0 pointer-events-none"
                 : "scale-100 opacity-100"
@@ -662,7 +662,7 @@ export default function MessagesV2Page() {
             style={{
               bottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)",
               transition:
-                "transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 200ms ease",
+                "transform 280ms var(--ease-spring), opacity 200ms ease",
             }}
             aria-label={canCreateGroup ? "New chat or group" : "Start a new chat"}
           >

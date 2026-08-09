@@ -80,7 +80,7 @@ export function SelectActionBar({
             type="button"
             onClick={onBulkDelete}
             disabled={selectedCount === 0}
-            className="relative p-2 rounded-xl active:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-default"
+            className="relative p-2 rounded-xl active:bg-[var(--soft-surface-strong)] transition-colors disabled:opacity-40 disabled:cursor-default"
             aria-label="Delete selected"
           >
             <Trash2 className="w-5 h-5 text-red-400" strokeWidth={2.3} />

@@ -108,14 +108,14 @@ export function AndroidInstallBanner() {
           </span>
           <button
             onClick={act}
-            className="px-3 py-1.5 rounded-full bg-primary-600 text-white text-xs font-bold active:scale-95 transition-transform shrink-0"
+            className="px-3 py-1.5 rounded-full bg-primary-600 text-white text-xs font-bold active:scale-[0.97] transition-transform shrink-0"
           >
             {platform === "ios" ? "Add it" : "Get it"}
           </button>
           <button
             onClick={dismiss}
             aria-label="Dismiss"
-            className="p-1.5 rounded-full text-dark-400 active:scale-90 transition-transform shrink-0"
+            className="p-1.5 rounded-full text-dark-400 active:scale-[0.97] transition-transform shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -151,7 +151,7 @@ export function AndroidInstallBanner() {
               setIosHelpOpen(false);
               dismiss();
             }}
-            className="w-full py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.98] transition-transform"
+            className="w-full py-3 rounded-2xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.97] transition-transform"
           >
             Got it
           </button>

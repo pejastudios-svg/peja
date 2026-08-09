@@ -139,7 +139,7 @@ export function ChatListRow({
           the user can see both who they're selecting and the toggle
           state. */}
       <div className="relative shrink-0">
-        <div className="w-12 h-12 rounded-full overflow-hidden bg-primary-600/20 border border-white/10 flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full overflow-hidden bg-primary-600/20 border border-[var(--hairline-strong)] flex items-center justify-center">
           {conv.other_user_avatar_url && !avatarFailed ? (
             <img
               src={conv.other_user_avatar_url}

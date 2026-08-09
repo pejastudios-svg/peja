@@ -104,7 +104,7 @@ export function CommunityNudge({ compact = false }: { compact?: boolean }) {
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push("/emergency-contacts")}
-            className="flex items-center gap-3 flex-1 min-w-0 text-left active:scale-[0.99] transition-transform"
+            className="flex items-center gap-3 flex-1 min-w-0 text-left active:scale-[0.97] transition-transform"
           >
             <div className="w-9 h-9 rounded-full bg-primary-500/20 flex items-center justify-center shrink-0">
               <Users className="beacon-accent-text w-[18px] h-[18px]" />
@@ -119,7 +119,7 @@ export function CommunityNudge({ compact = false }: { compact?: boolean }) {
           {compact && (
             <button
               onClick={() => setInviteOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold active:scale-95 transition-transform shrink-0"
+              className="px-3.5 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold active:scale-[0.97] transition-transform shrink-0"
             >
               Invite
             </button>
@@ -127,7 +127,7 @@ export function CommunityNudge({ compact = false }: { compact?: boolean }) {
           <button
             onClick={dismiss}
             aria-label="Dismiss"
-            className="p-1.5 rounded-full text-dark-400 hover:bg-white/10 active:scale-90 transition-all shrink-0"
+            className="p-1.5 rounded-full text-dark-400 hover:bg-[var(--soft-surface-strong)] active:scale-[0.97] transition-ui shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -137,7 +137,7 @@ export function CommunityNudge({ compact = false }: { compact?: boolean }) {
             maxHeight: compact ? 0 : 220,
             opacity: compact ? 0 : 1,
             overflow: "hidden",
-            transition: "max-height 0.45s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s ease",
+            transition: "max-height 0.45s var(--ease-sheet), opacity 0.3s ease",
           }}
         >
           <p className="text-sm text-dark-400 leading-relaxed mt-2">
@@ -147,13 +147,13 @@ export function CommunityNudge({ compact = false }: { compact?: boolean }) {
           <div className="flex gap-2 mt-3">
             <button
               onClick={() => setInviteOpen(true)}
-              className="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold active:scale-95 transition-transform"
+              className="px-4 py-2 rounded-xl bg-primary-600 text-white text-sm font-semibold active:scale-[0.97] transition-transform"
             >
               Invite your people
             </button>
             <button
               onClick={() => router.push("/emergency-contacts")}
-              className="px-4 py-2 rounded-xl bg-dark-700/60 text-dark-200 text-sm font-semibold active:scale-95 transition-transform"
+              className="px-4 py-2 rounded-xl bg-dark-700/60 text-dark-200 text-sm font-semibold active:scale-[0.97] transition-transform"
             >
               Find them on peja
             </button>

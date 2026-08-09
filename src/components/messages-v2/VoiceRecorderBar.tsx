@@ -102,9 +102,6 @@ export function VoiceRecorderBar({
   const stateRef = useRef<RecState>("idle");
   stateRef.current = state;
   const [elapsed, setElapsed] = useState(0);
-  const [waveHeights, setWaveHeights] = useState<number[]>(() =>
-    new Array(WAVEFORM_BARS).fill(4),
-  );
   // 0..1 — how close we are to the lock / trash thresholds. Drives the
   // visual state of the lock pill and trash button (idle / near / armed).
   const [lockProgress, setLockProgress] = useState(0);
@@ -142,7 +139,6 @@ export function VoiceRecorderBar({
   const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isHoldRef = useRef(false);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const waveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordingStartMsRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -278,10 +274,8 @@ export function VoiceRecorderBar({
     // Defensive: clear any leftover intervals before scheduling new
     // ones. stopTimers should always run between recordings, but if a
     // race or an unmount mid-flight left a ref dangling we'd otherwise
-    // run two intervals at once (both pumping setWaveHeights) and the
-    // bars would visibly stutter.
+    // run two timers at once and the elapsed count would jump.
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    if (waveIntervalRef.current) clearInterval(waveIntervalRef.current);
     recordingStartMsRef.current = Date.now();
     setElapsed(0);
     timerIntervalRef.current = setInterval(() => {
@@ -296,35 +290,21 @@ export function VoiceRecorderBar({
         void completeSendRef.current();
       }
     }, 250);
-    waveIntervalRef.current = setInterval(() => {
-      // sin + noise mix gives an organic-looking spectrogram without
-      // needing an actual AudioContext analyser hooked up. The phase
-      // changes with time so the bars genuinely move from frame to
-      // frame. The faster `t` (180 vs 220) and the layered second sin
-      // wave give the row a noticeably "alive" feel rather than a
-      // gentle hum — important because users use this as a tell that
-      // the mic is actually hot, especially after tap-to-lock (where
-      // they aren't holding anymore so the motion is the only signal).
-      const t = Date.now() / 180;
-      setWaveHeights((prev) =>
-        prev.map((_, i) => {
-          const phase = i * 0.55;
-          const v =
-            5 +
-            Math.abs(Math.sin(t + phase)) * 10 +
-            Math.abs(Math.sin(t * 1.6 + phase * 1.7)) * 3 +
-            Math.random() * 4;
-          return Math.round(v);
-        }),
-      );
-    }, 70);
+    // The waveform is no longer driven from here. It used to be a second
+    // setInterval at 70ms calling setWaveHeights, which re-rendered this
+    // whole component about 14 times a second for a purely decorative
+    // effect, on the one screen where the user is also holding a finger
+    // down and the mic encoder is running.
+    //
+    // The bars still say the same thing (the mic is hot, and after
+    // tap-to-lock that motion is the only signal the user has) and still
+    // look organic rather than a marching pattern, but the motion is now
+    // a CSS animation on the compositor. See .vrb-wave-bar in globals.css.
   }, [maxSeconds, onRecordingTick, onAutoStopped]);
 
   const stopTimers = useCallback(() => {
     if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    if (waveIntervalRef.current) clearInterval(waveIntervalRef.current);
     timerIntervalRef.current = null;
-    waveIntervalRef.current = null;
   }, []);
 
   // --- State transitions -----------------------------------------------------
@@ -337,7 +317,6 @@ export function VoiceRecorderBar({
     setLidOpen(false);
     setShake(false);
     setShowPuffs(false);
-    setWaveHeights(new Array(WAVEFORM_BARS).fill(4));
   }, []);
 
   const enterIdle = useCallback(() => {
@@ -692,7 +671,7 @@ export function VoiceRecorderBar({
         type="button"
         onClick={onTrashButtonClick}
         aria-label="Discard voice note"
-        className={`relative shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ease-out ${
+        className={`relative shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-ui duration-200 ease-out ${
           showRecordingBar ? "opacity-100 scale-100" : "opacity-0 scale-75 pointer-events-none w-0 h-0"
         }`}
         style={{
@@ -755,20 +734,15 @@ export function VoiceRecorderBar({
         />
         <span className="text-[13px] font-medium tabular-nums min-w-[34px] text-white">{timerLabel}</span>
         <div className="flex-1 flex items-center gap-[2px] h-[22px] overflow-hidden min-w-0">
-          {waveHeights.map((h, i) => (
+          {Array.from({ length: WAVEFORM_BARS }, (_, i) => (
             <span
               key={i}
-              className="flex-1 min-w-[2px] rounded-sm"
-              style={{
-                height: h,
-                background: "#b39df8",
-                opacity: 0.85,
-                // 80ms transition is just slightly longer than the 70ms
-                // tick — bars are constantly redrawing toward the next
-                // target which makes the row read as continuous motion
-                // rather than discrete frames.
-                transition: "height 80ms linear",
-              }}
+              className="vrb-wave-bar flex-1 min-w-[2px] rounded-sm"
+              // Each bar gets its own index. The CSS uses it to give every
+              // bar a slightly different period, so they drift out of phase
+              // with each other over time and the row never settles into a
+              // marching pattern. No JS runs per frame.
+              style={{ "--i": i } as React.CSSProperties}
             />
           ))}
         </div>
@@ -808,7 +782,7 @@ export function VoiceRecorderBar({
                 ? `translateY(${isLockNear ? -10 : 0}px) scale(${isLockArmed || isLockNear ? 1.16 : 1})`
                 : "translateY(15px) scale(0.6)",
             transition:
-              "opacity 300ms, transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1), background 250ms, border-color 250ms, color 250ms",
+              "opacity 300ms, transform 300ms var(--ease-spring), background 250ms, border-color 250ms, color 250ms",
             zIndex: 20,
           }}
         >
@@ -844,7 +818,7 @@ export function VoiceRecorderBar({
             opacity: state === "locked" ? 1 : 0,
             pointerEvents: state === "locked" ? "auto" : "none",
             transform: state === "locked" ? "scale(1)" : "scale(0.4)",
-            transition: "opacity 250ms, transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+            transition: "opacity 250ms, transform 250ms var(--ease-spring)",
           }}
         >
           <Send className="w-4 h-4" />
@@ -867,7 +841,7 @@ export function VoiceRecorderBar({
             transform: micTransform || (state === "holding" ? "scale(1.15)" : "scale(1)"),
             transition: micTransform
               ? "none"
-              : "transform 250ms cubic-bezier(0.34, 1.56, 0.64, 1), background 250ms, opacity 250ms",
+              : "transform 250ms var(--ease-spring), background 250ms, opacity 250ms",
             touchAction: "none",
           }}
         >
@@ -908,7 +882,7 @@ function PadlockSVG({ open }: { open: boolean }) {
         style={{
           transformOrigin: "17px 14px",
           transform: open ? "translate(-3px, -2px) rotate(32deg)" : "none",
-          transition: "transform 400ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+          transition: "transform 400ms var(--ease-spring)",
         }}
       />
       {/* Body. Sits behind the shackle so the open shackle visibly clears
@@ -1003,7 +977,7 @@ function TrashCanSVG({ lidOpen, shake }: { lidOpen: boolean; shake: boolean }) {
           // counter-clockwise and pushed the lid INTO the body.
           transformOrigin: "24px 7px",
           transform: lidOpen ? "rotate(50deg) translateY(-1px)" : "none",
-          transition: "transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+          transition: "transform 320ms var(--ease-spring)",
         }}
       >
         <rect x="10" y="0" width="6" height="2.5" rx="1.25" />

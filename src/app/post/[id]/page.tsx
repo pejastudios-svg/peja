@@ -1261,7 +1261,7 @@ const handleShare = async () => {
     const hasMoreReplies = replies.length > visibleCount;
 
     return (
-      <div key={parent.id} className="border-b border-white/5 last:border-0">
+      <div key={parent.id} className="border-b border-[var(--hairline)] last:border-0">
         {/* Use the new Component */}
         <CommentRow
           comment={parent}
@@ -1430,7 +1430,7 @@ if (error || !post) {
           <div className="relative">
             <button
               onClick={() => setShowOptions(!showOptions)}
-              className="p-2 rounded-xl active:bg-white/10 transition-colors"
+              className="p-2 rounded-xl active:bg-[var(--soft-surface-strong)] transition-colors"
             >
               <MoreVertical className="w-5 h-5 text-dark-200" />
             </button>
@@ -1438,16 +1438,16 @@ if (error || !post) {
               <>
                 <div className="fixed inset-0 z-40" onClick={closeOptions} />
                 <div className={`absolute right-0 top-full mt-1 w-44 glass-strong rounded-xl p-1.5 z-50 shadow-lg ${optionsClosing ? "animate-bounce-out" : "animate-bounce-in"}`}>
-                  <button onClick={() => { handleShare(); closeOptions(); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-dark-200 text-sm">
+                  <button onClick={() => { handleShare(); closeOptions(); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--soft-surface-strong)] text-dark-200 text-sm">
                     <Share2 className="w-4 h-4" /> Share
                   </button>
                   {!isOwner && (
-                    <button onClick={() => { setShowReportModal(true); closeOptions(); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-orange-400 text-sm">
+                    <button onClick={() => { setShowReportModal(true); closeOptions(); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--soft-surface-strong)] text-orange-400 text-sm">
                       <Flag className="w-4 h-4" /> Report
                     </button>
                   )}
                   {isOwner && (
-                    <button onClick={() => { setShowDeleteModal(true); closeOptions(); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white/10 text-red-400 text-sm">
+                    <button onClick={() => { setShowDeleteModal(true); closeOptions(); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--soft-surface-strong)] text-red-400 text-sm">
                       <Trash2 className="w-4 h-4" /> Delete
                     </button>
                   )}
@@ -1537,7 +1537,7 @@ if (error || !post) {
             {post.media.map((_, i) => (
               <div 
                 key={i} 
-                className={`h-2 rounded-full transition-all duration-300 ${
+                className={`h-2 rounded-full transition-ui duration-300 ${
                   i === currentMediaIndex 
                     ? "bg-white w-6" 
                     : "bg-white/40 w-2"
@@ -1610,7 +1610,7 @@ if (error || !post) {
             <div className="flex gap-2 pt-2">
                 <button
                 onClick={handleConfirm}
-                className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all active:scale-95 ${
+                className={`relative flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-ui active:scale-[0.97] ${
                   isConfirmed ? "bg-primary-600 text-white" : "action-chip text-dark-200 hover:bg-[var(--soft-surface-strong)]"
                 }`}
               >
@@ -1621,7 +1621,7 @@ if (error || !post) {
               {canForwardToChat && (
                 <button
                   onClick={() => setForwardSheetOpen(true)}
-                  className="p-2.5 rounded-xl action-chip text-dark-300 hover:bg-[var(--soft-surface-strong)] active:scale-90 transition-transform duration-150"
+                  className="p-2.5 rounded-xl action-chip text-dark-300 hover:bg-[var(--soft-surface-strong)] active:scale-[0.97] transition-transform duration-150"
                   aria-label="Send to chat"
                 >
                   <Send className="w-5 h-5" />
@@ -1701,7 +1701,7 @@ if (error || !post) {
 
       {/* Comment Input - Fixed Bottom */}
       <div
-        className="fixed bottom-0 inset-x-0 z-50 bg-dark-950/95 backdrop-blur-lg border-t border-white/10"
+        className="fixed bottom-0 inset-x-0 z-50 bg-dark-950/95 backdrop-blur-lg border-t border-[var(--hairline-strong)]"
         style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
       >
         <div className="max-w-2xl mx-auto p-3 w-full">

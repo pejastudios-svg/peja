@@ -104,7 +104,7 @@ export function OfflineScreen({ onRetry }: OfflineScreenProps) {
         <button
           onClick={handleRetry}
           disabled={checking}
-          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-semibold text-white transition-all active:scale-95"
+          className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-semibold text-white transition-ui active:scale-[0.97]"
           style={{
             background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
             boxShadow: "0 4px 20px rgba(124, 58, 237, 0.35)",

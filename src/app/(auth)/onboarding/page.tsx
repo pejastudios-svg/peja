@@ -177,7 +177,7 @@ export default function OnboardingPage() {
                 </ul>
               </div>
 
-              <div className="border-t border-white/5 pt-6">
+              <div className="border-t border-[var(--hairline)] pt-6">
                 <h3 className="text-sm font-medium text-dark-200 mb-4">Quick Quiz</h3>
                 <div className="space-y-4">
                   {QUIZ_QUESTIONS.map((q, qIndex) => (
@@ -188,10 +188,10 @@ export default function OnboardingPage() {
                           <button
                             key={oIndex}
                             onClick={() => handleQuizAnswer(qIndex, oIndex)}
-                            className={`flex-1 py-2 px-3 rounded-lg text-sm transition-all ${
+                            className={`flex-1 py-2 px-3 rounded-lg text-sm transition-ui ${
                               quizAnswers[qIndex] === oIndex
                                 ? "bg-primary-600 text-white"
-                                : "glass-sm text-dark-300 hover:bg-white/10"
+                                : "glass-sm text-dark-300 hover:bg-[var(--soft-surface-strong)]"
                             }`}
                           >
                             {option}

@@ -105,7 +105,7 @@ export function VoiceNotePlayer({ src, compact = false }: VoiceNotePlayerProps) 
       {/* Play/Pause button */}
       <button
         onClick={togglePlay}
-        className="shrink-0 flex items-center justify-center rounded-full active:scale-90 transition-transform"
+        className="shrink-0 flex items-center justify-center rounded-full active:scale-[0.97] transition-transform"
         style={{
           width: compact ? 32 : 38,
           height: compact ? 32 : 38,

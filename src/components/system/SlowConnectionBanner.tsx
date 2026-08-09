@@ -128,7 +128,7 @@ export function SlowConnectionBanner() {
       {/* Whole pill dismisses on tap - same rule as the action toasts. */}
       <button
         onClick={handleDismiss}
-        className="mx-4 mt-2 flex items-center gap-2 px-3 py-1.5 rounded-full max-w-md w-fit cursor-pointer active:scale-95 transition-transform"
+        className="mx-4 mt-2 flex items-center gap-2 px-3 py-1.5 rounded-full max-w-md w-fit cursor-pointer active:scale-[0.97] transition-transform"
         style={{
           background: isSlow ? "#eab308" : "#22c55e",
           boxShadow: isSlow

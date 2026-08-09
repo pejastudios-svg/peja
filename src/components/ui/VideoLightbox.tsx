@@ -321,7 +321,7 @@ if (animPhase === "enter") {
         borderRadius: "16px",
         overflow: "hidden",
         transition:
-          "transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 250ms ease, border-radius 280ms ease",
+          "transform 280ms var(--ease-out), opacity 250ms ease, border-radius 280ms ease",
       };
     }
 
@@ -360,7 +360,7 @@ if (animPhase === "enter") {
       opacity: 1,
       borderRadius: "0",
       transition:
-        "transform 300ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 300ms ease, border-radius 300ms ease",
+        "transform 300ms var(--ease-out), opacity 300ms ease, border-radius 300ms ease",
     };
   };
 
@@ -475,7 +475,7 @@ if (animPhase === "enter") {
       </div>
 
       <div
-        className={`absolute bottom-0 inset-x-0 z-10 transition-all duration-300 ${
+        className={`absolute bottom-0 inset-x-0 z-10 transition-ui duration-300 ${
           showControls && !isDragging && animPhase !== "exit"
             ? "opacity-100 pointer-events-auto"
             : "pointer-events-none opacity-0"

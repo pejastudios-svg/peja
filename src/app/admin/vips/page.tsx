@@ -543,7 +543,7 @@ useEffect(() => {
           Total cell counts distinct rows (not the sum of MVP+VIP). */}
       <div className="grid grid-cols-3 gap-3 mb-6">
         <div className="hud-panel p-4 text-center">
-          <p className="text-3xl font-bold text-amber-300">
+          <p className="text-3xl font-bold beacon-wait-text">
             {vips.filter((v) => v.is_mvp).length}
           </p>
           <p className="text-xs text-dark-500 uppercase tracking-wider mt-1">MVPs</p>
@@ -569,7 +569,7 @@ useEffect(() => {
           value={vipSearch}
           onChange={(e) => setVipSearch(e.target.value)}
           placeholder="Search VIPs..."
-          className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-all"
+          className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-ui"
         />
       </div>
 
@@ -617,7 +617,7 @@ useEffect(() => {
             <div
               key={v.id}
               onClick={selectMode ? () => toggleSelect(v.id) : undefined}
-              className={`hud-panel p-4 flex items-center justify-between gap-4 group transition-all ${
+              className={`hud-panel p-4 flex items-center justify-between gap-4 group transition-ui ${
                 selectMode
                   ? "cursor-pointer " +
                     (isSelected
@@ -681,7 +681,7 @@ useEffect(() => {
                     </p>
                     {/* Tier chips. A row can carry MVP, VIP, or both. */}
                     {v.is_mvp && (
-                      <span className="inline-flex items-center gap-0.5 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      <span className="inline-flex items-center gap-0.5 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-500/15 beacon-wait-text border border-amber-500/30">
                         <Star className="w-3 h-3" />
                         MVP
                       </span>
@@ -863,7 +863,7 @@ useEffect(() => {
               value={searchQuery}
               onChange={(e) => handleSearch(e.target.value)}
               placeholder="Search by name, email, or phone..."
-              className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-all"
+              className="w-full h-11 pl-10 pr-4 bg-[#1c1c1f] border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary-500/50 transition-ui"
               autoFocus
             />
           </div>
@@ -900,7 +900,7 @@ useEffect(() => {
                           {u.full_name || "Unknown"}
                         </p>
                         {u.is_mvp && (
-                          <span className="flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                          <span className="flex items-center gap-1 text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-amber-500/15 beacon-wait-text border border-amber-500/30">
                             <Star className="w-3 h-3" />
                             MVP
                           </span>

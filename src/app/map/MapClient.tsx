@@ -701,7 +701,7 @@ export default function MapClient() {
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               <button
                 onClick={() => setSelectedCategory(null)}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg ${
+                className={`active:scale-[0.97] px-3 py-1.5 rounded-full text-sm font-medium whitespace-nowrap shadow-lg ${
                   !selectedCategory ? "bg-primary-600 text-white" : "glass-float text-dark-200"
                 }`}
               >
@@ -727,10 +727,10 @@ export default function MapClient() {
                     setCompassEnabled(false);
                   }
                 }}
-                className={`p-3 rounded-full shadow-lg transition-colors ${
+                className={`active:scale-[0.97] p-3 rounded-full shadow-lg transition-colors ${
                   compassEnabled
                     ? "bg-primary-600 text-white"
-                    : "glass-float text-primary-400 hover:bg-white/10"
+                    : "glass-float text-primary-400 hover:bg-[var(--soft-surface-strong)]"
                 }`}
               >
                 <Compass className="w-5 h-5" />
@@ -740,7 +740,7 @@ export default function MapClient() {
                   handleCenterOnUser();
                 }}
                 disabled={gettingLocation}
-                className="p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
+                className="active:scale-[0.97] p-3 glass-float rounded-full shadow-lg hover:bg-[var(--soft-surface-strong)]"
               >
                 {gettingLocation ? (
                   <PejaSpinner className="w-5 h-5" />
@@ -754,7 +754,7 @@ export default function MapClient() {
             <div className="absolute left-4 bottom-full pb-3 z-10">
               <button
                 onClick={() => setShowAnalytics(true)}
-                className="p-3 glass-float rounded-full shadow-lg hover:bg-white/10"
+                className="active:scale-[0.97] p-3 glass-float rounded-full shadow-lg hover:bg-[var(--soft-surface-strong)]"
               >
                 <BarChart3 className="w-5 h-5 text-primary-400" />
               </button>
@@ -762,7 +762,7 @@ export default function MapClient() {
 
             {/* Drawer surface */}
             <div className="glass-strong rounded-t-2xl shadow-2xl" style={{ borderBottom: "none" }}>
-              <button onClick={() => setShowList(!showList)} className="w-full py-3 flex flex-col items-center">
+              <button onClick={() => setShowList(!showList)} className="active:scale-[0.97] w-full py-3 flex flex-col items-center">
                 <div className="w-10 h-1 bg-dark-600 rounded-full mb-1" />
                 <span className="text-sm text-dark-400">{filteredPosts.length} incidents</span>
               </button>
@@ -808,7 +808,7 @@ export default function MapClient() {
                   <div
                     key={post.id}
                     onClick={() => router.push(`/post/${post.id}`)}
-                    className="flex gap-3 p-3 glass-sm rounded-xl mb-2 cursor-pointer hover:bg-white/5"
+                    className="flex gap-3 p-3 glass-sm rounded-xl mb-2 cursor-pointer hover:bg-[var(--soft-surface)]"
                   >
                     {post.media?.[0] && (
                       <img src={post.media[0].url} alt="" className="w-16 h-16 rounded-lg object-cover" />

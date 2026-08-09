@@ -552,7 +552,7 @@ export default function EmergencyContactsPage() {
             <button
               onClick={() => setPeopleFilter("")}
               aria-label="Clear search"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-dark-500 active:scale-90 transition-transform"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-dark-500 active:scale-[0.97] transition-transform"
             >
               <X className="w-4 h-4" />
             </button>
@@ -563,7 +563,7 @@ export default function EmergencyContactsPage() {
         <CirclesSection query={peopleFilter} />
 
         {/* Tabs */}
-        <div className="flex border-b border-white/10 mb-6">
+        <div className="flex border-b border-[var(--hairline-strong)] mb-6">
           <button
             onClick={() => setActiveTab("mine")}
             className={`flex-1 py-3 text-sm font-medium transition-colors ${
@@ -628,7 +628,7 @@ export default function EmergencyContactsPage() {
                         {statusBadge(contact.status)}
                       </div>
                     </div>
-                    <button onClick={() => setDeleteId(contact.id)} className="p-2 hover:bg-white/10 rounded-lg text-dark-400 hover:text-red-400">
+                    <button onClick={() => setDeleteId(contact.id)} className="p-2 hover:bg-[var(--soft-surface-strong)] rounded-lg text-dark-400 hover:text-red-400">
                       <Trash2 className="w-5 h-5" />
                     </button>
                   </div>
@@ -684,7 +684,7 @@ export default function EmergencyContactsPage() {
                               return next;
                             })
                           }
-                          className="mt-1.5 flex items-center gap-1.5 text-xs text-dark-400 active:scale-95 transition-transform"
+                          className="mt-1.5 flex items-center gap-1.5 text-xs text-dark-400 active:scale-[0.97] transition-transform"
                         >
                           <span
                             className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
@@ -750,7 +750,7 @@ export default function EmergencyContactsPage() {
                         </span>
                       </div>
                     </div>
-                    <button onClick={() => setDeleteId(row.id)} className="p-2 hover:bg-white/10 rounded-lg text-dark-400 hover:text-red-400" title="Stop being their contact">
+                    <button onClick={() => setDeleteId(row.id)} className="p-2 hover:bg-[var(--soft-surface-strong)] rounded-lg text-dark-400 hover:text-red-400" title="Stop being their contact">
                       <Trash2 className="w-5 h-5" />
                     </button>
                   </div>
@@ -776,7 +776,7 @@ export default function EmergencyContactsPage() {
                 <input ref={searchInputRef} type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Type a name to search..." className="w-full pl-10 pr-4 py-3 glass-input" autoFocus />
                 {searchQuery && (
-                  <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-white/10 rounded">
+                  <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-[var(--soft-surface-strong)] rounded">
                     <X className="w-4 h-4 text-dark-400" />
                   </button>
                 )}
@@ -788,7 +788,7 @@ export default function EmergencyContactsPage() {
                 <div className="mt-2 space-y-1 max-h-60 overflow-y-auto">
                   {searchResults.map(r => (
                     <button key={r.id} onClick={() => setSelectedUser(r)}
-                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-white/10 transition-colors text-left">
+                      className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[var(--soft-surface-strong)] transition-colors text-left">
                       <AvatarImage
                         src={r.avatar_url}
                         wrapperClassName="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0 overflow-hidden"
@@ -821,14 +821,14 @@ export default function EmergencyContactsPage() {
                   fallback={<User className="w-5 h-5 text-primary-400" />}
                 />
                 <div className="flex-1"><p className="font-medium text-dark-100">{selectedUser.full_name}</p></div>
-                <button onClick={() => setSelectedUser(null)} className="p-1 hover:bg-white/10 rounded text-dark-400"><X className="w-4 h-4" /></button>
+                <button onClick={() => setSelectedUser(null)} className="p-1 hover:bg-[var(--soft-surface-strong)] rounded text-dark-400"><X className="w-4 h-4" /></button>
               </div>
 
               <label className="block text-sm font-medium text-dark-200 mb-2">Relationship</label>
               <div className="flex flex-wrap gap-2">
                 {RELATIONSHIPS.map(rel => (
                   <button key={rel} type="button" onClick={() => setRelationship(rel)}
-                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${relationship === rel ? "bg-primary-600 text-white" : "glass-sm text-dark-300 hover:bg-white/10"}`}>
+                    className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${relationship === rel ? "bg-primary-600 text-white" : "glass-sm text-dark-300 hover:bg-[var(--soft-surface-strong)]"}`}>
                     {rel}
                   </button>
                 ))}

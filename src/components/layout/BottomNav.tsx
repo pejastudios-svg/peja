@@ -182,7 +182,7 @@ export function BottomNav() {
       <div className="relative z-10 flex flex-col items-center justify-center py-1.5">
         <div
           style={{
-            transition: "all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)",
+            transition: "all 0.35s var(--ease-spring)",
             transform: isActive ? "translateY(-3px)" : "translateY(0)",
           }}
         >
@@ -317,7 +317,7 @@ export function BottomNav() {
                       height: 3,
                       borderRadius: "9999px",
                       background: "var(--color-primary-600)",
-                      transition: "left 0.35s cubic-bezier(0.4, 0.0, 0.2, 1)",
+                      transition: "left 0.35s var(--ease-out)",
                       zIndex: 20,
                     }}
                   />
@@ -350,7 +350,7 @@ export function BottomNav() {
                   position: "absolute",
                   left: "50%",
                   bottom: "100%",
-                  transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                  transition: "all 0.3s var(--ease-spring)",
                   transform: menuOpen && !menuClosing
                     ? "translate(calc(-50% - 32px), -16px) scale(1)"
                     : "translate(-50%, 20px) scale(0)",
@@ -372,7 +372,7 @@ export function BottomNav() {
                     left: "50%",
                     bottom: "100%",
                     zIndex: 2,
-                    transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.08s",
+                    transition: "all 0.3s var(--ease-spring) 0.08s",
                     transform: menuOpen && !menuClosing
                       ? "translate(-50%, -96px) scale(1)"
                       : "translate(-50%, 20px) scale(0)",
@@ -387,7 +387,7 @@ export function BottomNav() {
                         router.push("/beacon");
                       }}
                       aria-label="Beacon"
-                      className="w-12 h-12 rounded-full bg-primary-600 border-2 border-primary-400/60 shadow-lg shadow-primary-900/40 flex items-center justify-center active:scale-90 transition-transform"
+                      className="w-12 h-12 rounded-full bg-primary-600 border-2 border-primary-400/60 shadow-lg shadow-primary-900/40 flex items-center justify-center active:scale-[0.97] transition-transform"
                     >
                       <Radio className="w-5.5 h-5.5 text-white" />
                     </button>
@@ -403,7 +403,7 @@ export function BottomNav() {
                   position: "absolute",
                   left: "50%",
                   bottom: "100%",
-                  transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.04s",
+                  transition: "all 0.3s var(--ease-spring) 0.04s",
                   transform: menuOpen && !menuClosing
                     ? "translate(calc(-50% + 32px), -16px) scale(1)"
                     : "translate(-50%, 20px) scale(0)",
@@ -462,7 +462,7 @@ export function BottomNav() {
                     if (greenActive) return "peja-pulse-green 1.5s ease-in-out infinite";
                     return "none";
                   })(),
-                  transition: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                  transition: "all 0.3s var(--ease-spring)",
                   transform: menuOpen && !menuClosing ? "scale(0.88) rotate(45deg)" : "scale(1) rotate(0deg)",
                   zIndex: 40,
                 }}
@@ -481,7 +481,7 @@ export function BottomNav() {
                       filter:
                         "drop-shadow(0 0 3px rgba(167, 139, 250, 0.3))",
                       transition:
-                        "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                        "transform 0.3s var(--ease-spring)",
                       transform:
                         menuOpen && !menuClosing
                           ? "rotate(-45deg)"
@@ -499,7 +499,7 @@ export function BottomNav() {
                     onError={() => setLogoBroken(true)}
                     style={{
                       filter: "drop-shadow(0 0 3px rgba(167, 139, 250, 0.3))",
-                      transition: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                      transition: "transform 0.3s var(--ease-spring)",
                       transform: menuOpen && !menuClosing ? "rotate(-45deg)" : "rotate(0deg)",
                     }}
                   />

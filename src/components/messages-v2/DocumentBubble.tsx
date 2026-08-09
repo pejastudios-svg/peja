@@ -63,7 +63,7 @@ export function DocumentBubble({
   metaTrailing,
 }: Props) {
   const iconBg =
-    variant === "mine" ? "bg-white/25" : "bg-[var(--chat-control-other-bg)]";
+    variant === "mine" ? "bg-[var(--surface-3)]" : "bg-[var(--chat-control-other-bg)]";
   const iconFg = variant === "mine" ? "text-white" : "text-dark-100";
   const sizeFg = variant === "mine" ? "text-white/75" : "text-dark-400";
 

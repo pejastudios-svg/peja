@@ -139,7 +139,7 @@ export default function AdminInAppToasts({ onNewNotification }: Props) {
           <div
             key={toast.id}
             onClick={() => handleToastClick(toast)}
-            className="bg-dark-900/95 backdrop-blur-xl rounded-2xl border border-white/10 shadow-2xl p-4 cursor-pointer animate-[slideDown_200ms_ease-out] hover:bg-dark-800/95 transition-colors"
+            className="bg-dark-900/95 backdrop-blur-xl rounded-2xl border border-[var(--hairline-strong)] shadow-2xl p-4 cursor-pointer animate-[slideDown_200ms_ease-out] hover:bg-dark-800/95 transition-colors"
           >
             <div className="flex items-start gap-3">
               <div className="p-2 rounded-xl bg-red-500/20 shrink-0">
@@ -162,7 +162,7 @@ export default function AdminInAppToasts({ onNewNotification }: Props) {
                   e.stopPropagation();
                   dismissToast(toast.id);
                 }}
-                className="p-1.5 rounded-lg hover:bg-white/10 text-dark-400 shrink-0"
+                className="p-1.5 rounded-lg hover:bg-[var(--soft-surface-strong)] text-dark-400 shrink-0"
               >
                 <X className="w-4 h-4" />
               </button>

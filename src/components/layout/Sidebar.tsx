@@ -77,7 +77,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       )}
 
       <aside
-        className={`fixed top-0 left-0 bottom-0 w-64 glass border-r border-white/5 z-50 transform transition-transform duration-300 lg:translate-x-0 lg:top-16 ${
+        className={`fixed top-0 left-0 bottom-0 w-64 glass border-r border-[var(--hairline)] z-50 transform transition-transform duration-300 lg:translate-x-0 lg:top-16 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -85,7 +85,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           <span className="text-lg font-bold text-gradient">Peja</span>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/5 rounded-lg"
+            className="p-2 hover:bg-[var(--soft-surface)] rounded-lg"
           >
             <X className="w-5 h-5 text-dark-400" />
           </button>
@@ -105,7 +105,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                   className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
                     isActive
                       ? "bg-primary-600/20 text-primary-400 border border-primary-500/30"
-                      : "text-dark-300 hover:bg-white/5 hover:text-dark-100"
+                      : "text-dark-300 hover:bg-[var(--soft-surface)] hover:text-dark-100"
                   }`}
                 >
                   <Icon className="w-5 h-5" />
@@ -117,7 +117,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
           {/* Admin & Guardian Links */}
           {(isAdmin || isGuardian) && (
-            <div className="mt-6 pt-4 border-t border-white/5">
+            <div className="mt-6 pt-4 border-t border-[var(--hairline)]">
               <p className="px-3 text-xs font-medium text-dark-500 uppercase tracking-wider mb-2">
                 Management
               </p>
@@ -129,7 +129,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
                       pathname.startsWith("/admin")
                         ? "bg-red-600/20 text-red-400 border border-red-500/30"
-                        : "text-dark-300 hover:bg-white/5 hover:text-dark-100"
+                        : "text-dark-300 hover:bg-[var(--soft-surface)] hover:text-dark-100"
                     }`}
                   >
                     <LayoutDashboard className="w-5 h-5" />
@@ -143,7 +143,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
                       pathname.startsWith("/guardian")
                         ? "bg-primary-600/20 text-primary-400 border border-primary-500/30"
-                        : "text-dark-300 hover:bg-white/5 hover:text-dark-100"
+                        : "text-dark-300 hover:bg-[var(--soft-surface)] hover:text-dark-100"
                     }`}
                   >
                     <Shield className="w-5 h-5" />
@@ -154,7 +154,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
             </div>
           )}
 
-          <div className="mt-6 pt-4 border-t border-white/5">
+          <div className="mt-6 pt-4 border-t border-[var(--hairline)]">
             <p className="px-3 text-xs font-medium text-dark-500 uppercase tracking-wider mb-2">
               More
             </p>
@@ -171,7 +171,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
                     key={item.href}
                     href={item.href}
                     onClick={onClose}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-dark-400 hover:bg-white/5 hover:text-dark-200 transition-colors"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-dark-400 hover:bg-[var(--soft-surface)] hover:text-dark-200 transition-colors"
                   >
                     <Icon className="w-5 h-5" />
                     <span>{item.label}</span>

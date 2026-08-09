@@ -6,6 +6,18 @@
      var(--font-poppins) comes from next/font in layout.tsx. */
   --font-sans: var(--font-poppins), "Poppins", system-ui, sans-serif;
 
+  /* Motion curves. Defined here rather than in :root so Tailwind's
+     `ease-out` / `ease-in-out` utilities and hand-written
+     var(--ease-out) resolve to the same curve. Tailwind's stock values
+     are too weak for deliberate UI motion.
+     Entering or leaving the screen -> --ease-out (starts fast, so the
+     moment the user is watching is the moment that moves).
+     Travelling between two on-screen positions -> --ease-in-out.
+     Never ease-in on UI: it delays the interesting part.
+     These replaced eight hand-typed one-off curves. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
   --color-primary-50: #f5f3ff;
   --color-primary-100: #ede9fe;
   --color-primary-200: #ddd6fe;
@@ -18,15 +30,24 @@
   --color-primary-900: #4c1d95;
   --color-primary-950: #2e1065;
 
-  --color-dark-50: #f8fafc;
-  --color-dark-100: #f1f5f9;
-  --color-dark-200: #e2e8f0;
-  --color-dark-300: #cbd5e1;
-  --color-dark-400: #94a3b8;
-  --color-dark-500: #64748b;
-  --color-dark-600: #475569;
-  --color-dark-700: #334155;
-  --color-dark-800: #1e293b;
+  /* Neutral ramp. This used to be Tailwind Slate for 50-800 and then
+     jumped to violet-black at 900/950, so a bg-dark-800 panel was a
+     blue-grey sitting on a purple-black page — two different colour
+     temperatures touching, which read as "the colours don't blend".
+     The ramp is now one continuous violet-grey that arrives at the
+     existing 900/950 values instead of colliding with them.
+     dark-500 and dark-700 are tuned so that EVERY text step clears
+     4.5:1 on EVERY surface step, in both themes. The worst pairing in
+     the app is now 4.85:1; before this it was 2.4:1. */
+  --color-dark-50: #f8f7fb;
+  --color-dark-100: #f0eef6;
+  --color-dark-200: #e0dceb;
+  --color-dark-300: #c8c2d8;
+  --color-dark-400: #9a93ad;
+  --color-dark-500: #948ca8;
+  --color-dark-600: #4b4459;
+  --color-dark-700: #27222f;
+  --color-dark-800: #1d1828;
   --color-dark-900: #0a0612;
   --color-dark-950: #000000;
 }
@@ -48,6 +69,15 @@
   --r-sheet: 28px;
   --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* --ease-out and --ease-in-out live in the @theme block at the top of
+     this file, not here. Tailwind v4 owns those two names, so defining
+     them there means the `ease-out` utility class and a hand-written
+     var(--ease-out) resolve to the SAME curve instead of two curves
+     wearing one name. */
+  /* One press depth for the whole app. Buttons used to squash by
+     anywhere from 2% to 25% depending on the file. */
+  --press-scale: 0.97;
+  --press-duration: 160ms;
   --hairline: rgba(255, 255, 255, 0.06);
 
   --glass-bg: rgba(15, 10, 26, 0.85);
@@ -98,6 +128,13 @@
   --skeleton-bg: rgba(255, 255, 255, 0.05);
   --skeleton-shimmer: rgba(255, 255, 255, 0.1);
   --soft-surface-strong: rgba(255, 255, 255, 0.1);
+
+  /* Two more steps so every translucent surface in the app has a
+     theme-aware token to sit on. Before these, components reached for
+     bg-white/20 and border-white/10 directly, which is literal white and
+     therefore invisible once the page turns white in light mode. */
+  --surface-3: rgba(255, 255, 255, 0.2);
+  --hairline-strong: rgba(255, 255, 255, 0.12);
 
   /* v2 chat surfaces. The receiver ("theirs") bubble, the composer
      text area, and small in-chat controls all need to read against
@@ -155,6 +192,8 @@
   /* Light-mode soft surface: gentle grey so chips/players are visible on white. */
   --soft-surface: rgba(0, 0, 0, 0.05);
   --soft-surface-strong: rgba(0, 0, 0, 0.08);
+  --surface-3: rgba(0, 0, 0, 0.12);
+  --hairline-strong: rgba(0, 0, 0, 0.14);
 
   /* Light-mode chat surfaces — solid slate-100 family so bubbles + the
      composer area visually separate from the white page background.
@@ -168,18 +207,29 @@
   --chat-input-border: rgba(0, 0, 0, 0.14);
   --chat-input-hover: #cdd3dc;
 
-  /* Invert the neutral scale so existing text-dark-* / bg-dark-* utilities flip */
+  /* Invert the neutral scale so existing text-dark-* / bg-dark-* utilities
+     flip. Retinted from zinc to the same violet-grey family as the dark
+     ramp, so the app has one temperature in both themes.
+     dark-500 was #a1a1aa, which is 2.56:1 on the white page — it FAILED
+     AA on the 366 places that use it for metadata. It is now 5.47:1. */
   --color-dark-50: #0c0a14;
   --color-dark-100: #1a1530;
   --color-dark-200: #3f3a52;
-  --color-dark-300: #52525b;
-  --color-dark-400: #71717a;
-  --color-dark-500: #a1a1aa;
-  --color-dark-600: #d4d4d8;
-  --color-dark-700: #e4e4e7;
-  --color-dark-800: #ececec;
-  --color-dark-900: #fafaf7;
+  --color-dark-300: #4e455e;
+  --color-dark-400: #5f5670;
+  --color-dark-500: #665d78;
+  --color-dark-600: #d0ccd8;
+  --color-dark-700: #e6e3ec;
+  --color-dark-800: #efedf3;
+  --color-dark-900: #faf9fc;
   --color-dark-950: #ffffff;
+
+  /* Pale violet text is the brand colour on dark and a 1.85:1 ghost on
+     white. primary-* otherwise stays identical across themes (purple is
+     purple) — these two steps are overridden because the app uses them
+     almost exclusively as TEXT (54 of their 55 uses). */
+  --color-primary-200: #6d28d9;
+  --color-primary-300: #6d28d9;
 
   /* Deep purple so the "You" / author label in quoted-reply blocks
      reads clearly against the light-mode reply surface. */
@@ -322,28 +372,12 @@ textarea,
   to { transform: translateX(100%); opacity: 0; }
 }
 .peja-slide-out-to-right {
-  animation: peja-slide-out-to-right 220ms ease-in forwards;
+  /* ease-out, not ease-in. An exit that starts slow holds the user on a
+     screen they already asked to leave; starting fast makes the app feel
+     like it obeyed immediately. */
+  animation: peja-slide-out-to-right 220ms var(--ease-out) forwards;
 }
 
-/* Voice-note recording bar entrance. Pulls out from the mic
-   position on the right edge of the composer, expanding into the
-   full row. Used by VoiceRecorderBar when it transitions into
-   hold or locked mode. */
-@keyframes peja-bar-expand-from-right {
-  from {
-    transform: scaleX(0.05);
-    transform-origin: right center;
-    opacity: 0.5;
-  }
-  to {
-    transform: scaleX(1);
-    transform-origin: right center;
-    opacity: 1;
-  }
-}
-.peja-bar-expand-from-right {
-  animation: peja-bar-expand-from-right 220ms cubic-bezier(0.16, 1, 0.3, 1);
-}
 
 /* Enhanced Glass Effects - Works on all browsers */
 .glass {
@@ -453,7 +487,11 @@ textarea,
   padding-bottom: 0.75rem;
   width: 100%;
   outline: none;
-  transition: all 0.2s;
+  /* Named rather than `all`: `all` also animated backdrop-filter, which
+     is the single most expensive thing to transition on the low-end
+     Android GPUs this app targets. */
+  transition: background-color 0.2s var(--ease-out),
+    border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out);
   color: var(--fg-default);
 }
 
@@ -490,37 +528,6 @@ textarea,
   opacity: 0.6;
 }
 
-.btn-primary {
-  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
-  color: white;
-  font-weight: 500;
-  border-radius: 0.75rem;
-  padding: 0.75rem 1.5rem;
-  transition: all 0.2s;
-  box-shadow: 0 4px 16px 0 rgba(124, 58, 237, 0.35);
-}
-
-.btn-primary:hover {
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-  box-shadow: 0 6px 24px 0 rgba(124, 58, 237, 0.5);
-  transform: translateY(-1px);
-}
-
-.btn-secondary {
-  background: var(--glass-input-bg);
-  backdrop-filter: blur(8px);
-  border: 1px solid var(--glass-border);
-  color: var(--fg-default);
-  font-weight: 500;
-  border-radius: 0.75rem;
-  padding: 0.75rem 1rem;
-  transition: all 0.2s;
-}
-
-.btn-secondary:hover {
-  background: rgba(139, 92, 246, 0.2);
-  border-color: rgba(139, 92, 246, 0.4);
-}
 
 .badge {
   display: inline-flex;
@@ -577,20 +584,6 @@ textarea,
   word-break: break-word;
 }
 
-/* Fixed bottom input bar */
-.fixed-bottom-input {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(20, 10, 40, 0.95);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-top: 1px solid rgba(139, 92, 246, 0.2);
-  padding: 0.75rem 1rem;
-  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
-  z-index: 40;
-}
 
 /* Leaflet custom styles */
 .leaflet-container {
@@ -629,15 +622,6 @@ textarea,
   background: rgba(139, 92, 246, 0.3) !important;
 }
 
-.custom-marker {
-  background: transparent;
-  border: none;
-}
-
-.user-marker {
-  background: transparent;
-  border: none;
-}
 
 /* Safe area for iOS */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
@@ -714,82 +698,6 @@ input, textarea, select {
   }
 }
 
-@keyframes toastIn {
-  from {
-    transform: translateY(-12px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0px);
-    opacity: 1;
-  }
-}
-
-/* WhatsApp-iOS-style dismissal: the pill glides up and fades. Used when a
-   toast is tapped, swiped up, or times out (ToastContext sets `leaving`). */
-@keyframes toastOut {
-  from {
-    transform: translateY(0) scale(1);
-    opacity: 1;
-  }
-  to {
-    transform: translateY(-24px) scale(0.95);
-    opacity: 0;
-  }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Peja dashboard background: subtle grid + purple glow */
-.peja-sec-bg {
-  position: relative;
-  isolation: isolate;
-}
-
-.peja-sec-bg::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background:
-    radial-gradient(600px 300px at 20% 10%, rgba(124, 58, 237, 0.22), transparent 60%),
-    radial-gradient(500px 260px at 80% 25%, rgba(239, 68, 68, 0.10), transparent 55%),
-    radial-gradient(800px 420px at 50% 90%, rgba(124, 58, 237, 0.16), transparent 60%),
-    linear-gradient(135deg, #020617 0%, #0f172a 45%, #1e1033 100%);
-}
-
-.peja-sec-bg::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  opacity: 0.16;
-  background-image:
-    linear-gradient(rgba(167, 139, 250, 0.35) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(167, 139, 250, 0.35) 1px, transparent 1px);
-  background-size: 36px 36px;
-  mask-image: radial-gradient(circle at 50% 30%, black 0%, transparent 70%);
-}
 
 /* “Security panel” card style (slightly more premium than glass-card) */
 .sec-card {
@@ -951,35 +859,12 @@ input, textarea, select {
 }
 .pill-purple{ border-color: rgba(139,92,246,0.25); color: #c4b5fd; background: rgba(124,58,237,0.10);}
 .pill-red{ border-color: rgba(239,68,68,0.25); color: #fecaca; background: rgba(239,68,68,0.10);}
-.pill-green{ border-color: rgba(34,197,94,0.25); color: #bbf7d0; background: rgba(34,197,94,0.10);}
+
 
 /* Dashboard typography tuning */
 .hud-title{ font-weight: 700; letter-spacing: 0.2px; }
 .hud-subtitle{ color: rgba(226,232,240,0.70); font-size: 13px; }
 
-@keyframes sos-scan {
-  0%, 100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  50% {
-    transform: scale(1.1);
-    opacity: 0.8;
-  }
-}
-@keyframes sos-pulse-ring {
-  0% {
-    transform: scale(0.8);
-    opacity: 0;
-  }
-  50% {
-    opacity: 0.5;
-  }
-  100% {
-    transform: scale(2);
-    opacity: 0;
-  }
-}
 @keyframes sos-glow {
   0%, 100% {
     box-shadow: 0 0 20px rgba(239, 68, 68, 0.4),
@@ -1012,14 +897,7 @@ input, textarea, select {
                 0 0 60px rgba(239, 68, 68, 0.4);
   }
 }
-@keyframes sos-float {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-5px);
-  }
-}
+
 @keyframes sos-step-enter {
   from {
     opacity: 0;
@@ -1030,21 +908,8 @@ input, textarea, select {
     transform: translateY(0);
   }
 }
-.sos-loading-icon {
-  animation: sos-scan 1.5s ease-in-out infinite, sos-float 2s ease-in-out infinite;
-}
-.sos-loading-ring {
-  animation: sos-pulse-ring 1.5s ease-out infinite;
-}
-.sos-loading-glow {
-  animation: sos-glow 2s ease-in-out infinite;
-}
-.sos-success-glow {
-  animation: sos-success-glow 1.5s ease-in-out infinite;
-}
-.sos-error-glow {
-  animation: sos-error-glow 1.5s ease-in-out infinite;
-}
+
+
 .sos-step-text {
   animation: sos-step-enter 0.3s ease-out;
 }
@@ -1075,42 +940,10 @@ input, textarea, select {
   animation: bounce-in 0.25s ease-out forwards;
 }
 .animate-bounce-out {
-  animation: bounce-out 0.2s ease-in forwards;
+  animation: bounce-out 0.2s var(--ease-out) forwards;
 }
 
-/* =====================================================
-   MAP ROTATION & COMPASS STYLES
-   ===================================================== */
-.map-container-rotatable {
-  transition: transform 0.3s ease-out;
-  transform-origin: center center;
-}
-.compass-indicator {
-  transition: transform 0.3s ease-out;
-}
-/* =====================================================
-   DATA ANALYTICS PANEL STYLES
-   ===================================================== */
-@keyframes analytics-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.analytics-panel {
-  animation: analytics-slide-up 0.3s ease-out;
-}
-.analytics-hotspot-item {
-  transition: all 0.2s ease;
-}
-.analytics-hotspot-item:hover {
-  background: rgba(139, 92, 246, 0.1);
-  transform: translateX(4px);
-}
+
 /* =====================================================
    HELPER MARKER STYLES
    ===================================================== */
@@ -1125,42 +958,7 @@ input, textarea, select {
 .helper-marker {
   animation: helper-pulse 2s infinite;
 }
-/* =====================================================
-   SMOOTH USER LOCATION MARKER
-   ===================================================== */
-.user-location-marker-smooth {
-  transition: transform 0.5s ease-out;
-}
-/* =====================================================
-   SOS MARKER ANIMATIONS
-   ===================================================== */
-@keyframes sos-marker-pulse {
-  0%, 100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.05);
-  }
-}
-.sos-marker-animated {
-  animation: sos-marker-pulse 2s ease-in-out infinite;
-}
-/* =====================================================
-   PROGRESS DOTS FOR LOADING
-   ===================================================== */
-.progress-dot {
-  transition: all 0.3s ease;
-}
-.progress-dot-active {
-  background: #ef4444;
-  transform: scale(1.2);
-}
-.progress-dot-complete {
-  background: #22c55e;
-}
-.progress-dot-pending {
-  background: rgba(255, 255, 255, 0.2);
-}
+
 
 /* Main loading card */
 .sos-loading-card {
@@ -1182,11 +980,9 @@ input, textarea, select {
 }
 .sos-icon-container.success .sos-icon-glow {
   background: rgba(34, 197, 94, 0.4);
-  animation: sos-glow-success 2s ease-in-out infinite;
 }
 .sos-icon-container.failed .sos-icon-glow {
   background: rgba(239, 68, 68, 0.4);
-  animation: sos-glow-failed 2s ease-in-out infinite;
 }
 /* Glow effect behind icon */
 .sos-icon-glow {
@@ -1203,14 +999,7 @@ input, textarea, select {
 .sos-icon-glow.failed {
   background: rgba(239, 68, 68, 0.4);
 }
-/* Outer ring animation */
-.sos-icon-outer-ring {
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-  border: 2px solid rgba(124, 58, 237, 0.3);
-  animation: sos-ring-pulse 2s ease-in-out infinite;
-}
+
 /* Inner icon circle */
 .sos-icon-inner {
   position: relative;
@@ -1222,7 +1011,6 @@ input, textarea, select {
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: sos-icon-float 3s ease-in-out infinite;
 }
 .sos-icon-container.success .sos-icon-inner {
   background: rgba(34, 197, 94, 0.15);
@@ -1233,26 +1021,41 @@ input, textarea, select {
   border-color: rgba(239, 68, 68, 0.4);
 }
 /* Step text fade animation */
-.sos-step-text {
-  animation: sos-text-fade 0.5s ease-out;
-}
 /* Progress dots */
 .sos-progress-dot {
+  /* These dots were defined THREE times in this file with different base
+     and .active colours. The browser resolved it per property, so the dot
+     on screen was a blend of all three blocks and no single one described
+     it. Consolidated here, keeping the declarations that were winning. */
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.15);
-  transition: all 0.3s ease;
+  background: rgba(139, 92, 246, 0.2);
+  /* Named rather than `all`: only the fill and the glow ever change, and
+     `all` was also watching width, height and border-radius. */
+  transition: background-color 0.3s var(--ease-out),
+    box-shadow 0.3s var(--ease-out);
+}
+.sos-progress-dot.pending {
+  background: rgba(125, 117, 144, 0.5);
 }
 .sos-progress-dot.active {
-  background: #7c3aed;
-  box-shadow: 0 0 10px rgba(124, 58, 237, 0.5);
+  background: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 0 10px rgba(167, 139, 250, 0.8);
+  animation: dot-pulse 0.8s ease-in-out infinite;
+}
+.sos-progress-dot.done {
+  background: #22c55e;
+}
+.sos-progress-dot.current {
+  background: #8b5cf6;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6);
+  animation: sos-dot-pulse 1s ease-in-out infinite;
 }
 /* Notified count card (futuristic style) */
 .sos-notified-card {
   background: rgba(124, 58, 237, 0.1);
   backdrop-filter: blur(8px);
-  animation: sos-notified-appear 0.5s ease-out;
 }
 /* ============================================
    SOS BUTTON ACTIVE STATE (BLINKING)
@@ -1416,26 +1219,6 @@ input, textarea, select {
   }
 }
 
-.sos-progress-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  transition: all 0.3s ease;
-}
-
-.sos-progress-dot.pending {
-  background: rgba(100, 116, 139, 0.5);
-}
-
-.sos-progress-dot.active {
-  background: #a78bfa;
-  box-shadow: 0 0 10px rgba(167, 139, 250, 0.8);
-  animation: dot-pulse 0.8s ease-in-out infinite;
-}
-
-.sos-progress-dot.done {
-  background: #22c55e;
-}
 
 @keyframes dot-pulse {
   0%, 100% {
@@ -1450,7 +1233,7 @@ input, textarea, select {
    SMOOTH USER LOCATION MARKER
    ============================================ */
 .user-location-marker {
-  transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition: transform 0.5s var(--ease-out);
 }
 
 /* ============================================
@@ -1537,13 +1320,7 @@ body.modal-open {
   border-radius: 50%;
   animation: sos-glow-pulse 2s ease-in-out infinite;
 }
-.sos-icon-ring {
-  position: absolute;
-  inset: -4px;
-  border: 2px solid rgba(139, 92, 246, 0.3);
-  border-radius: 50%;
-  animation: sos-ring-spin 3s linear infinite;
-}
+
 .sos-icon-inner {
   position: relative;
   width: 64px;
@@ -1561,11 +1338,7 @@ body.modal-open {
 .sos-success-glow {
   background: radial-gradient(circle, rgba(34, 197, 94, 0.4) 0%, transparent 70%);
 }
-.sos-success-inner {
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.4);
-  animation: none;
-}
+
 /* Error State */
 .sos-error .sos-icon-glow,
 .sos-error-glow {
@@ -1576,42 +1349,10 @@ body.modal-open {
   border-color: rgba(239, 68, 68, 0.4);
   animation: none;
 }
-/* Notified Count */
-.sos-notified-count {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.sos-notified-number {
-  font-size: 3rem;
-  font-weight: 700;
-  color: #4ade80;
-  line-height: 1;
-  text-shadow: 0 0 30px rgba(34, 197, 94, 0.5);
-}
-.sos-notified-label {
-  font-size: 0.875rem;
-  color: rgba(226, 232, 240, 0.7);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
+
+
 /* Progress Dots */
-.sos-progress-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: rgba(139, 92, 246, 0.2);
-  transition: all 0.3s ease;
-}
-.sos-progress-dot.active {
-  background: rgba(139, 92, 246, 0.6);
-}
-.sos-progress-dot.current {
-  background: #8b5cf6;
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6);
-  animation: sos-dot-pulse 1s ease-in-out infinite;
-}
+
 /* Animations */
 @keyframes sos-glow-pulse {
   0%, 100% {
@@ -1623,19 +1364,7 @@ body.modal-open {
     transform: scale(1.1);
   }
 }
-@keyframes sos-ring-spin {
-  0% {
-    transform: rotate(0deg);
-    border-color: rgba(139, 92, 246, 0.3);
-  }
-  50% {
-    border-color: rgba(139, 92, 246, 0.6);
-  }
-  100% {
-    transform: rotate(360deg);
-    border-color: rgba(139, 92, 246, 0.3);
-  }
-}
+
 @keyframes sos-icon-pulse {
   0%, 100% {
     transform: scale(1);
@@ -1654,51 +1383,8 @@ body.modal-open {
     transform: scale(1.3);
   }
 }
-/* =====================================================
-   MAP - DATA ANALYTICS PANEL
-   ===================================================== */
-.analytics-panel {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 3000;
-  background: rgba(2, 6, 23, 0.98);
-  animation: analytics-slide-up 0.3s ease-out;
-}
-@keyframes analytics-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.analytics-hotspot-card {
-  background: rgba(30, 16, 51, 0.6);
-  border: 1px solid rgba(139, 92, 246, 0.15);
-  border-radius: 1rem;
-  padding: 1rem;
-  transition: all 0.2s ease;
-  cursor: pointer;
-}
-.analytics-hotspot-card:hover {
-  background: rgba(30, 16, 51, 0.8);
-  border-color: rgba(139, 92, 246, 0.3);
-}
-.analytics-hotspot-rank {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 0.875rem;
-}
+
+
 .analytics-hotspot-rank.rank-1 {
   background: rgba(239, 68, 68, 0.2);
   color: #f87171;
@@ -1719,42 +1405,8 @@ body.modal-open {
   color: #a78bfa;
   border: 1px solid rgba(139, 92, 246, 0.2);
 }
-.analytics-incident-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(226, 232, 240, 0.8);
-}
-/* =====================================================
-   MAP - COMPASS / ROTATION STYLES
-   ===================================================== */
-.map-container-rotated {
-  transition: transform 0.3s ease-out;
-}
-.compass-indicator {
-  position: absolute;
-  top: 4.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: rgba(30, 16, 51, 0.9);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  color: #a78bfa;
-}
-.compass-arrow {
-  transition: transform 0.2s ease-out;
-}
+
+
 /* =====================================================
    MAP - HELPER MARKER STYLES
    ===================================================== */
@@ -1778,61 +1430,7 @@ body.modal-open {
 .user-location-marker .direction-arrow {
   transition: transform 0.3s ease-out;
 }
-/* =====================================================
-   MAP - SOS MARKER ANIMATION
-   ===================================================== */
-.sos-marker-pulse {
-  animation: sos-marker-pulse 2s ease-in-out infinite;
-}
-@keyframes sos-marker-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
-  }
-  50% {
-    box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
-  }
-}
-/* =========================================
-   COMPASS INDICATOR STYLES
-   ========================================= */
-.compass-indicator {
-  position: relative;
-  width: 24px;
-  height: 24px;
-}
-.compass-needle {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 2px;
-  height: 12px;
-  background: linear-gradient(to bottom, #ef4444 50%, #ffffff 50%);
-  transform-origin: center bottom;
-  transform: translate(-50%, -100%);
-  transition: transform 0.3s ease-out;
-}
-/* Compass active indicator */
-.compass-active {
-  color: #a78bfa;
-}
-.compass-active::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  border: 2px solid rgba(167, 139, 250, 0.3);
-  animation: compass-ring 2s ease-in-out infinite;
-}
-@keyframes compass-ring {
-  0%, 100% {
-    opacity: 0.3;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(1.1);
-  }
-}
+
 
 /* ============================================
    PEJA LOGO MORPH ANIMATION (Peja <-> YouTube)
@@ -2011,103 +1609,6 @@ body.modal-open {
   border-top-color: var(--glass-strong-bg) !important;
 }
 
-@keyframes slide-down {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -20px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-.animate-slide-down {
-  animation: slide-down 0.3s ease-out;
-}
-
-/* ============================================
-   PEJA LOADING SCREEN ANIMATIONS
-   ============================================ */
-@keyframes peja-load-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-@keyframes peja-load-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-
-@keyframes peja-load-pulse-ring {
-  0%, 100% {
-    box-shadow: 0 0 40px rgba(34,197,94,0.12), 0 0 40px rgba(59,130,246,0.08), 0 0 40px rgba(192,38,211,0.08);
-    transform: scale(1);
-  }
-  50% {
-    box-shadow: 0 0 60px rgba(34,197,94,0.22), 0 0 60px rgba(59,130,246,0.16), 0 0 60px rgba(192,38,211,0.16);
-    transform: scale(1.03);
-  }
-}
-
-@keyframes peja-load-logo-pulse {
-  0%, 100% {
-    filter: drop-shadow(0 0 10px rgba(34,197,94,0.5))
-            drop-shadow(0 0 10px rgba(59,130,246,0.4))
-            drop-shadow(0 0 10px rgba(234,179,8,0.4))
-            drop-shadow(0 0 25px rgba(192,38,211,0.35));
-    transform: scale(1);
-  }
-  50% {
-    filter: drop-shadow(0 0 18px rgba(34,197,94,0.7))
-            drop-shadow(0 0 18px rgba(59,130,246,0.6))
-            drop-shadow(0 0 18px rgba(234,179,8,0.6))
-            drop-shadow(0 0 40px rgba(192,38,211,0.5));
-    transform: scale(1.04);
-  }
-}
-
-@keyframes peja-load-ambient {
-  0%, 100% {
-    opacity: 0.5;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.9;
-    transform: scale(1.15);
-  }
-}
-
-@keyframes peja-load-text-glow {
-  0%, 100% {
-    filter: drop-shadow(0 0 20px rgba(139,92,246,0.5));
-  }
-  50% {
-    filter: drop-shadow(0 0 35px rgba(139,92,246,0.8))
-            drop-shadow(0 0 60px rgba(167,139,250,0.3));
-  }
-}
-
-@keyframes peja-load-dot {
-  0%, 80%, 100% {
-    opacity: 0.3;
-    transform: scale(0.7);
-  }
-  40% {
-    opacity: 1;
-    transform: scale(1.4);
-  }
-}
-
-@keyframes peja-wifi-fade {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 0.25; }
-}
-
-@keyframes peja-status-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
-}
 
 html.capacitor-native .fixed.top-0:not(header),
 html.capacitor-native header.fixed:not([data-admin-nav]) {
@@ -2213,134 +1714,6 @@ html.capacitor-native .cap-status-pad {
   }
 }
 
-/* ============================================
-   DM CHAT STYLES
-   ============================================ */
-.dm-bubble-sent {
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.4), rgba(109, 40, 217, 0.35));
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 18px 18px 4px 18px;
-}
-
-.dm-bubble-received {
-  background: rgba(30, 16, 51, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 18px 18px 18px 4px;
-}
-
-.dm-input-bar {
-  background: rgba(20, 10, 40, 0.95);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-top: 1px solid rgba(139, 92, 246, 0.2);
-}
-
-/* Message link detection styling */
-.dm-message-content a {
-  color: #a78bfa;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.dm-message-content a:hover {
-  color: #c4b5fd;
-}
-
-/* Rich text formatting in messages */
-.dm-message-content strong,
-.dm-message-content b {
-  font-weight: 600;
-  color: #f1f5f9;
-}
-
-.dm-message-content em,
-.dm-message-content i {
-  font-style: italic;
-}
-
-.dm-message-content ul {
-  list-style-type: disc;
-  padding-left: 1.25rem;
-  margin: 4px 0;
-}
-
-.dm-message-content ol {
-  list-style-type: decimal;
-  padding-left: 1.25rem;
-  margin: 4px 0;
-}
-
-/* Read receipt icons */
-.dm-read-sent {
-  color: rgba(148, 163, 184, 0.6);
-}
-
-.dm-read-seen {
-  color: #a78bfa;
-}
-
-/* Profile drop-up menu */
-.profile-dropup {
-  animation: dropup-enter 200ms ease-out;
-  transform-origin: bottom center;
-}
-
-@keyframes dropup-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-/* Typing indicator animation */
-.typing-dot {
-  animation: typing-bounce 1.4s ease-in-out infinite;
-}
-
-.typing-dot:nth-child(1) { animation-delay: 0s; }
-.typing-dot:nth-child(2) { animation-delay: 0.2s; }
-.typing-dot:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typing-bounce {
-  0%, 60%, 100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  30% {
-    transform: translateY(-6px);
-    opacity: 1;
-  }
-}
-
-/* Emoji picker container */
-.emoji-picker-container {
-  animation: emoji-slide-up 200ms ease-out;
-}
-
-@keyframes emoji-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* Format toolbar */
-.format-toolbar {
-  animation: format-fade-in 150ms ease-out;
-}
-
-@keyframes format-fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
 
 /* =====================================================
    CONTENTEDITABLE EDITOR STYLES
@@ -2364,32 +1737,13 @@ html.capacitor-native .cap-status-pad {
   outline: none;
 }
 
-/* =====================================================
-   BUTTON BOUNCE ANIMATIONS
-   ===================================================== */
-@keyframes bounce-click {
-  0% { transform: scale(1); }
-  50% { transform: scale(0.92); }
-  100% { transform: scale(1); }
-}
 
-.btn-bounce:active {
-  animation: bounce-click 150ms ease-out;
-}
-
-/* =====================================================
-   SLIDE UP ANIMATION (emoji picker)
-   ===================================================== */
-@keyframes slideUp {
-  from {
-    transform: translateY(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
+/* A second @keyframes slideUp used to live here for the emoji picker. It
+   redefined the name with translateY(100%), and because it came later in
+   the file it silently won for EVERY consumer — the three notification
+   popups asking for the subtle 20px rise defined at the top of this file
+   were getting a full-height slide instead. The emoji picker never
+   referenced it, so it is gone. Keep keyframe names unique. */
 
 /* =====================================================
    PURPLE GLOW FOR READ RECEIPTS
@@ -2406,34 +1760,6 @@ html.capacitor-native .cap-status-pad {
   to { opacity: 1; }
 }
 
-@keyframes fadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@keyframes suck-in {
-  0% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  40% {
-    transform: scale(1.05);
-    opacity: 0.9;
-  }
-  100% {
-    transform: scale(0) rotate(10deg);
-    opacity: 0;
-    filter: blur(2px);
-  }
-}
-.animate-suck-in {
-  animation: suck-in 0.3s cubic-bezier(0.55, 0.06, 0.68, 0.19) forwards;
-}
-
-@keyframes zoomIn95 {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
 
 @keyframes slideInFromRight {
   from { transform: translateX(100%); }
@@ -2445,10 +1771,6 @@ html.capacitor-native .cap-status-pad {
   to { transform: translateY(0); opacity: 1; }
 }
 
-@keyframes slideInFromBottom2 {
-  from { transform: translateY(8px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
 
 .animate-in {
   animation-fill-mode: both;
@@ -2458,13 +1780,6 @@ html.capacitor-native .cap-status-pad {
   animation-name: fadeIn;
 }
 
-.zoom-in-95 {
-  animation-name: zoomIn95;
-}
-
-.zoom-in-90 {
-  animation-name: fadeIn, zoomIn95;
-}
 
 .slide-in-from-right {
   animation-name: slideInFromRight;
@@ -2474,9 +1789,6 @@ html.capacitor-native .cap-status-pad {
   animation-name: slideInFromTop2;
 }
 
-.slide-in-from-bottom-2 {
-  animation-name: slideInFromBottom2;
-}
 
 .duration-150 {
   animation-duration: 150ms;
@@ -2572,13 +1884,6 @@ html.capacitor-native {
   /* iOS detection - do nothing extra */
 }
 
-/* Ensure keyboard doesn't cover inputs on ALL Android devices */
-.keyboard-aware-container {
-  padding-bottom: max(
-    var(--keyboard-height, 0px),
-    env(safe-area-inset-bottom, 0px)
-  );
-}
 
 /* Post detail page: dynamic bottom padding */
 .post-detail-messages {
@@ -2597,283 +1902,6 @@ body.keyboard-open .post-detail-messages {
   padding-bottom: 8rem;
 }
 
-/* Ensure inputs stay visible - handled by Android adjustResize */
-/* No transform needed since adjustResize already shrinks the viewport */
-
-/* =====================================================
-   VOICE NOTE ANIMATIONS & STYLES
-   ===================================================== */
-
-/* Voice note waveform bar animation during playback */
-@keyframes waveform-pulse {
-  0%, 100% {
-    transform: scaleY(1);
-  }
-  50% {
-    transform: scaleY(1.15);
-  }
-}
-
-.waveform-bar-active {
-  animation: waveform-pulse 0.3s ease-in-out;
-}
-
-/* Recording pulse animation */
-@keyframes recording-pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(1.1);
-  }
-}
-
-.recording-indicator {
-  animation: recording-pulse 1s ease-in-out infinite;
-}
-
-/* Live waveform bar animation */
-@keyframes waveform-live {
-  0%, 100% {
-    transform: scaleY(0.3);
-  }
-  50% {
-    transform: scaleY(1);
-  }
-}
-
-.waveform-bar-live {
-  animation: waveform-live 0.15s ease-in-out infinite;
-  animation-delay: calc(var(--bar-index, 0) * 0.02s);
-}
-
-/* Voice note container styles */
-.voice-note-container {
-  position: relative;
-  border-radius: 1rem;
-  overflow: hidden;
-}
-
-.voice-note-container::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.05) 0%,
-    transparent 50%
-  );
-  pointer-events: none;
-}
-
-/* Voice note play button glow */
-.voice-note-play-btn {
-  position: relative;
-  transition: all 0.2s ease;
-}
-
-.voice-note-play-btn::after {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(139, 92, 246, 0.3) 0%,
-    transparent 70%
-  );
-  opacity: 0;
-  transition: opacity 0.2s ease;
-}
-
-.voice-note-play-btn:hover::after {
-  opacity: 1;
-}
-
-.voice-note-play-btn:active {
-  transform: scale(0.95);
-}
-
-/* Recording waveform container */
-.recording-waveform {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 32px;
-}
-
-.recording-waveform-bar {
-  width: 3px;
-  border-radius: 2px;
-  background: #ef4444;
-  transition: height 0.1s ease-out;
-  min-height: 4px;
-}
-
-/* =====================================================
-   MESSAGE BUBBLE ANIMATIONS
-   ===================================================== */
-
-/* Message send animation */
-@keyframes message-send {
-  0% {
-    opacity: 0;
-    transform: translateY(10px) scale(0.95);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.message-bubble-send {
-  animation: message-send 0.2s ease-out;
-}
-
-/* Message receive animation */
-@keyframes message-receive {
-  0% {
-    opacity: 0;
-    transform: translateX(-10px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.message-bubble-receive {
-  animation: message-receive 0.2s ease-out;
-}
-
-/* Message highlight animation (for scrolling to replied message) */
-@keyframes message-highlight {
-  0% {
-    background-color: rgba(139, 92, 246, 0.3);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-
-.message-highlighted {
-  animation: message-highlight 2s ease-out;
-  border-radius: 1rem;
-}
-
-/* =====================================================
-   RECORDING STATUS INDICATOR (Header)
-   ===================================================== */
-
-/* Recording status in chat header */
-.recording-status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 8px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 999px;
-  animation: recording-status-pulse 2s ease-in-out infinite;
-}
-
-@keyframes recording-status-pulse {
-  0%, 100% {
-    border-color: rgba(239, 68, 68, 0.3);
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-  }
-  50% {
-    border-color: rgba(239, 68, 68, 0.6);
-    box-shadow: 0 0 8px 0 rgba(239, 68, 68, 0.2);
-  }
-}
-
-.recording-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #ef4444;
-  animation: recording-pulse 1s ease-in-out infinite;
-}
-
-.recording-status-text {
-  font-size: 11px;
-  font-weight: 500;
-  color: #f87171;
-}
-
-/* =====================================================
-   VOICE NOTE WAVEFORM STYLES
-   ===================================================== */
-
-/* Waveform progress track */
-.waveform-track {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 32px;
-  cursor: pointer;
-  padding: 4px 0;
-}
-
-.waveform-track:hover .waveform-bar {
-  opacity: 0.9;
-}
-
-/* Individual waveform bar */
-.waveform-bar {
-  width: 3px;
-  border-radius: 2px;
-  transition: all 0.1s ease;
-  min-height: 4px;
-}
-
-.waveform-bar-inactive {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.waveform-bar-active-mine {
-  background: rgba(255, 255, 255, 0.9);
-}
-
-.waveform-bar-active-theirs {
-  background: #a78bfa;
-}
-
-/* =====================================================
-   UPLOAD PROGRESS ANIMATION
-   ===================================================== */
-
-@keyframes upload-progress-shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.upload-progress-bar {
-  position: relative;
-  overflow: hidden;
-  background: rgba(139, 92, 246, 0.3);
-}
-
-.upload-progress-bar::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.2),
-    transparent
-  );
-  background-size: 200% 100%;
-  animation: upload-progress-shimmer 1.5s linear infinite;
-}
 
 /* =====================================================
    MESSAGE INPUT VOICE MODE
@@ -2885,81 +1913,6 @@ body.keyboard-open .post-detail-messages {
   background: rgba(239, 68, 68, 0.05) !important;
 }
 
-/* Mic button recording state */
-
-/* =====================================================
-   CONTEXT MENU BOUNCE ANIMATIONS
-   ===================================================== */
-@keyframes context-menu-bounce-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.8);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.04);
-  }
-  75% {
-    transform: scale(0.98);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes context-menu-bounce-out {
-  0% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(0.85);
-  }
-}
-
-@keyframes context-menu-backdrop-in {
-  0% { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-@keyframes context-menu-backdrop-out {
-  0% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
-/* =====================================================
-   PEJA 4-CIRCLE ORBITAL SPINNER
-   ===================================================== */
-@keyframes peja-orbit-cw {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes peja-orbit-ccw {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(-360deg);
-  }
-}
-
-@keyframes peja-spinner-depth {
-  0%, 100% {
-    transform: translateX(-50%) scale(0.6);
-    opacity: 0.65;
-  }
-  50% {
-    transform: translateX(-50%) scale(1.15);
-    opacity: 1;
-  }
-}
 
 /* ===== LIQUID GLASS ADDITIONS ===== */
 /* Add these to your globals.css */
@@ -2967,26 +1920,6 @@ body.keyboard-open .post-detail-messages {
 /* Smooth spring-like transition for the nav indicator */
 .duration-400 {
   transition-duration: 400ms;
-}
-
-/* Liquid glass nav bar */
-.liquid-nav {
-  background: rgba(18, 10, 35, 0.55);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4),
-    inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
-}
-
-/* Liquid glass header */
-.liquid-header {
-  background: rgba(18, 10, 35, 0.55);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3),
-    inset 0 0.5px 0 rgba(255, 255, 255, 0.06);
 }
 
 
@@ -3049,45 +1982,6 @@ video {
   object-fit: cover;
 }
 
-/* Peja button pulse animations */
-@keyframes peja-pulse-red {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
-    border-color: rgba(239, 68, 68, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0), 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(239, 68, 68, 0.3);
-    border-color: rgba(239, 68, 68, 0.8);
-  }
-}
-@keyframes peja-pulse-green {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
-    border-color: rgba(34, 197, 94, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0), 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(34, 197, 94, 0.3);
-    border-color: rgba(34, 197, 94, 0.8);
-  }
-}
-@keyframes peja-pulse-dual {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
-    border-color: rgba(239, 68, 68, 0.5);
-  }
-  25% {
-    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0), 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(239, 68, 68, 0.3);
-    border-color: rgba(239, 68, 68, 0.8);
-  }
-  50% {
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
-    border-color: rgba(34, 197, 94, 0.5);
-  }
-  75% {
-    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0), 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(34, 197, 94, 0.3);
-    border-color: rgba(34, 197, 94, 0.8);
-  }
-}
 
 /* Hide scrollbar globally */
 *, *::before, *::after {
@@ -3107,12 +2001,12 @@ video {
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 .beacon-step-in {
-  animation: beacon-step-in 0.5s cubic-bezier(0.32, 0.72, 0, 1) both;
+  animation: beacon-step-in 0.5s var(--ease-sheet) both;
 }
 /* Staggered children reveal (add inline animation-delay). */
 .beacon-stagger {
   opacity: 0;
-  animation: beacon-step-in 0.55s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  animation: beacon-step-in 0.55s var(--ease-sheet) forwards;
 }
 
 /* Radar rings while searching for the device connection. */
@@ -3122,7 +2016,7 @@ video {
   100% { transform: scale(2.4); opacity: 0; }
 }
 .beacon-radar-ring {
-  animation: beacon-radar 2.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite;
+  animation: beacon-radar 2.4s var(--ease-out) infinite;
 }
 
 /* Gentle breathing for the device glyph during connect. */
@@ -3136,24 +2030,24 @@ video {
    set inline via strokeDasharray/-offset; these just run the draw. */
 @keyframes beacon-draw { to { stroke-dashoffset: 0; } }
 .beacon-draw-circle {
-  animation: beacon-draw 0.6s cubic-bezier(0.65, 0, 0.35, 1) 0.1s forwards;
+  animation: beacon-draw 0.6s var(--ease-in-out) 0.1s forwards;
 }
 .beacon-draw-check {
-  animation: beacon-draw 0.35s cubic-bezier(0.65, 0, 0.35, 1) 0.65s forwards;
+  animation: beacon-draw 0.35s var(--ease-in-out) 0.65s forwards;
 }
 @keyframes beacon-pop {
   0%   { transform: scale(0.6); opacity: 0; }
   60%  { transform: scale(1.06); opacity: 1; }
   100% { transform: scale(1); opacity: 1; }
 }
-.beacon-pop { animation: beacon-pop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.beacon-pop { animation: beacon-pop 0.55s var(--ease-spring) both; }
 
 /* One-shot celebratory ring burst behind the success check. */
 @keyframes beacon-burst {
   0%   { transform: scale(0.6); opacity: 0.5; }
   100% { transform: scale(1.9); opacity: 0; }
 }
-.beacon-burst { animation: beacon-burst 0.9s cubic-bezier(0.25, 0.46, 0.45, 0.94) 0.6s both; }
+.beacon-burst { animation: beacon-burst 0.9s var(--ease-out) 0.6s both; }
 
 /* Live status dot on the dashboard. */
 @keyframes beacon-live {
@@ -3188,26 +2082,6 @@ video {
 :root[data-theme="light"] .beacon-bad-text { color: #b91c1c; }
 :root[data-theme="light"] .beacon-wait-text { color: #b45309; }
 
-/* Bottom-sheet entrance/exit for the SOS + SML panels: they are sheets
-   now (drag-to-dismiss), so they SLIDE from the bottom edge with the
-   house spring instead of the old scale/fade bounce. Exit is 0.2s to
-   finish inside the components' 200ms close timers. */
-@keyframes sheet-slide-in {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
-}
-@keyframes sheet-slide-out {
-  to { transform: translateY(110%); }
-}
-.animate-sheet-in {
-  /* backwards (not both): once the entrance finishes, transform control
-     must return to the inline style so drag-to-dismiss can move the
-     panel. A forwards fill would pin translateY(0) over the drag. */
-  animation: sheet-slide-in 0.45s cubic-bezier(0.32, 0.72, 0, 1) backwards;
-}
-.animate-sheet-out {
-  animation: sheet-slide-out 0.2s cubic-bezier(0.32, 0.72, 0, 1) both;
-}
 
 /* Sheet drag handle: theme-aware so it's visible on BOTH the dark glass
    and the light cream sheet surfaces (bg-white/25 vanished on white). */
@@ -3216,4 +2090,262 @@ video {
 }
 :root[data-theme="light"] .sheet-handle {
   background: rgba(0, 0, 0, 0.22);
+}
+
+/* Live recording waveform. Every bar animates on the compositor with its
+   own period, so the row keeps drifting instead of marching in step. This
+   replaced a 70ms setInterval that re-rendered the whole recorder about 14
+   times a second, on the one screen where the mic encoder is already
+   running and the user is holding a finger down. */
+@keyframes vrb-wave {
+  from { transform: scaleY(0.22); }
+  to { transform: scaleY(1); }
+}
+.vrb-wave-bar {
+  height: 100%;
+  background: #b39df8;
+  opacity: 0.85;
+  transform-origin: center;
+  will-change: transform;
+  animation: vrb-wave calc(460ms + var(--i) * 43ms) ease-in-out infinite
+    alternate;
+  /* Negative delay starts each bar part-way through its cycle, so the row
+     is already alive on the first frame instead of rising together. */
+  animation-delay: calc(var(--i) * -97ms);
+}
+
+@layer utilities {
+  /* Replaces `transition-all`. `all` animates every animatable property,
+     including layout ones like width/height/top/left, which run off the
+     GPU and drop frames on the low-end Android hardware this app targets.
+     This names the properties a UI control actually changes. Pair it with
+     Tailwind's duration-* utilities as before. */
+  .transition-ui {
+    transition-property: color, background-color, border-color, outline-color,
+      box-shadow, opacity, transform, filter;
+    transition-timing-function: var(--ease-out);
+    transition-duration: 200ms;
+  }
+}
+
+/* =====================================================
+   PRESS FEEDBACK TIMING
+   =====================================================
+   Every pressable in the app now declares the same depth
+   (active:scale-[0.97]). This gives that scale a consistent duration and
+   curve even on elements that never had a transition utility, where the
+   press used to snap instantly between two sizes.
+
+   It sits in @layer base ON PURPOSE: Tailwind's own transition-*
+   utilities live in the later `utilities` layer, so any element that
+   already declares its own transition keeps it and this rule only fills
+   the gap. */
+@layer base {
+  [class*="active:scale-"] {
+    transition-property: transform;
+    transition-duration: var(--press-duration);
+    transition-timing-function: var(--ease-out);
+  }
+}
+
+/* =====================================================
+   REDUCED MOTION
+   =====================================================
+   Reduced motion means LESS movement, not no feedback. Someone who
+   turns this on still has to be able to tell that an SOS is live, that
+   a contact is online, or that a screen is loading — in this app those
+   signals carry safety meaning, so freezing everything would be worse
+   than the motion.
+
+   The rule: position and scale go, opacity and colour stay.
+   Movement-carrying transitions collapse to a colour/opacity crossfade,
+   looping decoration stops on its first frame, and the handful of
+   indicators that MEAN something keep a slow opacity-only pulse. */
+
+@keyframes peja-reduced-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* Looping/decorative animation stops after one pass. */
+    animation-iteration-count: 1 !important;
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    /* Keep the transition, drop the movement: only properties that
+       change appearance rather than position are still animated. */
+    transition-property: opacity, color, background-color, border-color,
+      box-shadow, fill, stroke !important;
+    transition-duration: 140ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Live-state indicators: still animated, but opacity only. Without
+     these an active SOS would look identical to a dismissed one. */
+  .sos-button-active,
+  .sos-glow-ring,
+  .sos-avatar-glow,
+  .helper-glow-ring,
+  .helper-marker,
+  .online-dot-pulse,
+  .beacon-live-dot,
+  .sos-progress-dot.active,
+  .sos-progress-dot.current,
+  .skeleton {
+    animation: peja-reduced-pulse 2s ease-in-out infinite !important;
+    animation-iteration-count: infinite !important;
+    animation-duration: 2s !important;
+    transform: none !important;
+  }
+}
+
+
+/* Keyframes referenced from component files (inline style / animate-[...]
+   utilities). They have no CSS class of their own, which is why the
+   dead-code sweep could not see them. */
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes peja-load-ambient {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.15);
+  }
+}
+@keyframes peja-load-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes peja-load-pulse-ring {
+  0%, 100% {
+    box-shadow: 0 0 40px rgba(34,197,94,0.12), 0 0 40px rgba(59,130,246,0.08), 0 0 40px rgba(192,38,211,0.08);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 60px rgba(34,197,94,0.22), 0 0 60px rgba(59,130,246,0.16), 0 0 60px rgba(192,38,211,0.16);
+    transform: scale(1.03);
+  }
+}
+@keyframes peja-load-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes peja-load-text-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 20px rgba(139,92,246,0.5));
+  }
+  50% {
+    filter: drop-shadow(0 0 35px rgba(139,92,246,0.8))
+            drop-shadow(0 0 60px rgba(167,139,250,0.3));
+  }
+}
+@keyframes peja-orbit-ccw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+@keyframes peja-orbit-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes peja-pulse-dual {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+  25% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0), 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
+    border-color: rgba(34, 197, 94, 0.5);
+  }
+  75% {
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0), 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(34, 197, 94, 0.3);
+    border-color: rgba(34, 197, 94, 0.8);
+  }
+}
+@keyframes peja-pulse-green {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
+    border-color: rgba(34, 197, 94, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0), 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(34, 197, 94, 0.3);
+    border-color: rgba(34, 197, 94, 0.8);
+  }
+}
+@keyframes peja-pulse-red {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.5), 0 4px 16px rgba(0, 0, 0, 0.3);
+    border-color: rgba(239, 68, 68, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0), 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.8);
+  }
+}
+@keyframes peja-spinner-depth {
+  0%, 100% {
+    transform: translateX(-50%) scale(0.6);
+    opacity: 0.65;
+  }
+  50% {
+    transform: translateX(-50%) scale(1.15);
+    opacity: 1;
+  }
+}
+@keyframes peja-status-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+@keyframes peja-wifi-fade {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.25; }
+}
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes toastIn {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0px);
+    opacity: 1;
+  }
+}
+@keyframes toastOut {
+  from {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-24px) scale(0.95);
+    opacity: 0;
+  }
 }

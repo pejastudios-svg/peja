@@ -165,7 +165,7 @@ export function MessageActionMenu({
                       onReact(emoji);
                       onClose();
                     }}
-                    className={`w-9 h-9 rounded-full flex items-center justify-center text-xl active:scale-95 transition-transform ${
+                    className={`w-9 h-9 rounded-full flex items-center justify-center text-xl active:scale-[0.97] transition-transform ${
                       mine ? "bg-primary-500/25 ring-1 ring-primary-400" : ""
                     }`}
                     aria-label={`React ${emoji}`}
@@ -198,7 +198,7 @@ export function MessageActionMenu({
                         onReact(emoji);
                         onClose();
                       }}
-                      className={`w-9 h-9 rounded-full flex items-center justify-center text-xl active:scale-95 transition-transform ${
+                      className={`w-9 h-9 rounded-full flex items-center justify-center text-xl active:scale-[0.97] transition-transform ${
                         mine ? "bg-primary-500/25 ring-1 ring-primary-400" : ""
                       }`}
                       aria-label={`React ${emoji}`}

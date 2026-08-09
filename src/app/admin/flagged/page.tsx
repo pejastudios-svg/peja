@@ -449,7 +449,7 @@ const handleReviewAction = async (action: "approve" | "blur" | "remove") => {
                 <div
                   key={item.id}
                   onClick={() => { setSelected(item); setMediaIndex(0); setShowModal(true); }}
-                  className="hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-all flex items-start gap-4 group relative overflow-hidden"
+                  className="hud-panel p-4 cursor-pointer hover:border-primary-500/30 transition-ui flex items-start gap-4 group relative overflow-hidden"
                 >
                   <div className={`absolute left-0 top-0 bottom-0 w-1 ${
                     item.status === "escalated" ? "bg-orange-500" :

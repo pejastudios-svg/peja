@@ -2540,7 +2540,7 @@ export default function ThreadV2Page() {
         <button
           type="button"
           onClick={() => scrollToBottom(true)}
-          className="absolute right-3 z-30 flex items-center justify-center w-12 h-12 rounded-full bg-[var(--chat-other-bg)] shadow-lg ring-1 ring-[var(--chat-input-border)] active:scale-95 transition-transform peja-pop-in"
+          className="absolute right-3 z-30 flex items-center justify-center w-12 h-12 rounded-full bg-[var(--chat-other-bg)] shadow-lg ring-1 ring-[var(--chat-input-border)] active:scale-[0.97] transition-transform peja-pop-in"
           style={{
             // Sit just above the composer / blocked banner.
             bottom: "calc(env(safe-area-inset-bottom, 0px) + 78px)",
@@ -2647,7 +2647,7 @@ export default function ThreadV2Page() {
                 <button
                   type="button"
                   onClick={handleAttachClick}
-                  className="shrink-0 w-10 h-10 rounded-full bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] text-dark-200 flex items-center justify-center hover:bg-[var(--chat-input-hover)] active:scale-90 transition-all"
+                  className="shrink-0 w-10 h-10 rounded-full bg-[var(--chat-input-bg)] border border-[var(--chat-input-border)] text-dark-200 flex items-center justify-center hover:bg-[var(--chat-input-hover)] active:scale-[0.97] transition-ui"
                   aria-label="Attach file"
                 >
                   <Paperclip className="w-5 h-5" />
@@ -2833,7 +2833,7 @@ export default function ThreadV2Page() {
               type="button"
               onClick={() => void handleSubmitEdit()}
               disabled={!draft.trim()}
-              className="shrink-0 w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center disabled:opacity-50 active:scale-90 transition-transform"
+              className="shrink-0 w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center disabled:opacity-50 active:scale-[0.97] transition-transform"
               aria-label="Save edit"
             >
               <Check className="w-4 h-4" />
@@ -2880,7 +2880,7 @@ export default function ThreadV2Page() {
                   disabled={
                     !(draft.trim().length > 0 || pendingFiles.length > 0)
                   }
-                  className={`absolute inset-0 rounded-full bg-primary-600 text-white flex items-center justify-center transition-all duration-200 ease-out ${
+                  className={`absolute inset-0 rounded-full bg-primary-600 text-white flex items-center justify-center transition-ui duration-200 ease-out ${
                     draft.trim().length > 0 || pendingFiles.length > 0
                       ? "opacity-100 scale-100 rotate-0 pointer-events-auto"
                       : "opacity-0 scale-50 -rotate-180 pointer-events-none"
@@ -3322,7 +3322,7 @@ function MessageBubbleWrapper({
               })`,
               transition:
                 dragX === 0
-                  ? "opacity 180ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1), background-color 150ms, color 150ms"
+                  ? "opacity 180ms ease, transform 220ms var(--ease-spring), background-color 150ms, color 150ms"
                   : "background-color 150ms, color 150ms",
             }}
           >
@@ -3380,7 +3380,7 @@ function MessageBubbleWrapper({
             isMine ? "left-1.5" : "right-1.5"
           } w-6 h-6 rounded-full flex items-center justify-center opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity ${
             isMine
-              ? "bg-white/25 text-white hover:bg-white/35"
+              ? "bg-[var(--surface-3)] text-white hover:bg-white/35"
               : "bg-black/15 text-dark-200 hover:bg-black/25"
           }`}
           aria-label="Message options"
@@ -3505,7 +3505,7 @@ function PendingThumb({
       <button
         type="button"
         onClick={onRemove}
-        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/80 border border-white/20 text-white flex items-center justify-center"
+        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/80 border border-[var(--hairline-strong)] text-white flex items-center justify-center"
         aria-label="Remove"
       >
         <X className="w-3 h-3" />

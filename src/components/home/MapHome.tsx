@@ -917,7 +917,7 @@ export default function MapHome() {
     transition:
       sheetLiveTop != null
         ? "none"
-        : `opacity 0.45s cubic-bezier(0.32, 0.72, 0, 1), transform 0.45s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s linear ${topFade > 0.97 ? "0.45s" : "0s"}`,
+        : `opacity 0.45s var(--ease-sheet), transform 0.45s var(--ease-sheet), visibility 0s linear ${topFade > 0.97 ? "0.45s" : "0s"}`,
     visibility: topFade > 0.97 ? ("hidden" as const) : ("visible" as const),
   };
 
@@ -1068,7 +1068,7 @@ export default function MapHome() {
                   flyTo(m.lat as number, m.lng as number);
                   setSelectedMember(m);
                 }}
-                className="flex flex-col items-center active:scale-90 transition-transform"
+                className="flex flex-col items-center active:scale-[0.97] transition-transform"
               >
                 {/* honesty halo: a coarse fix renders as "somewhere in this
                     area", sized to the REAL reported accuracy at the
@@ -1196,7 +1196,7 @@ export default function MapHome() {
           <Marker key={p.id} latitude={p.lat} longitude={p.lng} anchor="center">
             <button
               onClick={() => router.push(`/post/${p.id}`)}
-              className="active:scale-75 transition-transform"
+              className="active:scale-[0.97] transition-transform"
               aria-label="View incident"
             >
               <span className="relative block w-7 h-7">
@@ -1221,7 +1221,7 @@ export default function MapHome() {
       >
         <button
           onClick={() => router.push("/profile")}
-          className="pointer-events-auto w-11 h-11 rounded-full overflow-hidden border border-white/20 shadow-lg bg-dark-800 active:scale-90 transition-transform"
+          className="pointer-events-auto w-11 h-11 rounded-full overflow-hidden border border-[var(--hairline-strong)] shadow-lg bg-dark-800 active:scale-[0.97] transition-transform"
           aria-label="Profile"
         >
           {user?.avatar_url ? (
@@ -1234,7 +1234,7 @@ export default function MapHome() {
         </button>
         <button
           onClick={() => router.push("/notifications")}
-          className="pointer-events-auto relative w-11 h-11 rounded-full flex items-center justify-center border border-white/20 shadow-lg bg-dark-800 active:scale-90 transition-transform"
+          className="pointer-events-auto relative w-11 h-11 rounded-full flex items-center justify-center border border-[var(--hairline-strong)] shadow-lg bg-dark-800 active:scale-[0.97] transition-transform"
           aria-label="Notifications"
         >
           <Bell className="w-5 h-5 text-dark-100" />
@@ -1279,7 +1279,7 @@ export default function MapHome() {
         // glide together; disabled mid-drag so they track the finger 1:1.
         const ctlTransition = dragging
           ? "none"
-          : "bottom 0.45s cubic-bezier(0.32, 0.72, 0, 1)";
+          : "bottom 0.45s var(--ease-sheet)";
         const surface: React.CSSProperties = {
           background: "var(--glass-float-bg)",
           border: "1px solid var(--glass-border)",
@@ -1291,7 +1291,7 @@ export default function MapHome() {
             <button
               onClick={() => setShowAnalytics(true)}
               aria-label="Area insights"
-              className="absolute left-4 w-11 h-11 rounded-full flex items-center justify-center active:scale-90"
+              className="absolute left-4 w-11 h-11 rounded-full flex items-center justify-center active:scale-[0.97]"
               // "transform 0.15s, none" is INVALID CSS (none can't join a
               // transition list); the browser silently kept the old 0.45s
               // bottom transition mid-drag, making this button lag behind
@@ -1310,7 +1310,7 @@ export default function MapHome() {
               <button
                 onClick={toggleCompass}
                 aria-label="Compass"
-                className={`w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform ${compassOn ? "bg-primary-600" : ""}`}
+                className={`w-11 h-11 rounded-full flex items-center justify-center active:scale-[0.97] transition-transform ${compassOn ? "bg-primary-600" : ""}`}
                 style={compassOn ? { boxShadow: "var(--glass-shadow-float)" } : surface}
               >
                 <Compass className={`w-5 h-5 ${compassOn ? "text-white" : "beacon-accent-text"}`} />
@@ -1323,7 +1323,7 @@ export default function MapHome() {
                     flyTo(center.lat, center.lng, 16);
                   }}
                   aria-label="Center on me"
-                  className="w-11 h-11 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+                  className="w-11 h-11 rounded-full flex items-center justify-center active:scale-[0.97] transition-transform"
                   style={surface}
                 >
                   <LocateFixed className="beacon-accent-text w-5 h-5" />
@@ -1357,7 +1357,7 @@ export default function MapHome() {
                     </div>
                     <button
                       onClick={() => openDirections({ lat: pin.lat, lng: pin.lng }, centerRef.current)}
-                      className="px-3.5 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold active:scale-95 transition-transform shrink-0 flex items-center gap-1.5"
+                      className="px-3.5 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold active:scale-[0.97] transition-transform shrink-0 flex items-center gap-1.5"
                     >
                       <Navigation className="w-3.5 h-3.5" />
                       Directions
@@ -1365,7 +1365,7 @@ export default function MapHome() {
                     <button
                       onClick={() => setPin(null)}
                       aria-label="Remove pin"
-                      className="p-1.5 rounded-full text-dark-400 hover:bg-white/10 active:scale-90 transition-all shrink-0"
+                      className="p-1.5 rounded-full text-dark-400 hover:bg-[var(--soft-surface-strong)] active:scale-[0.97] transition-ui shrink-0"
                     >
                       <X className="w-4 h-4" />
                     </button>
@@ -1399,7 +1399,7 @@ export default function MapHome() {
                       : "calc(env(safe-area-inset-bottom, 0px) + 278px)",
                   transition: dragging
                     ? "none"
-                    : `left 0.45s cubic-bezier(0.32, 0.72, 0, 1), right 0.45s cubic-bezier(0.32, 0.72, 0, 1), ${ctlTransition}`,
+                    : `left 0.45s var(--ease-sheet), right 0.45s var(--ease-sheet), ${ctlTransition}`,
                 }}
               >
                 <CommunityNudge compact={sheetExpanded} />
@@ -1413,7 +1413,7 @@ export default function MapHome() {
       {activeSos && (
         <button
           onClick={() => router.push(`/map?sos=${activeSos.sosId}`)}
-          className="absolute left-4 right-4 rounded-2xl bg-red-600 text-white px-4 py-3 shadow-2xl beacon-step-in active:scale-[0.98] transition-transform"
+          className="absolute left-4 right-4 rounded-2xl bg-red-600 text-white px-4 py-3 shadow-2xl beacon-step-in active:scale-[0.97] transition-transform"
           style={{ top: bannerTop(sosSlot), zIndex: 41 }}
         >
           <p className="font-bold text-sm text-left">{activeSos.name} needs help</p>
@@ -1468,7 +1468,7 @@ export default function MapHome() {
             <button
               onClick={replyImOk}
               disabled={replyingOk}
-              className="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold active:scale-95 transition-transform disabled:opacity-60 shrink-0"
+              className="px-4 py-2 rounded-xl bg-green-600 text-white text-sm font-bold active:scale-[0.97] transition-transform disabled:opacity-60 shrink-0"
             >
               {replyingOk ? "..." : "I'm OK"}
             </button>

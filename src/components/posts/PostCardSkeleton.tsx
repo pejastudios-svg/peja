@@ -32,7 +32,7 @@ export function PostCardSkeleton() {
       </div>
 
       {/* actions */}
-      <div className="flex gap-2 pt-3 border-t border-white/5">
+      <div className="flex gap-2 pt-3 border-t border-[var(--hairline)]">
         <Skeleton className="h-10 flex-1" />
         <Skeleton className="h-10 flex-1" />
         <Skeleton className="h-10 w-10" />

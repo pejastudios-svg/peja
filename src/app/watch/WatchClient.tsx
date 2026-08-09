@@ -189,7 +189,7 @@ function WatchMediaCarousel({
                     <p className="text-white font-semibold mb-1">Sensitive content</p>
                     <button 
                       onClick={(e) => { e.stopPropagation(); onReveal(); }} 
-                      className="mt-2 px-5 py-2 rounded-xl bg-primary-600 text-white"
+                      className="active:scale-[0.97] mt-2 px-5 py-2 rounded-xl bg-primary-600 text-white"
                     >
                       View
                     </button>
@@ -221,7 +221,7 @@ function WatchMediaCarousel({
           {activeMediaIndex > 0 && (
             <button 
               onClick={(e) => { e.stopPropagation(); scroll('left'); }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 backdrop-blur-md text-white/80 hover:bg-black/50 z-20"
+              className="active:scale-[0.97] absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 backdrop-blur-md text-white/80 hover:bg-black/50 z-20"
             >
               <ChevronLeft className="w-6 h-6" />
             </button>
@@ -229,7 +229,7 @@ function WatchMediaCarousel({
           {activeMediaIndex < media.length - 1 && (
             <button 
               onClick={(e) => { e.stopPropagation(); scroll('right'); }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 backdrop-blur-md text-white/80 hover:bg-black/50 z-20"
+              className="active:scale-[0.97] absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 backdrop-blur-md text-white/80 hover:bg-black/50 z-20"
             >
               <ChevronRight className="w-6 h-6" />
             </button>
@@ -240,7 +240,7 @@ function WatchMediaCarousel({
             {media.map((_: any, i: number) => (
               <div 
                 key={i} 
-                className={`h-2 rounded-full transition-all duration-300 ${
+                className={`h-2 rounded-full transition-ui duration-300 ${
                   i === activeMediaIndex 
                     ? "bg-white w-6" 
                     : "bg-white/40 w-2"
@@ -841,7 +841,7 @@ useEffect(() => {
       {/* Back Button */}
       <button
         onClick={closeWatch}
-        className={`fixed top-4 left-4 z-50 p-2 rounded-full bg-black/40 backdrop-blur-md transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
+        className={`active:scale-[0.97] fixed top-4 left-4 z-50 p-2 rounded-full bg-black/40 backdrop-blur-md transition-opacity duration-300 ${controlsVisible ? 'opacity-100' : 'opacity-0'}`}
         style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top, 0px))" }}
       >
         <ChevronLeft className="w-8 h-8 text-white" />
@@ -865,11 +865,11 @@ useEffect(() => {
           const containerStyle = isActivePost && showComments ? {
              transform: "scale(0.85) translateY(-15%)",
              borderRadius: "24px",
-             transition: "all 0.4s cubic-bezier(0.32, 0.72, 0, 1)"
+             transition: "all 0.4s var(--ease-sheet)"
           } : {
              transform: "scale(1) translateY(0)",
              borderRadius: "0px",
-             transition: "all 0.4s cubic-bezier(0.32, 0.72, 0, 1)"
+             transition: "all 0.4s var(--ease-sheet)"
           };
 
           return (
@@ -918,13 +918,13 @@ useEffect(() => {
                   >
                     <div className="absolute right-2 bottom-48 flex flex-col items-center gap-6 z-30 pointer-events-auto pb-safe">
                        <div className="flex flex-col items-center gap-1">
-                          <button onClick={() => toggleConfirm(post)} className={`p-3 rounded-full backdrop-blur-md transition-colors ${isConfirmed ? "bg-primary-600/90 text-white" : "bg-black/40 text-white hover:bg-black/60"}`}>
+                          <button onClick={() => toggleConfirm(post)} className={`active:scale-[0.97] p-3 rounded-full backdrop-blur-md transition-colors ${isConfirmed ? "bg-primary-600/90 text-white" : "bg-black/40 text-white hover:bg-black/60"}`}>
                              <CheckCircle className={`w-8 h-8 ${isConfirmed ? "fill-current" : ""}`} />
                           </button>
                           <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{formatCount(confirmCount)}</span>
                        </div>
                        <div className="flex flex-col items-center gap-1">
-                          <button onClick={() => { if (isActivePost) openComments(); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
+                          <button onClick={() => { if (isActivePost) openComments(); }} className="active:scale-[0.97] p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
                              <MessageCircle className="w-8 h-8" />
                           </button>
                           <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{formatCount(post.comment_count || 0)}</span>
@@ -933,7 +933,7 @@ useEffect(() => {
                           <div className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white"><Eye className="w-8 h-8" /></div>
                           <span className="text-white text-xs font-medium shadow-black drop-shadow-md">{formatCount(post.views || 0)}</span>
                        </div>
-                       <button onClick={() => { setActivePostForOptions(post); setShowOptions(true); }} className="p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
+                       <button onClick={() => { setActivePostForOptions(post); setShowOptions(true); }} className="active:scale-[0.97] p-3 rounded-full bg-black/40 backdrop-blur-md text-white hover:bg-black/60">
                          <MoreVertical className="w-8 h-8" />
                        </button>
                     </div>
@@ -943,7 +943,7 @@ useEffect(() => {
                     >
                        <div className="w-[80%] pointer-events-auto">
                           <p 
-                            className={`text-white text-sm wrap-break-word whitespace-pre-wrap shadow-black drop-shadow-md transition-all duration-300 ${descExpanded ? '' : 'line-clamp-2'}`}
+                            className={`text-white text-sm wrap-break-word whitespace-pre-wrap shadow-black drop-shadow-md transition-ui duration-300 ${descExpanded ? '' : 'line-clamp-2'}`}
                             onClick={() => setDescExpanded(!descExpanded)}
                           >
                             {post.comment || ""}
@@ -951,7 +951,7 @@ useEffect(() => {
                           {post.comment && post.comment.length > 80 && (
                             <button 
                               onClick={(e) => { e.stopPropagation(); setDescExpanded(!descExpanded); }}
-                              className="text-white/70 text-xs mt-1 font-medium hover:text-white"
+                              className="active:opacity-70 text-white/70 text-xs mt-1 font-medium hover:text-white"
                             >
                               {descExpanded ? "View less" : "View more"}
                             </button>

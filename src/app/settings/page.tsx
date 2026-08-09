@@ -535,7 +535,7 @@ export default function SettingsPage() {
   }) => (
     <div
       className={`flex items-center justify-between py-4 px-2 rounded-lg ${
-        onClick ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : ""
+        onClick ? "cursor-pointer hover:bg-[var(--soft-surface)] active:bg-[var(--soft-surface-strong)]" : ""
       } transition-colors`}
       onClick={onClick}
     >
@@ -577,12 +577,12 @@ export default function SettingsPage() {
           <button
             onClick={saveSettings}
             disabled={saving}
-            className={`h-11 px-5 rounded-full transition-all flex items-center gap-1.5 text-sm font-semibold ${
+            className={`h-11 px-5 rounded-full transition-ui flex items-center gap-1.5 text-sm font-semibold ${
               saveSuccess
                 ? "bg-green-500/20 text-green-400"
                 : saveError
                 ? "bg-red-500/20 text-red-400"
-                : "bg-primary-600 text-white hover:bg-primary-700 active:scale-95"
+                : "bg-primary-600 text-white hover:bg-primary-700 active:scale-[0.97]"
             }`}
           >
             {saving ? (
@@ -609,7 +609,7 @@ export default function SettingsPage() {
             until users said it cluttered the chrome. A Light/Dark
             segmented control here is more discoverable and matches how
             iOS/Android handle theme in Settings. */}
-        <section className="py-6 border-b border-white/5">
+        <section className="py-6 border-b border-[var(--hairline)]">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Appearance</h2>
           <SettingRow
             icon={theme === "dark" ? Moon : Sun}
@@ -649,7 +649,7 @@ export default function SettingsPage() {
 
         {/* Background location: only meaningful inside the Android app */}
         {isNativeApp && (
-          <section className="py-6 border-b border-white/5">
+          <section className="py-6 border-b border-[var(--hairline)]">
             <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Location</h2>
             <SettingRow
               icon={MapPin}
@@ -671,7 +671,7 @@ export default function SettingsPage() {
         )}
 
         {/* Notifications Section */}
-        <section className="py-6 border-b border-white/5">
+        <section className="py-6 border-b border-[var(--hairline)]">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Notifications</h2>
 
           <SettingRow
@@ -696,7 +696,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="pt-3 border-t border-white/5">
+              <div className="pt-3 border-t border-[var(--hairline)]">
                 <div className="flex items-center justify-between mb-2">
                   <div>
                     <p className="text-dark-100 font-medium">Info Alerts</p>
@@ -716,7 +716,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Alert Zone Section */}
-        <section className="py-6 border-b border-white/5">
+        <section className="py-6 border-b border-[var(--hairline)]">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Alert Zone</h2>
           <p className="text-sm text-dark-400 mb-4">
             Choose where you want to receive incident alerts from
@@ -742,7 +742,7 @@ export default function SettingsPage() {
               className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${
                 alertZoneType === "all_nigeria"
                   ? "bg-primary-600/20 border border-primary-500/50"
-                  : "glass-sm hover:bg-white/5"
+                  : "glass-sm hover:bg-[var(--soft-surface)]"
               }`}
             >
               <input
@@ -771,7 +771,7 @@ export default function SettingsPage() {
               className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${
                 alertZoneType === "radius"
                   ? "bg-primary-600/20 border border-primary-500/50"
-                  : "glass-sm hover:bg-white/5"
+                  : "glass-sm hover:bg-[var(--soft-surface)]"
               }`}
             >
               <input
@@ -823,7 +823,7 @@ export default function SettingsPage() {
               className={`flex items-center gap-3 p-4 rounded-xl cursor-pointer transition-colors ${
                 alertZoneType === "states"
                   ? "bg-primary-600/20 border border-primary-500/50"
-                  : "glass-sm hover:bg-white/5"
+                  : "glass-sm hover:bg-[var(--soft-surface)]"
               }`}
             >
               <input
@@ -858,7 +858,7 @@ export default function SettingsPage() {
                     e.stopPropagation();
                     setShowStatesModal(true);
                   }}
-                  className="text-primary-400 text-sm px-3 py-1 rounded-lg hover:bg-white/10"
+                  className="text-primary-400 text-sm px-3 py-1 rounded-lg hover:bg-[var(--soft-surface-strong)]"
                 >
                   Edit
                 </button>
@@ -891,7 +891,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Social Notifications */}
-        <section className="py-6 border-b border-white/5">
+        <section className="py-6 border-b border-[var(--hairline)]">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Social Notifications</h2>
           <SettingRow
             icon={Bell}
@@ -903,7 +903,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Security Section — NEW */}
-        <section className="py-6 border-b border-white/5">
+        <section className="py-6 border-b border-[var(--hairline)]">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Security</h2>
           <SettingRow
             icon={KeyRound}
@@ -914,7 +914,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Support */}
-        <section className="py-6 border-b border-white/5">
+        <section className="py-6 border-b border-[var(--hairline)]">
           <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Support</h2>
           <SettingRow
             icon={Users}
@@ -959,7 +959,7 @@ export default function SettingsPage() {
     try { localStorage.setItem("peja-replay-welcome", "1"); } catch {}
     router.push("/");
   }}
-  className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-white/5 transition-colors"
+  className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-[var(--soft-surface)] transition-colors"
 >
   <div className="flex items-center gap-3">
     <HelpCircle className="w-5 h-5 text-dark-400" />
@@ -1003,7 +1003,7 @@ export default function SettingsPage() {
                 </div>
                 <button
                   onClick={resetPasswordModal}
-                  className="p-1 hover:bg-white/10 rounded-lg"
+                  className="p-1 hover:bg-[var(--soft-surface-strong)] rounded-lg"
                 >
                   <X className="w-5 h-5 text-dark-400" />
                 </button>
@@ -1218,7 +1218,7 @@ export default function SettingsPage() {
                 <h2 className="text-lg font-semibold text-dark-100">Select States</h2>
                 <button
                   onClick={() => setShowStatesModal(false)}
-                  className="p-1 hover:bg-white/10 rounded-lg"
+                  className="p-1 hover:bg-[var(--soft-surface-strong)] rounded-lg"
                 >
                   <X className="w-5 h-5 text-dark-400" />
                 </button>
@@ -1234,7 +1234,7 @@ export default function SettingsPage() {
                       className={`p-3 rounded-lg text-left text-sm transition-colors ${
                         selectedStates.includes(state)
                           ? "bg-primary-600/20 text-primary-400 border border-primary-500/50"
-                          : "glass-sm text-dark-300 hover:bg-white/5"
+                          : "glass-sm text-dark-300 hover:bg-[var(--soft-surface)]"
                       }`}
                     >
                       {state}
@@ -1243,7 +1243,7 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="pt-4 mt-4 border-t border-white/5 shrink-0">
+              <div className="pt-4 mt-4 border-t border-[var(--hairline)] shrink-0">
                 <button
                   type="button"
                   onClick={() => setShowStatesModal(false)}

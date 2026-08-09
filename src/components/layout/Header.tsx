@@ -178,7 +178,7 @@ export function Header({
             <button
               type="button"
               onClick={onBack || (() => router.back())}
-              className="flex items-center justify-center h-11 w-11 shrink-0 active:scale-90 active:opacity-80 transition-all duration-150"
+              className="flex items-center justify-center h-11 w-11 shrink-0 active:scale-[0.97] active:opacity-80 transition-ui duration-150"
               style={GLASS_CIRCLE}
               aria-label="Back"
             >
@@ -237,7 +237,7 @@ export function Header({
                   <button
                     type="button"
                     onClick={onBack || (() => router.back())}
-                    className="p-0.5 rounded-lg active:scale-90 active:opacity-80 transition-all duration-150 shrink-0"
+                    className="p-0.5 rounded-lg active:scale-[0.97] active:opacity-80 transition-ui duration-150 shrink-0"
                     aria-label="Back"
                   >
                     <ArrowLeft className="w-5 h-5 text-dark-200" strokeWidth={2.5} />
@@ -247,7 +247,7 @@ export function Header({
                       <button
                         type="button"
                         onClick={onAvatarTap}
-                        className="shrink-0 active:scale-90 active:opacity-80 transition-all duration-150"
+                        className="shrink-0 active:scale-[0.97] active:opacity-80 transition-ui duration-150"
                         aria-label="View profile picture"
                       >
                         {avatarContent}
@@ -259,7 +259,7 @@ export function Header({
                     <button
                       type="button"
                       onClick={onTitleTap}
-                      className="min-w-0 flex-1 p-0.5 rounded-lg active:scale-90 active:opacity-80 transition-all duration-150 text-left"
+                      className="min-w-0 flex-1 p-0.5 rounded-lg active:scale-[0.97] active:opacity-80 transition-ui duration-150 text-left"
                     >
                       {titleContent}
                     </button>
@@ -284,7 +284,7 @@ export function Header({
             <div className="flex items-center h-11 px-1.5 gap-0.5" style={GLASS}>
               <Link
                 href="/notifications"
-                className="relative p-2 rounded-xl active:bg-white/10 transition-colors"
+                className="relative p-2 rounded-xl active:bg-[var(--soft-surface-strong)] transition-colors"
               >
                 <Bell className="w-5 h-5 text-dark-300" strokeWidth={2.3} />
                 {unreadCount > 0 && (
@@ -350,8 +350,8 @@ export function Header({
           {canMessage && (
             <Link
               href="/messages"
-              className={`relative p-2 rounded-xl transition-colors active:bg-white/10 ${
-                pathname === "/messages" ? "bg-white/10" : ""
+              className={`relative p-2 rounded-xl transition-colors active:bg-[var(--soft-surface-strong)] ${
+                pathname === "/messages" ? "bg-[var(--soft-surface-strong)]" : ""
               }`}
             >
               <MessageCircle
@@ -381,8 +381,8 @@ export function Header({
 
           {/* Notifications */}
           <Link href="/notifications" data-tutorial="header-notifications"
-            className={`relative p-2 rounded-xl transition-colors active:bg-white/10 ${
-              pathname === "/notifications" ? "bg-white/10" : ""
+            className={`relative p-2 rounded-xl transition-colors active:bg-[var(--soft-surface-strong)] ${
+              pathname === "/notifications" ? "bg-[var(--soft-surface-strong)]" : ""
             }`}
           >
             <Bell
@@ -411,8 +411,8 @@ export function Header({
 
           {/* Profile */}
           <Link href="/profile" data-tutorial="header-profile" 
-            className={`p-1.5 rounded-xl transition-colors active:bg-white/10 ${
-              pathname === "/profile" ? "bg-white/10" : ""
+            className={`p-1.5 rounded-xl transition-colors active:bg-[var(--soft-surface-strong)] ${
+              pathname === "/profile" ? "bg-[var(--soft-surface-strong)]" : ""
             }`}
           >
             <div
@@ -420,7 +420,7 @@ export function Header({
             >
               <AvatarImage
                 src={user?.avatar_url}
-                wrapperClassName="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center transition-all duration-300"
+                wrapperClassName="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center transition-ui duration-300"
                 wrapperStyle={{
                   border:
                     pathname === "/profile"

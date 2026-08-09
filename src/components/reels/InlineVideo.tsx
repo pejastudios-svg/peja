@@ -284,12 +284,12 @@ export function InlineVideo({
     }
     if (expandPhase === "exit") {
       const exitT = dist > 50 ? `translate(${dragOffset.x * 2}px, ${dragOffset.y * 2}px) scale(0.5)` : "scale(0.88)";
-      return { position: "fixed", inset: 0, zIndex: 999998, backgroundColor: "black", display: "flex", alignItems: "center", justifyContent: "center", transform: exitT, opacity: 0, transition: "transform 280ms cubic-bezier(0.2,0.8,0.2,1), opacity 250ms ease" };
+      return { position: "fixed", inset: 0, zIndex: 999998, backgroundColor: "black", display: "flex", alignItems: "center", justifyContent: "center", transform: exitT, opacity: 0, transition: "transform 280ms var(--ease-out), opacity 250ms ease" };
     }
     if (isDraggingExpanded || dist > 0) {
       return { position: "fixed", inset: 0, zIndex: 999998, backgroundColor: "black", display: "flex", alignItems: "center", justifyContent: "center", transform: `translate(${dragOffset.x}px, ${dragOffset.y}px) scale(${1 - dist / 1000})`, transition: isDraggingExpanded ? "none" : "transform 0.3s ease-out" };
     }
-    return { position: "fixed", inset: 0, zIndex: 999998, backgroundColor: "black", display: "flex", alignItems: "center", justifyContent: "center", transform: "none", transition: "transform 300ms cubic-bezier(0.2,0.8,0.2,1)" };
+    return { position: "fixed", inset: 0, zIndex: 999998, backgroundColor: "black", display: "flex", alignItems: "center", justifyContent: "center", transform: "none", transition: "transform 300ms var(--ease-out)" };
   };
 
   const handleSelfExpand = (e: React.MouseEvent) => {
@@ -571,7 +571,7 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
       onTouchStart={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-3">
-        <button onClick={togglePlay} className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
+        <button onClick={togglePlay} className="active:scale-[0.97] p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
           {isPlaying ? <Pause className={isExpanded ? "w-6 h-6 fill-current" : "w-4 h-4 fill-current"} /> : <Play className={isExpanded ? "w-6 h-6 fill-current" : "w-4 h-4 fill-current"} />}
         </button>
         <div className="flex-1 relative h-6 flex items-center group/slider">
@@ -585,12 +585,12 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
           </div>
         </div>
         {showMute && (
-          <button onPointerDownCapture={(e) => e.stopPropagation()} onTouchStartCapture={(e) => e.stopPropagation()} onClick={handleMuteClick} className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
+          <button onPointerDownCapture={(e) => e.stopPropagation()} onTouchStartCapture={(e) => e.stopPropagation()} onClick={handleMuteClick} className="active:scale-[0.97] p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
             {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </button>
         )}
         {showExpand && !isExpanded && (
-          <button onClick={handleExpand} className="p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
+          <button onClick={handleExpand} className="active:scale-[0.97] p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
             <Maximize2 className="w-4 h-4" />
           </button>
         )}
@@ -626,7 +626,7 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
           {/* Expanded: back button */}
           {isExpanded && expandPhase === "open" && (
             <div className="absolute z-10" style={{ top: "calc(1rem + var(--cap-status-bar-height, 0px))", left: "1rem" }}>
-              <button onClick={(e) => { e.stopPropagation(); handleCollapse(); }} className="p-2 rounded-full bg-black/40 text-white hover:bg-black/60">
+              <button onClick={(e) => { e.stopPropagation(); handleCollapse(); }} className="active:scale-[0.97] p-2 rounded-full bg-black/40 text-white hover:bg-black/60">
                 <ChevronLeft className="w-8 h-8" />
               </button>
             </div>
@@ -634,14 +634,14 @@ handoff.beginExpand(src, currentTime, posterDataUrl || null, sourceRect);
           {/* Inline: play button overlays */}
           {!isExpanded && !isPlaying && !autoPlay && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/30 z-[2]">
-              <button onClick={togglePlay} className="p-4 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
+              <button onClick={togglePlay} className="active:scale-[0.97] p-4 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors">
                 <Play className="w-8 h-8 fill-current" />
               </button>
             </div>
           )}
           {!isExpanded && !videoReady && autoPlay && !isPlaying && (
             <div className="absolute inset-0 flex items-center justify-center z-[2]">
-              <button onClick={togglePlay} className="p-4 rounded-full bg-black/40 text-white transition-colors">
+              <button onClick={togglePlay} className="active:scale-[0.97] p-4 rounded-full bg-black/40 text-white transition-colors">
                 <Play className="w-8 h-8 fill-current" />
               </button>
             </div>

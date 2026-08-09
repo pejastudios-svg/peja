@@ -153,7 +153,7 @@ export function VideoPlayer({
           className="absolute inset-0 flex items-center justify-center group"
           aria-label="Play"
         >
-          <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center group-active:scale-95 transition-transform">
+          <div className="w-16 h-16 rounded-full bg-black/50 backdrop-blur-md flex items-center justify-center group-active:scale-[0.97] transition-transform">
             <Play className="w-7 h-7 text-white fill-white ml-1" />
           </div>
         </button>
@@ -194,7 +194,7 @@ export function VideoPlayer({
           <div className="flex items-center gap-2">
             <button
               onClick={togglePlay}
-              className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform"
+              className="w-8 h-8 flex items-center justify-center active:scale-[0.97] transition-transform"
               aria-label={isPlaying ? "Pause" : "Play"}
             >
               {isPlaying ? (
@@ -205,7 +205,7 @@ export function VideoPlayer({
             </button>
             <button
               onClick={toggleMute}
-              className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform"
+              className="w-8 h-8 flex items-center justify-center active:scale-[0.97] transition-transform"
               aria-label={isMuted ? "Unmute" : "Mute"}
             >
               {isMuted ? (
@@ -220,7 +220,7 @@ export function VideoPlayer({
           </div>
           <button
             onClick={toggleFullscreen}
-            className="w-8 h-8 flex items-center justify-center active:scale-90 transition-transform"
+            className="w-8 h-8 flex items-center justify-center active:scale-[0.97] transition-transform"
             aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
           >
             {isFullscreen ? (

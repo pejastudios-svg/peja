@@ -17,7 +17,7 @@ export default function GlowButton({
     <button
       disabled={disabled}
       onClick={onClick}
-      className={`btn-glow px-4 py-2.5 rounded-xl text-white font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+      className={`btn-glow px-4 py-2.5 rounded-xl text-white font-medium transition-ui disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
     >
       {children}
     </button>

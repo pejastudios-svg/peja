@@ -126,7 +126,7 @@ export default function VerifyEmailPage() {
           <button
             type="submit"
             disabled={code.length < 6 || busy}
-            className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.98] transition-transform disabled:opacity-40"
+            className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-transform disabled:opacity-40"
           >
             {busy ? "Checking..." : "Confirm email"}
           </button>

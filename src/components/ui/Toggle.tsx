@@ -26,7 +26,7 @@ export function Toggle({
         className="absolute top-[3px] w-6 h-6 rounded-full bg-white shadow-md"
         style={{
           left: on ? 23 : 3,
-          transition: "left 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+          transition: "left 0.3s var(--ease-spring)",
         }}
       />
     </button>

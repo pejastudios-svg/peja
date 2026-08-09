@@ -102,7 +102,7 @@ export function InvitePanel({ compact = false }: { compact?: boolean }) {
           <button
             key={c.key}
             onClick={c.onTap}
-            className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border active:scale-95 transition-transform ${c.className}`}
+            className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border active:scale-[0.97] transition-transform ${c.className}`}
           >
             {c.icon}
             <span className="text-[11px] font-semibold">{c.label}</span>

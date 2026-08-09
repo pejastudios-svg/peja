@@ -594,7 +594,7 @@ const handleConfirm = async () => {
      <button
         data-tutorial="nav-sml"
         onClick={handleButtonClick}
-        className="relative flex items-center justify-center transition-all active:scale-90"
+        className="relative flex items-center justify-center transition-ui active:scale-[0.97]"
         style={{
           width: 44,
           height: 44,
@@ -663,7 +663,7 @@ const handleConfirm = async () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Shared with me section */}
-            <div className="p-3 border-b border-white/5">
+            <div className="p-3 border-b border-[var(--hairline)]">
               <p className="text-[10px] text-dark-500 uppercase tracking-wider font-bold mb-2">Sharing with you</p>
               <div className="space-y-1.5">
                 {sharedWithMe.map((s) => {
@@ -676,7 +676,7 @@ const handleConfirm = async () => {
                         setShowMenu(false);
                         router.push(`/checkin/track/${s.id}`);
                       }}
-                      className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-white/5 transition-colors"
+                      className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-[var(--soft-surface)] transition-colors"
                     >
                       <div className="relative shrink-0">
                         <AvatarImage
@@ -719,7 +719,7 @@ const handleConfirm = async () => {
             {myCheckIn ? (
               <button
                 onClick={() => { closeMenu(); setShowActiveModal(true); }}
-                className="w-full flex items-center gap-3 p-3 hover:bg-white/5 transition-colors border-t border-white/5"
+                className="w-full flex items-center gap-3 p-3 hover:bg-[var(--soft-surface)] transition-colors border-t border-[var(--hairline)]"
               >
                 <div className={`w-9 h-9 rounded-full flex items-center justify-center ${isOverdue ? "bg-red-500/15" : "bg-green-500/15"}`}>
                   {isOverdue ? <AlertTriangle className="w-4 h-4 text-red-400" /> : <Radio className="w-4 h-4 text-green-400 animate-pulse" />}
@@ -735,7 +735,7 @@ const handleConfirm = async () => {
             ) : (
               <button
                 onClick={() => { closeMenu(); fetchContacts(); setShowShareModal(true); }}
-                className="w-full flex items-center gap-3 p-3 hover:bg-white/5 transition-colors border-t border-white/5"
+                className="w-full flex items-center gap-3 p-3 hover:bg-[var(--soft-surface)] transition-colors border-t border-[var(--hairline)]"
               >
                 <div className="w-9 h-9 rounded-full bg-primary-500/15 flex items-center justify-center">
                   <MapPin className="w-4 h-4 text-primary-400" />
@@ -769,7 +769,7 @@ const handleConfirm = async () => {
                       ? "translateY(110%)"
                       : "translateY(0)",
                 transition:
-                  activeDrag.dragY > 0 ? "none" : "transform 0.45s cubic-bezier(0.32, 0.72, 0, 1)",
+                  activeDrag.dragY > 0 ? "none" : "transform 0.45s var(--ease-sheet)",
               }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -799,14 +799,14 @@ const handleConfirm = async () => {
               <div className="flex gap-2">
                 <button
                   onClick={handleConfirm}
-                  className={`flex-1 py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 text-white active:scale-[0.95] transition-transform ${isOverdue ? "bg-red-600" : "bg-green-600"}`}
+                  className={`flex-1 py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 text-white active:scale-[0.97] transition-transform ${isOverdue ? "bg-red-600" : "bg-green-600"}`}
                 >
                   <CheckCircle className="w-4 h-4" />
                   I'm OK
                 </button>
                  <button
                   onClick={() => { closeActiveModal(); setShowCancelConfirm(true); }}
-                  className="px-5 py-3.5 rounded-xl text-sm font-medium bg-white/5 text-dark-300 border border-white/10 active:scale-[0.95] transition-transform"
+                  className="px-5 py-3.5 rounded-xl text-sm font-medium bg-[var(--soft-surface)] text-dark-300 border border-[var(--hairline-strong)] active:scale-[0.97] transition-transform"
                 >
                   Stop
                 </button>
@@ -829,7 +829,7 @@ const handleConfirm = async () => {
               <h3 className="text-lg font-bold text-dark-100 mb-2">Stop Sharing?</h3>
               <p className="text-sm text-dark-400 mb-4">Your contacts will be notified that you stopped sharing.</p>
               <div className="flex gap-3">
-                <button onClick={() => { closeCancelConfirm(); setShowActiveModal(true); }} className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-white/5 text-dark-200 border border-white/10">Keep Sharing</button>
+                <button onClick={() => { closeCancelConfirm(); setShowActiveModal(true); }} className="flex-1 py-2.5 rounded-xl text-sm font-medium bg-[var(--soft-surface)] text-dark-200 border border-[var(--hairline-strong)]">Keep Sharing</button>
                 <button onClick={handleCancel} className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-red-600 text-white">Stop</button>
               </div>
             </div>
@@ -855,7 +855,7 @@ const handleConfirm = async () => {
                       ? "translateY(110%)"
                       : "translateY(0)",
                 transition:
-                  shareDrag.dragY > 0 ? "none" : "transform 0.45s cubic-bezier(0.32, 0.72, 0, 1)",
+                  shareDrag.dragY > 0 ? "none" : "transform 0.45s var(--ease-sheet)",
               }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -868,7 +868,7 @@ const handleConfirm = async () => {
                     <h2 className="text-lg font-bold text-dark-100">Share My Location</h2>
                     <p className="text-sm text-dark-400">Alert your emergency contacts</p>
                   </div>
-                  <button onClick={() => closeShareModal()} className="p-1.5 rounded-lg hover:bg-white/10">
+                  <button onClick={() => closeShareModal()} className="p-1.5 rounded-lg hover:bg-[var(--soft-surface-strong)]">
                     <X className="w-5 h-5 text-dark-400" />
                   </button>
                 </div>
@@ -892,7 +892,7 @@ const handleConfirm = async () => {
                                   : [...new Set([...prev, ...g.memberIds])]
                               )
                             }
-                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all active:scale-95 ${
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-ui active:scale-[0.97] ${
                               allIn
                                 ? "bg-primary-600 border-primary-500 text-white"
                                 : "bg-[var(--glass-input-bg)] border-[var(--glass-border)] text-dark-200"
@@ -978,7 +978,7 @@ const handleConfirm = async () => {
                 <button
                   onClick={handleStart}
                   disabled={starting || selectedContacts.length === 0}
-                  className="w-full py-3.5 rounded-xl font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                  className="w-full py-3.5 rounded-xl font-semibold text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-ui active:scale-[0.97]"
                   style={{
                     boxShadow: "0 4px 20px rgba(124, 58, 237, 0.3)",
                   }}
