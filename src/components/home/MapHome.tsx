@@ -112,6 +112,13 @@ export default function MapHome() {
       padding: { top: 0, right: 0, bottom, left: 0 },
     });
   }, []);
+  // Tap a place marker: go there. Follow is released so the camera does
+  // not immediately snap back to the user.
+  const flyToPlace = useCallback((lat: number, lng: number) => {
+    followRef.current = false;
+    mapRef.current?.flyTo({ center: [lng, lat], zoom: 16, duration: 800 });
+  }, []);
+
   // Always-fresh copy of `center` for use inside the load() closure (which
   // is memoized on [user] and otherwise can't see live position updates).
   const centerRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -1289,14 +1296,18 @@ export default function MapHome() {
               : null;
             return (
               <Marker key={`place-${p.id}`} latitude={p.lat} longitude={p.lng} anchor="center">
-                <div className="flex flex-col items-center pointer-events-none">
+                <button
+                  onClick={() => flyToPlace(p.lat, p.lng)}
+                  className="flex flex-col items-center active:scale-[0.97] transition-transform"
+                  aria-label={`Go to ${p.label}`}
+                >
                   <div className="w-6 h-6 rounded-full bg-[var(--glass-float-bg)] border border-[var(--glass-border-float)] shadow flex items-center justify-center">
                     <MapPin className="beacon-accent-text w-3 h-3" />
                   </div>
                   <span className="mt-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold shadow bg-black/60 text-white whitespace-nowrap">
                     {wearer ? `${wearer}, ${p.label}` : p.label}
                   </span>
-                </div>
+                </button>
               </Marker>
             );
           })}
@@ -1315,14 +1326,18 @@ export default function MapHome() {
         {mapZoom >= 13 &&
           sharedPlaces.map((p) => (
             <Marker key={`splace-${p.id}`} latitude={p.lat} longitude={p.lng} anchor="center">
-              <div className="flex flex-col items-center pointer-events-none">
+              <button
+                onClick={() => flyToPlace(p.lat, p.lng)}
+                className="flex flex-col items-center active:scale-[0.97] transition-transform"
+                aria-label={`Go to ${p.label}`}
+              >
                 <div className="w-6 h-6 rounded-full bg-[var(--glass-float-bg)] border border-[var(--glass-border-float)] shadow flex items-center justify-center">
                   <MapPin className="beacon-accent-text w-3 h-3" />
                 </div>
                 <span className="mt-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold shadow bg-black/60 text-white whitespace-nowrap">
                   {p.label}
                 </span>
-              </div>
+              </button>
             </Marker>
           ))}
 

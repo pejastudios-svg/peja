@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapGL, { MapRef } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { Briefcase, GraduationCap, Home, MapPin, BookOpen, Trash2 } from "lucide-react";
+import { Briefcase, GraduationCap, Home, MapPin, BookOpen, Search, Trash2, X } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { Toggle } from "@/components/ui/Toggle";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
@@ -65,6 +65,75 @@ export function PlaceEditorModal({
   const [visible, setVisible] = useState(place?.visible_to_circle ?? true);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Type-to-find: MapTiler forward geocoding, biased toward wherever the
+  // map is currently looking so "market" finds the one nearby, not the
+  // most famous one on earth. Picking a result flies the mini-map there;
+  // the pin stays fixed at centre, so the point is set the same way as
+  // panning by hand.
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<
+    { id: string; name: string; detail: string; lat: number; lng: number }[]
+  >([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const q = search.trim();
+    if (q.length < 3) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const { lat, lng } = center.current;
+        const res = await fetch(
+          `https://api.maptiler.com/geocoding/${encodeURIComponent(q)}.json?key=${
+            process.env.NEXT_PUBLIC_MAPTILER_KEY
+          }&proximity=${lng},${lat}&limit=5`,
+        );
+        const data = await res.json();
+        setSearchResults(
+          (data?.features || []).map(
+            (f: { id: string; text?: string; place_name?: string; center: [number, number] }) => ({
+              id: f.id,
+              name: f.text || f.place_name || "Unknown",
+              detail: f.place_name || "",
+              lng: f.center[0],
+              lat: f.center[1],
+            }),
+          ),
+        );
+      } catch {
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+    // center.current is a ref on purpose: re-searching on every pan would
+    // spam the geocoder; the bias is read at request time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
+
+  const pickResult = useCallback(
+    (r: { name: string; lat: number; lng: number }) => {
+      center.current = { lat: r.lat, lng: r.lng };
+      setView({ lat: r.lat, zoom: 16 });
+      mapRef.current?.flyTo({ center: [r.lng, r.lat], zoom: 16, duration: 700 });
+      setSearch("");
+      setSearchResults([]);
+      // A found place probably wants the found name, but never overwrite
+      // something the user already typed.
+      setLabel((prev) => prev || r.name);
+    },
+    [],
+  );
 
   const startLat = place?.lat ?? initialLat ?? 6.5244; // Lagos fallback
   const startLng = place?.lng ?? initialLng ?? 3.3792;
@@ -133,6 +202,52 @@ export function PlaceEditorModal({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={place ? "Edit place" : "New place"}>
       <div className="space-y-4">
+        {/* type-to-find */}
+        <div className="relative">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500 pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search for a place or address"
+            className="w-full glass-input rounded-xl pl-10 pr-9 text-sm text-dark-100 placeholder:text-dark-500"
+          />
+          {search && (
+            <button
+              onClick={() => {
+                setSearch("");
+                setSearchResults([]);
+              }}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-full text-dark-400 active:scale-[0.97] transition-transform"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          {(searchResults.length > 0 || (searching && search.trim().length >= 3)) && (
+            <div className="absolute left-0 right-0 top-full mt-1.5 z-20 rounded-xl bg-[var(--glass-strong-bg)] border border-[var(--glass-border)] shadow-xl overflow-hidden">
+              {searching && searchResults.length === 0 ? (
+                <p className="px-3.5 py-2.5 text-xs text-dark-500">Searching...</p>
+              ) : (
+                searchResults.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => pickResult(r)}
+                    className="w-full flex items-start gap-2.5 px-3.5 py-2.5 text-left border-b border-[var(--hairline)] last:border-b-0 active:bg-[var(--soft-surface)]"
+                  >
+                    <MapPin className="beacon-accent-text w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block text-sm text-dark-100 truncate">{r.name}</span>
+                      {r.detail && r.detail !== r.name && (
+                        <span className="block text-[11px] text-dark-500 truncate">{r.detail}</span>
+                      )}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
         {/* map with fixed centre pin + live arrival zone */}
         <div className="relative h-56 rounded-2xl overflow-hidden border border-[var(--glass-border)]">
           <MapGL
