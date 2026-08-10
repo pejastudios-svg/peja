@@ -157,7 +157,11 @@ export function MemberCard({
                 : member.smlOverdue
                   ? "Check-in overdue"
                   : member.smlActive
-                    ? "Sharing live with you"
+                    ? member.smlDestination
+                      ? member.smlArrived
+                        ? `Arrived at ${member.smlDestination}`
+                        : `Going to ${member.smlDestination}`
+                      : "Sharing live with you"
                     : member.freshLabel
                     ? member.tier === "fresh"
                       ? `Updated ${member.freshLabel === "now" ? "just now" : `${member.freshLabel} ago`}`

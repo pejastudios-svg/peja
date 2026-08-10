@@ -31,6 +31,9 @@ export interface CircleMember {
   sosActive: boolean;
   smlActive: boolean;
   smlOverdue: boolean;
+  /** Where their active check-in is heading, when they told peja. */
+  smlDestination?: string | null;
+  smlArrived?: boolean;
   batteryPct: number | null;
   speedKmh?: number | null;
   stillSince?: string | null;
@@ -255,7 +258,11 @@ export function CircleSheet({
             : m.smlOverdue
               ? "Check-in overdue - contacts alerted"
               : m.smlActive
-                ? "Sharing live with you"
+                ? m.smlDestination
+                  ? m.smlArrived
+                    ? `Arrived at ${m.smlDestination}`
+                    : `Going to ${m.smlDestination}`
+                  : "Sharing live with you"
                 : m.freshLabel
                 ? m.tier === "fresh"
                   ? `Updated ${m.freshLabel === "now" ? "just now" : `${m.freshLabel} ago`}`

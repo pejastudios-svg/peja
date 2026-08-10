@@ -15,6 +15,7 @@ import {
   Phone,
   User,
   CheckCircle,
+  Navigation,
 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { formatDistanceToNow } from "date-fns";
@@ -41,6 +42,10 @@ interface CheckInData {
   missed_count: number;
   check_in_interval_minutes: number;
   created_at: string;
+  destination_label: string | null;
+  destination_lat: number | null;
+  destination_lng: number | null;
+  arrived_at: string | null;
 }
 
 interface OwnerData {
@@ -156,6 +161,7 @@ useEffect(() => {
             next_check_in_at: updated.next_check_in_at ?? prev.next_check_in_at,
             last_confirmed_at: updated.last_confirmed_at ?? prev.last_confirmed_at,
             missed_count: updated.missed_count ?? prev.missed_count,
+            arrived_at: updated.arrived_at ?? prev.arrived_at,
           } : null);
         }
       )
@@ -300,6 +306,37 @@ useEffect(() => {
               {checkin.status === "missed" ? "Missed" : "Active"}
             </div>
           </div>
+
+          {/* Journey: where they said they were going */}
+          {checkin.destination_label && (
+            <div
+              className={`flex items-center gap-2.5 p-3 rounded-xl mb-3 border ${
+                checkin.arrived_at
+                  ? "bg-green-500/10 border-green-500/20"
+                  : "bg-primary-500/10 border-primary-500/20"
+              }`}
+            >
+              <Navigation
+                className={`w-4 h-4 shrink-0 ${checkin.arrived_at ? "text-green-400" : "text-primary-400"}`}
+              />
+              <p className="text-sm text-dark-200 min-w-0 truncate">
+                {checkin.arrived_at ? (
+                  <>
+                    Arrived at{" "}
+                    <span className="font-semibold text-dark-100">{checkin.destination_label}</span>{" "}
+                    <span className="text-xs text-dark-400">
+                      {formatDistanceToNow(new Date(checkin.arrived_at), { addSuffix: true })}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Going to{" "}
+                    <span className="font-semibold text-dark-100">{checkin.destination_label}</span>
+                  </>
+                )}
+              </p>
+            </div>
+          )}
 
           {/* Status row */}
           <div className="flex items-center gap-4 text-sm">

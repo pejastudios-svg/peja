@@ -21,7 +21,7 @@ import { StoryRail } from "./StoryRail";
 import { authFetchJson } from "@/lib/authFetch";
 import { CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
-import { Bell, BarChart3, Compass, LocateFixed, MapPin, Navigation, Radio, User, X } from "lucide-react";
+import { Bell, BarChart3, Compass, LocateFixed, MapPin, Navigation, Radio, User, X, Flag } from "lucide-react";
 import dynamic from "next/dynamic";
 import { PlaceEditorModal } from "@/components/places/PlaceEditorModal";
 import { fetchPlaces, type Place } from "@/lib/places";
@@ -143,6 +143,12 @@ export default function MapHome() {
   // when the card closes: the card is full screen, so the map is only
   // visible after closing, and clearing then would mean the markers could
   // never be seen at all. Replaced when a different member is selected.
+  // Destination flags: active check-ins with a stated destination, both
+  // the ones shared with me and my own. "Funke is going to contract" is
+  // only real if you can SEE the target on the map.
+  const [journeys, setJourneys] = useState<
+    { userId: string; lat: number; lng: number; label: string; arrived: boolean }[]
+  >([]);
   const [memberPlaces, setMemberPlaces] = useState<
     { id: string; lat: number; lng: number; label: string; mapLabel: string }[] | undefined
   >(undefined);
@@ -532,7 +538,7 @@ export default function MapHome() {
           // protect, so they're already in `ids`).
           supabase
             .from("safety_checkins")
-            .select("user_id, latitude, longitude, status, next_check_in_at, speed_kmh, still_since")
+            .select("user_id, latitude, longitude, status, next_check_in_at, speed_kmh, still_since, destination_label, destination_lat, destination_lng, arrived_at")
             .in("status", ["active", "missed"])
             .contains("contact_ids", [user.id]),
         ]);
@@ -541,6 +547,25 @@ export default function MapHome() {
         const presenceById = new Map((presenceRes.data || []).map((p) => [p.user_id, p]));
         const sosById = new Map((sosRes.data || []).map((s) => [s.user_id, s]));
         const smlById = new Map((smlRes.data || []).map((c) => [c.user_id, c]));
+
+        // Destination flags for sessions shared with me.
+        {
+          const nameById = new Map(
+            (usersRes.data || []).map((u) => [u.id, (u.full_name || "Someone").split(" ")[0]]),
+          );
+          const flags = (smlRes.data || [])
+            .filter((c) => c.destination_lat != null && c.destination_lng != null)
+            .map((c) => ({
+              userId: c.user_id as string,
+              lat: c.destination_lat as number,
+              lng: c.destination_lng as number,
+              label: c.arrived_at
+                ? `${nameById.get(c.user_id) || "They"} arrived, ${c.destination_label || "destination"}`
+                : `${nameById.get(c.user_id) || "They"} going to ${c.destination_label || "a destination"}`,
+              arrived: Boolean(c.arrived_at),
+            }));
+          if (!stop) setJourneys((prev) => [...flags, ...prev.filter((j) => j.userId === user.id)]);
+        }
 
         const out: CircleMember[] = (usersRes.data || []).map((u) => {
           const p = presenceById.get(u.id);
@@ -567,6 +592,8 @@ export default function MapHome() {
             tier: sos || sml ? "fresh" : f?.tier ?? "cold",
             sosActive: Boolean(sos),
             smlActive: Boolean(sml),
+            smlDestination: (sml?.destination_label as string) || null,
+            smlArrived: Boolean(sml?.arrived_at),
             smlOverdue,
             batteryPct: p?.battery_pct ?? null,
             speedKmh,
@@ -685,6 +712,32 @@ export default function MapHome() {
               ),
             }))
         );
+      }
+
+      // My own journey flag, so the traveler sees their target too.
+      {
+        const { data: mine } = await supabase
+          .from("safety_checkins")
+          .select("destination_label, destination_lat, destination_lng, arrived_at")
+          .eq("user_id", user.id)
+          .in("status", ["active", "missed"])
+          .maybeSingle();
+        if (!stop) {
+          setJourneys((prev) => [
+            ...prev.filter((j) => j.userId !== user.id),
+            ...(mine && mine.destination_lat != null && mine.destination_lng != null
+              ? [{
+                  userId: user.id,
+                  lat: mine.destination_lat as number,
+                  lng: mine.destination_lng as number,
+                  label: mine.arrived_at
+                    ? `You arrived, ${mine.destination_label || "destination"}`
+                    : `You are going to ${mine.destination_label || "your destination"}`,
+                  arrived: Boolean(mine.arrived_at),
+                }]
+              : []),
+          ]);
+        }
       }
 
       // Own Beacon pins: every device this account hosts that has a fix.
@@ -1287,6 +1340,29 @@ export default function MapHome() {
             </div>
           </Marker>
         )}
+
+        {/* ── journey flags: where an active check-in is heading ── */}
+        {journeys.map((j) => (
+          <Marker key={`journey-${j.userId}`} latitude={j.lat} longitude={j.lng} anchor="bottom">
+            <button
+              onClick={() => flyToPlace(j.lat, j.lng)}
+              className="flex flex-col items-center active:scale-[0.97] transition-transform"
+              aria-label={j.label}
+            >
+              <div
+                className={`w-7 h-7 rounded-full border-2 border-white shadow-lg flex items-center justify-center ${
+                  j.arrived ? "bg-green-600" : "bg-primary-600"
+                }`}
+              >
+                <Flag className="w-3.5 h-3.5 text-white" />
+              </div>
+              <div className="w-1 h-2 bg-white rounded-b-full -mt-0.5 shadow" />
+              <span className="mt-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold shadow bg-black/70 text-white whitespace-nowrap">
+                {j.label}
+              </span>
+            </button>
+          </Marker>
+        ))}
 
         {/* ── saved places: mine, my Beacons' (wearer-labelled), and those
             of Beacons shared with me ── */}

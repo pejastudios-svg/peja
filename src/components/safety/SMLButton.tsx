@@ -23,6 +23,7 @@ import {
   Eye,
   Shield,
   AlertTriangle,
+  Navigation,
 } from "lucide-react";
 import { PejaSpinner } from "../ui/PejaSpinner";
 import { AvatarImage } from "@/components/ui/AvatarImage";
@@ -46,6 +47,8 @@ interface ActiveCheckIn {
   next_check_in_at: string;
   last_confirmed_at: string;
   missed_count: number;
+  destination_label?: string | null;
+  arrived_at?: string | null;
 }
 
 interface AcceptedContact {
@@ -810,6 +813,19 @@ const handleConfirm = async () => {
                 </div>
               </div>
               </div>
+
+              {myCheckIn.destination_label && (
+                <div className="mb-4 flex items-center gap-2.5 p-3 rounded-xl bg-[var(--soft-surface)] border border-[var(--hairline)]">
+                  <Navigation className={`w-4 h-4 shrink-0 ${myCheckIn.arrived_at ? "beacon-ok-text" : "beacon-accent-text"}`} />
+                  <p className="text-sm text-dark-200 min-w-0 truncate">
+                    {myCheckIn.arrived_at ? (
+                      <>Arrived at <span className="font-semibold text-dark-100">{myCheckIn.destination_label}</span></>
+                    ) : (
+                      <>Heading to <span className="font-semibold text-dark-100">{myCheckIn.destination_label}</span></>
+                    )}
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <button
