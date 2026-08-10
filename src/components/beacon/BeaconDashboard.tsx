@@ -9,6 +9,8 @@ import { authFetchJson } from "@/lib/authFetch";
 import { Modal } from "@/components/ui/Modal";
 import { BeaconManual } from "./BeaconManual";
 import { BeaconSharePeople } from "./BeaconSharePeople";
+import { BeaconViewers } from "./BeaconViewers";
+import { BeaconPlaces } from "./BeaconPlaces";
 import { Toggle } from "@/components/ui/Toggle";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -339,12 +341,27 @@ export function BeaconDashboard({
             {device.status === "connected" && (
               <div className="absolute inset-0 rounded-2xl bg-primary-500/10 beacon-radar-ring" />
             )}
-            <div className="relative w-16 h-16 rounded-2xl bg-dark-800/80 border border-dark-600 flex items-center justify-center">
-              <Radio className="w-7 h-7 beacon-accent-text" />
+            <div
+              className="relative w-16 h-16 rounded-2xl border border-dark-600 flex items-center justify-center"
+              style={
+                device.wearer_name
+                  ? { background: device.wearer_color || "#8b5cf6" }
+                  : undefined
+              }
+            >
+              {device.wearer_name ? (
+                <span className="text-2xl font-bold text-white">
+                  {device.wearer_name[0].toUpperCase()}
+                </span>
+              ) : (
+                <Radio className="w-7 h-7 beacon-accent-text" />
+              )}
             </div>
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-bold text-dark-50 truncate">{device.name}</h1>
+            <h1 className="text-lg font-bold text-dark-50 truncate">
+              {device.wearer_name || device.name}
+            </h1>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className={`w-2 h-2 rounded-full ${meta.dot}`} />
               <span className={`text-[13px] font-medium ${meta.text}`}>{meta.label}</span>
@@ -518,6 +535,17 @@ export function BeaconDashboard({
           deviceId={device.id}
           enabled={device.share_with_contacts !== false}
         />
+      </div>
+
+      {/* ── Explicit viewer grants (family members who are not contacts,
+          parents at a school, anyone invited by link) ── */}
+      <div className="beacon-stagger" style={{ animationDelay: "0.19s" }}>
+        <BeaconViewers device={device} />
+      </div>
+
+      {/* ── This wearer's places: geofenced arrive/leave alerts ── */}
+      <div className="beacon-stagger" style={{ animationDelay: "0.195s" }}>
+        <BeaconPlaces device={device} />
       </div>
 
       {/* ── How the device works: the manual lives with the device ── */}

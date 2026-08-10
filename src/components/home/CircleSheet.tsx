@@ -16,6 +16,9 @@ import { useToast } from "@/context/ToastContext";
 import { CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { AlertTriangle, ChevronRight, ChevronUp, Plus, Radio, Search as SearchIcon, User, UserPlus, Users, X } from "lucide-react";
+import { PlaceEditorModal } from "@/components/places/PlaceEditorModal";
+import { fetchPlaces, type Place, type PlaceKind } from "@/lib/places";
+import { Briefcase, GraduationCap, Home as HomeIcon, BookOpen, MapPin as MapPinIcon } from "lucide-react";
 
 export interface CircleMember {
   id: string;
@@ -60,6 +63,8 @@ export function CircleSheet({
   incidents,
   onMemberTap,
   onIncidentTap,
+  onPlaceTap,
+  origin,
   onExpandedChange,
   onSheetMove,
 }: {
@@ -68,6 +73,8 @@ export function CircleSheet({
   incidents: NearbyIncident[];
   onMemberTap: (m: CircleMember) => void;
   onIncidentTap: (i: NearbyIncident) => void;
+  onPlaceTap?: (p: { lat: number; lng: number }) => void;
+  origin?: { lat: number; lng: number } | null;
   onExpandedChange?: (expanded: boolean) => void;
   onSheetMove?: (topFromBottom: number | null, dragging: boolean) => void;
 }) {
@@ -84,6 +91,27 @@ export function CircleSheet({
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [openCircle, setOpenCircle] = useState<string | null>(null);
+  // My Places strip: personal saved places, refreshed on the global
+  // places-changed event so the check-in sheet and settings stay in sync.
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [placeEditorOpen, setPlaceEditorOpen] = useState(false);
+  const [editingPlace, setEditingPlace] = useState<Place | null>(null);
+  useEffect(() => {
+    let stop = false;
+    const load = () => {
+      fetchPlaces()
+        .then((list) => {
+          if (!stop) setPlaces(list.filter((pl) => !pl.device_id));
+        })
+        .catch(() => {});
+    };
+    load();
+    window.addEventListener("peja-places-changed", load);
+    return () => {
+      stop = true;
+      window.removeEventListener("peja-places-changed", load);
+    };
+  }, []);
   const [addToCircle, setAddToCircle] = useState<{ id: string; name: string; memberIds: string[]; owned: boolean } | null>(null);
   const toast = useToast();
   // Create a circle right from the map sheet, then flow into inviting.
@@ -550,6 +578,48 @@ export function CircleSheet({
             </>
           )}
 
+
+          {/* ── My Places: tap flies the map there, long tap edits ── */}
+          <div className="flex items-center justify-between mb-2 mt-5">
+            <p className="text-xs font-bold uppercase tracking-wider text-dark-500">
+              My places
+            </p>
+          </div>
+          <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+            {places.map((pl) => {
+              const icon =
+                pl.kind === "home" ? <HomeIcon className="w-3.5 h-3.5" /> :
+                pl.kind === "school" ? <GraduationCap className="w-3.5 h-3.5" /> :
+                pl.kind === "work" ? <Briefcase className="w-3.5 h-3.5" /> :
+                pl.kind === "lesson" ? <BookOpen className="w-3.5 h-3.5" /> :
+                <MapPinIcon className="w-3.5 h-3.5" />;
+              return (
+                <button
+                  key={pl.id}
+                  onClick={() => onPlaceTap?.({ lat: pl.lat, lng: pl.lng })}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setEditingPlace(pl);
+                    setPlaceEditorOpen(true);
+                  }}
+                  className="shrink-0 px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 bg-dark-800/50 border border-dark-700/60 text-dark-200 active:scale-[0.97] transition-transform"
+                >
+                  {icon}
+                  {pl.label}
+                </button>
+              );
+            })}
+            <button
+              onClick={() => {
+                setEditingPlace(null);
+                setPlaceEditorOpen(true);
+              }}
+              className="shrink-0 px-3 py-2 rounded-xl text-xs font-medium bg-dark-800/50 border border-dashed border-dark-600 text-dark-400 active:scale-[0.97] transition-transform"
+            >
+              + Add
+            </button>
+          </div>
+
           <p className="text-xs font-bold uppercase tracking-wider text-dark-500 mb-2 mt-5">
             Near you
           </p>
@@ -581,6 +651,21 @@ export function CircleSheet({
           <div style={{ height: PEEK_PX }} />
         </div>
       </div>
+
+      {placeEditorOpen && (
+        <PlaceEditorModal
+          isOpen
+          onClose={() => {
+            setPlaceEditorOpen(false);
+            setEditingPlace(null);
+          }}
+          place={editingPlace}
+          initialLat={origin?.lat}
+          initialLng={origin?.lng}
+          onSaved={() => {}}
+          onDeleted={() => {}}
+        />
+      )}
 
       <Modal isOpen={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite your people">
         <InvitePanel />

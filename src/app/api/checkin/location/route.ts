@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { requireUser, authErrorResponse } from "../../_auth";
+import { evaluateUserGeofences } from "../../_geofence";
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,10 +15,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing coordinates" }, { status: 400 });
     }
 
-    // Get active check-in (previous position too, for the stillness clock)
+    // Get active check-in (previous position too, for the stillness clock;
+    // destination + audience for the geofence pass below)
     const { data: checkin } = await supabaseAdmin
       .from("safety_checkins")
-      .select("id, latitude, longitude, still_since")
+      .select(
+        "id, latitude, longitude, still_since, contact_ids, destination_place_id, destination_label, destination_lat, destination_lng, destination_radius_m, destination_pending_since, arrived_at",
+      )
       .eq("user_id", user.id)
       .in("status", ["active", "missed"])
       .maybeSingle();
@@ -61,6 +65,25 @@ export async function POST(req: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", checkin.id);
+
+    // Geofences: destination arrival + saved-place enter/leave, told to the
+    // same people the session is shared with. Never allowed to fail the
+    // location write, a fence bug must not stop tracking.
+    try {
+      const { data: userData } = await supabaseAdmin
+        .from("users")
+        .select("full_name")
+        .eq("id", user.id)
+        .single();
+      await evaluateUserGeofences(supabaseAdmin, {
+        userId: user.id,
+        userName: userData?.full_name || "Someone",
+        audienceUserIds: (checkin.contact_ids as string[]) || [],
+        lat: latitude,
+        lng: longitude,
+        checkin,
+      });
+    } catch {}
 
     return NextResponse.json({ ok: true });
   } catch (error: any) {

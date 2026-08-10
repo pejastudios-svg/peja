@@ -9,10 +9,54 @@ export async function POST(req: NextRequest) {
     const { user } = await requireUser(req);
     const supabaseAdmin = getSupabaseAdmin();
 
-    const { contactIds, intervalMinutes } = await req.json();
+    const { contactIds, intervalMinutes, destination } = await req.json();
 
     if (!contactIds || !Array.isArray(contactIds) || contactIds.length === 0) {
       return NextResponse.json({ error: "Select at least one contact" }, { status: 400 });
+    }
+
+    // Optional destination: a saved place or a dropped pin. Snapshotted
+    // onto the session so deleting the place later cannot break an active
+    // journey. Bad destination input degrades to "no destination" rather
+    // than blocking the check-in, tracking always starts.
+    let dest: {
+      destination_place_id: string | null;
+      destination_label: string;
+      destination_lat: number;
+      destination_lng: number;
+      destination_radius_m: number;
+    } | null = null;
+    if (
+      destination &&
+      typeof destination.lat === "number" &&
+      typeof destination.lng === "number" &&
+      Math.abs(destination.lat) <= 90 &&
+      Math.abs(destination.lng) <= 180
+    ) {
+      dest = {
+        destination_place_id: null,
+        destination_label: String(destination.label || "their destination").slice(0, 60),
+        destination_lat: destination.lat,
+        destination_lng: destination.lng,
+        destination_radius_m: Math.min(500, Math.max(100, Math.round(Number(destination.radiusM) || 150))),
+      };
+      if (destination.placeId) {
+        const { data: place } = await supabaseAdmin
+          .from("places")
+          .select("id, label, lat, lng, radius_m")
+          .eq("id", destination.placeId)
+          .eq("owner_user_id", user.id)
+          .maybeSingle();
+        if (place) {
+          dest = {
+            destination_place_id: place.id,
+            destination_label: place.label,
+            destination_lat: place.lat,
+            destination_lng: place.lng,
+            destination_radius_m: place.radius_m,
+          };
+        }
+      }
     }
 
     if (!intervalMinutes || intervalMinutes < 15 || intervalMinutes > 1440) {
@@ -63,6 +107,7 @@ export async function POST(req: NextRequest) {
         check_in_interval_minutes: intervalMinutes,
         next_check_in_at: nextCheckIn.toISOString(),
         last_confirmed_at: new Date().toISOString(),
+        ...(dest || {}),
       })
       .select()
       .single();
@@ -73,11 +118,12 @@ export async function POST(req: NextRequest) {
 
     // Notify all selected contacts
     const userName = userData?.full_name || "Someone";
+    const headingTo = dest ? ` They are heading to ${dest.destination_label}.` : "";
     const notifications = validIds.map((contactId: string) => ({
       user_id: contactId,
       type: "system",
       title: "Safety Check-In Started",
-      body: `${userName} is sharing their location with you. They will check in every ${intervalMinutes < 60 ? `${intervalMinutes} minutes` : `${Math.floor(intervalMinutes / 60)} hour${Math.floor(intervalMinutes / 60) > 1 ? "s" : ""}${intervalMinutes % 60 > 0 ? ` ${intervalMinutes % 60} min` : ""}`}.`,
+      body: `${userName} is sharing their location with you. They will check in every ${intervalMinutes < 60 ? `${intervalMinutes} minutes` : `${Math.floor(intervalMinutes / 60)} hour${Math.floor(intervalMinutes / 60) > 1 ? "s" : ""}${intervalMinutes % 60 > 0 ? ` ${intervalMinutes % 60} min` : ""}`}.${headingTo}`,
       data: {
         type: "safety_checkin_started",
         checkin_id: checkin.id,
@@ -93,7 +139,7 @@ export async function POST(req: NextRequest) {
       sendPushToUser({
         userId: contactId,
         title: "Safety Check-In Started",
-        body: `${userName} is sharing their location with you. They will check in every ${intervalMinutes < 60 ? `${intervalMinutes} minutes` : `${Math.floor(intervalMinutes / 60)} hour${Math.floor(intervalMinutes / 60) > 1 ? "s" : ""}${intervalMinutes % 60 > 0 ? ` ${intervalMinutes % 60} min` : ""}`}.`,
+        body: `${userName} is sharing their location with you. They will check in every ${intervalMinutes < 60 ? `${intervalMinutes} minutes` : `${Math.floor(intervalMinutes / 60)} hour${Math.floor(intervalMinutes / 60) > 1 ? "s" : ""}${intervalMinutes % 60 > 0 ? ` ${intervalMinutes % 60} min` : ""}`}.${headingTo}`,
         data: { type: "safety_checkin_started", checkin_id: checkin.id, user_id: user.id },
       })
     ));

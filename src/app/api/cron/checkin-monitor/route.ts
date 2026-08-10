@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { sendPushToUser, sendSilentDataToUser } from "../../_firebaseAdmin";
 import { escalateStaleBeaconSos } from "../../_beaconEscalation";
+import { evaluateUserGeofences, evaluateBeaconGeofences } from "../../_geofence";
+import { drainBeaconConfigQueue } from "../../_beaconConfigQueue";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -130,7 +132,13 @@ export async function GET(req: NextRequest) {
     for (const { checkin, newMissedCount } of won) {
       const userName = nameById.get(checkin.user_id) || "Your contact";
       const contactIds: string[] = checkin.contact_ids || [];
-      const missedBody = `${userName} missed their check-in. Try reaching out to them. Their location is still being shared.`;
+      // A destination they never reached is the single most useful fact a
+      // contact can get with this alert, so say it when we know it.
+      const notArrived =
+        checkin.destination_label && !checkin.arrived_at
+          ? ` They had not yet arrived at ${checkin.destination_label}.`
+          : "";
+      const missedBody = `${userName} missed their check-in.${notArrived} Try reaching out to them. Their location is still being shared.`;
 
       for (const contactId of contactIds) {
         rows.push({
@@ -239,6 +247,66 @@ export async function GET(req: NextRequest) {
     console.error("[checkin-monitor] beacon escalation failed", e);
   }
 
+  // --- 3d. GEOFENCES for natively-tracked sessions ---
+  // The native Android service PATCHes safety_checkins straight against
+  // Supabase, so /api/checkin/location never sees those positions. This
+  // sweep evaluates fences from whatever the latest stored position is.
+  // The evaluator's hysteresis is wall-clock based, so sessions whose
+  // positions DO come through the API route get evaluated twice (route +
+  // here) and reach the same answers; only freshness is gated, dwell does
+  // the rest.
+  let fencesChecked = 0;
+  try {
+    const freshCutoff = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+    const { data: trackedCheckins } = await supabaseAdmin
+      .from("safety_checkins")
+      .select(
+        "id, user_id, latitude, longitude, contact_ids, location_updated_at, destination_place_id, destination_label, destination_lat, destination_lng, destination_radius_m, destination_pending_since, arrived_at",
+      )
+      .in("status", ["active", "missed"])
+      .gte("location_updated_at", freshCutoff)
+      .limit(BATCH);
+
+    const withPos = (trackedCheckins || []).filter(
+      (c) => c.latitude != null && c.longitude != null,
+    );
+    if (withPos.length > 0) {
+      const ids = Array.from(new Set(withPos.map((c) => c.user_id)));
+      const { data: subjects } = await supabaseAdmin
+        .from("users")
+        .select("id, full_name")
+        .in("id", ids);
+      const nameBy = new Map(
+        (subjects || []).map((u: { id: string; full_name: string | null }) => [u.id, u.full_name]),
+      );
+      for (const c of withPos) {
+        await evaluateUserGeofences(supabaseAdmin, {
+          userId: c.user_id,
+          userName: nameBy.get(c.user_id) || "Someone",
+          audienceUserIds: (c.contact_ids as string[]) || [],
+          lat: c.latitude,
+          lng: c.longitude,
+          checkin: c,
+        });
+        fencesChecked++;
+      }
+    }
+    // Hosted Beacons: same evaluator, subject "device:<id>", audience =
+    // host + viewers + shared contacts. Positions arrive via the TCP
+    // gateway, so the cron is their only evaluation point.
+    fencesChecked += await evaluateBeaconGeofences(supabaseAdmin);
+  } catch (e) {
+    console.error("[checkin-monitor] geofence sweep failed", e);
+  }
+
+  // --- 3e. Beacon config queue: a few over-the-air commands per pass ---
+  let configSent = 0;
+  try {
+    configSent = await drainBeaconConfigQueue(supabaseAdmin);
+  } catch (e) {
+    console.error("[checkin-monitor] config queue failed", e);
+  }
+
   // --- 4. Clean up temp pre-upload files older than 24h ---
   const { data: tempFiles } = await supabaseAdmin.storage
     .from("media")
@@ -268,5 +336,5 @@ export async function GET(req: NextRequest) {
     // Never fail the run over bookkeeping.
   }
 
-  return NextResponse.json({ ok: true, warned, missed, revived, beaconEscalated, tempCleaned: oldTempFiles.length });
+  return NextResponse.json({ ok: true, warned, missed, revived, beaconEscalated, fencesChecked, configSent, tempCleaned: oldTempFiles.length });
 }

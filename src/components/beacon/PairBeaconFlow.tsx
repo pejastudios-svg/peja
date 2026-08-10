@@ -14,7 +14,11 @@ import {
 } from "lucide-react";
 import type { BeaconCommand, BeaconDevice } from "@/lib/beacon";
 
-type Step = "intro" | "scan" | "sim" | "contacts" | "configure" | "done";
+type Step = "intro" | "scan" | "wearer" | "sim" | "contacts" | "configure" | "done";
+
+// Marker colours a wearer can be tagged with. Distinct at map-marker size,
+// readable with white text inside.
+const WEARER_COLORS = ["#8b5cf6", "#38bdf8", "#34d399", "#fbbf24", "#fb7185", "#818cf8"];
 
 interface PickableContact {
   id: string; // emergency_contacts row id
@@ -29,6 +33,8 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
 
   const [step, setStep] = useState<Step>("intro");
   const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [wearerName, setWearerName] = useState("");
+  const [wearerColor, setWearerColor] = useState(WEARER_COLORS[0]);
   const [sim, setSim] = useState("");
   const [contacts, setContacts] = useState<PickableContact[]>([]);
   const [family1, setFamily1] = useState<string | null>(null);
@@ -106,6 +112,8 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
           sim_msisdn: sim,
           family1_contact_id: family1,
           family2_contact_id: family2,
+          wearer_name: wearerName.trim() || null,
+          wearer_color: wearerColor,
         }),
       });
       if (!res.ok) {
@@ -120,7 +128,7 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
     } finally {
       setPairing(false);
     }
-  }, [deviceId, sim, family1, family2, pairing, toast]);
+  }, [deviceId, sim, family1, family2, wearerName, wearerColor, pairing, toast]);
 
   const simDigits = sim.replace(/[^\d+]/g, "");
   const markSent = (i: number) => setSentCmds((prev) => new Set(prev).add(i));
@@ -178,12 +186,13 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
 
   const back = () => {
     if (step === "scan") setStep("intro");
-    else if (step === "sim") setStep("scan");
+    else if (step === "wearer") setStep("scan");
+    else if (step === "sim") setStep("wearer");
     else if (step === "contacts") setStep("sim");
   };
 
   const progress = useMemo(() => {
-    const visible: Step[] = ["scan", "sim", "contacts", "configure"];
+    const visible: Step[] = ["scan", "wearer", "sim", "contacts", "configure"];
     const i = visible.indexOf(step);
     return i === -1 ? (step === "done" ? 1 : 0) : (i + 1) / (visible.length + 1);
   }, [step]);
@@ -261,9 +270,57 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
           <BeaconScanner
             onFound={(id) => {
               setDeviceId(id);
-              setStep("sim");
+              setStep("wearer");
             }}
           />
+        </div>
+      )}
+
+      {step === "wearer" && (
+        <div className="pt-4 beacon-step-in space-y-6">
+          <div className="text-center space-y-2">
+            <div className="mx-auto w-12 h-12 rounded-2xl bg-green-500/15 flex items-center justify-center">
+              <Check className="w-6 h-6 beacon-ok-text" />
+            </div>
+            <h2 className="text-xl font-bold text-dark-50">Who wears this one?</h2>
+            <p className="text-sm text-dark-400 px-4">
+              Their name goes on the map marker and in every alert, so you
+              always know which Beacon is talking.
+            </p>
+          </div>
+          <div className="space-y-3">
+            <input
+              autoFocus
+              value={wearerName}
+              onChange={(e) => setWearerName(e.target.value)}
+              maxLength={40}
+              placeholder="Ada"
+              className="w-full bg-dark-800 border border-dark-600 rounded-2xl px-4 py-3.5 text-center text-lg text-dark-100 placeholder:text-dark-500 focus:outline-none focus:border-primary-500 transition-colors"
+            />
+            <div className="flex justify-center gap-2.5 pt-1">
+              {WEARER_COLORS.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setWearerColor(c)}
+                  aria-label={`Colour ${c}`}
+                  className="w-9 h-9 rounded-full active:scale-[0.97] transition-transform flex items-center justify-center"
+                  style={{
+                    background: c,
+                    boxShadow: wearerColor === c ? `0 0 0 3px var(--page-bg), 0 0 0 5px ${c}` : "none",
+                  }}
+                >
+                  {wearerColor === c && <Check className="w-4 h-4 text-white" />}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button
+            onClick={() => setStep("sim")}
+            disabled={!wearerName.trim()}
+            className="w-full py-4 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-ui disabled:opacity-40"
+          >
+            Continue
+          </button>
         </div>
       )}
 

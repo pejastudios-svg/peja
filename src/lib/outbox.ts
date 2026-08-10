@@ -83,6 +83,13 @@ export interface SmlStartPayload {
   contactIds: string[];
   intervalMinutes: number;
   triggered_at: string;
+  destination?: {
+    placeId: string | null;
+    label: string;
+    lat: number;
+    lng: number;
+    radiusM: number;
+  } | null;
 }
 
 // SML "I'm OK, reset the timer" queued while offline. Carries the

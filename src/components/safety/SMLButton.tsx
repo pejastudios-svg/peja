@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { PejaSpinner } from "../ui/PejaSpinner";
 import { AvatarImage } from "@/components/ui/AvatarImage";
+import { DestinationPicker } from "@/components/places/DestinationPicker";
+import type { Place } from "@/lib/places";
 
 interface SharedWithMe {
   id: string;
@@ -155,6 +157,7 @@ export function SMLButton() {
   const [groups, setGroups] = useState<{ id: string; name: string; memberIds: string[] }[]>([]);
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [interval, setInterval_] = useState(60);
+  const [destination, setDestination] = useState<Place | null>(null);
   const [starting, setStarting] = useState(false);
   const [startPhase, setStartPhase] = useState<string | null>(null);
 
@@ -468,6 +471,9 @@ const handleButtonClick = () => {
           contactIds: selectedContacts,
           intervalMinutes: interval,
           triggered_at: triggeredAt,
+          destination: destination
+            ? { placeId: destination.id, label: destination.label, lat: destination.lat, lng: destination.lng, radiusM: destination.radius_m }
+            : null,
         },
       });
       toast.info(
@@ -482,7 +488,13 @@ const handleButtonClick = () => {
       setStartPhase("Starting location sharing...");
       const { data } = await authFetchJson("/api/checkin/start/", {
         method: "POST",
-        body: JSON.stringify({ contactIds: selectedContacts, intervalMinutes: interval }),
+        body: JSON.stringify({
+          contactIds: selectedContacts,
+          intervalMinutes: interval,
+          destination: destination
+            ? { placeId: destination.id, label: destination.label, lat: destination.lat, lng: destination.lng, radiusM: destination.radius_m }
+            : null,
+        }),
       });
       if (!data?.ok) throw new Error(data?.error || "Could not start sharing");
 
@@ -512,6 +524,9 @@ const handleButtonClick = () => {
           contactIds: selectedContacts,
           intervalMinutes: interval,
           triggered_at: triggeredAt,
+          destination: destination
+            ? { placeId: destination.id, label: destination.label, lat: destination.lat, lng: destination.lng, radiusM: destination.radius_m }
+            : null,
         },
       });
       toast.info(
@@ -947,6 +962,9 @@ const handleConfirm = async () => {
                     })}
                   </div>
                 </div>
+
+                {/* Destination (optional) */}
+                <DestinationPicker selected={destination} onChange={setDestination} />
 
                 {/* Timer */}
                 <div className="mb-5">

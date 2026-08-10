@@ -21,6 +21,10 @@ export async function POST(req: NextRequest) {
     const sim = String(body.sim_msisdn ?? "").replace(/[^\d+]/g, "");
     const family1Id: string | null = body.family1_contact_id || null;
     const family2Id: string | null = body.family2_contact_id || null;
+    const wearerName = String(body.wearer_name ?? "").trim().slice(0, 40) || null;
+    const wearerColor = /^#[0-9a-fA-F]{6}$/.test(String(body.wearer_color ?? ""))
+      ? String(body.wearer_color)
+      : null;
 
     if (!deviceId) {
       return NextResponse.json({ error: "That doesn't look like a Beacon ID" }, { status: 400 });
@@ -83,6 +87,8 @@ export async function POST(req: NextRequest) {
       device_id: deviceId,
       sim_msisdn: sim,
       name: "Beacon 1",
+      wearer_name: wearerName,
+      wearer_color: wearerColor,
       status: "configuring",
       family1_contact_id: family1Phone ? family1Id : null,
       family2_contact_id: family2Phone ? family2Id : null,

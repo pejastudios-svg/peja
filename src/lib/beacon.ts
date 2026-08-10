@@ -17,6 +17,10 @@ export interface BeaconDevice {
   device_id: string;
   sim_msisdn: string;
   name: string;
+  /** Who wears this device ("Ada"). Null on rows paired before Beacon Circle. */
+  wearer_name: string | null;
+  /** Marker/accent colour for this wearer (hex). */
+  wearer_color: string | null;
   status: "pairing" | "configuring" | "connected" | "offline" | "unpaired";
   family1_contact_id: string | null;
   family2_contact_id: string | null;

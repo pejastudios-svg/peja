@@ -39,6 +39,7 @@ export async function dispatchSmlStart(payload: SmlStartPayload): Promise<void> 
   await postCheckin("/api/checkin/start/", {
     contactIds: payload.contactIds,
     intervalMinutes: payload.intervalMinutes,
+    destination: payload.destination ?? null,
   });
 }
 

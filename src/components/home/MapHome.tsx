@@ -23,6 +23,8 @@ import { CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
 import { Bell, BarChart3, Compass, LocateFixed, MapPin, Navigation, Radio, User, X } from "lucide-react";
 import dynamic from "next/dynamic";
+import { PlaceEditorModal } from "@/components/places/PlaceEditorModal";
+import { fetchPlaces, type Place } from "@/lib/places";
 
 const DataAnalyticsPanel = dynamic(() => import("@/components/map/DataAnalyticsPanel"), { ssr: false });
 
@@ -119,12 +121,51 @@ export default function MapHome() {
   const [circleSos, setCircleSos] = useState<
     { user_id: string; name: string; lat: number | null; lng: number | null; created_at: string; sosId: string }[]
   >([]);
-  const [beacon, setBeacon] = useState<{ lat: number; lng: number; online: boolean } | null>(null);
-  // Beacons belonging to people in my circle who share theirs with me.
+  // Every Beacon this account hosts (Beacon Circle: can be many).
+  const [myBeacons, setMyBeacons] = useState<
+    { id: string; lat: number; lng: number; online: boolean; wearerName: string | null; wearerColor: string | null }[]
+  >([]);
+  // Beacons visible to me: shared by my circle, or granted to me directly.
   const [sharedBeacons, setSharedBeacons] = useState<
-    { id: string; lat: number; lng: number; online: boolean; ownerName: string }[]
+    { id: string; lat: number; lng: number; online: boolean; label: string; wearerColor: string | null }[]
   >([]);
   const [selectedMember, setSelectedMember] = useState<CircleMember | null>(null);
+  // The selected person's circle-visible places (permission enforced by
+  // RLS, so whatever comes back is exactly what they allow me to see).
+  // Undefined = not fetched yet; [] = fetched, nothing shared. NOT cleared
+  // when the card closes: the card is full screen, so the map is only
+  // visible after closing, and clearing then would mean the markers could
+  // never be seen at all. Replaced when a different member is selected.
+  const [memberPlaces, setMemberPlaces] = useState<
+    { id: string; lat: number; lng: number; label: string; mapLabel: string }[] | undefined
+  >(undefined);
+  useEffect(() => {
+    let stop = false;
+    if (!selectedMember) return; // keep the previous member's markers
+    setMemberPlaces(undefined);
+    (async () => {
+      const { data } = await supabase
+        .from("places")
+        .select("id, label, lat, lng")
+        .eq("owner_user_id", selectedMember.id)
+        .is("device_id", null);
+      if (!stop) {
+        const first = selectedMember.name.split(" ")[0];
+        setMemberPlaces(
+          (data || []).map((pl) => ({
+            id: pl.id as string,
+            lat: pl.lat as number,
+            lng: pl.lng as number,
+            label: pl.label as string,
+            mapLabel: `${first}, ${pl.label}`,
+          })),
+        );
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [selectedMember]);
   const [sheetCircles, setSheetCircles] = useState<{ id: string; name: string; members: CircleMember[]; owned: boolean }[]>([]);
   const [incomingPing, setIncomingPing] = useState<
     { id: string; fromId: string; fromName: string } | null
@@ -156,6 +197,63 @@ export default function MapHome() {
   const lastPresenceWrite = useRef(0);
   // ── long-press pin: hold the map, get a place + directions ──
   const [pin, setPin] = useState<{ lat: number; lng: number; name: string | null; loading: boolean } | null>(null);
+  // "Save place" from the long-press card: opens the place editor seeded
+  // with the pinned point and its reverse-geocoded name.
+  const [savingPlace, setSavingPlace] = useState<{ lat: number; lng: number; name: string | null } | null>(null);
+  // Own saved places, drawn as small labelled markers once zoomed in
+  // enough to be useful (personal ones AND the ones attached to hosted
+  // Beacons, which carry the wearer's name in the label). Refreshed when
+  // the save-place editor closes.
+  const [myPlaces, setMyPlaces] = useState<Place[]>([]);
+  useEffect(() => {
+    let stop = false;
+    const load = () => {
+      fetchPlaces()
+        .then((list) => {
+          if (!stop) setMyPlaces(list);
+        })
+        .catch(() => {});
+    };
+    load();
+    // Saved from the check-in sheet, settings, or anywhere else: the
+    // places lib announces every mutation.
+    window.addEventListener("peja-places-changed", load);
+    return () => {
+      stop = true;
+      window.removeEventListener("peja-places-changed", load);
+    };
+  }, [savingPlace]);
+  // Places of Beacons OTHER people share with me (RLS returns only what I
+  // am allowed to see: circle-visible places of granted/shared devices).
+  const [sharedPlaces, setSharedPlaces] = useState<
+    { id: string; lat: number; lng: number; label: string }[]
+  >([]);
+  useEffect(() => {
+    let stop = false;
+    if (sharedBeacons.length === 0) {
+      setSharedPlaces([]);
+      return;
+    }
+    (async () => {
+      const { data } = await supabase
+        .from("places")
+        .select("id, device_id, label, lat, lng")
+        .in("device_id", sharedBeacons.map((b) => b.id));
+      if (stop) return;
+      const labelFor = new Map(sharedBeacons.map((b) => [b.id, b.label]));
+      setSharedPlaces(
+        (data || []).map((p) => ({
+          id: p.id as string,
+          lat: p.lat as number,
+          lng: p.lng as number,
+          label: `${(labelFor.get(p.device_id as string) || "").split("'")[0]}, ${p.label}`.replace(/^, /, ""),
+        })),
+      );
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [sharedBeacons]);
   // A flight requested before the map finished loading (deep link).
   const pendingFly = useRef<{ lat: number; lng: number } | null>(null);
 
@@ -582,46 +680,86 @@ export default function MapHome() {
         );
       }
 
-      // Own Beacon tracker pin.
-      const { data: dev } = await supabase
+      // Own Beacon pins: every device this account hosts that has a fix.
+      const { data: devs } = await supabase
         .from("devices")
-        .select("last_lat, last_lng, status")
+        .select("id, last_lat, last_lng, status, wearer_name, wearer_color")
         .eq("user_id", user.id)
         .neq("status", "unpaired")
-        .not("last_lat", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .not("last_lat", "is", null);
       if (!stop) {
-        setBeacon(
-          dev ? { lat: dev.last_lat, lng: dev.last_lng, online: dev.status === "connected" } : null
+        setMyBeacons(
+          (devs || []).map((d) => ({
+            id: d.id as string,
+            lat: d.last_lat as number,
+            lng: d.last_lng as number,
+            online: d.status === "connected",
+            wearerName: (d.wearer_name as string) || null,
+            wearerColor: (d.wearer_color as string) || null,
+          })),
         );
       }
 
-      // Beacons shared with me by people in my circle. RLS returns a row
-      // only when the owner has sharing on and has not hidden from me, so
-      // no permission logic is duplicated here.
-      if (ids.length > 0) {
-        const { data: shared } = await supabase
-          .from("devices")
-          .select("id, user_id, name, last_lat, last_lng, status")
-          .in("user_id", ids)
-          .neq("status", "unpaired")
-          .not("last_lat", "is", null);
-        if (!stop) {
-          const nameFor = new Map(outMembers.map((m) => [m.id, m.name]));
-          setSharedBeacons(
-            (shared || []).map((d) => ({
+      // Beacons visible to me from two directions, merged by device id:
+      //   - my circle's beacons (owner shares with contacts; RLS filters)
+      //   - beacons granted to me one at a time (beacon_viewers), the
+      //     school-parent path. The grant list is mine to read; the device
+      //     rows come back through the granted-viewers RLS policy.
+      {
+        const nameFor = new Map(outMembers.map((m) => [m.id, m.name]));
+        const merged = new Map<
+          string,
+          { id: string; lat: number; lng: number; online: boolean; label: string; wearerColor: string | null }
+        >();
+
+        if (ids.length > 0) {
+          const { data: shared } = await supabase
+            .from("devices")
+            .select("id, user_id, name, last_lat, last_lng, status, wearer_name, wearer_color")
+            .in("user_id", ids)
+            .neq("status", "unpaired")
+            .not("last_lat", "is", null);
+          for (const d of shared || []) {
+            merged.set(d.id as string, {
               id: d.id as string,
               lat: d.last_lat as number,
               lng: d.last_lng as number,
               online: d.status === "connected",
-              ownerName: (nameFor.get(d.user_id as string) || "Someone").split(" ")[0],
-            })),
-          );
+              label:
+                (d.wearer_name as string) ||
+                `${(nameFor.get(d.user_id as string) || "Someone").split(" ")[0]}'s Beacon`,
+              wearerColor: (d.wearer_color as string) || null,
+            });
+          }
         }
-      } else if (!stop) {
-        setSharedBeacons([]);
+
+        const { data: grants } = await supabase
+          .from("beacon_viewers")
+          .select("device_id")
+          .eq("viewer_user_id", user.id);
+        const grantIds = (grants || [])
+          .map((g) => g.device_id as string)
+          .filter((id) => !merged.has(id));
+        if (grantIds.length > 0) {
+          const { data: granted } = await supabase
+            .from("devices")
+            .select("id, last_lat, last_lng, status, name, wearer_name, wearer_color")
+            .in("id", grantIds)
+            .neq("status", "unpaired")
+            .not("last_lat", "is", null);
+          for (const d of granted || []) {
+            merged.set(d.id as string, {
+              id: d.id as string,
+              lat: d.last_lat as number,
+              lng: d.last_lng as number,
+              online: d.status === "connected",
+              label: (d.wearer_name as string) || (d.name as string) || "Beacon",
+              wearerColor: (d.wearer_color as string) || null,
+            });
+          }
+        }
+
+        if (!stop) setSharedBeacons(Array.from(merged.values()));
       }
 
       // Incidents near the user. Without a position we cannot honestly
@@ -948,7 +1086,10 @@ export default function MapHome() {
         attributionControl={false}
         style={{ width: "100%", height: "100%" }}
         onRotate={(e) => setMapBearing(e.viewState.bearing)}
-        onLoad={() => {
+        onLoad={(e) => {
+          // Sync the zoom-gate state with the real camera before the first
+          // move, or place markers judge visibility against a stale value.
+          setMapZoom(Math.round(e.target.getZoom() * 10) / 10);
           if (pendingFly.current) {
             const { lat, lng } = pendingFly.current;
             pendingFly.current = null;
@@ -1140,6 +1281,51 @@ export default function MapHome() {
           </Marker>
         )}
 
+        {/* ── saved places: mine, my Beacons' (wearer-labelled), and those
+            of Beacons shared with me ── */}
+        {myPlaces.map((p) => {
+            const wearer = p.device_id
+              ? myBeacons.find((b) => b.id === p.device_id)?.wearerName
+              : null;
+            return (
+              <Marker key={`place-${p.id}`} latitude={p.lat} longitude={p.lng} anchor="center">
+                <div className="flex flex-col items-center pointer-events-none">
+                  <div className="w-6 h-6 rounded-full bg-[var(--glass-float-bg)] border border-[var(--glass-border-float)] shadow flex items-center justify-center">
+                    <MapPin className="beacon-accent-text w-3 h-3" />
+                  </div>
+                  <span className="mt-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold shadow bg-black/60 text-white whitespace-nowrap">
+                    {wearer ? `${wearer}, ${p.label}` : p.label}
+                  </span>
+                </div>
+              </Marker>
+            );
+          })}
+        {(memberPlaces || []).map((p) => (
+          <Marker key={`mplace-${p.id}`} latitude={p.lat} longitude={p.lng} anchor="center">
+            <div className="flex flex-col items-center pointer-events-none beacon-pop">
+              <div className="w-6 h-6 rounded-full bg-[var(--glass-float-bg)] border border-[var(--glass-border-float)] shadow flex items-center justify-center">
+                <MapPin className="beacon-accent-text w-3 h-3" />
+              </div>
+              <span className="mt-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold shadow bg-black/60 text-white whitespace-nowrap">
+                {p.label}
+              </span>
+            </div>
+          </Marker>
+        ))}
+        {mapZoom >= 13 &&
+          sharedPlaces.map((p) => (
+            <Marker key={`splace-${p.id}`} latitude={p.lat} longitude={p.lng} anchor="center">
+              <div className="flex flex-col items-center pointer-events-none">
+                <div className="w-6 h-6 rounded-full bg-[var(--glass-float-bg)] border border-[var(--glass-border-float)] shadow flex items-center justify-center">
+                  <MapPin className="beacon-accent-text w-3 h-3" />
+                </div>
+                <span className="mt-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold shadow bg-black/60 text-white whitespace-nowrap">
+                  {p.label}
+                </span>
+              </div>
+            </Marker>
+          ))}
+
         {/* ── SOS movement trails (oldest faintest) ── */}
         {Object.entries(trails).flatMap(([uid, pts]) =>
           circleSos.some((c) => c.user_id === uid)
@@ -1158,34 +1344,47 @@ export default function MapHome() {
             : []
         )}
 
-        {/* ── your Beacon tracker (owner-only) ── */}
-        {beacon && (
-          <TweenedMarker latitude={beacon.lat} longitude={beacon.lng} anchor="center">
-            <div
-              className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shadow-lg ${
-                beacon.online ? "bg-primary-600 border-white" : "bg-dark-700 border-dark-500 opacity-70"
-              }`}
-            >
-              <Radio className="w-4 h-4 text-white" />
+        {/* ── your Beacons (host view): one marker per wearer ── */}
+        {myBeacons.map((b) => (
+          <TweenedMarker key={`mine-${b.id}`} latitude={b.lat} longitude={b.lng} anchor="center">
+            <div className="flex flex-col items-center pointer-events-none">
+              <div
+                className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shadow-lg ${
+                  b.online ? "border-white" : "border-dark-500 opacity-70"
+                }`}
+                style={{ background: b.online ? b.wearerColor || "#7c3aed" : undefined }}
+              >
+                {b.wearerName ? (
+                  <span className="text-xs font-bold text-white">{b.wearerName[0].toUpperCase()}</span>
+                ) : (
+                  <Radio className="w-4 h-4 text-white" />
+                )}
+              </div>
+              {b.wearerName && (
+                <span className="mt-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold shadow bg-black/70 text-white whitespace-nowrap">
+                  {b.wearerName}
+                </span>
+              )}
             </div>
           </TweenedMarker>
-        )}
+        ))}
 
-        {/* ── Beacons shared with me by my circle ── */}
+        {/* ── Beacons shared with or granted to me ── */}
         {sharedBeacons.map((b) => (
           <TweenedMarker key={b.id} latitude={b.lat} longitude={b.lng} anchor="center">
             <div className="flex flex-col items-center pointer-events-none">
               <div
                 className={`w-8 h-8 rounded-full border-2 flex items-center justify-center shadow-lg ${
-                  b.online ? "bg-primary-600 border-white" : "bg-dark-700 border-dark-500 opacity-70"
+                  b.online ? "border-white" : "border-dark-500 opacity-70"
                 }`}
+                style={{ background: b.online ? b.wearerColor || "#7c3aed" : undefined }}
               >
                 <Radio className="w-4 h-4 text-white" />
               </div>
               <span
                 className="mt-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold shadow bg-black/70 text-white whitespace-nowrap"
               >
-                {b.ownerName}&apos;s Beacon
+                {b.label}
               </span>
             </div>
           </TweenedMarker>
@@ -1356,6 +1555,14 @@ export default function MapHome() {
                       </p>
                     </div>
                     <button
+                      onClick={() =>
+                        setSavingPlace({ lat: pin.lat, lng: pin.lng, name: pin.name })
+                      }
+                      className="px-3 py-2 rounded-xl bg-[var(--soft-surface-strong)] text-dark-100 text-xs font-semibold active:scale-[0.97] transition-transform shrink-0"
+                    >
+                      Save
+                    </button>
+                    <button
                       onClick={() => openDirections({ lat: pin.lat, lng: pin.lng }, centerRef.current)}
                       className="px-3.5 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold active:scale-[0.97] transition-transform shrink-0 flex items-center gap-1.5"
                     >
@@ -1372,6 +1579,17 @@ export default function MapHome() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {savingPlace && (
+              <PlaceEditorModal
+                isOpen
+                onClose={() => setSavingPlace(null)}
+                initialLat={savingPlace.lat}
+                initialLng={savingPlace.lng}
+                initialLabel={savingPlace.name}
+                onSaved={() => setPin(null)}
+              />
             )}
 
             {/* S0 nudge: sheet open = compact row slotted BETWEEN the
@@ -1484,7 +1702,18 @@ export default function MapHome() {
       />
 
       {/* ── member card ── */}
-      <MemberCard member={selectedMember} onClose={() => setSelectedMember(null)} origin={center} />
+      <MemberCard
+        member={selectedMember}
+        onClose={() => setSelectedMember(null)}
+        origin={center}
+        places={memberPlaces}
+        onPlaceTap={(pl) => {
+          // Close the card so the map is visible, then land on the place.
+          setSelectedMember(null);
+          followRef.current = false;
+          mapRef.current?.flyTo({ center: [pl.lng, pl.lat], zoom: 15.5, duration: 900 });
+        }}
+      />
 
       {/* ── the sheet ── */}
       <CircleSheet
@@ -1498,6 +1727,11 @@ export default function MapHome() {
           setSelectedMember(m);
         }}
         onIncidentTap={(i) => router.push(`/post/${i.id}`)}
+        onPlaceTap={(pl) => {
+          followRef.current = false;
+          mapRef.current?.flyTo({ center: [pl.lng, pl.lat], zoom: 15.5, duration: 800 });
+        }}
+        origin={centerRef.current}
       />
     </div>
   );

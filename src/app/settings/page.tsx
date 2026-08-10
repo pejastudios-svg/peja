@@ -45,6 +45,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { useToast } from "@/context/ToastContext";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { Header } from "@/components/layout/Header";
+import { PlacesSection } from "@/components/places/PlacesSection";
 
 export default function SettingsPage() {
   useScrollRestore("settings");
@@ -669,6 +670,9 @@ export default function SettingsPage() {
             )}
           </section>
         )}
+
+        {/* Saved places: destinations + arrive/leave alerts */}
+        <PlacesSection />
 
         {/* Notifications Section */}
         <section className="py-6 border-b border-[var(--hairline)]">

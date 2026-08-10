@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import {
   AlertTriangle, BatteryLow, Battery, HeartHandshake, MapPinned, MessageCircle, Navigation, Phone, User,
+  MapPin,
 } from "lucide-react";
 import type { CircleMember } from "./CircleSheet";
 
@@ -23,10 +24,15 @@ export function MemberCard({
   member,
   onClose,
   origin,
+  places,
+  onPlaceTap,
 }: {
   member: CircleMember | null;
   onClose: () => void;
   origin?: { lat: number; lng: number } | null;
+  /** Their circle-visible places. Undefined = still loading. */
+  places?: { id: string; lat: number; lng: number; label: string }[];
+  onPlaceTap?: (p: { id: string; lat: number; lng: number; label: string }) => void;
 }) {
   const { user } = useAuth();
   const toast = useToast();
@@ -256,6 +262,34 @@ export function MemberCard({
             <Navigation className="w-4 h-4" />
             Directions to {member.name.split(" ")[0]}
           </button>
+        )}
+
+        {/* their places: tap one to see it on the map (the card closes,
+            because the map lives behind this full-screen sheet) */}
+        {places !== undefined && (
+          <div className="mb-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-dark-500 mb-2">
+              {member.name.split(" ")[0]}&apos;s places
+            </p>
+            {places.length === 0 ? (
+              <p className="text-xs text-dark-500">
+                No places shared with you.
+              </p>
+            ) : (
+              <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+                {places.map((pl) => (
+                  <button
+                    key={pl.id}
+                    onClick={() => onPlaceTap?.(pl)}
+                    className="shrink-0 px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 bg-dark-800/60 border border-dark-700 text-dark-200 active:scale-[0.97] transition-transform"
+                  >
+                    <MapPin className="beacon-accent-text w-3.5 h-3.5" />
+                    {pl.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* sharing switch */}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
+import { beaconAudience } from "../../_geofence";
 import { sendPushToUser } from "../../_firebaseAdmin";
 import { sendOpsAlert } from "../../_email";
 
@@ -66,7 +67,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data: devices } = await supabaseAdmin
       .from("devices")
-      .select("id, user_id, name, battery_pct, status")
+      .select("id, user_id, name, wearer_name, share_with_contacts, battery_pct, status")
       .lte("battery_pct", LOW_PCT)
       .not("battery_pct", "is", null)
       .neq("status", "unpaired")
@@ -86,28 +87,105 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      const name = d.name || "Your Beacon";
+      // Named after the wearer, told to everyone who watches this device:
+      // the host, granted viewers, and shared contacts. In a fleet, "Your
+      // Beacon" says nothing; "Ada's Beacon" says everything.
+      const name = d.wearer_name ? `${d.wearer_name}'s Beacon` : d.name || "Your Beacon";
       const title = `${name} battery is low`;
       const body = `${d.battery_pct}% left. Charge it soon so it can still call for help.`;
+      const audience = await beaconAudience(supabaseAdmin, d);
 
-      await supabaseAdmin.from("notifications").insert({
-        user_id: d.user_id,
-        type: "system",
-        title,
-        body,
-        data: { type: "beacon_low_battery", device_id: d.id, battery_pct: d.battery_pct },
-        is_read: false,
-      });
-      sendPushToUser({
-        userId: d.user_id,
-        title,
-        body,
-        data: { type: "beacon_low_battery", device_id: String(d.id) },
-      }).catch(() => {});
+      await supabaseAdmin.from("notifications").insert(
+        audience.map((userId) => ({
+          user_id: userId,
+          type: "system",
+          title,
+          body,
+          data: { type: "beacon_low_battery", device_id: d.id, battery_pct: d.battery_pct },
+          is_read: false,
+        })),
+      );
+      await Promise.all(
+        audience.map((userId) =>
+          sendPushToUser({
+            userId,
+            title,
+            body,
+            data: { type: "beacon_low_battery", device_id: String(d.id) },
+          }).catch(() => {}),
+        ),
+      );
       beaconsWarned++;
     }
   } catch (e) {
     console.error("[battery-monitor] beacon pass failed:", e);
+  }
+
+  // ── 1b. Silent Beacons ──────────────────────────────────────────────
+  // A powered-on Beacon that stops reporting is a mystery exactly when a
+  // mystery is unacceptable: dead battery, dead SIM, or a child somewhere
+  // without coverage. Two hours of silence from a device that claims to
+  // be connected earns an alert to everyone who watches it. This cron
+  // runs every 2 hours, so the 12h cooldown keeps it to a reminder, not
+  // a drumbeat.
+  let beaconsSilent = 0;
+  try {
+    const silenceCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const { data: silent } = await supabaseAdmin
+      .from("devices")
+      .select("id, user_id, name, wearer_name, share_with_contacts, last_seen_at")
+      .eq("status", "connected")
+      .lt("last_seen_at", silenceCutoff)
+      .not("last_seen_at", "is", null)
+      .limit(BATCH);
+
+    for (const d of silent || []) {
+      if (
+        await alertedRecently(
+          supabaseAdmin,
+          d.user_id,
+          "beacon_silent",
+          "device_id",
+          d.id,
+          12,
+        )
+      ) {
+        continue;
+      }
+
+      const name = d.wearer_name ? `${d.wearer_name}'s Beacon` : d.name || "Your Beacon";
+      const hours = Math.max(
+        2,
+        Math.floor((Date.now() - new Date(d.last_seen_at as string).getTime()) / 3_600_000),
+      );
+      const title = `${name} has gone quiet`;
+      const body = `No signal for ${hours} hours. Check its battery, its SIM credit, or whether it is somewhere without coverage.`;
+      const audience = await beaconAudience(supabaseAdmin, d);
+
+      await supabaseAdmin.from("notifications").insert(
+        audience.map((userId) => ({
+          user_id: userId,
+          type: "system",
+          title,
+          body,
+          data: { type: "beacon_silent", device_id: d.id },
+          is_read: false,
+        })),
+      );
+      await Promise.all(
+        audience.map((userId) =>
+          sendPushToUser({
+            userId,
+            title,
+            body,
+            data: { type: "beacon_silent", device_id: String(d.id) },
+          }).catch(() => {}),
+        ),
+      );
+      beaconsSilent++;
+    }
+  } catch (e) {
+    console.error("[battery-monitor] silence pass failed:", e);
   }
 
   // ── 2. Phones ───────────────────────────────────────────────────────
@@ -270,5 +348,5 @@ export async function GET(req: NextRequest) {
     console.error("[battery-monitor] watchdog failed:", e);
   }
 
-  return NextResponse.json({ ok: true, beaconsWarned, phonesWarned, watchdogAlerted });
+  return NextResponse.json({ ok: true, beaconsWarned, beaconsSilent, phonesWarned, watchdogAlerted });
 }

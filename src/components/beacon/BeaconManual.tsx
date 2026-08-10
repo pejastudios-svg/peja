@@ -110,9 +110,10 @@ export function BeaconManual() {
                 <Power className="beacon-bad-text w-4 h-4 shrink-0 mt-0.5" />
                 <p className="text-xs text-dark-300 leading-relaxed">
                   <span className="font-semibold text-dark-200">Off:</span> press and
-                  hold the green call button first, then hold the side button for about
-                  5 seconds. A voice plays as it shuts down. Two buttons on purpose, so
-                  it cannot be switched off by accident in a pocket.
+                  hold the green call button first, then hold the side button
+                  immediately after for about 5 seconds. A voice plays as it shuts
+                  down. Two buttons on purpose, so it cannot be switched off by
+                  accident in a pocket.
                 </p>
               </div>
             </div>
@@ -138,7 +139,8 @@ export function BeaconManual() {
               ))}
             </div>
             <p className="text-[11px] text-dark-500 mt-2">
-              Press the green button to switch which light is showing.
+              The light is on the bottom edge of the device. Press the green
+              button to switch which light is showing.
             </p>
           </section>
 
@@ -178,8 +180,9 @@ export function BeaconManual() {
                 find GPS. After that it locks on much faster.
               </p>
               <p className="text-xs text-dark-300 leading-relaxed">
-                Worn on the arm band or on the hanging rope works best. Deep inside a
-                bag, both GPS and the speaker suffer.
+                Wear it concealed. Fabric does not block GPS, so under clothing is
+                fine, and a device nobody can see is a device nobody can take.
+                Buried deep inside a bag, both GPS and the speaker suffer.
               </p>
               <p className="text-xs text-dark-300 leading-relaxed">
                 It sends its position while moving and rests when still, which is what
