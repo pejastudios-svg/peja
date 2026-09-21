@@ -8,7 +8,7 @@ import { usePageCache } from "@/context/PageCacheContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
-import { Loader2, ArrowLeft, User, MapPin, Trash2, Archive, FileText } from "lucide-react";
+import { Loader2, ArrowLeft, User, MapPin, Trash2, Archive, FileText, Radio, Eye, EyeOff } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { PostCard } from "@/components/posts/PostCard";
 import { Post } from "@/lib/types";
@@ -47,6 +47,40 @@ type AdminEmergencyContact = {
   } | null;
 };
 
+type BeaconPerson = { id: string; name: string; grantedAt?: string | null; via?: "grant" | "contact" };
+
+type AdminBeacon = {
+  id: string;
+  deviceId: string;
+  name: string;
+  wearerName: string | null;
+  wearerColor: string | null;
+  status: string;
+  batteryPct: number | null;
+  lat: number | null;
+  lng: number | null;
+  lastFixAt: string | null;
+  lastSeenAt: string | null;
+  sosActive: boolean;
+  shareWithContacts: boolean;
+  fallAlertEnabled: boolean;
+  firmware: string | null;
+  simLast4: string | null;
+  pairedAt: string | null;
+  canSee: BeaconPerson[];
+  hiddenFrom: BeaconPerson[];
+};
+
+type SharedBeacon = Omit<AdminBeacon, "canSee" | "hiddenFrom"> & {
+  ownerId: string;
+  ownerName: string;
+  ownerAvatar: string | null;
+  grantedAt: string | null;
+};
+
+/** How long a revealed SIM number stays on screen before hiding itself. */
+const SIM_REVEAL_MS = 60_000;
+
 export default function AdminUserDetailPage() {
   const router = useRouter();
   const params = useParams();
@@ -68,6 +102,93 @@ const pageCache = usePageCache();
 
 const [contacts, setContacts] = useState<AdminEmergencyContact[]>(cachedData?.contacts || []);
   const [contactsLoading, setContactsLoading] = useState(cachedData === null);
+
+  // SIM reveal. The number is the Beacon's control channel, not contact
+  // info: /api/beacon/sms texts commands to it and the device's own
+  // authorisation code is the factory default, so holding the number is
+  // enough to repoint someone's SOS call. Hidden until the admin PIN is
+  // re-entered, and only for the device asked about.
+  const [revealTarget, setRevealTarget] = useState<AdminBeacon | null>(null);
+  const [revealPin, setRevealPin] = useState("");
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealError, setRevealError] = useState<string | null>(null);
+  const [revealedSims, setRevealedSims] = useState<Record<string, { sim: string; expiresAt: number }>>({});
+  const [copiedSim, setCopiedSim] = useState<string | null>(null);
+  // Drives the countdown and the automatic hide. Only ticks while
+  // something is actually revealed.
+  const [revealTick, setRevealTick] = useState(0);
+
+  useEffect(() => {
+    if (Object.keys(revealedSims).length === 0) return;
+    const t = setInterval(() => {
+      setRevealTick((n) => n + 1);
+      setRevealedSims((prev) => {
+        const now = Date.now();
+        const next = Object.fromEntries(
+          Object.entries(prev).filter(([, v]) => v.expiresAt > now),
+        );
+        return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [revealedSims]);
+
+  const submitReveal = async () => {
+    if (!revealTarget || revealBusy) return;
+    setRevealBusy(true);
+    setRevealError(null);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth.session?.access_token;
+      if (!token) throw new Error("Session expired");
+      const res = await fetch("/api/admin/user-beacons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "reveal_sim", deviceId: revealTarget.id, pin: revealPin }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not reveal");
+      // A working credential should not sit on screen indefinitely.
+      setRevealedSims((prev) => ({
+        ...prev,
+        [revealTarget.id]: { sim: json.sim, expiresAt: Date.now() + SIM_REVEAL_MS },
+      }));
+      setRevealTarget(null);
+      setRevealPin("");
+    } catch (e) {
+      setRevealError((e as Error).message);
+    } finally {
+      setRevealBusy(false);
+    }
+  };
+
+  const [ownedBeacons, setOwnedBeacons] = useState<AdminBeacon[]>([]);
+  const [sharedBeacons, setSharedBeacons] = useState<SharedBeacon[]>([]);
+  const [beaconsLoading, setBeaconsLoading] = useState(true);
+
+  // Beacons attached to this account, both directions: devices this user
+  // owns (and who is allowed to watch each one) and devices someone else
+  // owns that this user has been granted sight of.
+  const fetchBeacons = async () => {
+    setBeaconsLoading(true);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth.session?.access_token;
+      if (!token) throw new Error("Session expired");
+      const res = await fetch(`/api/admin/user-beacons?userId=${encodeURIComponent(userId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to load beacons");
+      setOwnedBeacons((json.owned || []) as AdminBeacon[]);
+      setSharedBeacons((json.visible || []) as SharedBeacon[]);
+    } catch {
+      setOwnedBeacons([]);
+      setSharedBeacons([]);
+    } finally {
+      setBeaconsLoading(false);
+    }
+  };
 
   const fetchEmergencyContacts = async () => {
     setContactsLoading(true);
@@ -196,7 +317,8 @@ useEffect(() => {
         await Promise.all([
           fetchUser(),
           fetchEmergencyContacts(),
-          fetchUserPosts()
+          fetchUserPosts(),
+          fetchBeacons()
         ]);
       } catch (e) {
         if (!cachedData) setU(null);
@@ -471,6 +593,264 @@ useEffect(() => {
         </div>
       )}
 
+      {/* Beacons: what hardware this account carries, and exactly who is
+          allowed to watch it. The visibility list is the part that gets
+          asked about, so it is spelled out rather than counted. */}
+      <div className="mt-8 mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
+          <Radio className="w-5 h-5 text-dark-200" />
+          Beacons ({ownedBeacons.length})
+        </h2>
+        <Button variant="secondary" size="sm" onClick={fetchBeacons}>
+          Refresh
+        </Button>
+      </div>
+
+      {beaconsLoading ? (
+        <div className="glass-card p-4 space-y-3">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-3 w-full max-w-[260px]" />
+        </div>
+      ) : ownedBeacons.length === 0 && sharedBeacons.length === 0 ? (
+        <div className="glass-card text-center py-10">
+          <p className="text-dark-400">No Beacon paired to this account</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {ownedBeacons.map((b) => (
+            <div key={b.id} className="glass-card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span
+                    className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+                    style={{
+                      background: b.wearerColor || "#7c3aed",
+                      opacity: b.status === "connected" ? 1 : 0.5,
+                    }}
+                  >
+                    <Radio className="w-4 h-4 text-white" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-dark-100 font-semibold truncate">
+                      {b.wearerName || b.name}
+                      {b.sosActive && <span className="text-red-400 text-sm"> · SOS ACTIVE</span>}
+                    </p>
+                    <p className="text-dark-400 text-xs font-mono truncate">{b.deviceId}</p>
+                  </div>
+                </div>
+                <span
+                  className={`text-[10px] font-bold px-2 py-1 rounded-full shrink-0 uppercase ${
+                    b.sosActive
+                      ? "bg-red-500/20 text-red-300"
+                      : b.status === "connected"
+                        ? "bg-green-500/20 text-green-300"
+                        : "bg-white/10 text-dark-300"
+                  }`}
+                >
+                  {b.status}
+                </span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div>
+                  <p className="text-dark-500 text-[10px] uppercase font-bold">Battery</p>
+                  <p className="text-dark-200">
+                    {b.batteryPct != null ? `${b.batteryPct}%` : "unknown"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-dark-500 text-[10px] uppercase font-bold">Last fix</p>
+                  <p className="text-dark-200">
+                    {b.lastFixAt
+                      ? formatDistanceToNow(new Date(b.lastFixAt), { addSuffix: true })
+                      : "never"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-dark-500 text-[10px] uppercase font-bold">Last heard</p>
+                  <p className="text-dark-200">
+                    {b.lastSeenAt
+                      ? formatDistanceToNow(new Date(b.lastSeenAt), { addSuffix: true })
+                      : "never"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-dark-500 text-[10px] uppercase font-bold">Paired</p>
+                  <p className="text-dark-200">
+                    {b.pairedAt
+                      ? formatDistanceToNow(new Date(b.pairedAt), { addSuffix: true })
+                      : "unknown"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-dark-500 text-[10px] uppercase font-bold">Fall alert</p>
+                  <p className="text-dark-200">{b.fallAlertEnabled ? "On" : "Off"}</p>
+                </div>
+                <div className={revealedSims[b.id] ? "col-span-2" : undefined}>
+                  <p className="text-dark-500 text-[10px] uppercase font-bold">SIM</p>
+                  {revealedSims[b.id] ? (
+                    <div className="mt-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-200 font-mono text-sm break-all flex-1 min-w-0">
+                          {revealedSims[b.id].sim}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setRevealedSims((prev) => {
+                              const next = { ...prev };
+                              delete next[b.id];
+                              return next;
+                            })
+                          }
+                          className="shrink-0 p-1 rounded-lg text-dark-400 hover:text-white hover:bg-white/10"
+                          title="Hide now"
+                          aria-label="Hide SIM number"
+                        >
+                          <EyeOff className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <button
+                          onClick={async () => {
+                            const value = revealedSims[b.id]?.sim;
+                            if (!value) return;
+                            try {
+                              await navigator.clipboard.writeText(value);
+                              setCopiedSim(b.id);
+                              setTimeout(() => setCopiedSim(null), 2000);
+                            } catch {
+                              /* clipboard blocked: the number is on screen to read */
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-dark-200 text-[11px] font-semibold active:scale-[0.97] transition-transform"
+                        >
+                          {copiedSim === b.id ? "Copied" : "Copy"}
+                        </button>
+                        <a
+                          href={`tel:${revealedSims[b.id].sim}`}
+                          className="px-2.5 py-1 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-[11px] font-semibold active:scale-[0.97] transition-transform"
+                        >
+                          Call
+                        </a>
+                        <span className="text-dark-500 text-[10px] ml-auto" aria-hidden={revealTick < 0}>
+                          Hides in{" "}
+                          {Math.max(
+                            0,
+                            Math.ceil((revealedSims[b.id].expiresAt - Date.now()) / 1000),
+                          )}
+                          s
+                        </span>
+                      </div>
+                    </div>
+                  ) : b.simLast4 ? (
+                    <button
+                      onClick={() => {
+                        setRevealTarget(b);
+                        setRevealPin("");
+                        setRevealError(null);
+                      }}
+                      className="text-dark-200 font-mono underline decoration-dotted underline-offset-2 active:opacity-70"
+                    >
+                      ending {b.simLast4}
+                      <span className="text-dark-500 no-underline"> · reveal</span>
+                    </button>
+                  ) : (
+                    <p className="text-dark-200 font-mono">unknown</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Who can see it. */}
+              <div className="mt-3 pt-3 border-t border-white/10">
+                <p className="text-dark-500 text-[10px] uppercase font-bold flex items-center gap-1.5 mb-1.5">
+                  <Eye className="w-3 h-3" />
+                  Who can see this Beacon ({b.canSee.length})
+                </p>
+                {b.canSee.length === 0 ? (
+                  <p className="text-dark-400 text-xs">
+                    Nobody but the owner
+                    {b.shareWithContacts ? " (sharing is on, but there are no accepted contacts)" : ""}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {b.canSee.map((v) => (
+                      <span
+                        key={`${b.id}-see-${v.id}`}
+                        className="text-[11px] px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-dark-200"
+                      >
+                        {v.name}
+                        <span className="text-dark-500">
+                          {v.via === "grant" ? " · granted" : " · contact"}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {b.hiddenFrom.length > 0 && (
+                  <>
+                    <p className="text-dark-500 text-[10px] uppercase font-bold flex items-center gap-1.5 mt-2.5 mb-1.5">
+                      <EyeOff className="w-3 h-3" />
+                      Blocked from seeing it ({b.hiddenFrom.length})
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {b.hiddenFrom.map((v) => (
+                        <span
+                          key={`${b.id}-hide-${v.id}`}
+                          className="text-[11px] px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-red-300"
+                        >
+                          {v.name}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* Beacons this user watches but does not own. */}
+          {sharedBeacons.length > 0 && (
+            <div className="glass-card p-4">
+              <p className="text-dark-500 text-[10px] uppercase font-bold mb-2">
+                Also watches ({sharedBeacons.length})
+              </p>
+              <div className="space-y-2">
+                {sharedBeacons.map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => router.push(`/admin/users/${b.ownerId}`)}
+                    className="w-full flex items-center gap-2.5 text-left active:scale-[0.99] transition-transform"
+                  >
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{
+                        background: b.sosActive
+                          ? "#dc2626"
+                          : b.status === "connected"
+                            ? "#22c55e"
+                            : "#6b7280",
+                      }}
+                    />
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-dark-100 text-sm font-medium truncate">
+                        {b.wearerName || b.name}
+                      </span>
+                      <span className="block text-dark-400 text-[11px] truncate">
+                        owned by {b.ownerName}
+                        {b.grantedAt
+                          ? ` · granted ${formatDistanceToNow(new Date(b.grantedAt), { addSuffix: true })}`
+                          : ""}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Posts */}
       <div className="mt-8 mb-4 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-dark-100 flex items-center gap-2">
@@ -519,6 +899,62 @@ useEffect(() => {
           ))}
         </div>
       )}
+
+      {/* Admin PIN before a SIM number is shown. Same second key the
+          election danger zone uses: the session cookie is not enough. */}
+      <Modal
+        isOpen={!!revealTarget}
+        onClose={() => {
+          setRevealTarget(null);
+          setRevealPin("");
+          setRevealError(null);
+        }}
+        title="Reveal SIM number"
+      >
+        <div className="space-y-3">
+          <p className="text-dark-300 text-sm">
+            {revealTarget?.wearerName || revealTarget?.name}
+            <span className="text-dark-500"> · ending {revealTarget?.simLast4}</span>
+          </p>
+          <p className="text-dark-400 text-xs">
+            This number controls the device. Anyone who has it can text the Beacon and
+            change where its SOS call goes. Revealing it is recorded in the admin log.
+          </p>
+          <input
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            value={revealPin}
+            onChange={(e) => setRevealPin(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") submitReveal();
+            }}
+            placeholder="Admin PIN"
+            className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+          />
+          {revealError && <p className="text-red-400 text-xs">{revealError}</p>}
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setRevealTarget(null);
+                setRevealPin("");
+                setRevealError(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={submitReveal}
+              disabled={revealBusy || revealPin.trim().length === 0}
+            >
+              {revealBusy ? "Checking..." : "Reveal"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <ImageLightbox
         isOpen={lightboxOpen}

@@ -20,6 +20,7 @@
 import { dispatchSosLog } from "./outbox/sos";
 import { dispatchSmlStart, dispatchSmlConfirm, dispatchSmlCancel } from "./outbox/sml";
 import { dispatchPostCreate } from "./outbox/post";
+import { dispatchElectionUpload, dispatchElectionTally } from "./outbox/election";
 
 const KEY_PREFIX = "peja:outbox:v1:";
 const MAX_ITEMS = 200;
@@ -44,7 +45,47 @@ export type OutboxItem =
   | (OutboxItemBase & { kind: "sml-start"; payload: SmlStartPayload })
   | (OutboxItemBase & { kind: "sml-confirm"; payload: SmlConfirmPayload })
   | (OutboxItemBase & { kind: "sml-cancel"; payload: SmlCancelPayload })
-  | (OutboxItemBase & { kind: "post-create"; payload: PostCreatePayload });
+  | (OutboxItemBase & { kind: "post-create"; payload: PostCreatePayload })
+  | (OutboxItemBase & { kind: "election-upload"; payload: ElectionUploadPayload })
+  | (OutboxItemBase & { kind: "election-tally"; payload: ElectionTallyPayload });
+
+// Election result sheet queued while offline. The photo bytes live in
+// IndexedDB (postDraftBlobs store, draft id = the outbox item id) so
+// localStorage never carries megabytes of image.
+//
+// TRADEOFF, made deliberately: the action PIN rides in this payload,
+// which means it exists at rest inside the app sandbox until the drain
+// fires. Without it, a queued sheet could never authenticate when
+// connectivity returns (the drain runs in the background, nobody is
+// there to type). Election day means dead networks at polling units, so
+// offline capture wins; the item is removed the moment the drain
+// succeeds and the store is app-sandboxed.
+export interface ElectionUploadPayload {
+  election_id: string;
+  state: string;
+  lga: string;
+  polling_unit: string | null;
+  pin: string;
+  device_lat: number | null;
+  device_lng: number | null;
+  device_accuracy_m: number | null;
+  /** IndexedDB blob address: draft id (outbox item id) + media id. */
+  draft_id: string;
+  media_id: string;
+  triggered_at: string;
+}
+
+// Tally queued while offline. Same PIN tradeoff as uploads.
+export interface ElectionTallyPayload {
+  election_id: string;
+  upload_id: string;
+  figures: Record<string, number>;
+  note: string | null;
+  pin: string;
+  device_lat: number | null;
+  device_lng: number | null;
+  triggered_at: string;
+}
 
 // Per-kind payload shapes. Replace `unknown` with the real shape when
 // wiring each kind. The outbox lib doesn't import from the call
@@ -229,6 +270,10 @@ export async function runOutboxItem(item: OutboxItem): Promise<void> {
       return dispatchSmlCancel(item.payload);
     case "post-create":
       return dispatchPostCreate(item.payload);
+    case "election-upload":
+      return dispatchElectionUpload(item.payload);
+    case "election-tally":
+      return dispatchElectionTally(item.payload);
     default: {
       // Exhaustiveness check — adding a new kind without a case here
       // produces a TS error.

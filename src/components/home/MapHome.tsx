@@ -21,7 +21,7 @@ import { StoryRail } from "./StoryRail";
 import { authFetchJson } from "@/lib/authFetch";
 import { CATEGORIES } from "@/lib/types";
 import { formatDistanceToNow } from "date-fns";
-import { Bell, BarChart3, Compass, LocateFixed, MapPin, Navigation, Radio, User, X, Flag } from "lucide-react";
+import { Bell, BarChart3, Compass, LocateFixed, MapPin, Navigation, Radio, User, X, Flag, Vote } from "lucide-react";
 import dynamic from "next/dynamic";
 import { PlaceEditorModal } from "@/components/places/PlaceEditorModal";
 import { fetchPlaces, type Place } from "@/lib/places";
@@ -1522,6 +1522,28 @@ export default function MapHome() {
             </div>
           )}
         </button>
+        {/* Election Watch entry: dead centre of the top row, the first
+            thing a VIP/MVP/admin sees. Lives INSIDE the chips row because
+            the story rail below is a full-width absolute layer that eats
+            taps; this row is proven tappable (the bell works). */}
+        {(user?.is_admin || user?.is_mvp || user?.is_vip) && (
+          <button
+            onClick={() => router.push("/results")}
+            className="pointer-events-auto flex items-center gap-1.5 pl-2 pr-3 py-1.5 rounded-full shadow-lg border border-primary-400/40 active:scale-[0.97] transition-transform mx-2 min-w-0"
+            style={{
+              background: "linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)",
+              boxShadow: "0 4px 18px rgba(124, 58, 237, 0.45)",
+            }}
+            aria-label="Election results"
+          >
+            <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+              <Vote className="w-3.5 h-3.5 text-white" />
+            </span>
+            <span className="text-xs font-bold text-white truncate">
+              Make your vote count
+            </span>
+          </button>
+        )}
         <button
           onClick={() => router.push("/notifications")}
           className="pointer-events-auto relative w-11 h-11 rounded-full flex items-center justify-center border border-[var(--hairline-strong)] shadow-lg bg-dark-800 active:scale-[0.97] transition-transform"

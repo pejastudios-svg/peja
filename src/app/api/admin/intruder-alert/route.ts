@@ -36,6 +36,11 @@ export async function POST(req: NextRequest) {
   }
 
   const { photo, userId, userEmail, userName, latitude, longitude } = body;
+  // Which gate fired: the admin PIN pad (default, historical) or a wrong
+  // password on a normal account login.
+  const context = body.context === "login_failed" ? "login_failed" : "admin_pin";
+  const contextLabel =
+    context === "login_failed" ? "Failed Login Attempt" : "Failed Admin PIN Attempt";
 
   // This endpoint is unauthenticated by design (it fires on a failed admin
   // PIN), so every field below is attacker-controlled and must be escaped
@@ -175,8 +180,8 @@ export async function POST(req: NextRequest) {
     const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
   <div style="background:#dc2626;color:#fff;padding:20px;border-radius:12px 12px 0 0;text-align:center">
-    <h1 style="margin:0;font-size:22px">ADMIN INTRUSION ALERT</h1>
-    <p style="margin:4px 0 0;opacity:.9">Failed Admin PIN Attempt</p>
+    <h1 style="margin:0;font-size:22px">${context === "login_failed" ? "LOGIN INTRUSION ALERT" : "ADMIN INTRUSION ALERT"}</h1>
+    <p style="margin:4px 0 0;opacity:.9">${contextLabel}</p>
   </div>
   <div style="background:#1a1a2e;color:#e0e0e0;padding:20px;border:1px solid #333">
     <table style="width:100%;border-collapse:collapse">
@@ -207,7 +212,7 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           secret: webhookSecret,
           to: alertEmail,
-          subject: `INTRUSION ALERT - ${now}`,
+          subject: `${context === "login_failed" ? "LOGIN" : "ADMIN"} INTRUSION ALERT - ${now}`,
           html,
         }),
       });

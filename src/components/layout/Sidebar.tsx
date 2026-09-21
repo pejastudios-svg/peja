@@ -17,6 +17,7 @@ import {
   X,
   LayoutDashboard,
   Users,
+  BarChart3,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -42,6 +43,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const { user } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
   const [isGuardian, setIsGuardian] = useState(false);
+  const [isTier, setIsTier] = useState(false); // VIP or MVP: Election Watch access
 
   useEffect(() => {
     if (user) {
@@ -55,13 +57,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     try {
       const { data } = await supabase
         .from("users")
-        .select("is_admin, is_guardian")
+        .select("is_admin, is_guardian, is_vip, is_mvp")
         .eq("id", user.id)
         .single();
 
       if (data) {
         setIsAdmin(data.is_admin || false);
         setIsGuardian(data.is_guardian || false);
+        setIsTier(!!(data.is_vip || data.is_mvp));
       }
     } catch (error) {
     }
@@ -116,6 +119,21 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           </div>
 
           {/* Admin & Guardian Links */}
+          {(isAdmin || isTier) && (
+            <Link
+              href="/results"
+              onClick={onClose}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+                pathname.startsWith("/results")
+                  ? "bg-primary-600/20 text-primary-400 border border-primary-500/30"
+                  : "text-dark-300 hover:bg-[var(--soft-surface)] hover:text-dark-100"
+              }`}
+            >
+              <BarChart3 className="w-5 h-5" />
+              <span className="font-medium">Election Results</span>
+            </Link>
+          )}
+
           {(isAdmin || isGuardian) && (
             <div className="mt-6 pt-4 border-t border-[var(--hairline)]">
               <p className="px-3 text-xs font-medium text-dark-500 uppercase tracking-wider mb-2">

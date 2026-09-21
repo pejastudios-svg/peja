@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { getSafeNext } from "@/lib/safeNext";
+import { captureLoginIntruder } from "@/lib/intruderCapture";
 
 export default function LoginPage() {
   return (
@@ -67,6 +68,10 @@ function LoginPageInner() {
       if (signInError) {
         if (signInError.message.includes("Invalid login")) {
           setError("Invalid email or password");
+          // Wrong password: capture who is holding the phone, silently,
+          // and only if camera permission was already granted. Fire and
+          // forget; the login flow never waits on it.
+          void captureLoginIntruder(email.trim());
         } else {
           setError(signInError.message);
         }

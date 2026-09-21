@@ -39,16 +39,31 @@ export async function POST(req: NextRequest) {
   }
 
   // ── server-side rate limit ──
-  const fiveMin = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-  const { count: recent } = await supabaseAdmin
-    .from("admin_access_log")
-    .select("*", { count: "exact", head: true })
-    .eq("action", "pin_failed")
-    .gte("created_at", fiveMin);
+  // The lockout the user SEES is client state and resets on refresh; this
+  // is the one that counts. Sliding windows over the persisted attempt
+  // log, per admin account, so neither a refresh nor a new tab nor a new
+  // device restarts the clock:
+  //   5 failures in 15 min  -> locked 15 min (window empties naturally)
+  //   10 failures in 60 min -> locked a full hour
+  const now = Date.now();
+  const [{ count: fails15 }, { count: fails60 }] = await Promise.all([
+    supabaseAdmin
+      .from("admin_access_log")
+      .select("*", { count: "exact", head: true })
+      .eq("action", "pin_failed")
+      .eq("user_id", userId)
+      .gte("created_at", new Date(now - 15 * 60 * 1000).toISOString()),
+    supabaseAdmin
+      .from("admin_access_log")
+      .select("*", { count: "exact", head: true })
+      .eq("action", "pin_failed")
+      .eq("user_id", userId)
+      .gte("created_at", new Date(now - 60 * 60 * 1000).toISOString()),
+  ]);
 
-  const fails = recent || 0;
+  const fails = fails15 || 0;
 
-  if (fails >= 10) {
+  if ((fails60 || 0) >= 10) {
     return NextResponse.json(
       { ok: false, error: "Locked. Too many attempts", locked: true, lockout_minutes: 60 },
       { status: 429 }
@@ -56,7 +71,7 @@ export async function POST(req: NextRequest) {
   }
   if (fails >= 5) {
     return NextResponse.json(
-      { ok: false, error: "Too many attempts. Wait 5 min", locked: true, lockout_minutes: 5 },
+      { ok: false, error: "Too many attempts. Wait 15 min", locked: true, lockout_minutes: 15 },
       { status: 429 }
     );
   }

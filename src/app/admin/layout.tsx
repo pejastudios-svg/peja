@@ -21,6 +21,7 @@ const navItems: { href: string; label: string; badge?: boolean }[] = [
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/guardians", label: "Guardians" },
   { href: "/admin/vips", label: "VIPs" },
+  { href: "/admin/elections", label: "Elections" },
   { href: "/admin/analytics", label: "Analytics" },
   { href: "/admin/security", label: "Security" },
 ];
