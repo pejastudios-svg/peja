@@ -1,15 +1,28 @@
 // Beacon 1 (P02L tracker) shared helpers: feature gate, types, and the
 // SMS command sequence used to provision a device.
 //
-// Feature gate: the Beacon 1 UI is in a closed pilot. Only the accounts
-// below can see the fan button and the /beacon page. Server routes check
-// the same list. Widen (or remove) when the pilot opens up.
+// Feature gate: Beacon is OPEN. Any signed-in account sees the fan
+// button and the /beacon page, and may pair and run its own devices.
+// Server routes check the same function, so this is the single switch
+// if it ever needs closing again.
+//
+// Bulk import is the exception and stays on the list below. It accepts
+// up to 1000 arbitrary phone numbers and queues provisioning SMS to
+// every one of them, which the check-in cron then sends from our Termii
+// wallet. Open to all users that is a spam cannon pointed at strangers
+// and billed to us, so it is kept separate on purpose.
 
-const BEACON_PILOT_EMAILS = ["pejastudios@gmail.com"];
+const BEACON_FLEET_EMAILS = ["pejastudios@gmail.com"];
 
 export function canUseBeacon(email?: string | null): boolean {
+  // Signed in is the only requirement.
+  return Boolean(email && email.trim());
+}
+
+/** Bulk device import: still restricted. See the note above. */
+export function canBulkImportBeacons(email?: string | null): boolean {
   if (!email) return false;
-  return BEACON_PILOT_EMAILS.includes(email.trim().toLowerCase());
+  return BEACON_FLEET_EMAILS.includes(email.trim().toLowerCase());
 }
 
 export interface BeaconDevice {

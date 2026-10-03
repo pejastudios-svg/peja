@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser, authErrorResponse } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
-import { canUseBeacon, parseDeviceId, pairingCommands, devicePhone } from "@/lib/beacon";
+import { canBulkImportBeacons, parseDeviceId, pairingCommands, devicePhone } from "@/lib/beacon";
 
 // Fleet onboarding: many Beacons in one request. Each valid row becomes a
 // devices row plus a queued over-the-air config job; the checkin-monitor
@@ -18,8 +18,10 @@ const MAX_ROWS = 1000;
 export async function POST(req: NextRequest) {
   try {
     const { user } = await requireUser(req);
-    if (!canUseBeacon(user.email)) {
-      return NextResponse.json({ error: "Beacon is in a closed pilot" }, { status: 403 });
+    // Bulk import stays restricted even though Beacon itself is open:
+    // it queues provisioning SMS to every number supplied, on our wallet.
+    if (!canBulkImportBeacons(user.email)) {
+      return NextResponse.json({ error: "Bulk import is not available on this account" }, { status: 403 });
     }
     const supabaseAdmin = getSupabaseAdmin();
     const { rows } = await req.json();

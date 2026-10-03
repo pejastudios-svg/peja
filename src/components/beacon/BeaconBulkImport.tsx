@@ -19,23 +19,106 @@ interface ParsedRow {
   contactPhone: string;
 }
 
-function parseCsv(text: string): ParsedRow[] {
+/** Which separator this file actually uses. Counted outside quotes, over
+ *  the first few lines, so a name containing a comma cannot sway it. */
+function detectDelimiter(text: string): string {
+  const counts: Record<string, number> = { ",": 0, ";": 0, "\t": 0 };
+  let inQuotes = false;
+  let lines = 0;
+  for (let i = 0; i < text.length && lines < 5; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (inQuotes) continue;
+    if (ch === "\n") {
+      lines++;
+      continue;
+    }
+    if (ch in counts) counts[ch] += 1;
+  }
+  return (Object.keys(counts) as string[]).reduce((a, b) => (counts[b] > counts[a] ? b : a), ",");
+}
+
+/** RFC 4180 tokenizer. Quoted fields may contain the separator, line
+ *  breaks, and doubled quotes. Splitting on a regex got this wrong, and
+ *  the failure was silent: "Okonkwo, Ada" became the name "Okonkwo" and
+ *  the contact phone "Ada", which the server then dropped, leaving a
+ *  Beacon provisioned with nobody to call. */
+function tokenizeCsv(text: string, delim: string): string[][] {
+  const table: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          cell += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cell += ch;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inQuotes = true;
+      continue;
+    }
+    if (ch === delim) {
+      row.push(cell);
+      cell = "";
+      continue;
+    }
+    if (ch === "\r") continue;
+    if (ch === "\n") {
+      row.push(cell);
+      table.push(row);
+      row = [];
+      cell = "";
+      continue;
+    }
+    cell += ch;
+  }
+  if (cell !== "" || row.length > 0) {
+    row.push(cell);
+    table.push(row);
+  }
+  return table;
+}
+
+/** `skipped` is reported rather than swallowed: a half-imported fleet
+ *  with no mention of the rest is how people end up believing a device
+ *  is configured when it never was. */
+function parseCsv(text: string): { rows: ParsedRow[]; skipped: number } {
+  // Excel on Windows writes a BOM; it would ride along on the first cell.
+  const clean = text.replace(/^\uFEFF/, "");
+  const table = tokenizeCsv(clean, detectDelimiter(clean));
   const rows: ParsedRow[] = [];
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const cells = line.split(/[,;\t]/).map((c) => c.trim().replace(/^"|"$/g, ""));
-    // Skip an obvious header row.
-    if (/device/i.test(cells[0] || "") && /sim|phone/i.test(cells[1] || "")) continue;
-    if (cells.length < 3) continue;
+  let skipped = 0;
+
+  for (const raw of table) {
+    const cells = raw.map((c) => c.trim());
+    if (cells.every((c) => c === "")) continue; // blank line, not a failure
+    // Header row.
+    if (/device|id/i.test(cells[0] || "") && /sim|phone|msisdn/i.test(cells[1] || "")) continue;
+    if (cells.length < 3 || !cells[0] || !cells[1] || !cells[2]) {
+      skipped += 1;
+      continue;
+    }
     rows.push({
-      deviceId: cells[0] || "",
-      sim: cells[1] || "",
-      wearerName: cells[2] || "",
+      deviceId: cells[0],
+      sim: cells[1],
+      wearerName: cells[2],
       contactPhone: cells[3] || "",
     });
   }
-  return rows;
+  return { rows, skipped };
 }
 
 export function BeaconBulkImport({
@@ -72,10 +155,16 @@ export function BeaconBulkImport({
 
   const pickFile = async (file: File) => {
     const text = await file.text();
-    const parsed = parseCsv(text);
+    const { rows: parsed, skipped } = parseCsv(text);
     if (parsed.length === 0) {
       toast.warning("No usable rows. Expected columns: deviceId, sim, wearerName, contactPhone");
       return;
+    }
+    // Say what was dropped at the door, not after the import.
+    if (skipped > 0) {
+      toast.warning(
+        `${skipped} line${skipped === 1 ? "" : "s"} skipped: needs device ID, SIM and wearer name`,
+      );
     }
     setRows(parsed);
     setResult(null);

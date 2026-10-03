@@ -4,7 +4,8 @@ import { useMemo, useState } from "react";
 import { Battery, BatteryLow, FileSpreadsheet, List, Map as MapIcon, Plus, Radio, Search, ChevronRight } from "lucide-react";
 import { BeaconFleetMap } from "./BeaconFleetMap";
 import { BeaconBulkImport } from "./BeaconBulkImport";
-import type { BeaconDevice } from "@/lib/beacon";
+import { canBulkImportBeacons, type BeaconDevice } from "@/lib/beacon";
+import { useAuth } from "@/context/AuthContext";
 
 // The Beacon home list: every device this account hosts, one card each,
 // navigated by wearer. Scales from a family's three to a school's fleet:
@@ -45,6 +46,7 @@ export function BeaconFleet({
   onPairAnother: () => void;
   onRefresh?: () => void;
 }) {
+  const { user } = useAuth();
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"list" | "map">("list");
   const [importOpen, setImportOpen] = useState(false);
@@ -166,18 +168,25 @@ export function BeaconFleet({
       >
         <Plus className="w-4 h-4" /> Pair another Beacon
       </button>
-      <button
-        onClick={() => setImportOpen(true)}
-        className="mt-2 w-full flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-xs font-medium text-dark-400 active:scale-[0.97] transition-transform"
-      >
-        <FileSpreadsheet className="w-3.5 h-3.5" /> Import many from CSV
-      </button>
+      {/* Bulk import queues provisioning SMS to every number in the file,
+          billed to us, so it stays on the fleet allowlist even though
+          Beacon itself is open to everyone. */}
+      {canBulkImportBeacons(user?.email) && (
+        <>
+          <button
+            onClick={() => setImportOpen(true)}
+            className="mt-2 w-full flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-xs font-medium text-dark-400 active:scale-[0.97] transition-transform"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" /> Import many from CSV
+          </button>
 
-      <BeaconBulkImport
-        isOpen={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImported={() => onRefresh?.()}
-      />
+          <BeaconBulkImport
+            isOpen={importOpen}
+            onClose={() => setImportOpen(false)}
+            onImported={() => onRefresh?.()}
+          />
+        </>
+      )}
     </div>
   );
 }
