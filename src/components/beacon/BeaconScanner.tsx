@@ -11,7 +11,10 @@ interface BarcodeDetectorLike {
 }
 declare global {
   interface Window {
-    BarcodeDetector?: new (opts?: { formats?: string[] }) => BarcodeDetectorLike;
+    BarcodeDetector?: {
+      new (opts?: { formats?: string[] }): BarcodeDetectorLike;
+      getSupportedFormats?: () => Promise<string[]>;
+    };
   }
 }
 
@@ -51,20 +54,40 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
   const [mode, setMode] = useState<"starting" | "scanning" | "manual">("starting");
   // Why manual entry is showing, so the user is not left guessing.
   const [fallbackReason, setFallbackReason] = useState<"unsupported" | "denied" | null>(null);
-  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [manualValue, setManualValue] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [maxZoom, setMaxZoom] = useState(1);
+  // Set when the camera has been live a while with nothing detected, so
+  // we can stop implying the scan is about to work.
+  const [stalled, setStalled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     let raf = 0;
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
 
     async function start() {
       // Safari has no BarcodeDetector, so live scanning is Chrome-only.
-      // iOS users get the photo path plus manual entry instead.
+      // iOS users get manual entry instead.
       if (!window.BarcodeDetector || !navigator.mediaDevices?.getUserMedia) {
+        setFallbackReason("unsupported");
+        setMode("manual");
+        return;
+      }
+      // The constructor existing is NOT proof it works. On Android
+      // WebView the class can be present while the decoding backend is
+      // missing, in which case detect() resolves empty forever and the
+      // user stares at a live camera that cannot possibly succeed.
+      // Ask what it actually supports before opening the lens.
+      try {
+        const formats = (await window.BarcodeDetector.getSupportedFormats?.()) ?? [];
+        if (formats.length > 0 && !formats.includes("qr_code")) {
+          setFallbackReason("unsupported");
+          setMode("manual");
+          return;
+        }
+      } catch {
         setFallbackReason("unsupported");
         setMode("manual");
         return;
@@ -104,6 +127,14 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
           await tuneTrack(track, 1);
         }
 
+        // A scanner that has seen nothing after this long is either
+        // pointed at the wrong thing or cannot decode at all. Either way
+        // the honest move is to offer the number under the QR rather
+        // than let the scanline keep sweeping.
+        stallTimer = setTimeout(() => {
+          if (!cancelled && !foundRef.current) setStalled(true);
+        }, 12000);
+
         const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
         const tick = async () => {
           if (cancelled || foundRef.current) return;
@@ -139,6 +170,7 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
+      if (stallTimer) clearTimeout(stallTimer);
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -242,13 +274,29 @@ export function BeaconScanner({ onFound }: { onFound: (deviceId: string) => void
           </div>
         )}
       </div>
-      <p className="text-center text-sm text-dark-400">
-        Point the camera at the QR code on the back of your Beacon. Hold it
-        about a hand&apos;s length away and let it focus.
-      </p>
+      {stalled ? (
+        <div className="rounded-2xl border border-[var(--hairline-strong)] bg-dark-800/60 px-4 py-3 space-y-1">
+          <p className="text-center text-sm font-semibold text-dark-100">
+            Still not reading it
+          </p>
+          <p className="text-center text-sm text-dark-400">
+            Some phones cannot scan a code this small. The same number is
+            printed under the QR code, and typing it works just as well.
+          </p>
+        </div>
+      ) : (
+        <p className="text-center text-sm text-dark-400">
+          Point the camera at the QR code on the back of your Beacon. Hold it
+          about a hand&apos;s length away and let it focus.
+        </p>
+      )}
       <button
         onClick={() => setMode("manual")}
-        className="mx-auto flex items-center gap-2 text-sm beacon-accent-text font-medium py-2 px-4 rounded-full active:scale-[0.97] transition-transform"
+        className={`mx-auto flex items-center gap-2 text-sm font-medium py-2 px-4 rounded-full active:scale-[0.97] transition-transform ${
+          stalled
+            ? "bg-primary-600 text-white px-5 py-2.5"
+            : "beacon-accent-text"
+        }`}
       >
         <Keyboard className="w-4 h-4" />
         Type the ID instead

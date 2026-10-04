@@ -148,28 +148,49 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
     if (step === "configure" && connected && allSent) setStep("done");
   }, [step, connected, allSent]);
 
+  // Drive the queued provisioning job forward one command at a time.
+  //
+  // The job row on the server is the source of truth, not this loop. We
+  // run it here only because once-a-minute cron pacing would make setup
+  // take nine minutes. If a step is rate limited, fails, or the user
+  // walks away, the command stays queued at the same index and the
+  // checkin-monitor cron finishes the sequence. The old version held the
+  // list in memory and abandoned everything after the first failure,
+  // which is how call buttons went unprogrammed while setup still
+  // reported success.
   const autoSend = useCallback(async () => {
     if (!pairedDevice || autoSending != null) return;
     setAutoSending(0);
+    let deferred = false;
     try {
       for (let i = 0; i < commands.length; i++) {
         setAutoSending(i);
-        const { res, data } = await authFetchJson("/api/beacon/sms", {
+        const { res, data } = await authFetchJson("/api/beacon/provision", {
           method: "POST",
-          body: JSON.stringify({ deviceId: pairedDevice.id, sms: commands[i].sms }),
+          body: JSON.stringify({ deviceId: pairedDevice.id }),
         });
         if (!res.ok) {
           setSetupMode("manual");
           toast.warning(data?.error || "Automatic setup is unavailable. Text the commands below instead.");
           return;
         }
+        if (data?.deferred) {
+          // Queued, not lost. Stop pushing and let the cron drain it.
+          deferred = true;
+          break;
+        }
         markSent(i);
+        if (data?.done) break;
         // The device applies commands in order; give it breathing room.
         if (i < commands.length - 1) {
           await new Promise((r) => setTimeout(r, 8000));
         }
       }
-      toast.success("Setup sent. The Beacon will restart and connect on its own.");
+      toast.success(
+        deferred
+          ? "Setup is queued. The rest sends automatically over the next few minutes."
+          : "Setup sent. The Beacon will restart and connect on its own.",
+      );
     } finally {
       setAutoSending(null);
     }

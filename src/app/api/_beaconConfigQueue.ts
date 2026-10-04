@@ -23,7 +23,7 @@ export async function drainBeaconConfigQueue(supabaseAdmin: SupabaseClient): Pro
 
   const { data: jobs } = await supabaseAdmin
     .from("beacon_config_jobs")
-    .select("id, device_id, commands, next_index, status, attempts")
+    .select("id, device_id, commands, next_index, status, attempts, kind")
     .in("status", ["queued", "sending"])
     .order("created_at", { ascending: true })
     .limit(SMS_PER_PASS);
@@ -48,7 +48,10 @@ export async function drainBeaconConfigQueue(supabaseAdmin: SupabaseClient): Pro
       .select("id, sim_msisdn, status")
       .eq("id", job.device_id)
       .maybeSingle();
-    if (!device?.sim_msisdn || device.status === "unpaired") {
+    // Release jobs are the exception: their whole purpose is to reach a
+    // device we just unpaired and send it back to the vendor platform.
+    const isRelease = job.kind === "release";
+    if (!device?.sim_msisdn || (device.status === "unpaired" && !isRelease)) {
       await supabaseAdmin
         .from("beacon_config_jobs")
         .update({

@@ -124,7 +124,35 @@ export async function POST(req: NextRequest) {
       volume: 1,
     });
 
-    return NextResponse.json({ device, commands });
+    // Persist the sequence BEFORE anyone tries to send it. The client
+    // drives it for speed, but the job row is what guarantees it
+    // finishes: if the tab closes, a send fails, or the SMS rate limit
+    // trips partway through, the checkin-monitor cron picks up exactly
+    // where it stopped. Previously the list lived only in browser memory
+    // and a failure at step 3 silently skipped the call-button and SOS
+    // commands at steps 5 and 6.
+    //
+    // Supersede any earlier unfinished job for this device so a re-pair
+    // cannot race an abandoned sequence carrying stale contact numbers.
+    await supabaseAdmin
+      .from("beacon_config_jobs")
+      .update({ status: "failed", last_error: "superseded by re-pair" })
+      .eq("device_id", device.id)
+      .in("status", ["queued", "sending"]);
+
+    const { data: job } = await supabaseAdmin
+      .from("beacon_config_jobs")
+      .insert({
+        device_id: device.id,
+        created_by: user.id,
+        commands,
+        kind: "config",
+        status: "queued",
+      })
+      .select("id")
+      .single();
+
+    return NextResponse.json({ device, commands, jobId: job?.id ?? null });
   } catch (error) {
     return (
       authErrorResponse(error) ??

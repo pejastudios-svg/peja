@@ -134,12 +134,27 @@ export function settingsCommands(changes: {
   intercomEnabled?: boolean;
 }): BeaconCommand[] {
   const cmds: BeaconCommand[] = [];
-  if (changes.family1Phone !== undefined && changes.family1Phone) {
-    const f2 = changes.family2Phone ? ` ${devicePhone(changes.family2Phone)}` : "";
-    cmds.push({
-      label: "Update call buttons",
-      sms: `familynum123456 ${devicePhone(changes.family1Phone)}${f2}`,
-    });
+  // familynum programs BOTH call buttons in one text, so it must be
+  // rewritten whenever EITHER contact moves. Gating it on contact 1 alone
+  // meant a device could keep dialling someone who had been removed as a
+  // contact, while the app showed the new person. Nobody would find out
+  // until they pressed the button in an emergency.
+  //
+  // If contact 1 is cleared but contact 2 remains, the survivor takes
+  // button 1. Losing slot order is a cosmetic cost; leaving a removed
+  // person programmed into the hardware is a safety one.
+  const contactsTouched =
+    changes.family1Phone !== undefined || changes.family2Phone !== undefined;
+  if (contactsTouched) {
+    const nums = [changes.family1Phone, changes.family2Phone]
+      .filter((n): n is string => Boolean(n))
+      .map(devicePhone);
+    if (nums.length > 0) {
+      cmds.push({
+        label: "Update call buttons",
+        sms: `familynum123456 ${nums.join(" ")}`,
+      });
+    }
   }
   if (changes.sosPhone !== undefined && changes.sosPhone) {
     cmds.push({ label: "Update SOS number", sms: `admin123456 ${devicePhone(changes.sosPhone)}` });
