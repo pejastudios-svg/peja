@@ -43,6 +43,8 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { OutboxBootstrap } from "@/components/system/OutboxBootstrap";
 import { EmergencyContactsBootstrap } from "@/components/system/EmergencyContactsBootstrap";
 import { AmbientTrackerBootstrap } from "@/components/system/AmbientTrackerBootstrap";
+import { RecoveryCodesPrompt } from "@/components/system/RecoveryCodesPrompt";
+import { RecoveryApprovalPrompt } from "@/components/system/RecoveryApprovalPrompt";
 import { AndroidInstallBanner } from "@/components/system/AndroidInstallBanner";
 import { WebPushSetup } from "@/components/system/WebPushSetup";
 import { PwaRealityNotice } from "@/components/system/PwaRealityNotice";
@@ -217,6 +219,8 @@ export default function RootLayout({
                         <OutboxBootstrap />
                         <EmergencyContactsBootstrap />
                         <AmbientTrackerBootstrap />
+                        <RecoveryCodesPrompt />
+                        <RecoveryApprovalPrompt />
                         <AndroidInstallBanner />
                         <WebPushSetup />
                         <PwaRealityNotice />

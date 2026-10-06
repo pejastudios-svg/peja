@@ -320,6 +320,13 @@ export default function ForgotPasswordPage() {
                 ? "Use the code we sent instead"
                 : "Can't get the code? Use a recovery code"}
             </button>
+
+            <a
+              href="/recover"
+              className="block w-full text-center text-sm text-dark-400 hover:text-dark-200 mt-2"
+            >
+              Or ask your emergency contacts to confirm it is you
+            </a>
           </form>
         )}
       </div>
