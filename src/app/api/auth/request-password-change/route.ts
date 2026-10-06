@@ -1,6 +1,7 @@
 // src/app/api/auth/request-password-change/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "../../_auth";
+import { deliverAuthCode } from "../../_authCode";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
@@ -108,18 +109,28 @@ export async function POST(req: NextRequest) {
     Peja Security System
   </div>
 </div>`;
-    try {
-      await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          secret: webhookSecret,
-          to: userEmail,
-          subject: `${code} is your Peja password change code`,
-          html,
-        }),
-      });
-    } catch {}
+    // Push first, email as fallback. Same code either way; only the
+    // delivery changes. See _authCode.ts for why.
+    const { delivered, channel } = await deliverAuthCode({
+      userId,
+      email: userEmail,
+      code,
+      purpose: "change",
+      subject: `${code} is your peja password change code`,
+      html,
+    });
+    if (!delivered) {
+      return NextResponse.json(
+        { ok: false, error: "We could not send the code just now. Try again shortly." },
+        { status: 502 },
+      );
+    }
+    if (!delivered) {
+      return NextResponse.json(
+        { ok: false, error: "We could not send the email just now. Try again shortly." },
+        { status: 502 },
+      );
+    }
   }
 
   // Never returns the code. `emailed` tells the client whether the code

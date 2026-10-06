@@ -18,6 +18,10 @@ export default function VerifyEmailPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
+  // Codes go out by push when the device can receive them, so the screen
+  // has to point at the right place. Telling someone to check an inbox
+  // that will never receive anything is how people get stuck here.
+  const [channel, setChannel] = useState<"push" | "email" | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const sentOnce = useRef(false);
 
@@ -38,6 +42,9 @@ export default function VerifyEmailPage() {
       if (!res.ok) {
         setError(data?.error || "Could not send the code");
         return;
+      }
+      if (data?.channel === "push" || data?.channel === "email") {
+        setChannel(data.channel);
       }
       if (data?.alreadyVerified) {
         await refreshUser?.();
@@ -101,9 +108,19 @@ export default function VerifyEmailPage() {
           </div>
           <h1 className="text-2xl font-black text-dark-50 mb-2">Confirm your email</h1>
           <p className="text-sm text-dark-400 leading-relaxed">
-            We sent a 6-digit code to
-            <br />
-            <span className="text-dark-200 font-medium">{user.email}</span>
+            {channel === "push" ? (
+              <>
+                We sent a 6-digit code to your
+                <br />
+                <span className="text-dark-200 font-medium">phone notifications</span>
+              </>
+            ) : (
+              <>
+                We sent a 6-digit code to
+                <br />
+                <span className="text-dark-200 font-medium">{user.email}</span>
+              </>
+            )}
           </p>
         </div>
 

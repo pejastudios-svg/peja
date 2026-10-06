@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { requireUser, authErrorResponse } from "../../_auth";
-import { sendEmail } from "../../_email";
+import { deliverAuthCode } from "../../_authCode";
 import { isRateLimitedDurable } from "../../_rateLimit";
 
 // Send (or resend) the signup verification code to the address the user
@@ -82,13 +82,29 @@ export async function POST(req: NextRequest) {
   </div>
 </div>`;
 
-    const sent = await sendEmail({
-      to: email,
+    const { delivered, channel } = await deliverAuthCode({
+      userId: user.id,
+      email,
+      code,
+      purpose: "signup",
       subject: `${code} is your peja confirmation code`,
       html,
     });
+    const sent = delivered;
 
-    return NextResponse.json({ ok: true, sent });
+    // Previously this returned ok:true whatever happened, so a quota wall
+    // looked identical to a delivered code and the user sat waiting for
+    // mail that was never sent. The caller is authenticated, so there is
+    // no account-enumeration risk in being honest here.
+    if (!sent) {
+      return NextResponse.json(
+        { ok: false, error: "We could not send the email just now. Try again shortly." },
+        { status: 502 },
+      );
+    }
+    // channel tells the UI whether to say "check your notifications" or
+    // "check your email", so the user is not sent hunting in the wrong place.
+    return NextResponse.json({ ok: true, sent: true, channel });
   } catch (error) {
     return (
       authErrorResponse(error) ??

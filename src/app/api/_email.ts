@@ -18,7 +18,7 @@ export async function sendEmail(params: {
   const webhookUrl = process.env.APPS_SCRIPT_EMAIL_WEBHOOK_URL;
   if (!webhookUrl || !params.to) return false;
   try {
-    await fetch(webhookUrl, {
+    const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -27,7 +27,25 @@ export async function sendEmail(params: {
         subject: params.subject,
         html: params.html,
       }),
+      signal: AbortSignal.timeout(10_000),
     });
+
+    // The response used to be thrown away and `true` returned regardless.
+    // That made a daily-quota wall indistinguishable from a working
+    // system: Apps Script refused the send, the caller told the user
+    // "code sent", and they waited for mail that was never going to come.
+    if (!res.ok) {
+      console.error(`[email] webhook HTTP ${res.status} for ${params.subject}`);
+      return false;
+    }
+
+    // Apps Script answers 200 even when it refuses the job, so the body
+    // is the only place a quota error actually shows up.
+    const body = (await res.text()).slice(0, 500);
+    if (/error|quota|exceeded|limit|unauthor/i.test(body)) {
+      console.error(`[email] webhook rejected send: ${body}`);
+      return false;
+    }
     return true;
   } catch (e) {
     console.error("[email] send failed:", e);

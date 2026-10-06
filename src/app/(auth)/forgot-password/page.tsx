@@ -13,6 +13,10 @@ import { PejaSpinner } from "@/components/ui/PejaSpinner";
 export default function ForgotPasswordPage() {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
+  // Recovery codes are the route for someone who cannot receive the
+  // emailed/pushed code at all. Same shape on screen, different endpoint,
+  // because a saved code is already proof and needs no delivery.
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -92,7 +96,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/auth/reset-password/", {
+      const res = await fetch(useRecoveryCode ? "/api/recovery/redeem" : "/api/auth/reset-password/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -130,7 +134,9 @@ export default function ForgotPasswordPage() {
           <p className="text-sm text-dark-400 mt-2">
             {step === 1
               ? "Enter your email to receive a reset code"
-              : `We sent a code to ${email}`}
+              : useRecoveryCode
+                ? "Enter one of the twenty recovery codes you saved"
+                : `If ${email} has an account, the code is in your phone notifications or your inbox`}
           </p>
         </div>
 
@@ -289,15 +295,31 @@ export default function ForgotPasswordPage() {
               >
                 Use a different email
               </button>
-              <button
-                type="button"
-                onClick={handleSendCode}
-                disabled={loading || resendCooldown > 0}
-                className="text-sm text-primary-400 hover:text-primary-300 disabled:text-dark-500 disabled:cursor-not-allowed"
-              >
-                {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend code"}
-              </button>
+              {!useRecoveryCode && (
+                <button
+                  type="button"
+                  onClick={handleSendCode}
+                  disabled={loading || resendCooldown > 0}
+                  className="text-sm text-primary-400 hover:text-primary-300 disabled:text-dark-500 disabled:cursor-not-allowed"
+                >
+                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend code"}
+                </button>
+              )}
             </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setUseRecoveryCode((v) => !v);
+                setCode("");
+                setError("");
+              }}
+              className="w-full text-center text-sm text-primary-400 hover:text-primary-300 mt-4"
+            >
+              {useRecoveryCode
+                ? "Use the code we sent instead"
+                : "Can't get the code? Use a recovery code"}
+            </button>
           </form>
         )}
       </div>

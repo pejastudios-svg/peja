@@ -1,5 +1,7 @@
 // src/app/api/auth/forgot-password/route.ts
 import { NextRequest, NextResponse } from "next/server";
+import { sendOpsAlert } from "../../_email";
+import { deliverAuthCode } from "../../_authCode";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import crypto from "crypto";
 
@@ -115,18 +117,40 @@ export async function POST(req: NextRequest) {
   </div>
 </div>`;
 
-    try {
-      await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          secret: webhookSecret,
-          to: cleanEmail,
-          subject: `${code} is your Peja password reset code`,
-          html,
-        }),
-      });
-    } catch {}
+    // Push first, email as fallback, same as the other code flows.
+    //
+    // Pushing is also the stronger security position here: the code goes
+    // to a device holding a logged-in session rather than to an inbox
+    // anyone who knows the address might be watching, and the real owner
+    // is alerted the instant someone attempts a reset on their account.
+    //
+    // The RESPONSE stays identical either way. This endpoint is anonymous,
+    // so revealing delivery success only for real accounts would turn it
+    // into an account enumeration oracle. Failures are raised to ops.
+    const { delivered } = await deliverAuthCode({
+      userId: users[0].id,
+      email: cleanEmail,
+      code,
+      purpose: "reset",
+      subject: `${code} is your Peja password reset code`,
+      html,
+    });
+    if (!delivered) {
+      sendOpsAlert(
+        "Password reset code failed to deliver",
+        "A reset was requested and neither push nor email reached the user. " +
+          "If email is the cause, the most likely reason is the daily Gmail quota. " +
+          "Affected users cannot reset their passwords until this clears.",
+      ).catch(() => {});
+    }
+    if (!delivered) {
+      sendOpsAlert(
+        "Password reset email failed to send",
+        "A user requested a password reset and the email webhook refused the send. " +
+          "The most likely cause is the daily Gmail quota. Users cannot reset their " +
+          "passwords until this clears.",
+      ).catch(() => {});
+    }
   }
 
   return NextResponse.json({ ok: true });

@@ -46,6 +46,7 @@ import { useToast } from "@/context/ToastContext";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { Header } from "@/components/layout/Header";
 import { PlacesSection } from "@/components/places/PlacesSection";
+import { RecoveryCodes } from "@/components/settings/RecoveryCodes";
 
 export default function SettingsPage() {
   useScrollRestore("settings");
@@ -915,6 +916,7 @@ export default function SettingsPage() {
             description="Update your account password"
             onClick={() => setShowChangePassword(true)}
           />
+          <RecoveryCodes />
         </section>
 
         {/* Support */}
