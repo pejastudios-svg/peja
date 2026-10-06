@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser, authErrorResponse } from "../../_auth";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { sendPushToUser } from "../../_firebaseAdmin";
+import { UNLOCK_DELAY_MIN } from "../_constants";
 
 export const runtime = "nodejs";
 
-const UNLOCK_DELAY_MIN = 10;
 
 /**
  * A nominated contact answers a recovery request, or the account owner

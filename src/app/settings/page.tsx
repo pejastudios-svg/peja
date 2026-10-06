@@ -116,6 +116,10 @@ export default function SettingsPage() {
   const [deleteError, setDeleteError] = useState("");
 
   // ─── Change Password State ───
+  // Codes now go by push when the device can take one, so the panel has
+  // to name the right place. Saying "check your email" while the code
+  // sits in the notification tray is how people get stuck here.
+  const [pwChannel, setPwChannel] = useState<"push" | "email">("email");
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [pwStep, setPwStep] = useState<1 | 2>(1);
   const [oldPassword, setOldPassword] = useState("");
@@ -433,6 +437,7 @@ export default function SettingsPage() {
         return;
       }
 
+      setPwChannel(data?.channel === "push" ? "push" : "email");
       setPwStep(2);
     } catch {
       setPwError("Connection error. Try again.");
@@ -1140,16 +1145,19 @@ export default function SettingsPage() {
                     </div>
                   )}
 
-                  {/* The code goes to email, never on screen - showing it
-                      would defeat the verification. */}
+                  {/* The code is never shown on screen - showing it would
+                      defeat the verification. Only its destination changes. */}
                   {pwStep === 2 && (
                     <div className="p-4 rounded-xl bg-primary-600/10 border border-primary-500/30 text-center">
                       <p className="text-sm text-dark-200 font-medium">
-                        Check your email
+                        {pwChannel === "push"
+                          ? "Check your notifications"
+                          : "Check your email"}
                       </p>
                       <p className="text-xs text-dark-400 mt-1">
-                        We sent a 6-digit code to your inbox. Enter it below to
-                        confirm your new password. It expires in 5 minutes.
+                        {pwChannel === "push"
+                          ? "We sent a 6-digit code to this phone. Enter it below to confirm your new password. It expires in 5 minutes."
+                          : "We sent a 6-digit code to your inbox. Enter it below to confirm your new password. It expires in 5 minutes."}
                       </p>
                     </div>
                   )}

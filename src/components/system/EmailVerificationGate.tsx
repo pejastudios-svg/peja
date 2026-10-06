@@ -20,6 +20,7 @@ const ALLOWED = [
   "/login",
   "/signup",
   "/forgot-password",
+  "/recover",
   "/welcome",
   "/about",
   "/terms",

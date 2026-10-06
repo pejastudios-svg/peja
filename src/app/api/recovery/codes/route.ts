@@ -28,6 +28,29 @@ function hashCode(userId: string, code: string): string {
   return crypto.createHash("sha256").update(`${userId}:${code}`).digest("hex");
 }
 
+/**
+ * Does this account sign in with a password at all?
+ *
+ * Generating codes re-authenticates with signInWithPassword, which a
+ * Google-only account can never satisfy. Callers need to know that up
+ * front so they can hide the password field and, more importantly, so
+ * the mandatory setup step in the welcome flow does not trap a Google
+ * user on a screen they cannot complete. Those users recover through
+ * Google itself, which is why they are excused rather than blocked.
+ */
+async function accountHasPassword(userId: string): Promise<boolean> {
+  try {
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data, error } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (error || !data?.user) return true; // unknown: assume password, never excuse by accident
+    const identities = data.user.identities || [];
+    if (identities.length === 0) return true;
+    return identities.some((i) => i.provider === "email");
+  } catch {
+    return true;
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { user } = await requireUser(req);
@@ -46,6 +69,7 @@ export async function GET(req: NextRequest) {
       hasCodes: (total || 0) > 0,
       unused: unused || 0,
       total: total || 0,
+      hasPassword: await accountHasPassword(user.id),
     });
   } catch (error) {
     return authErrorResponse(error) ?? NextResponse.json({ error: "Failed" }, { status: 500 });
@@ -62,6 +86,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "Too many attempts. Try again later." },
         { status: 429 },
+      );
+    }
+
+    if (!(await accountHasPassword(user.id))) {
+      return NextResponse.json(
+        {
+          error:
+            "This account signs in with Google. Reset access through Google instead.",
+          code: "no_password",
+        },
+        { status: 400 },
       );
     }
 

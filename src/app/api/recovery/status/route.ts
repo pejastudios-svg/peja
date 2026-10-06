@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { isRateLimitedDurable } from "../../_rateLimit";
 import { sendPushToUser } from "../../_firebaseAdmin";
+import { APPROVALS_REQUIRED } from "../_constants";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,21 @@ export async function GET(req: NextRequest) {
     .select("id, status, unlock_at, approvals_required, expires_at")
     .eq("id", id)
     .maybeSingle();
-  if (!r) return NextResponse.json({ ok: false }, { status: 404 });
+  // An unknown id answers exactly like a real request nobody has approved
+  // yet. /api/recovery/start returns a throwaway id when the account does
+  // not exist, so a 404 here would hand that difference straight back and
+  // turn the pair into an account-existence oracle. A decoy simply stays
+  // pending until the caller gives up.
+  if (!r) {
+    return NextResponse.json({
+      ok: true,
+      status: "pending",
+      approvals: 0,
+      required: APPROVALS_REQUIRED,
+      unlockAt: null,
+      ready: false,
+    });
+  }
 
   const { count: approvals } = await supabaseAdmin
     .from("recovery_approvers")
@@ -70,7 +85,11 @@ export async function POST(req: NextRequest) {
     .select("id, user_id, status, unlock_at")
     .eq("id", String(requestId))
     .maybeSingle();
-  if (!r) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  // Indistinguishable from a real request that is not approved yet, for
+  // the same reason as the GET above.
+  if (!r) {
+    return NextResponse.json({ ok: false, error: "Not approved yet" }, { status: 409 });
+  }
 
   // Re-check everything here. The GET above is a convenience for the UI,
   // never the authority.

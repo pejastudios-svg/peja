@@ -82,14 +82,16 @@ export async function POST(req: NextRequest) {
     expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
   });
 
-  // Email the code (same channel as forgot-password). The code MUST NOT
-  // appear in-app or in the API response - a code the app shows you
-  // verifies nothing. Only someone with access to the account's email
-  // should be able to complete a password change.
-  const webhookUrl = process.env.APPS_SCRIPT_EMAIL_WEBHOOK_URL;
-  const webhookSecret = process.env.APPS_SCRIPT_WEBHOOK_SECRET;
-  if (webhookUrl) {
-    const html = `
+  // Deliver the code. Push first, email as the fallback.
+  //
+  // Push is appropriate HERE and nowhere else in the password flows: the
+  // caller already proved the current password above, so the code is a
+  // confirmation and a warning shot rather than the proof of identity.
+  // See _authCode.ts for why "forgot password" must never work this way.
+  //
+  // The code MUST NOT appear in the API response or on screen. A code the
+  // app hands you verifies nothing.
+  const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
   <div style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:20px;border-radius:12px 12px 0 0;text-align:center">
     <h1 style="margin:0;font-size:22px">Password Change</h1>
@@ -109,31 +111,29 @@ export async function POST(req: NextRequest) {
     Peja Security System
   </div>
 </div>`;
-    // Push first, email as fallback. Same code either way; only the
-    // delivery changes. See _authCode.ts for why.
-    const { delivered, channel } = await deliverAuthCode({
-      userId,
-      email: userEmail,
-      code,
-      purpose: "change",
-      subject: `${code} is your peja password change code`,
-      html,
-    });
-    if (!delivered) {
-      return NextResponse.json(
-        { ok: false, error: "We could not send the code just now. Try again shortly." },
-        { status: 502 },
-      );
-    }
-    if (!delivered) {
-      return NextResponse.json(
-        { ok: false, error: "We could not send the email just now. Try again shortly." },
-        { status: 502 },
-      );
-    }
+
+  // Not gated on the email webhook being configured. Push is the primary
+  // channel and works without it; the old `if (webhookUrl)` wrapper meant
+  // a missing env var silently sent nothing while still returning ok,
+  // leaving the user on step 2 waiting for a code that was never issued.
+  const { delivered, channel } = await deliverAuthCode({
+    userId,
+    email: userEmail,
+    code,
+    purpose: "change",
+    subject: `${code} is your peja password change code`,
+    html,
+  });
+
+  if (!delivered) {
+    return NextResponse.json(
+      { ok: false, error: "We could not send the code just now. Try again shortly." },
+      { status: 502 },
+    );
   }
 
-  // Never returns the code. `emailed` tells the client whether the code
-  // actually went out (webhook configured) so it can guide the user.
-  return NextResponse.json({ ok: true, emailed: Boolean(webhookUrl) });
+  // Never returns the code. `channel` is what the client keys its copy
+  // off, so that "Check your notifications" and "Check your email" match
+  // where the code actually went.
+  return NextResponse.json({ ok: true, channel });
 }

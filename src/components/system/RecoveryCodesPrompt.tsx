@@ -25,7 +25,13 @@ import { authFetchJson } from "@/lib/authFetch";
  * which is a mild annoyance rather than a bug.
  */
 const DISMISSED_KEY = "peja-recovery-prompt-dismissed-at";
-const REASK_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+// Seven days, not thirty. New accounts now hit a mandatory codes step in
+// the welcome flow, so the only people this prompt still has to reach are
+// the ones who signed up before that existed. They have no other nudge,
+// and a month of silence is too long to leave an account with no way back
+// in. Owned by WelcomeSequence.tsx; grep SEEN_KEY there if it moves.
+const REASK_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
+const WELCOME_SEEN_KEY = "peja-welcome-v2-seen";
 // Let the app settle before interrupting. Landing straight into a modal
 // on launch reads as an error, not an invitation.
 const DELAY_MS = 4000;
@@ -41,6 +47,12 @@ export function RecoveryCodesPrompt() {
 
     const check = async () => {
       try {
+        // Never stack on top of the welcome flow. That flow fires at 900ms
+        // and already ends in a mandatory codes step; opening this modal at
+        // 4000ms would put two sheets over each other and ask the same
+        // thing twice. Its own step covers these users.
+        if (localStorage.getItem(WELCOME_SEEN_KEY) !== "true") return;
+
         const raw = localStorage.getItem(DISMISSED_KEY);
         if (raw) {
           const at = Number(raw);
@@ -52,9 +64,12 @@ export function RecoveryCodesPrompt() {
 
       try {
         const { res, data } = await authFetchJson("/api/recovery/codes");
-        // Only interrupt someone who genuinely has no codes. Anyone part
-        // way through, or already set up, is left alone.
-        if (!cancelled && res.ok && data && !data.hasCodes) setOpen(true);
+        if (cancelled || !res.ok || !data) return;
+        // Only interrupt someone who genuinely has no codes AND could
+        // actually make some. A Google account has no peja password to
+        // recover and cannot satisfy the password gate, so nagging it
+        // would be a modal with no way to comply.
+        if (data.hasPassword !== false && !data.hasCodes) setOpen(true);
       } catch {
         /* offline or erroring: never nag on a guess */
       }

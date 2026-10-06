@@ -1,22 +1,58 @@
 // src/app/(auth)/forgot-password/page.tsx
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Mail, Lock, Eye, EyeOff, ArrowLeft, Loader2, ShieldCheck, KeyRound } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  KeyRound,
+  LifeBuoy,
+  Lock,
+  Mail,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { PasswordStrength, isPasswordStrong } from "@/components/ui/PasswordStrength";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { RECOVERY_CATEGORIES, type RecoveryCategoryId } from "@/lib/recoveryCategories";
+
+/**
+ * Password reset. Asks WHICH proof the user has before doing anything.
+ *
+ * This screen used to take an email and immediately mint a six-digit
+ * code, delivered by push with email as the fallback. That was wrong, and
+ * the reasoning is worth keeping here as well as in the retired route:
+ *
+ * A reset code only means something if it reaches somewhere the person
+ * holding the phone cannot. Pushing it put the code on the lock screen of
+ * the very device an attacker would have taken, so physical possession of
+ * the phone became the entire authentication. For an app whose users may
+ * be followed or living with someone dangerous, locking the real owner out
+ * of their SOS button is close to the worst failure available.
+ *
+ * So there is no send step any more. Both remaining routes prove identity
+ * with something that is not the phone in hand:
+ *
+ *   recovery code - twenty single-use codes saved off-device at signup
+ *   contacts      - two trusted people confirm it is really them, at
+ *                   /recover, with a delay the owner can cancel inside
+ *
+ * Nothing here reveals whether an account exists. The redeem endpoint
+ * answers "that code is not valid" identically for an unknown address and
+ * a wrong code, so this page cannot be used to probe for registered
+ * emails.
+ */
+type Step = "choose" | "code" | "help";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
-  const [step, setStep] = useState<1 | 2>(1);
-  // Recovery codes are the route for someone who cannot receive the
-  // emailed/pushed code at all. Same shape on screen, different endpoint,
-  // because a saved code is already proof and needs no delivery.
-  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
+  const [step, setStep] = useState<Step>("choose");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -25,48 +61,36 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  // Cooldown for the resend button. Set to 30 after every successful
-  // send/resend so the user can't spam the endpoint past Supabase's
-  // own server-side rate limit. UI countdown only — server enforcement
-  // is Supabase's existing per-email throttle.
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const codeInputRef = useRef<HTMLInputElement>(null);
+  // The human route, for someone with neither a saved code nor two
+  // reachable contacts. Files a support ticket; grants nothing by itself.
+  const [category, setCategory] = useState<RecoveryCategoryId>("no_codes");
+  const [helpMessage, setHelpMessage] = useState("");
+  const [helpSent, setHelpSent] = useState(false);
 
-  useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const t = setTimeout(() => setResendCooldown((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendCooldown]);
-
-  const handleSendCode = async (e: React.FormEvent) => {
+  const submitHelp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-
     if (!email.trim()) {
       setError("Please enter your email");
       return;
     }
-
+    if (!helpMessage.trim()) {
+      setError("Tell us briefly what happened");
+      return;
+    }
     setLoading(true);
-
     try {
-    const res = await fetch("/api/auth/forgot-password/", {
+      const res = await fetch("/api/recovery/request-help", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), category, message: helpMessage.trim() }),
       });
-
       const data = await res.json();
-
       if (!res.ok) {
         setError(data.error || "Something went wrong");
-        setLoading(false);
         return;
       }
-
-      setStep(2);
-      setResendCooldown(30);
-      setTimeout(() => codeInputRef.current?.focus(), 200);
+      setHelpSent(true);
     } catch {
       setError("Connection error. Try again.");
     } finally {
@@ -74,38 +98,34 @@ export default function ForgotPasswordPage() {
     }
   };
 
-  const handleResetPassword = async (e: React.FormEvent) => {
+  const handleRedeem = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    if (!code.trim()) {
-      setError("Please enter the verification code");
+    if (!email.trim()) {
+      setError("Please enter your email");
       return;
     }
-
+    if (!code.trim()) {
+      setError("Please enter one of your recovery codes");
+      return;
+    }
     if (!isPasswordStrong(newPassword)) {
       setError("Password doesn't meet the requirements");
       return;
     }
-
     if (newPassword !== confirmPassword) {
       setError("Passwords don't match");
       return;
     }
 
     setLoading(true);
-
     try {
-      const res = await fetch(useRecoveryCode ? "/api/recovery/redeem" : "/api/auth/reset-password/", {
+      const res = await fetch("/api/recovery/redeem", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          code: code.trim(),
-          newPassword,
-        }),
+        body: JSON.stringify({ email: email.trim(), code: code.trim(), newPassword }),
       });
-
       const data = await res.json();
 
       if (!res.ok) {
@@ -114,8 +134,13 @@ export default function ForgotPasswordPage() {
         return;
       }
 
-      setSuccess("Password reset successfully! Redirecting to login...");
-      setTimeout(() => router.push("/login"), 2000);
+      const left = typeof data.remaining === "number" ? data.remaining : null;
+      setSuccess(
+        left != null
+          ? `Password changed. You have ${left} recovery ${left === 1 ? "code" : "codes"} left.`
+          : "Password changed.",
+      );
+      setTimeout(() => router.push("/login"), 2200);
     } catch {
       setError("Connection error. Try again.");
     } finally {
@@ -132,57 +157,99 @@ export default function ForgotPasswordPage() {
           </div>
           <h1 className="text-2xl font-bold text-dark-50">Reset Password</h1>
           <p className="text-sm text-dark-400 mt-2">
-            {step === 1
-              ? "Enter your email to receive a reset code"
-              : useRecoveryCode
-                ? "Enter one of the twenty recovery codes you saved"
-                : `If ${email} has an account, the code is in your phone notifications or your inbox`}
+            {step === "choose"
+              ? "Choose how you want to prove it is you"
+              : step === "help"
+                ? "Tell us what happened and we will help you back in"
+                : "Enter one of the twenty codes you saved"}
           </p>
         </div>
 
-        {success ? (
+        {helpSent ? (
+          <div className="glass-card text-center">
+            <ShieldCheck className="w-12 h-12 text-green-400 mx-auto mb-4" />
+            <p className="text-dark-100 font-medium">Request sent</p>
+            <p className="text-sm text-dark-400 mt-2 leading-relaxed">
+              A person will look at this and get back to you by email, at the
+              address already on your account. Nothing changes on your account
+              until then.
+            </p>
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-1 text-sm text-primary-400 hover:text-primary-300 font-medium mt-5"
+            >
+              <ArrowLeft className="w-3 h-3" />
+              Back to Sign In
+            </Link>
+          </div>
+        ) : success ? (
           <div className="glass-card text-center">
             <ShieldCheck className="w-12 h-12 text-green-400 mx-auto mb-4" />
             <p className="text-green-400 font-medium">{success}</p>
+            <p className="text-sm text-dark-400 mt-2">Taking you to sign in...</p>
           </div>
-        ) : step === 1 ? (
-          <form onSubmit={handleSendCode} className="glass-card">
-            {error && (
-              <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                <p className="text-sm text-red-400">{error}</p>
-              </div>
-            )}
-
-            <Input
-              type="email"
-              label="Email Address"
-              placeholder="Enter your email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setError("");
-              }}
-              leftIcon={<Mail className="w-4 h-4" />}
-              disabled={loading}
-            />
-
-            <Button
-              type="submit"
-              variant="primary"
-              className="w-full mt-6"
-              disabled={loading || !email.trim()}
+        ) : step === "choose" ? (
+          <div className="glass-card space-y-3">
+            <button
+              onClick={() => setStep("code")}
+              className="w-full flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10 text-left active:scale-[0.99] transition-ui hover:border-primary-500/40"
             >
-              {loading ? (
-                <>
-                  <PejaSpinner className="w-4 h-4 mr-2" />
-                  Sending Code...
-                </>
-              ) : (
-                "Send Reset Code"
-              )}
-            </Button>
+              <div className="w-10 h-10 rounded-xl bg-primary-500/15 flex items-center justify-center shrink-0">
+                <KeyRound className="w-5 h-5 text-primary-400" />
+              </div>
+              <span className="flex-1 min-w-0">
+                <span className="block text-dark-100 font-medium">
+                  I have a recovery code
+                </span>
+                <span className="block text-sm text-dark-400 mt-0.5">
+                  Instant. One of the codes you saved when you signed up.
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-dark-500 shrink-0" />
+            </button>
 
-            <p className="text-center text-dark-400 text-sm mt-6">
+            <button
+              onClick={() => router.push("/recover")}
+              className="w-full flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10 text-left active:scale-[0.99] transition-ui hover:border-primary-500/40"
+            >
+              <div className="w-10 h-10 rounded-xl bg-primary-500/15 flex items-center justify-center shrink-0">
+                <Users className="w-5 h-5 text-primary-400" />
+              </div>
+              <span className="flex-1 min-w-0">
+                <span className="block text-dark-100 font-medium">
+                  Ask my emergency contacts
+                </span>
+                <span className="block text-sm text-dark-400 mt-0.5">
+                  Slower. Two of your people confirm it is really you.
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-dark-500 shrink-0" />
+            </button>
+
+            <button
+              onClick={() => setStep("help")}
+              className="w-full flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10 text-left active:scale-[0.99] transition-ui hover:border-primary-500/40"
+            >
+              <div className="w-10 h-10 rounded-xl bg-primary-500/15 flex items-center justify-center shrink-0">
+                <LifeBuoy className="w-5 h-5 text-primary-400" />
+              </div>
+              <span className="flex-1 min-w-0">
+                <span className="block text-dark-100 font-medium">
+                  I cannot use either of these
+                </span>
+                <span className="block text-sm text-dark-400 mt-0.5">
+                  Ask a person for help. We check and get back to you.
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-dark-500 shrink-0" />
+            </button>
+
+            <p className="text-xs text-dark-500 leading-relaxed pt-1">
+              We no longer send reset codes to your phone or inbox. A code
+              sent to the device in someone else's hand would prove nothing.
+            </p>
+
+            <p className="text-center text-dark-400 text-sm pt-2">
               <Link
                 href="/login"
                 className="text-primary-400 hover:text-primary-300 font-medium inline-flex items-center gap-1"
@@ -191,9 +258,9 @@ export default function ForgotPasswordPage() {
                 Back to Sign In
               </Link>
             </p>
-          </form>
-        ) : (
-          <form onSubmit={handleResetPassword} className="glass-card">
+          </div>
+        ) : step === "help" ? (
+          <form onSubmit={submitHelp} className="glass-card">
             {error && (
               <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
                 <p className="text-sm text-red-400">{error}</p>
@@ -201,27 +268,134 @@ export default function ForgotPasswordPage() {
             )}
 
             <div className="space-y-4">
+              <Input
+                type="email"
+                label="Email Address"
+                placeholder="The email on your peja account"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError("");
+                }}
+                leftIcon={<Mail className="w-4 h-4" />}
+                disabled={loading}
+              />
+
               <div>
                 <label className="block text-sm font-medium text-dark-200 mb-1.5">
-                  Verification Code
+                  What happened?
+                </label>
+                <div className="space-y-1.5">
+                  {RECOVERY_CATEGORIES.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setCategory(c.id)}
+                      className={`w-full px-3 py-2.5 rounded-xl border text-left transition-ui ${
+                        category === c.id
+                          ? "border-primary-500/50 bg-primary-500/10"
+                          : "border-white/10 bg-white/5"
+                      }`}
+                    >
+                      <span className="block text-sm text-dark-100">{c.label}</span>
+                      <span className="block text-xs text-dark-400 mt-0.5">{c.hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-dark-200 mb-1.5">
+                  Anything else we should know
+                </label>
+                <textarea
+                  value={helpMessage}
+                  onChange={(e) => {
+                    setHelpMessage(e.target.value.slice(0, 2000));
+                    setError("");
+                  }}
+                  rows={4}
+                  placeholder="Tell us what happened in your own words"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500 resize-none"
+                  disabled={loading}
+                />
+              </div>
+            </div>
+
+            <p className="text-xs text-dark-500 mt-4 leading-relaxed">
+              We will reply to the email already on the account, never to an
+              address given here. That is what stops someone else using this
+              form to take your account.
+            </p>
+
+            <Button
+              type="submit"
+              variant="primary"
+              className="w-full mt-4"
+              disabled={loading || !email.trim() || !helpMessage.trim()}
+            >
+              {loading ? (
+                <>
+                  <PejaSpinner className="w-4 h-4 mr-2" />
+                  Sending...
+                </>
+              ) : (
+                "Send request"
+              )}
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStep("choose");
+                setError("");
+              }}
+              className="w-full text-center text-sm text-dark-400 hover:text-dark-200 mt-4"
+            >
+              Back
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleRedeem} className="glass-card">
+            {error && (
+              <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                <p className="text-sm text-red-400">{error}</p>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <Input
+                type="email"
+                label="Email Address"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError("");
+                }}
+                leftIcon={<Mail className="w-4 h-4" />}
+                disabled={loading}
+              />
+
+              <div>
+                <label className="block text-sm font-medium text-dark-200 mb-1.5">
+                  Recovery Code
                 </label>
                 <input
-                  ref={codeInputRef}
                   type="text"
                   value={code}
                   onChange={(e) => {
-                    const v = e.target.value.replace(/\D/g, "").slice(0, 6);
-                    setCode(v);
+                    setCode(e.target.value.replace(/\D/g, "").slice(0, 6));
                     setError("");
                   }}
                   placeholder="Enter 6-digit code"
                   className="w-full px-4 py-3 glass-input text-xl tracking-[0.4em] text-center font-mono"
                   inputMode="numeric"
-                  autoComplete="one-time-code"
+                  autoComplete="off"
                   disabled={loading}
                 />
                 <p className="text-xs text-dark-500 mt-1.5 text-center">
-                  Check your email for the code
+                  Each code works once
                 </p>
               </div>
 
@@ -287,46 +461,18 @@ export default function ForgotPasswordPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setStep(1);
+                  setStep("choose");
                   setCode("");
                   setError("");
                 }}
                 className="text-sm text-dark-400 hover:text-dark-200"
               >
-                Use a different email
+                Back
               </button>
-              {!useRecoveryCode && (
-                <button
-                  type="button"
-                  onClick={handleSendCode}
-                  disabled={loading || resendCooldown > 0}
-                  className="text-sm text-primary-400 hover:text-primary-300 disabled:text-dark-500 disabled:cursor-not-allowed"
-                >
-                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend code"}
-                </button>
-              )}
+              <Link href="/recover" className="text-sm text-primary-400 hover:text-primary-300">
+                Lost your codes?
+              </Link>
             </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setUseRecoveryCode((v) => !v);
-                setCode("");
-                setError("");
-              }}
-              className="w-full text-center text-sm text-primary-400 hover:text-primary-300 mt-4"
-            >
-              {useRecoveryCode
-                ? "Use the code we sent instead"
-                : "Can't get the code? Use a recovery code"}
-            </button>
-
-            <a
-              href="/recover"
-              className="block w-full text-center text-sm text-dark-400 hover:text-dark-200 mt-2"
-            >
-              Or ask your emergency contacts to confirm it is you
-            </a>
           </form>
         )}
       </div>

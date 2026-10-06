@@ -5,31 +5,41 @@ import { sendPushToUser } from "./_firebaseAdmin";
  * Deliver a one-time auth code, push first, email as the fallback.
  *
  * Email is the expensive channel: the whole app shares one consumer Gmail
- * quota, and signup codes, password resets and ops alerts all draw on it.
- * Push costs nothing, arrives instantly, and lands on a device the person
- * is already holding rather than an inbox they have to go and open.
+ * quota, and signup codes and ops alerts all draw on it. Push costs
+ * nothing and arrives instantly on a device the person already holds.
  *
- * It is also the safer channel. The notification reaches a device with a
- * logged-in session, and if someone else triggers a reset the real owner's
- * phone buzzes immediately instead of the attempt sitting unseen in an
- * inbox.
+ * WHERE PUSH IS ALLOWED, AND WHY THE LINE IS WHERE IT IS
  *
- * Email is not removed, only demoted: a user on a laptop, or one who never
- * granted notification permission, still gets their code.
+ * A code delivered to the account's own device proves possession of that
+ * device and nothing else. That is fine when the code is a CONFIRMATION
+ * of something the caller has already authenticated, and unacceptable
+ * when the code IS the authentication.
+ *
+ *   signup  - ok. There is no account to steal yet; the code only ties a
+ *             fresh account to a reachable address.
+ *   change  - ok. The caller already proved the current password before
+ *             this is ever reached, so the push is a second signal and a
+ *             warning shot, not the proof.
+ *   reset   - REMOVED, deliberately. "Forgot password" is exactly the
+ *             case where identity is the open question, so the code was
+ *             the only proof in play. Pushing it put that proof on the
+ *             lock screen of the phone an attacker would be holding:
+ *             pick up the phone, tap forgot password, read the
+ *             notification, take the account. Do not add it back. Reset
+ *             now runs through /api/recovery/redeem (a code the user
+ *             saved somewhere else) or /api/recovery/start (trusted
+ *             contacts vouching), both of which prove something the
+ *             thief does not have.
  *
  * Deliberately does NOT write a notifications row. A one-time code has no
  * business sitting in the in-app notification history after it expires.
  */
-export type CodePurpose = "signup" | "reset" | "change";
+export type CodePurpose = "signup" | "change";
 
 const PUSH_COPY: Record<CodePurpose, (code: string) => { title: string; body: string }> = {
   signup: (code) => ({
     title: "Confirm your email",
     body: `${code} is your peja confirmation code. It expires in 15 minutes.`,
-  }),
-  reset: (code) => ({
-    title: "Password reset requested",
-    body: `${code} is your peja reset code. If this was not you, ignore this and your password stays unchanged.`,
   }),
   change: (code) => ({
     title: "Confirm your password change",

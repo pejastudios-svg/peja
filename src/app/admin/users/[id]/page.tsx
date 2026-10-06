@@ -8,7 +8,7 @@ import { usePageCache } from "@/context/PageCacheContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
-import { Loader2, ArrowLeft, User, MapPin, Trash2, Archive, FileText, Radio, Eye, EyeOff } from "lucide-react";
+import { Loader2, ArrowLeft, User, MapPin, Trash2, Archive, FileText, Radio, Eye, EyeOff, KeyRound, Copy, Check } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { PostCard } from "@/components/posts/PostCard";
 import { Post } from "@/lib/types";
@@ -159,6 +159,73 @@ const [contacts, setContacts] = useState<AdminEmergencyContact[]>(cachedData?.co
       setRevealError((e as Error).message);
     } finally {
       setRevealBusy(false);
+    }
+  };
+
+  // Admin-issued temporary password. The last door for someone with no
+  // recovery codes and fewer than two accepted contacts, who is therefore
+  // locked out with no automated way back in.
+  //
+  // The password it produces is shown to the ADMIN only, to be sent to the
+  // address already on the account. It is never handed to whoever asked,
+  // which is what makes an open request form safe: a stranger filing a
+  // reset for someone else's email just causes that owner to be emailed
+  // and pushed a warning.
+  const [pwResetOpen, setPwResetOpen] = useState(false);
+  const [pwResetPin, setPwResetPin] = useState("");
+  const [pwResetBusy, setPwResetBusy] = useState(false);
+  const [pwResetError, setPwResetError] = useState<string | null>(null);
+  const [pwResetResult, setPwResetResult] = useState<
+    { tempPassword: string; email: string; emailText: string } | null
+  >(null);
+  const [pwCopied, setPwCopied] = useState<"password" | "email" | null>(null);
+
+  const closePwReset = () => {
+    setPwResetOpen(false);
+    setPwResetPin("");
+    setPwResetError(null);
+    setPwResetResult(null);
+    setPwCopied(null);
+  };
+
+  const submitPasswordReset = async () => {
+    if (pwResetBusy || !u) return;
+    setPwResetBusy(true);
+    setPwResetError(null);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth.session?.access_token;
+      if (!token) throw new Error("Session expired");
+      const res = await fetch("/api/admin/reset-user-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId: u.id, pin: pwResetPin }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not reset the password");
+      setPwResetResult({
+        tempPassword: json.tempPassword,
+        email: json.email,
+        emailText: json.emailText,
+      });
+      setPwResetPin("");
+    } catch (e) {
+      setPwResetError((e as Error).message);
+    } finally {
+      setPwResetBusy(false);
+    }
+  };
+
+  const copyPw = async (what: "password" | "email") => {
+    if (!pwResetResult) return;
+    try {
+      await navigator.clipboard.writeText(
+        what === "password" ? pwResetResult.tempPassword : pwResetResult.emailText,
+      );
+      setPwCopied(what);
+      setTimeout(() => setPwCopied(null), 2000);
+    } catch {
+      setPwResetError("Could not copy. Select the text and copy it by hand.");
     }
   };
 
@@ -536,6 +603,32 @@ useEffect(() => {
             )}
           </div>
         ) : null}
+      </div>
+
+      {/* Account access */}
+      <div className="glass-card mb-6">
+        <h2 className="text-sm font-semibold text-dark-400 uppercase mb-3">Account access</h2>
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center shrink-0">
+            <KeyRound className="w-5 h-5 text-amber-300" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm text-dark-100 font-medium">Issue a temporary password</p>
+            <p className="text-xs text-dark-400 mt-0.5 leading-relaxed">
+              For a user who is locked out with no recovery codes and fewer
+              than two accepted contacts. You send it to the address on the
+              account, never to whoever asked. Recorded in the admin log.
+            </p>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-3"
+              onClick={() => setPwResetOpen(true)}
+            >
+              Reset password
+            </Button>
+          </div>
+        </div>
       </div>
 
             {/* Emergency Contacts */}
@@ -954,6 +1047,107 @@ useEffect(() => {
             </Button>
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={pwResetOpen}
+        onClose={closePwReset}
+        title={pwResetResult ? "Temporary password issued" : "Reset this password"}
+      >
+        {!pwResetResult ? (
+          <div className="space-y-3">
+            <p className="text-dark-300 text-sm">
+              {u.full_name || "This user"}
+              <span className="text-dark-500"> · {u.email}</span>
+            </p>
+            <p className="text-dark-400 text-xs leading-relaxed">
+              This signs them out of nothing and tells them nothing by
+              itself. It generates a one-time password, pushes them a
+              warning that support reset their account, and blocks the app
+              for them until they choose their own. Send it only to the
+              address shown above.
+            </p>
+            <input
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              value={pwResetPin}
+              onChange={(e) => setPwResetPin(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitPasswordReset();
+              }}
+              placeholder="Admin PIN"
+              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+            />
+            {pwResetError && <p className="text-red-400 text-xs">{pwResetError}</p>}
+            <div className="flex gap-2">
+              <Button variant="secondary" size="sm" onClick={closePwReset}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={submitPasswordReset}
+                disabled={pwResetBusy || pwResetPin.trim().length === 0}
+              >
+                {pwResetBusy ? "Resetting..." : "Reset password"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25">
+              <p className="text-sm font-semibold text-amber-200">Shown once</p>
+              <p className="text-xs text-dark-300 mt-0.5 leading-relaxed">
+                Copy it now. Send it to {pwResetResult.email} and nowhere
+                else. The user must change it before they can use the app.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-center">
+              <p className="font-mono text-xl text-dark-50 tracking-wide select-all">
+                {pwResetResult.tempPassword}
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => copyPw("password")}
+                leftIcon={
+                  pwCopied === "password" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />
+                }
+              >
+                {pwCopied === "password" ? "Copied" : "Copy password"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => copyPw("email")}
+                leftIcon={
+                  pwCopied === "email" ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />
+                }
+              >
+                {pwCopied === "email" ? "Copied" : "Copy email text"}
+              </Button>
+            </div>
+
+            <details className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+              <summary className="px-3 py-2.5 text-sm text-dark-200 cursor-pointer select-none">
+                Preview the email
+              </summary>
+              <pre className="px-3 pb-3 text-xs text-dark-300 whitespace-pre-wrap font-sans leading-relaxed">
+                {pwResetResult.emailText}
+              </pre>
+            </details>
+
+            {pwResetError && <p className="text-red-400 text-xs">{pwResetError}</p>}
+
+            <Button size="sm" onClick={closePwReset}>
+              Done
+            </Button>
+          </div>
+        )}
       </Modal>
 
       <ImageLightbox

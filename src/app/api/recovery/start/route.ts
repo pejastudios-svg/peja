@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
+import { APPROVALS_REQUIRED } from "../_constants";
 import { getSupabaseAdmin } from "../../_supabaseAdmin";
 import { isRateLimitedDurable } from "../../_rateLimit";
 import { sendPushToUser } from "../../_firebaseAdmin";
@@ -22,8 +24,6 @@ export const runtime = "nodejs";
  *   - the owner is pushed on every device the instant it starts
  *   - approval alone does not open the account; a delay runs first
  */
-const APPROVALS_REQUIRED = 2;
-const UNLOCK_DELAY_MIN = 10;
 
 /** First names only. Enough to recognise, not enough to harvest. */
 function firstName(full: string | null): string {
@@ -88,8 +88,21 @@ export async function POST(req: NextRequest) {
   const { data: users } = await supabaseAdmin
     .from("users").select("id, full_name").eq("email", cleanEmail).limit(1);
   // Opaque success: an attacker learns nothing from this response.
-  const opaque = NextResponse.json({ ok: true, started: true });
-  if (!users || users.length === 0) return opaque;
+  //
+  // The starter DOES need the request id back, because it is what the
+  // waiting screen polls and what finishes the reset. Withholding it was
+  // why this route could never complete: the id was both the credential
+  // and never handed to anybody.
+  //
+  // So every caller gets an id, real or not. A decoy is a throwaway uuid
+  // that no row matches, and /api/recovery/status answers for an unknown
+  // id exactly as it does for a pending one, so the response shape and
+  // the subsequent polling look identical whether or not the account
+  // exists. Returning the id only on success would have made this
+  // endpoint an account-existence oracle.
+  const decoy = () =>
+    NextResponse.json({ ok: true, started: true, requestId: crypto.randomUUID() });
+  if (!users || users.length === 0) return decoy();
   const owner = users[0];
 
   // Only genuine accepted contacts can ever be approvers, whatever the
@@ -101,7 +114,7 @@ export async function POST(req: NextRequest) {
     .eq("status", "accepted")
     .in("contact_user_id", chosen);
   const approvers = [...new Set((valid || []).map((v) => v.contact_user_id as string))];
-  if (approvers.length < APPROVALS_REQUIRED) return opaque;
+  if (approvers.length < APPROVALS_REQUIRED) return decoy();
 
   // One live request at a time.
   await supabaseAdmin
@@ -115,7 +128,7 @@ export async function POST(req: NextRequest) {
     .insert({ user_id: owner.id, approvals_required: APPROVALS_REQUIRED })
     .select("id")
     .single();
-  if (!request) return opaque;
+  if (!request) return decoy();
 
   await supabaseAdmin.from("recovery_approvers").insert(
     approvers.map((id) => ({ request_id: request.id, contact_user_id: id })),
@@ -142,5 +155,5 @@ export async function POST(req: NextRequest) {
     data: { type: "recovery_started", request_id: request.id },
   }).catch(() => {});
 
-  return opaque;
+  return NextResponse.json({ ok: true, started: true, requestId: request.id });
 }

@@ -37,6 +37,11 @@ interface User {
   last_location_updated_at?: string;
 
   status?: "active" | "suspended" | "banned";
+
+  // Set when an admin issued a temporary password. ForcedPasswordChange
+  // reads this to block the app until the user picks their own, so it MUST
+  // flow through the mapping below or the gate never appears.
+  must_change_password?: boolean;
 }
 
 interface AuthContextType {
@@ -846,6 +851,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         is_admin: data.is_admin || false,
         is_vip: data.is_vip || false,
         is_mvp: data.is_mvp || false,
+        must_change_password: data.must_change_password || false,
       } : {
         id: userId,
         email: supabaseUser?.email || "",

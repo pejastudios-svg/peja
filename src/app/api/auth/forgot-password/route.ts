@@ -1,157 +1,45 @@
 // src/app/api/auth/forgot-password/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { sendOpsAlert } from "../../_email";
-import { deliverAuthCode } from "../../_authCode";
-import { getSupabaseAdmin } from "../../_supabaseAdmin";
-import crypto from "crypto";
+import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-// Per-IP rate limit (in-memory, complements the per-email DB limit). Stops
-// an attacker rotating across emails from email-bombing the webhook / quota.
-const ipBuckets = new Map<string, { count: number; resetAt: number }>();
-const IP_LIMIT = 10; // requests per hour per IP
-const IP_WINDOW = 60 * 60 * 1000;
-
-export async function POST(req: NextRequest) {
-  const supabaseAdmin = getSupabaseAdmin();
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    req.headers.get("x-real-ip") ||
-    "unknown";
-
-  if (ip !== "unknown") {
-    const now = Date.now();
-    const entry = ipBuckets.get(ip);
-    if (!entry || now > entry.resetAt) {
-      ipBuckets.set(ip, { count: 1, resetAt: now + IP_WINDOW });
-    } else {
-      entry.count++;
-      if (entry.count > IP_LIMIT) {
-        return NextResponse.json(
-          { ok: false, error: "Too many requests. Try again later." },
-          { status: 429 }
-        );
-      }
-    }
-  }
-
-  const { email } = await req.json();
-  if (!email || typeof email !== "string") {
-    return NextResponse.json({ ok: false, error: "Email required" }, { status: 400 });
-  }
-
-  const cleanEmail = email.trim().toLowerCase();
-
-  // Rate limit: max 3 requests per email per 15 min
-  const fifteenAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-  const { count } = await supabaseAdmin
-    .from("verification_codes")
-    .select("*", { count: "exact", head: true })
-    .eq("email", cleanEmail)
-    .eq("type", "password_reset")
-    .gte("created_at", fifteenAgo);
-
-  if ((count || 0) >= 3) {
-    return NextResponse.json(
-      { ok: false, error: "Too many requests. Try again in 15 minutes." },
-      { status: 429 }
-    );
-  }
-
-  // Check if user exists (but don't reveal this to the caller)
-  const { data: users } = await supabaseAdmin
-    .from("users")
-    .select("id")
-    .eq("email", cleanEmail)
-    .limit(1);
-
-  // Always return success (don't reveal if email exists)
-  if (!users || users.length === 0) {
-    return NextResponse.json({ ok: true });
-  }
-
-  // Generate 6-digit code
-  const code = crypto.randomInt(100000, 999999).toString();
-
-  // Invalidate old codes
-  await supabaseAdmin
-    .from("verification_codes")
-    .update({ used: true })
-    .eq("email", cleanEmail)
-    .eq("type", "password_reset")
-    .eq("used", false);
-
-  // Store new code (expires in 10 minutes)
-  await supabaseAdmin.from("verification_codes").insert({
-    user_id: users[0].id,
-    email: cleanEmail,
-    code,
-    type: "password_reset",
-    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-  });
-
-  // Send email
-  const webhookUrl = process.env.APPS_SCRIPT_EMAIL_WEBHOOK_URL;
-  const webhookSecret = process.env.APPS_SCRIPT_WEBHOOK_SECRET;
-
-  if (webhookUrl) {
-    const html = `
-<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-  <div style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:20px;border-radius:12px 12px 0 0;text-align:center">
-    <h1 style="margin:0;font-size:22px">Password Reset</h1>
-    <p style="margin:4px 0 0;opacity:.9">Peja Security</p>
-  </div>
-  <div style="background:#1a1a2e;color:#e0e0e0;padding:24px;border:1px solid #333">
-    <p>You requested a password reset. Use this code to set a new password:</p>
-    <div style="text-align:center;margin:24px 0">
-      <div style="display:inline-block;background:#0f0a1e;border:2px solid #7c3aed;border-radius:12px;padding:16px 32px;font-size:32px;font-family:monospace;letter-spacing:8px;color:#a855f7;font-weight:bold">
-        ${code}
-      </div>
-    </div>
-    <p style="text-align:center;color:#888;font-size:13px">This code expires in 10 minutes.</p>
-    <p style="margin-top:16px;color:#888;font-size:13px">If you didn't request this, ignore this email. Your password won't change.</p>
-  </div>
-  <div style="background:#111;color:#555;padding:12px;border-radius:0 0 12px 12px;text-align:center;font-size:11px">
-    Peja Security System
-  </div>
-</div>`;
-
-    // Push first, email as fallback, same as the other code flows.
-    //
-    // Pushing is also the stronger security position here: the code goes
-    // to a device holding a logged-in session rather than to an inbox
-    // anyone who knows the address might be watching, and the real owner
-    // is alerted the instant someone attempts a reset on their account.
-    //
-    // The RESPONSE stays identical either way. This endpoint is anonymous,
-    // so revealing delivery success only for real accounts would turn it
-    // into an account enumeration oracle. Failures are raised to ops.
-    const { delivered } = await deliverAuthCode({
-      userId: users[0].id,
-      email: cleanEmail,
-      code,
-      purpose: "reset",
-      subject: `${code} is your Peja password reset code`,
-      html,
-    });
-    if (!delivered) {
-      sendOpsAlert(
-        "Password reset code failed to deliver",
-        "A reset was requested and neither push nor email reached the user. " +
-          "If email is the cause, the most likely reason is the daily Gmail quota. " +
-          "Affected users cannot reset their passwords until this clears.",
-      ).catch(() => {});
-    }
-    if (!delivered) {
-      sendOpsAlert(
-        "Password reset email failed to send",
-        "A user requested a password reset and the email webhook refused the send. " +
-          "The most likely cause is the daily Gmail quota. Users cannot reset their " +
-          "passwords until this clears.",
-      ).catch(() => {});
-    }
-  }
-
-  return NextResponse.json({ ok: true });
+/**
+ * RETIRED. Password reset no longer delivers a code to the account itself.
+ *
+ * This endpoint used to mint a six-digit code and deliver it by push, with
+ * email as the fallback. That was a mistake, and the reason is worth
+ * keeping written down so nobody rebuilds it:
+ *
+ * A reset code's only job is to prove the requester controls something the
+ * thief does not. Pushing it sent the code to the very device an attacker
+ * would already be holding, where it appears on the lock screen. Anyone
+ * with sixty seconds of physical access could tap "forgot password", read
+ * the notification, set a new password, and lock the real owner out of a
+ * personal-safety app. Delivering to the account's own device turns
+ * possession of the phone into the whole of authentication.
+ *
+ * Recovery now goes through proofs that live somewhere else:
+ *
+ *   POST /api/recovery/redeem  - a code the user saved off-device
+ *   POST /api/recovery/start   - trusted contacts confirm it is really them
+ *
+ * Both are reachable from /forgot-password, which asks which route the
+ * user wants before sending anything anywhere.
+ *
+ * Kept as an explicit 410 rather than deleted. The route was live in
+ * production, so an old cached client may still call it, and a clear
+ * refusal is better than a 404 that looks like a deploy problem. It also
+ * stops anyone reaching the old push-a-code behaviour directly with curl
+ * while the UI no longer offers it.
+ */
+export async function POST() {
+  return NextResponse.json(
+    {
+      ok: false,
+      error:
+        "Password reset has moved. Open the app and choose Forgot password to use a recovery code or ask your emergency contacts.",
+      code: "endpoint_retired",
+    },
+    { status: 410 },
+  );
 }

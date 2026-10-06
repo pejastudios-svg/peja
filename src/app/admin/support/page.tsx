@@ -28,6 +28,7 @@ import {
   StickyNote,
 } from "lucide-react";
 import { PejaSpinner } from "@/components/ui/PejaSpinner";
+import { findRecoveryCategory } from "@/lib/recoveryCategories";
 
 type TicketStatus = "open" | "in_progress" | "resolved" | "archived";
 
@@ -45,6 +46,9 @@ interface Ticket {
   user_id: string;
   title: string;
   message: string;
+  /** Set only on lockout requests filed from /forgot-password. Null on
+      ordinary tickets from the Help screen. */
+  category?: string | null;
   status: TicketStatus;
   admin_notes: AdminNote[];
   resolved_at: string | null;
@@ -102,7 +106,7 @@ export default function AdminSupportPage() {
       const { data, error } = await supabase
         .from("support_tickets")
         .select(`
-          id, ticket_number, user_id, title, message, status, admin_notes,
+          id, ticket_number, user_id, title, message, category, status, admin_notes,
           resolved_at, resolved_by, created_at, updated_at,
           user:user_id ( id, full_name, email, avatar_url )
         `)
@@ -492,6 +496,44 @@ export default function AdminSupportPage() {
               <p className="text-[11px] font-bold uppercase tracking-wider text-dark-500 mb-1">Message</p>
               <p className="text-sm text-dark-200 whitespace-pre-wrap break-words">{selected.message}</p>
             </div>
+
+            {/* Handling steps for a lockout request. Collapsed by default so
+                it never crowds the ordinary tickets, and sits directly under
+                what the person actually said. */}
+            {(() => {
+              const cat = findRecoveryCategory(selected.category);
+              if (!cat) return null;
+              return (
+                <details className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+                  <summary className="px-3 py-2.5 text-sm text-primary-300 cursor-pointer select-none">
+                    How to handle this
+                  </summary>
+                  <div className="px-3 pb-3 space-y-2.5">
+                    {cat.caution && (
+                      <p className="text-xs text-amber-300 leading-relaxed">{cat.caution}</p>
+                    )}
+                    <ol className="space-y-2">
+                      {cat.steps.map((step, i) => (
+                        <li key={i} className="flex gap-2.5 text-xs text-dark-300 leading-relaxed">
+                          <span className="shrink-0 w-5 h-5 rounded-full bg-primary-500/15 text-primary-300 font-bold flex items-center justify-center">
+                            {i + 1}
+                          </span>
+                          <span className="pt-0.5">{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                    {selected.user?.id && (
+                      <a
+                        href={`/admin/users/${selected.user.id}`}
+                        className="inline-block text-xs font-medium text-primary-400 hover:text-primary-300 pt-1"
+                      >
+                        Open their account page
+                      </a>
+                    )}
+                  </div>
+                </details>
+              );
+            })()}
 
             {/* Notes & replies history */}
             {selected.admin_notes.length > 0 && (

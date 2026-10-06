@@ -65,6 +65,11 @@ export default function RecoverPage() {
         setError(data?.error || "Could not start recovery");
         return;
       }
+      // Hold the request id: it is what the waiting screen polls and what
+      // finishes the reset. The endpoint returns one for every caller,
+      // including a throwaway when the account does not exist, so keeping
+      // it here reveals nothing and leaves the flow able to complete.
+      if (data?.requestId) setRequestId(data.requestId as string);
       setStep("waiting");
     } catch {
       setError("Connection error. Try again.");
@@ -73,9 +78,9 @@ export default function RecoverPage() {
     }
   };
 
-  // Poll while waiting. The request id is not returned by `start` on
-  // purpose, so the waiting screen asks the user to follow the link in
-  // their own notification once a contact approves.
+  // Poll while waiting. Once enough contacts approve, the status flips to
+  // approved with an unlock time, the countdown runs, and `ready` moves us
+  // straight to the password step without the user needing to come back.
   const poll = useCallback(async () => {
     if (!requestId) return;
     try {
@@ -216,9 +221,14 @@ export default function RecoverPage() {
             <div className="text-center space-y-3 py-2">
               <p className="text-dark-100 font-semibold">Request sent</p>
               <p className="text-sm text-dark-400 leading-relaxed">
-                We have asked the people you chose. When enough of them confirm,
-                you will get a notification with a link to finish.
+                We have asked the people you chose. Keep this screen open:
+                it moves on by itself once enough of them confirm.
               </p>
+              {state && state.status === "pending" && (
+                <p className="text-sm text-dark-300">
+                  {state.approvals} of {required} confirmed so far
+                </p>
+              )}
               {state?.unlockAt && left != null && (
                 <p className="text-3xl font-black text-dark-50 tabular-nums">
                   {String(Math.floor(left / 60)).padStart(2, "0")}:

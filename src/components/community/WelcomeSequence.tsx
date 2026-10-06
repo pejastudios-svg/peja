@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { QuickAddSheet } from "./QuickAddSheet";
-import { MapPin, ShieldCheck, Users } from "lucide-react";
+import { KeyRound, MapPin, ShieldCheck, Users } from "lucide-react";
+import { RecoveryCodesForm } from "@/components/recovery/RecoveryCodesForm";
+import { authFetchJson } from "@/lib/authFetch";
 import DeviceSettings from "@/lib/deviceSettings";
 import { isCapacitor } from "@/lib/ambientTracker";
 
@@ -11,14 +13,31 @@ import { isCapacitor } from "@/lib/ambientTracker";
 // A coach-mark tour of empty space teaches nothing, so instead: three
 // friendly cards that say what peja is, ask for location with the reason,
 // and drive the one action that matters most - adding their people.
-// Shows once (localStorage), skippable, and quiets the old feed-era
-// tutorial so the two never fight (PEJA_HOME_V2_PLAN.md Batch F).
+// Shows once (localStorage) and quiets the old feed-era tutorial so the
+// two never fight (PEJA_HOME_V2_PLAN.md Batch F).
+//
+// The LAST card is not skippable, and that is load-bearing. Password
+// reset no longer sends a code to the account's own device, because a
+// code on the lock screen of a stolen phone is no proof of anything.
+// What is left is a code the user saved elsewhere, or trusted contacts
+// vouching. Contacts cannot be made mandatory here: it takes two of
+// them to ACCEPT, which depends on other people and cannot gate a
+// signup. Recovery codes depend on nobody, so they are the step that
+// has to happen, or the account has no way back in at all.
 
 const SEEN_KEY = "peja-welcome-v2-seen";
 // Keys the legacy TutorialOverlay checks - set them so it stays silent
 // for users who've been through this newer intro.
 const TUTORIAL_COMPLETED_KEY = "peja-tutorial-completed";
 const TUTORIAL_HAS_LOGIN_KEY = "peja-has-logged-in";
+// Index of the mandatory recovery-codes step, one past the three cards.
+const CODES_STEP = 3;
+// Set once the three intro cards are behind the user. The codes step is
+// mandatory, so quitting on it leaves SEEN_KEY unset and the flow comes
+// back on the next launch. Without this flag it would come back at card
+// one and make them redo the whole intro to reach the step they were
+// already on, which is how a required step turns into an enemy.
+const CARDS_DONE_KEY = "peja-welcome-cards-done";
 
 export function WelcomeSequence() {
   const { user, loading } = useAuth();
@@ -28,6 +47,29 @@ export function WelcomeSequence() {
   // Location card state: show a live check when permission is granted so
   // the user SEES it worked before moving on.
   const [locState, setLocState] = useState<"idle" | "checking" | "granted" | "denied">("idle");
+  // null until we know. Anything other than a clear "they need codes"
+  // skips the step: a brand new user must never be trapped behind a card
+  // that cannot complete, and RecoveryCodesPrompt catches them later.
+  const [needsCodes, setNeedsCodes] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { res, data } = await authFetchJson("/api/recovery/codes");
+        if (cancelled || !res.ok || !data) return;
+        // Google accounts have no peja password to recover and cannot
+        // satisfy the form's re-authentication, so they are excused.
+        setNeedsCodes(data.hasPassword !== false && !data.hasCodes);
+      } catch {
+        /* unknown: leave null, which skips the step */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (loading || !user) return;
@@ -44,8 +86,16 @@ export function WelcomeSequence() {
     // run #1 eat it while its timer got cancelled, so run #2 bailed and
     // the tutorial never appeared.
     const t = setTimeout(() => {
-      try { localStorage.removeItem("peja-replay-welcome"); } catch {}
-      setStep(0);
+      let resumeAt = 0;
+      try {
+        localStorage.removeItem("peja-replay-welcome");
+        // A replay is an explicit request from Settings to see the intro
+        // again, so it always starts from the top.
+        if (!replay && localStorage.getItem(CARDS_DONE_KEY) === "true") {
+          resumeAt = CODES_STEP;
+        }
+      } catch {}
+      setStep(resumeAt);
       setOpen(true);
     }, replay ? 50 : 900);
     return () => clearTimeout(t);
@@ -85,6 +135,28 @@ export function WelcomeSequence() {
     } catch {}
     setOpen(false);
   };
+
+  // Where the contacts card leads: into the codes step when the account
+  // needs one, otherwise straight out. Declared after finish so the
+  // reference is resolved rather than hoisted.
+  const afterContacts = () => {
+    try {
+      localStorage.setItem(CARDS_DONE_KEY, "true");
+    } catch {}
+    if (needsCodes) setStep(CODES_STEP);
+    else finish();
+  };
+
+  // Resuming lands on the codes step before we know whether it applies.
+  // Once the answer comes back as "not needed" (a Google account, or codes
+  // already saved on another device), there is nothing left to do and
+  // holding the overlay open would strand the user on a blank step.
+  useEffect(() => {
+    if (open && step === CODES_STEP && needsCodes === false) finish();
+    // finish is stable enough for this: it only writes localStorage and
+    // closes, and re-running it would be harmless anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, step, needsCodes]);
 
   // Ground truth beats API guessing: the MAP behind this card is already
   // running GPS. Every accepted fix stamps sessionStorage("peja-gps-ok"),
@@ -204,11 +276,17 @@ export function WelcomeSequence() {
       body: "Add the ones who'd want to know you're safe. When you accept each other, you watch over one another on the map and in emergencies.",
       cta: "Add your people",
       onCta: () => setQuickAdd(true),
-      secondary: { label: "Maybe later", onClick: finish },
+      secondary: { label: "Maybe later", onClick: afterContacts },
     },
   ];
 
-  const c = cards[step];
+  // The codes step renders its own body rather than the card shape: it
+  // needs a password field, a grid of codes and a save gate, none of
+  // which fit {icon, title, body, cta}. Guarded on needsCodes so a stale
+  // step index can never strand someone on a step that does not apply.
+  const onCodesStep = step === CODES_STEP && needsCodes === true;
+  const c = onCodesStep ? null : cards[Math.min(step, cards.length - 1)];
+  const dotCount = cards.length + (needsCodes ? 1 : 0);
 
   return (
     <>
@@ -225,7 +303,7 @@ export function WelcomeSequence() {
         >
           {/* step dots */}
           <div className="flex justify-center gap-1.5 mb-5">
-            {cards.map((_, i) => (
+            {Array.from({ length: dotCount }).map((_, i) => (
               <span
                 key={i}
                 className={`h-1.5 rounded-full transition-ui ${
@@ -236,36 +314,62 @@ export function WelcomeSequence() {
           </div>
 
           <div className="mx-auto w-20 h-20 rounded-full bg-primary-500/15 border border-primary-500/25 flex items-center justify-center mb-5">
-            {c.icon}
+            {onCodesStep ? <KeyRound className="w-10 h-10 text-primary-300" /> : c?.icon}
           </div>
-          <h2 className="text-xl font-bold text-dark-50 mb-2">{c.title}</h2>
-          <p className="text-[15px] text-dark-300 leading-relaxed mb-6">{c.body}</p>
 
-          <button
-            onClick={c.onCta}
-            disabled={Boolean((c as { ctaDisabled?: boolean }).ctaDisabled)}
-            className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-transform disabled:opacity-60"
-          >
-            {c.cta}
-          </button>
-          {c.secondary && (
-            <button
-              onClick={c.secondary.onClick}
-              className="w-full mt-2 py-2.5 text-sm font-medium text-dark-400 active:scale-[0.97] transition-transform"
-            >
-              {c.secondary.label}
-            </button>
-          )}
+          {onCodesStep ? (
+            <>
+              <h2 className="text-xl font-bold text-dark-50 mb-2">
+                Save your way back in
+              </h2>
+              <p className="text-[15px] text-dark-300 leading-relaxed mb-6">
+                If you ever forget your password, one of these codes is how
+                you get back into peja. There is no step to skip here,
+                because without them there is no way back.
+              </p>
+              {/* No onCancel: this step has no exit. Closing the app
+                  instead leaves SEEN_KEY unset, so the flow returns on the
+                  next launch rather than silently letting someone through. */}
+              <div className="text-left">
+                <RecoveryCodesForm
+                  hasExisting={false}
+                  onDone={finish}
+                  introText="Twenty single-use codes. Enter your password to create them."
+                />
+              </div>
+            </>
+          ) : c ? (
+            <>
+              <h2 className="text-xl font-bold text-dark-50 mb-2">{c.title}</h2>
+              <p className="text-[15px] text-dark-300 leading-relaxed mb-6">{c.body}</p>
+
+              <button
+                onClick={c.onCta}
+                disabled={Boolean((c as { ctaDisabled?: boolean }).ctaDisabled)}
+                className="w-full py-3.5 rounded-2xl bg-primary-600 text-white font-semibold active:scale-[0.97] transition-transform disabled:opacity-60"
+              >
+                {c.cta}
+              </button>
+              {c.secondary && (
+                <button
+                  onClick={c.secondary.onClick}
+                  className="w-full mt-2 py-2.5 text-sm font-medium text-dark-400 active:scale-[0.97] transition-transform"
+                >
+                  {c.secondary.label}
+                </button>
+              )}
+            </>
+          ) : null}
         </div>
       </div>
       )}
 
-      {/* Adding people from the last card finishes onboarding. */}
+      {/* Closing the add sheet moves on to the codes step, or out. */}
       <QuickAddSheet
         open={quickAdd}
         onClose={() => {
           setQuickAdd(false);
-          finish();
+          afterContacts();
         }}
       />
     </>
