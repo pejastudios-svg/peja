@@ -210,7 +210,7 @@ export default function ForgotPasswordPage() {
           <div className="glass-card space-y-3">
             <button
               onClick={() => setStep("code")}
-              className="w-full flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10 text-left active:scale-[0.99] transition-ui hover:border-primary-500/40"
+              className="w-full flex items-center gap-3 p-4 rounded-xl bg-[var(--glass-input-bg)] border border-[var(--glass-border)] text-left active:scale-[0.99] transition-ui hover:border-primary-500/40"
             >
               <div className="w-10 h-10 rounded-xl bg-primary-500/15 flex items-center justify-center shrink-0">
                 <KeyRound className="w-5 h-5 text-primary-400" />
@@ -228,7 +228,7 @@ export default function ForgotPasswordPage() {
 
             <button
               onClick={() => router.push("/recover")}
-              className="w-full flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10 text-left active:scale-[0.99] transition-ui hover:border-primary-500/40"
+              className="w-full flex items-center gap-3 p-4 rounded-xl bg-[var(--glass-input-bg)] border border-[var(--glass-border)] text-left active:scale-[0.99] transition-ui hover:border-primary-500/40"
             >
               <div className="w-10 h-10 rounded-xl bg-primary-500/15 flex items-center justify-center shrink-0">
                 <Users className="w-5 h-5 text-primary-400" />
@@ -246,7 +246,7 @@ export default function ForgotPasswordPage() {
 
             <button
               onClick={() => setStep("help")}
-              className="w-full flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/10 text-left active:scale-[0.99] transition-ui hover:border-primary-500/40"
+              className="w-full flex items-center gap-3 p-4 rounded-xl bg-[var(--glass-input-bg)] border border-[var(--glass-border)] text-left active:scale-[0.99] transition-ui hover:border-primary-500/40"
             >
               <div className="w-10 h-10 rounded-xl bg-primary-500/15 flex items-center justify-center shrink-0">
                 <LifeBuoy className="w-5 h-5 text-primary-400" />
@@ -312,7 +312,7 @@ export default function ForgotPasswordPage() {
                       className={`w-full px-3 py-2.5 rounded-xl border text-left transition-ui ${
                         category === c.id
                           ? "border-primary-500/50 bg-primary-500/10"
-                          : "border-white/10 bg-white/5"
+                          : "border-[var(--glass-border)] bg-[var(--glass-input-bg)]"
                       }`}
                     >
                       <span className="block text-sm text-dark-100">{c.label}</span>

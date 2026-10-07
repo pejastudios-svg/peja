@@ -156,7 +156,7 @@ export function RecoveryCodesForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 p-3 rounded-xl bg-white/5 border border-white/10 font-mono text-sm text-dark-100">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 p-3 rounded-xl bg-[var(--glass-input-bg)] border border-[var(--glass-border)] font-mono text-sm text-dark-100">
         {codes.map((c) => (
           <span key={c}>{c}</span>
         ))}

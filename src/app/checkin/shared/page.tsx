@@ -376,7 +376,7 @@ export default function SharedLocationsPage() {
                 className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-ui ${
                   isSelected
                     ? "bg-primary-600/10 border border-primary-500/30"
-                    : "bg-white/[0.03] border border-transparent hover:bg-white/[0.06]"
+                    : "bg-[var(--soft-surface)] border border-[var(--hairline)] hover:bg-[var(--hairline)]"
                 }`}
               >
                 <div className="relative shrink-0">

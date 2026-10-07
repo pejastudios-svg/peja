@@ -357,7 +357,7 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
           <button
             type="button"
             onClick={() => searchRef.current?.focus()}
-            className="absolute left-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10"
+            className="absolute left-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-[var(--hairline-strong)]"
             aria-label="Focus search"
           >
             <Search className="w-5 h-5 text-dark-400" />
@@ -383,7 +383,7 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
             className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-colors ${
               priorityFilter === priority
                 ? "bg-primary-600 text-white"
-                : "glass-sm text-dark-300 hover:bg-white/10"
+                : "glass-sm text-dark-300 hover:bg-[var(--hairline-strong)]"
             }`}
           >
             {priority.charAt(0).toUpperCase() + priority.slice(1)}
@@ -418,7 +418,7 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
             return (
               <div
                 key={item.id}
-                className="glass-card hover:bg-white/5 transition-colors cursor-pointer"
+                className="glass-card hover:bg-[var(--hairline)] transition-colors cursor-pointer"
                 onClick={() => openReview(item)}
               >
                 <div className="flex items-center gap-4">
@@ -467,7 +467,7 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
                   </div>
 
                   {/* Action */}
-                  <button className="p-2 hover:bg-white/10 rounded-lg shrink-0">
+                  <button className="p-2 hover:bg-[var(--hairline-strong)] rounded-lg shrink-0">
                     <Eye className="w-5 h-5 text-primary-400" />
                   </button>
                 </div>
@@ -508,7 +508,7 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-red-500/20">
                   <AvatarImage
                     src={selectedItem.flaggedComment.user?.avatar_url}
-                    wrapperClassName="w-6 h-6 rounded-full bg-dark-800 border border-white/10 overflow-hidden flex items-center justify-center"
+                    wrapperClassName="w-6 h-6 rounded-full bg-dark-800 border border-[var(--hairline-strong)] overflow-hidden flex items-center justify-center"
                     fallbackIconClassName="w-3 h-3"
                   />
                   <span className="text-xs text-dark-400">{selectedItem.flaggedComment.user?.full_name || "Unknown"}</span>
@@ -571,7 +571,7 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
 
             {/* Post context for comments */}
             {selectedItem.contentType === "comment" && selectedItem.post && (
-              <div className="p-4 bg-white/5 rounded-xl space-y-2">
+              <div className="p-4 bg-[var(--glass-input-bg)] rounded-xl space-y-2">
                 <p className="text-xs text-dark-500 uppercase font-bold mb-2">On Post:</p>
                 <p className="text-sm text-dark-400">
                   Category: <span className="text-dark-200 capitalize">{selectedItem.post.category?.replace(/_/g, " ")}</span>
@@ -586,7 +586,7 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
 
             {/* Post Info for posts */}
             {selectedItem.contentType === "post" && selectedItem.post && (
-              <div className="p-4 bg-white/5 rounded-xl space-y-2">
+              <div className="p-4 bg-[var(--glass-input-bg)] rounded-xl space-y-2">
                 <p className="text-sm text-dark-400">
                   Category: <span className="text-dark-200 capitalize">{selectedItem.post.category?.replace(/_/g, " ")}</span>
                 </p>
@@ -605,7 +605,7 @@ const handleAction = async (action: "approve" | "remove" | "blur" | "escalate") 
             )}
 
             {/* Actions */}
-            <div className="border-t border-white/10 pt-4">
+            <div className="border-t border-[var(--hairline-strong)] pt-4">
               <p className="text-sm text-dark-400 mb-3">Take Action:</p>
               <div className="grid grid-cols-2 gap-3">
                 <Button

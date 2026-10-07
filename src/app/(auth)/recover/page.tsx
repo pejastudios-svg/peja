@@ -201,7 +201,7 @@ export default function RecoverPage() {
                         className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-ui ${
                           chosen.includes(c.id)
                             ? "border-primary-500/50 bg-primary-500/10 text-dark-50"
-                            : "border-white/10 bg-white/5 text-dark-200"
+                            : "border-[var(--glass-border)] bg-[var(--glass-input-bg)] text-dark-200"
                         }`}
                       >
                         <span>{c.name}</span>

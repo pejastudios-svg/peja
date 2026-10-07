@@ -116,7 +116,7 @@ export default function GuardianDashboardPage() {
         <Skeleton className="h-5 w-44 mb-4" />
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+            <div key={i} className="flex items-center gap-3 p-3 bg-[var(--glass-input-bg)] rounded-xl">
               <Skeleton className="h-2 w-2 rounded-full" />
               <div className="flex-1">
                 <Skeleton className="h-4 w-40 mb-2" />
@@ -191,7 +191,7 @@ export default function GuardianDashboardPage() {
 
       {/* Quick Actions */}
       <div className="grid md:grid-cols-2 gap-6 mb-8">
-        <Link href="/guardian/queue" className="glass-card hover:bg-white/5 transition-colors group">
+        <Link href="/guardian/queue" className="glass-card hover:bg-[var(--hairline)] transition-colors group">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="p-4 rounded-xl bg-orange-500/10">
@@ -208,7 +208,7 @@ export default function GuardianDashboardPage() {
           </div>
         </Link>
 
-        <Link href="/guardian/guidelines" className="glass-card hover:bg-white/5 transition-colors group">
+        <Link href="/guardian/guidelines" className="glass-card hover:bg-[var(--hairline)] transition-colors group">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div className="p-4 rounded-xl bg-primary-500/10">
@@ -245,7 +245,7 @@ export default function GuardianDashboardPage() {
               <Link
                 key={item.id}
                 href={`/guardian/queue?review=${item.id}`}
-                className="flex items-center gap-3 p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors"
+                className="flex items-center gap-3 p-3 bg-[var(--glass-input-bg)] rounded-xl hover:bg-[var(--hairline-strong)] transition-colors"
               >
                 <div className={`w-2 h-2 rounded-full ${
                   item.priority === "critical" ? "bg-red-500" :

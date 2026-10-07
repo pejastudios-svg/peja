@@ -246,8 +246,8 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
       {sidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/60" onClick={() => setSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-dark-900 border-r border-white/10">
-            <div className="flex items-center justify-between p-4 border-b border-white/10">
+          <aside className="absolute left-0 top-0 bottom-0 w-64 bg-dark-900 border-r border-[var(--hairline-strong)]">
+            <div className="flex items-center justify-between p-4 border-b border-[var(--hairline-strong)]">
               <span className="text-lg font-bold text-primary-400">Guardian Hub</span>
               <button onClick={() => setSidebarOpen(false)} className="p-1">
                 <X className="w-5 h-5 text-dark-400" />
@@ -264,7 +264,7 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
                     href={item.href}
                     onClick={() => setSidebarOpen(false)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                      isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-white/5"
+                      isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-[var(--hairline)]"
                     }`}
                   >
                     <Icon className="w-5 h-5" />
@@ -273,11 +273,11 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
                   </Link>
                 );
               })}
-              <hr className="border-white/10 my-4" />
+              <hr className="border-[var(--hairline-strong)] my-4" />
               <Link
                 href="/"
                 onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-dark-300 hover:bg-white/5"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-dark-300 hover:bg-[var(--hairline)]"
               >
                 <ArrowLeft className="w-5 h-5" />
                 <span>Back to App</span>
@@ -295,8 +295,8 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
       )}
 
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-dark-900 border-r border-white/10">
-        <div className="p-6 border-b border-white/10">
+      <aside className="hidden lg:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-dark-900 border-r border-[var(--hairline-strong)]">
+        <div className="p-6 border-b border-[var(--hairline-strong)]">
           <h1 className="text-xl font-bold text-primary-400">Guardian Hub</h1>
           <p className="text-sm text-dark-500 mt-1">Content Moderation</p>
         </div>
@@ -310,7 +310,7 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
                 key={`${item.href}-${badgeKey}`}
                 href={item.href}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
-                  isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-white/5"
+                  isActive ? "bg-primary-600/20 text-primary-400" : "text-dark-300 hover:bg-[var(--hairline)]"
                 }`}
               >
                 <Icon className="w-5 h-5" />
@@ -319,16 +319,16 @@ export default function GuardianLayout({ children }: { children: React.ReactNode
               </Link>
             );
           })}
-          <hr className="border-white/10 my-4" />
+          <hr className="border-[var(--hairline-strong)] my-4" />
           <Link
             href="/"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-dark-300 hover:bg-white/5"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-dark-300 hover:bg-[var(--hairline)]"
           >
             <ArrowLeft className="w-5 h-5" />
             <span>Back to App</span>
           </Link>
         </nav>
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-[var(--hairline-strong)]">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-full bg-primary-600/20 flex items-center justify-center">
               <span className="text-primary-400 font-semibold">

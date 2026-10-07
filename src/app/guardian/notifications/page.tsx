@@ -200,7 +200,7 @@ export default function GuardianNotificationsPage() {
             <div
               key={n.id}
               onClick={() => openNotification(n)}
-              className={`glass-card p-4 cursor-pointer hover:bg-white/5 transition-colors ${
+              className={`glass-card p-4 cursor-pointer hover:bg-[var(--hairline)] transition-colors ${
                 !n.is_read ? "border-l-4 border-l-primary-500" : ""
               }`}
             >
@@ -226,7 +226,7 @@ export default function GuardianNotificationsPage() {
                     e.stopPropagation();
                     removeOne(n.id);
                   }}
-                  className="p-2 hover:bg-white/10 rounded-lg text-dark-500 hover:text-red-400"
+                  className="p-2 hover:bg-[var(--hairline-strong)] rounded-lg text-dark-500 hover:text-red-400"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>

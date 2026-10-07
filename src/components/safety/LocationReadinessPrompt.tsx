@@ -200,7 +200,7 @@ function ReadinessRow({
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 p-3 rounded-xl bg-[var(--soft-surface)] border border-[var(--hairline-strong)] hover:bg-white/[0.07] transition-colors text-left"
+      className="w-full flex items-center gap-3 p-3 rounded-xl bg-[var(--soft-surface)] border border-[var(--hairline-strong)] hover:bg-[var(--hairline)] transition-colors text-left"
     >
       <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${tint}`}>
         {icon}

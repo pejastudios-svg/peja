@@ -74,7 +74,7 @@ export default function GuardianActionsPage() {
           <button
             type="button"
             onClick={() => searchRef.current?.focus()}
-            className="absolute left-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10"
+            className="absolute left-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-[var(--hairline-strong)]"
           >
             <Search className="w-5 h-5 text-dark-400" />
           </button>
