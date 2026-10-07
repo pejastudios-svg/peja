@@ -135,12 +135,30 @@ export async function POST(req: NextRequest) {
   );
 
   const name = (owner.full_name || "Someone").split(/\s+/)[0];
+  const approverTitle = `${name} is trying to recover their account`;
+  const approverBody = `Open Peja to confirm whether this was really ${name}. Only approve if you are sure.`;
+
+  // Notification rows as well as pushes. A push is a single chance: swipe
+  // it away, miss it on a locked phone, or have notifications off, and the
+  // request simply vanished with no trace in the app. Someone's way back
+  // into their account should not hinge on a banner being caught in time.
+  await supabaseAdmin.from("notifications").insert(
+    approvers.map((id) => ({
+      user_id: id,
+      type: "recovery_request",
+      title: approverTitle,
+      body: approverBody,
+      data: { type: "recovery_request", request_id: request.id },
+      is_read: false,
+    })),
+  );
+
   await Promise.all(
     approvers.map((id) =>
       sendPushToUser({
         userId: id,
-        title: `${name} is trying to recover their account`,
-        body: `Open Peja to confirm whether this was really ${name}. Only approve if you are sure.`,
+        title: approverTitle,
+        body: approverBody,
         data: { type: "recovery_request", request_id: request.id },
       }).catch(() => 0),
     ),
@@ -148,6 +166,17 @@ export async function POST(req: NextRequest) {
 
   // The owner hears about it on every device they still hold. If this is
   // not them, this notification is the whole defence.
+  // Same reasoning for the owner, and more urgently: this notification is
+  // their entire defence if the request was not theirs.
+  await supabaseAdmin.from("notifications").insert({
+    user_id: owner.id,
+    type: "recovery_started",
+    title: "Someone started account recovery",
+    body: "If this was not you, open Peja and cancel it now.",
+    data: { type: "recovery_started", request_id: request.id },
+    is_read: false,
+  });
+
   sendPushToUser({
     userId: owner.id,
     title: "Someone started account recovery",

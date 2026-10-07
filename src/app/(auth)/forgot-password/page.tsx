@@ -14,6 +14,7 @@ import {
   Lock,
   Mail,
   ShieldCheck,
+  UserRound,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
@@ -48,6 +49,11 @@ import { RECOVERY_CATEGORIES, type RecoveryCategoryId } from "@/lib/recoveryCate
  * a wrong code, so this page cannot be used to probe for registered
  * emails.
  */
+// Matches MESSAGE_MAX on /api/recovery/request-help. The counter is
+// there so nobody writes four paragraphs into a field that silently
+// stops accepting them.
+const HELP_MESSAGE_MAX = 2000;
+
 type Step = "choose" | "code" | "help";
 
 export default function ForgotPasswordPage() {
@@ -65,6 +71,8 @@ export default function ForgotPasswordPage() {
   // reachable contacts. Files a support ticket; grants nothing by itself.
   const [category, setCategory] = useState<RecoveryCategoryId>("no_codes");
   const [helpMessage, setHelpMessage] = useState("");
+  const [helpPhone, setHelpPhone] = useState("");
+  const [helpName, setHelpName] = useState("");
   const [helpSent, setHelpSent] = useState(false);
 
   const submitHelp = async (e: React.FormEvent) => {
@@ -72,6 +80,10 @@ export default function ForgotPasswordPage() {
     setError("");
     if (!email.trim()) {
       setError("Please enter your email");
+      return;
+    }
+    if (!helpName.trim()) {
+      setError("Enter your full name");
       return;
     }
     if (!helpMessage.trim()) {
@@ -83,7 +95,13 @@ export default function ForgotPasswordPage() {
       const res = await fetch("/api/recovery/request-help", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), category, message: helpMessage.trim() }),
+        body: JSON.stringify({
+          email: email.trim(),
+          category,
+          message: helpMessage.trim(),
+          phone: helpPhone.trim(),
+          fullName: helpName.trim(),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -304,6 +322,36 @@ export default function ForgotPasswordPage() {
                 </div>
               </div>
 
+              <Input
+                type="text"
+                label="Your Full Name"
+                placeholder="First name and surname, as on the account"
+                value={helpName}
+                onChange={(e) => {
+                  setHelpName(e.target.value.slice(0, 120));
+                  setError("");
+                }}
+                leftIcon={<UserRound className="w-4 h-4" />}
+                disabled={loading}
+              />
+
+              <div>
+                <label className="block text-sm font-medium text-dark-200 mb-1.5">
+                  Phone number <span className="text-dark-500 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="tel"
+                  value={helpPhone}
+                  onChange={(e) => setHelpPhone(e.target.value.slice(0, 40))}
+                  placeholder="A number we can reach you on"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+                  disabled={loading}
+                />
+                <p className="text-xs text-dark-500 mt-1.5">
+                  Helps us confirm it is you. We check it against the account.
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-dark-200 mb-1.5">
                   Anything else we should know
@@ -311,7 +359,7 @@ export default function ForgotPasswordPage() {
                 <textarea
                   value={helpMessage}
                   onChange={(e) => {
-                    setHelpMessage(e.target.value.slice(0, 2000));
+                    setHelpMessage(e.target.value.slice(0, HELP_MESSAGE_MAX));
                     setError("");
                   }}
                   rows={4}
@@ -319,6 +367,9 @@ export default function ForgotPasswordPage() {
                   className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500 resize-none"
                   disabled={loading}
                 />
+                <p className="mt-1 text-[11px] text-dark-500 text-right">
+                  {helpMessage.length}/{HELP_MESSAGE_MAX}
+                </p>
               </div>
             </div>
 
@@ -332,7 +383,7 @@ export default function ForgotPasswordPage() {
               type="submit"
               variant="primary"
               className="w-full mt-4"
-              disabled={loading || !email.trim() || !helpMessage.trim()}
+              disabled={loading || !email.trim() || !helpName.trim() || !helpMessage.trim()}
             >
               {loading ? (
                 <>

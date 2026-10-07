@@ -49,6 +49,11 @@ interface Ticket {
   /** Set only on lockout requests filed from /forgot-password. Null on
       ordinary tickets from the Help screen. */
   category?: string | null;
+  /** Filed from the signed-out recovery form: nobody proved they hold the account. */
+  unverified_requester?: boolean | null;
+  requester_name?: string | null;
+  requester_phone?: string | null;
+  requester_ip?: string | null;
   status: TicketStatus;
   admin_notes: AdminNote[];
   resolved_at: string | null;
@@ -59,6 +64,7 @@ interface Ticket {
     id: string;
     full_name: string | null;
     email: string | null;
+    phone?: string | null;
     avatar_url: string | null;
   };
 }
@@ -107,8 +113,9 @@ export default function AdminSupportPage() {
         .from("support_tickets")
         .select(`
           id, ticket_number, user_id, title, message, category, status, admin_notes,
+          unverified_requester, requester_name, requester_phone, requester_ip,
           resolved_at, resolved_by, created_at, updated_at,
-          user:user_id ( id, full_name, email, avatar_url )
+          user:user_id ( id, full_name, email, phone, avatar_url )
         `)
         .order("created_at", { ascending: false })
         .limit(500);
@@ -496,6 +503,93 @@ export default function AdminSupportPage() {
               <p className="text-[11px] font-bold uppercase tracking-wider text-dark-500 mb-1">Message</p>
               <p className="text-sm text-dark-200 whitespace-pre-wrap break-words">{selected.message}</p>
             </div>
+
+            {/* Who actually filed this.
+
+                A ticket from the signed-out form is attached to the account
+                whose email was typed in, so it would otherwise sit in the
+                queue looking exactly like one the owner wrote. Nobody
+                proved anything. Said plainly, and above the steps, because
+                it changes how hard you verify before resetting. */}
+            {selected.unverified_requester && (() => {
+              // Nigerian numbers arrive as 0803..., 234803... or +234 803...
+              // so compare the last nine digits rather than the strings.
+              const tail = (v?: string | null) => (v || "").replace(/\D/g, "").slice(-9);
+              const given = tail(selected.requester_phone);
+              const onFile = tail(selected.user?.phone);
+              const match = given.length === 9 && given === onFile;
+
+              // Names are typed by hand, so compare on words rather than
+              // whole strings: case, middle names and ordering all vary
+              // without meaning anything. Every word they gave appearing in
+              // the account name is a strong match; a shared surname alone
+              // is weak but still worth seeing.
+              const words = (v?: string | null) =>
+                (v || "").toLowerCase().split(/[^a-z]+/i).filter((w) => w.length > 1);
+              const givenName = words(selected.requester_name);
+              const fileName = words(selected.user?.full_name);
+              const nameVerdict =
+                givenName.length === 0 || fileName.length === 0
+                  ? null
+                  : givenName.every((w) => fileName.includes(w))
+                    ? "full"
+                    : givenName.some((w) => fileName.includes(w))
+                      ? "partial"
+                      : "none";
+              return (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2">
+                  <p className="text-sm font-semibold text-amber-200">
+                    Filed while signed out. Not verified.
+                  </p>
+                  <p className="text-xs text-dark-300 leading-relaxed">
+                    Anyone can type any email into this form. The account
+                    shown above is whose address was entered, not proof of
+                    who wrote this. Verify before you reset anything.
+                  </p>
+                  {selected.requester_name && (
+                    <p className="text-xs">
+                      <span className="text-dark-400">Name they gave: </span>
+                      <span className="text-dark-100">{selected.requester_name}</span>
+                      {nameVerdict === "full" && (
+                        <span className="text-green-400"> · matches the account</span>
+                      )}
+                      {nameVerdict === "partial" && (
+                        <span className="text-amber-300"> · partly matches, check it</span>
+                      )}
+                      {nameVerdict === "none" && (
+                        <span className="text-red-400"> · does NOT match the account</span>
+                      )}
+                      {nameVerdict === null && (
+                        <span className="text-dark-500"> · no name on the account to compare</span>
+                      )}
+                    </p>
+                  )}
+                  {selected.requester_phone ? (
+                    <p className="text-xs">
+                      <span className="text-dark-400">Number they gave: </span>
+                      <span className="text-dark-100">{selected.requester_phone}</span>
+                      {onFile ? (
+                        match ? (
+                          <span className="text-green-400"> · matches the account</span>
+                        ) : (
+                          <span className="text-red-400"> · does NOT match the account</span>
+                        )
+                      ) : (
+                        <span className="text-dark-500"> · no number on the account to compare</span>
+                      )}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-dark-500">They gave no callback number.</p>
+                  )}
+                  {selected.requester_ip && (
+                    <p className="text-xs text-dark-500">
+                      From {selected.requester_ip}. Worth a look if several
+                      tickets arrive from the same place.
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Handling steps for a lockout request. Collapsed by default so
                 it never crowds the ordinary tickets, and sits directly under

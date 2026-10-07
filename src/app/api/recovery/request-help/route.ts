@@ -49,10 +49,21 @@ export async function POST(req: NextRequest) {
   const email = String(body?.email ?? "").trim().toLowerCase();
   const categoryId = String(body?.category ?? "").trim();
   const message = String(body?.message ?? "").trim();
+  // Untrusted, like everything else on this form. Stored so the admin can
+  // compare it against the phone already on the account: a match is real
+  // signal, a mismatch is a reason to slow down.
+  const phone = String(body?.phone ?? "").trim().slice(0, 40);
+  const fullName = String(body?.fullName ?? "").trim().slice(0, 120);
 
   if (!email || !message) {
     return NextResponse.json(
       { ok: false, error: "Tell us your email and what happened" },
+      { status: 400 },
+    );
+  }
+  if (!fullName) {
+    return NextResponse.json(
+      { ok: false, error: "Enter your full name as it appears on the account" },
       { status: 400 },
     );
   }
@@ -95,6 +106,13 @@ export async function POST(req: NextRequest) {
       title: `Account recovery: ${category.label}`,
       message,
       category: category.id,
+      // Nobody signed in to file this, so nobody has proved they hold the
+      // account. The admin queue shows this as a banner rather than
+      // letting the ticket read like the owner wrote it.
+      unverified_requester: true,
+      requester_name: fullName,
+      requester_phone: phone || null,
+      requester_ip: ip === "unknown" ? null : ip,
       status: "open",
     })
     .select("id, ticket_number")
@@ -115,7 +133,7 @@ export async function POST(req: NextRequest) {
       sendPushToUser({
         userId: a.id,
         title: "Account recovery request",
-        body: `${name} cannot get back in: ${category.label.toLowerCase()}. Open Support to review.`,
+        body: `Someone says they cannot get into ${name}'s account: ${category.label.toLowerCase()}. Unverified. Open Support to review.`,
         data: { type: "recovery_help_request", ticket_id: ticket.id },
       }).catch(() => 0),
     ),

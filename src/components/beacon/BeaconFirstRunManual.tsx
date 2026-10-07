@@ -456,7 +456,7 @@ export function BeaconFirstRunManual({
               ))}
             </div>
             <p className="text-[13px] text-dark-500 mt-3">
-              Press the green button to switch which light is showing.
+              Press the green and red button to switch which light is showing.
             </p>
           </section>
 

@@ -42,10 +42,19 @@ export function RecoveryApprovalPrompt() {
   useEffect(() => {
     if (!user) return;
     load();
-    // Slow poll. These are rare events and the push notification is the
-    // real delivery mechanism; this just keeps an open app honest.
+    // Slow poll. These are rare events, so a minute is fine for catching
+    // one that arrived while the app was already open.
     const t = setInterval(load, 60_000);
-    return () => clearInterval(t);
+    // ...but a minute is far too long when someone has just deliberately
+    // tapped the notification. The notifications page fires this so the
+    // modal appears straight away instead of after a wait that reads as
+    // the tap having done nothing.
+    const onRefresh = () => load();
+    window.addEventListener("peja:recovery-refresh", onRefresh);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("peja:recovery-refresh", onRefresh);
+    };
   }, [user, load]);
 
   // Live countdown on the owner's cancel window.
@@ -71,6 +80,14 @@ export function RecoveryApprovalPrompt() {
         body: JSON.stringify({ requestId, approve }),
       });
       if (!res.ok) {
+        // 409/403 mean this one is settled: already answered, cancelled, or
+        // expired. Leaving the buttons up invites someone to keep tapping a
+        // question that no longer exists, so clear it and say why.
+        if (res.status === 409 || res.status === 403) {
+          toast.warning("This request has already been answered.");
+          setPending((p) => p.filter((x) => x.requestId !== requestId));
+          return;
+        }
         toast.warning(data?.error || "Could not send your answer");
         return;
       }
@@ -138,7 +155,13 @@ export function RecoveryApprovalPrompt() {
   if (!first) return null;
 
   return (
-    <Modal isOpen onClose={() => setPending((p) => p.slice(1))} title="Recovery request">
+    <Modal
+      isOpen
+      // Closing only sets this one aside. It stays unanswered in their
+      // notifications, which is the point of writing a row for it.
+      onClose={() => setPending((p) => p.slice(1))}
+      title="Recovery request"
+    >
       <div className="space-y-4">
         <div className="mx-auto w-12 h-12 rounded-2xl bg-primary-500/15 flex items-center justify-center">
           <ShieldQuestion className="w-6 h-6 text-primary-400" />

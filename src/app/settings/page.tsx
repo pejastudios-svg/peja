@@ -417,6 +417,14 @@ export default function SettingsPage() {
       return;
     }
 
+    // Reusing the current password is not a password change. Caught here
+    // as well as live below, because the live hint only appears once both
+    // fields have something in them.
+    if (newPassword === oldPassword) {
+      setPwError("Your new password must be different from your current one");
+      return;
+    }
+
     setPwLoading(true);
 
     try {
@@ -1117,6 +1125,11 @@ export default function SettingsPage() {
                         disabled={pwLoading}
                       />
                     </div>
+                    {oldPassword && newPassword && newPassword === oldPassword && (
+                      <p className="text-xs text-amber-400 mt-1.5">
+                        This is the same as your current password
+                      </p>
+                    )}
                     {confirmNewPassword && confirmNewPassword !== newPassword && (
                       <p className="text-xs text-red-400 mt-1">Passwords don't match</p>
                     )}
@@ -1124,7 +1137,13 @@ export default function SettingsPage() {
 
                   <button
                     type="submit"
-                    disabled={pwLoading || !oldPassword || !newPassword || !confirmNewPassword}
+                    disabled={
+                      pwLoading ||
+                      !oldPassword ||
+                      !newPassword ||
+                      !confirmNewPassword ||
+                      newPassword === oldPassword
+                    }
                     className="w-full py-3 bg-primary-600 text-white rounded-xl font-semibold disabled:opacity-50 hover:bg-primary-500 transition-colors flex items-center justify-center gap-2"
                   >
                     {pwLoading ? (

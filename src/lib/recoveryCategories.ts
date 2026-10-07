@@ -36,6 +36,7 @@ const RESET_STEP =
   "Open Account access on their admin user page, Reset password, and send the temporary password to the email shown there. Never to any address they gave you in the ticket.";
 
 const VERIFY_STEPS = [
+  "Start from the amber box above. Nobody signed in to file this, so the account shown is only whose email was typed in. The name and number they gave are checked against the account for you.",
   "Open their profile under Admin, Users. Check the phone number, city and join date against what they told you.",
   "Call one of their accepted emergency contacts and ask whether this person really is locked out. This is the strongest check you have.",
 ];

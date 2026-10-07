@@ -5,7 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { apiUrl } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Megaphone, Send, AlertTriangle, Check } from "lucide-react";
+import { Send, AlertTriangle, Check } from "lucide-react";
+import HudShell from "@/components/dashboard/HudShell";
 import { formatDistanceToNow } from "date-fns";
 import { NIGERIA_STATES_LIST } from "@/lib/nigeriaLgas";
 import {
@@ -148,14 +149,14 @@ export default function AdminBroadcastsPage() {
     body.trim().length > 0 &&
     (kind !== "states" || states.length > 0);
 
+  // HudShell rather than a bare div: the admin nav is fixed, and its pt-32
+  // is what keeps a page from starting underneath it.
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6">
-      <h1 className="text-2xl font-bold text-dark-50 mb-1 flex items-center gap-2">
-        <Megaphone className="w-6 h-6 text-primary-400" /> Broadcasts
-      </h1>
-      <p className="text-sm text-dark-400 mb-6">
-        Send a message to a chosen group. Nothing is sent until you confirm.
-      </p>
+    <HudShell
+      title="Broadcasts"
+      subtitle="Send a message to a chosen group. Nothing is sent until you confirm."
+    >
+    <div className="max-w-3xl mx-auto">
 
       {sentNote && (
         <div className="glass-card mb-4 flex items-start gap-2.5">
@@ -382,5 +383,6 @@ export default function AdminBroadcastsPage() {
         </div>
       </Modal>
     </div>
+    </HudShell>
   );
 }

@@ -314,6 +314,18 @@ export default function NotificationsPage() {
   }
 };
 
+// Bodies are clamped to two lines so the list stays scannable, but a
+  // broadcast or a recovery request can run longer than that and the rest
+  // was simply unreachable. Expansion is per row and per visit.
+  const [expandedBodies, setExpandedBodies] = useState<Set<string>>(new Set());
+  const toggleBody = (id: string) =>
+    setExpandedBodies((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
  const handleNotificationClick = (notification: Notification) => {
 
     // Mark as read first
@@ -444,6 +456,26 @@ export default function NotificationsPage() {
     }
 
     switch (notification.type) {
+      // Broadcasts carry their own destination. Without this the Link field
+      // on the admin compose screen set a value nothing ever read.
+      case "broadcast": {
+        const url = typeof data.url === "string" ? data.url : null;
+        if (url) {
+          if (url.startsWith("http")) window.open(url, "_blank", "noopener");
+          else router.push(url);
+        }
+        break;
+      }
+
+      // The approval modal lives in the root layout and polls slowly, so
+      // nudge it to re-check now rather than making someone wait a minute
+      // after deliberately tapping the notification.
+      case "recovery_request":
+      case "recovery_started":
+        window.dispatchEvent(new Event("peja:recovery-refresh"));
+        router.push("/");
+        break;
+
       case "sos_alert": {
         const id = data.sos_id;
         const lat = data.latitude;
@@ -649,7 +681,26 @@ export default function NotificationsPage() {
                               {notification.title}
                             </p>
                             {notification.body && (
-                              <p className="text-sm text-dark-400 mt-0.5 line-clamp-2 break-words">{notification.body}</p>
+                              <>
+                                <p
+                                  className={`text-sm text-dark-400 mt-0.5 break-words ${
+                                    expandedBodies.has(notification.id) ? "" : "line-clamp-2"
+                                  }`}
+                                >
+                                  {notification.body}
+                                </p>
+                                {notification.body.length > 90 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleBody(notification.id);
+                                    }}
+                                    className="text-xs font-medium text-primary-400 hover:text-primary-300 mt-1"
+                                  >
+                                    {expandedBodies.has(notification.id) ? "Show less" : "Show more"}
+                                  </button>
+                                )}
+                              </>
                             )}
                             {notification.data?.type === "emergency_contact_invite" && (
                               <p className="text-xs text-yellow-400 mt-1 font-medium">
