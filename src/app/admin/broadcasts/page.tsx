@@ -143,7 +143,7 @@ export default function AdminBroadcastsPage() {
   };
 
   const field =
-    "w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500";
+    "w-full px-3 glass-input text-sm placeholder:text-dark-500";
   const canSend =
     title.trim().length > 0 &&
     body.trim().length > 0 &&
@@ -356,14 +356,24 @@ export default function AdminBroadcastsPage() {
 
       <Modal isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} title="Send this?">
         <div className="space-y-4">
-          <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-            <p className="text-sm text-dark-100 font-medium">{title}</p>
-            <p className="text-sm text-dark-300 mt-1 whitespace-pre-wrap">{body}</p>
+          {/* overflow-wrap:anywhere, not just break-words: break-words only
+              breaks at spaces, so one long unbroken run of characters still
+              pushed the preview past the edge of the dialog. The height cap
+              keeps the Send button on screen for a long message. */}
+          <div className="p-3 rounded-xl bg-white/5 border border-white/10 max-h-56 overflow-y-auto">
+            <p className="text-sm text-dark-100 font-medium break-words [overflow-wrap:anywhere]">
+              {title}
+            </p>
+            <p className="text-sm text-dark-300 mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+              {body}
+            </p>
             {resourceText && (
-              <p className="text-sm text-primary-300 mt-2 whitespace-pre-wrap">{resourceText}</p>
+              <p className="text-sm text-primary-300 mt-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                {resourceText}
+              </p>
             )}
           </div>
-          <p className="text-sm text-dark-400">
+          <p className="text-sm text-dark-400 break-words">
             Going to <span className="text-dark-100">{describeAudience(audience())}</span>, as{" "}
             <span className="text-dark-100">
               {DELIVERY_OPTIONS.find((d) => d.value === delivery)?.label.toLowerCase()}

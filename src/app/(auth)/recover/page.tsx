@@ -163,7 +163,7 @@ export default function RecoverPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Your email"
-                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+                className="w-full px-3 glass-input text-sm placeholder:text-dark-500"
               />
               <Button size="sm" onClick={lookup} disabled={busy || !email.trim()}>
                 Continue
@@ -250,7 +250,7 @@ export default function RecoverPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="New password"
-                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+                className="w-full px-3 glass-input text-sm placeholder:text-dark-500"
               />
               <PasswordStrength password={password} />
               <input
@@ -258,7 +258,7 @@ export default function RecoverPage() {
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 placeholder="Confirm password"
-                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+                className="w-full px-3 glass-input text-sm placeholder:text-dark-500"
               />
               <Button size="sm" onClick={finish} disabled={busy}>
                 Set password

@@ -67,7 +67,7 @@ export function ForcedPasswordChange() {
   };
 
   const field =
-    "w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500";
+    "w-full px-3 glass-input text-sm placeholder:text-dark-500";
 
   return (
     <Modal isOpen onClose={() => {}} title="Choose a new password">

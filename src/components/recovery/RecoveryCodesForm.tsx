@@ -121,7 +121,7 @@ export function RecoveryCodesForm({
             if (e.key === "Enter") generate();
           }}
           placeholder="Your current password"
-          className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+          className="w-full px-3 glass-input text-sm placeholder:text-dark-500"
         />
         <p className="text-xs text-dark-500">
           We ask for your password so that someone holding your unlocked

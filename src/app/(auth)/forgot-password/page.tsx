@@ -344,7 +344,7 @@ export default function ForgotPasswordPage() {
                   value={helpPhone}
                   onChange={(e) => setHelpPhone(e.target.value.slice(0, 40))}
                   placeholder="A number we can reach you on"
-                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+                  className="w-full px-3 glass-input text-sm placeholder:text-dark-500"
                   disabled={loading}
                 />
                 <p className="text-xs text-dark-500 mt-1.5">
@@ -364,7 +364,7 @@ export default function ForgotPasswordPage() {
                   }}
                   rows={4}
                   placeholder="Tell us what happened in your own words"
-                  className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500 resize-none"
+                  className="w-full px-3 glass-input text-sm placeholder:text-dark-500 resize-none"
                   disabled={loading}
                 />
                 <p className="mt-1 text-[11px] text-dark-500 text-right">

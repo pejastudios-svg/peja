@@ -1023,7 +1023,7 @@ useEffect(() => {
               if (e.key === "Enter") submitReveal();
             }}
             placeholder="Admin PIN"
-            className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+            className="w-full px-3 glass-input text-sm placeholder:text-dark-500"
           />
           {revealError && <p className="text-red-400 text-xs">{revealError}</p>}
           <div className="flex gap-2">
@@ -1077,7 +1077,7 @@ useEffect(() => {
                 if (e.key === "Enter") submitPasswordReset();
               }}
               placeholder="Admin PIN"
-              className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm outline-none focus:border-primary-500/50 placeholder:text-dark-500"
+              className="w-full px-3 glass-input text-sm placeholder:text-dark-500"
             />
             {pwResetError && <p className="text-red-400 text-xs">{pwResetError}</p>}
             <div className="flex gap-2">
