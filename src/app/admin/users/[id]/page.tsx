@@ -8,7 +8,7 @@ import { usePageCache } from "@/context/PageCacheContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
-import { Loader2, ArrowLeft, User, MapPin, Trash2, Archive, FileText, Radio, Eye, EyeOff, KeyRound, Copy, Check } from "lucide-react";
+import { Loader2, ArrowLeft, User, MapPin, Trash2, Archive, FileText, Radio, Eye, EyeOff, KeyRound, Copy, Check, Mail } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { PostCard } from "@/components/posts/PostCard";
 import { Post } from "@/lib/types";
@@ -176,7 +176,13 @@ const [contacts, setContacts] = useState<AdminEmergencyContact[]>(cachedData?.co
   const [pwResetBusy, setPwResetBusy] = useState(false);
   const [pwResetError, setPwResetError] = useState<string | null>(null);
   const [pwResetResult, setPwResetResult] = useState<
-    { tempPassword: string; email: string; emailText: string } | null
+    {
+      tempPassword: string;
+      email: string;
+      emailText: string;
+      emailSubject: string;
+      emailRawBody: string;
+    } | null
   >(null);
   const [pwCopied, setPwCopied] = useState<"password" | "email" | null>(null);
   // Blocks Done until the password has actually left this screen. It is
@@ -215,6 +221,8 @@ const [contacts, setContacts] = useState<AdminEmergencyContact[]>(cachedData?.co
         tempPassword: json.tempPassword,
         email: json.email,
         emailText: json.emailText,
+        emailSubject: json.emailSubject,
+        emailRawBody: json.emailRawBody,
       });
       setPwResetPin("");
     } catch (e) {
@@ -222,6 +230,21 @@ const [contacts, setContacts] = useState<AdminEmergencyContact[]>(cachedData?.co
     } finally {
       setPwResetBusy(false);
     }
+  };
+
+  // Gmail's compose URL takes the recipient, subject and body as real
+  // fields, so the message opens ready to send rather than as a paste the
+  // admin has to tidy up. Counts as saving the password: it now exists in
+  // a draft, which is the whole point of this screen.
+  const openInGmail = () => {
+    if (!pwResetResult) return;
+    const url =
+      "https://mail.google.com/mail/?view=cm&fs=1" +
+      `&to=${encodeURIComponent(pwResetResult.email)}` +
+      `&su=${encodeURIComponent(pwResetResult.emailSubject)}` +
+      `&body=${encodeURIComponent(pwResetResult.emailRawBody)}`;
+    window.open(url, "_blank", "noopener");
+    setPwSaved(true);
   };
 
   const copyPw = async (what: "password" | "email") => {
@@ -1123,6 +1146,14 @@ useEffect(() => {
               </p>
             </div>
 
+            <Button size="sm" onClick={openInGmail} leftIcon={<Mail className="w-4 h-4" />}>
+              Open in Gmail
+            </Button>
+            <p className="text-xs text-dark-500 -mt-2">
+              Opens a draft to {pwResetResult.email} with the message filled
+              in. Check the address before you send.
+            </p>
+
             <div className="flex gap-2">
               <Button
                 variant="secondary"
@@ -1175,7 +1206,7 @@ useEffect(() => {
               disabled={!pwSaved}
               leftIcon={pwSaved ? <Check className="w-4 h-4" /> : undefined}
             >
-              {pwSaved ? "Done" : "Copy the password first"}
+              {pwSaved ? "Done" : "Copy it or open Gmail first"}
             </Button>
           </div>
         )}

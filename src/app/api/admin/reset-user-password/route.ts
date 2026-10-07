@@ -58,6 +58,8 @@ function tempPassword(): string {
   return `${s.slice(0, 4)}-${s.slice(4, 8)}-${s.slice(8, 12)}`;
 }
 
+const EMAIL_SUBJECT = "Getting back into your peja account";
+
 function emailBody(name: string, password: string): string {
   const first = (name || "").trim().split(/\s+/)[0] || "there";
   return `Hi ${first},
@@ -186,11 +188,18 @@ export async function POST(req: NextRequest) {
 
     // The password is returned to the ADMIN, who sends it to the address on
     // the account. It is never handed to whoever filed the request.
+    const body = emailBody(target.full_name || "", password);
     return NextResponse.json({
       ok: true,
       tempPassword: password,
       email: target.email,
-      emailText: emailBody(target.full_name || "", password),
+      emailSubject: EMAIL_SUBJECT,
+      // Carries the subject as a header line, because a plain paste into a
+      // mail client loses it otherwise and the message arrives with an
+      // empty subject. Gmail gets the subject as a real field instead, so
+      // the "Open in Gmail" path uses emailBody directly.
+      emailText: `Subject: ${EMAIL_SUBJECT}\n\n${body}`,
+      emailRawBody: body,
     });
   } catch (error) {
     return (
