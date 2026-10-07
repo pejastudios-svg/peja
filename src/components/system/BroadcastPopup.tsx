@@ -92,13 +92,17 @@ export function BroadcastPopup() {
           <Megaphone className="w-6 h-6 text-primary-400" />
         </div>
 
-        <p className="text-sm text-dark-300 leading-relaxed whitespace-pre-wrap">
+        {/* overflow-wrap:anywhere, not just break-words: break-words only
+            breaks at spaces, so a long unbroken run of characters ran off
+            both edges of the card. The height cap keeps the dismiss button
+            reachable on a phone when a message is long. */}
+        <p className="max-h-[45vh] overflow-y-auto text-sm text-dark-300 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
           {broadcast.body}
         </p>
 
         {broadcast.resourceText && (
           <div className="p-3 rounded-xl bg-primary-500/10 border border-primary-500/25">
-            <p className="text-sm text-dark-200 leading-relaxed whitespace-pre-wrap">
+            <p className="text-sm text-dark-200 leading-relaxed whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
               {broadcast.resourceText}
             </p>
           </div>

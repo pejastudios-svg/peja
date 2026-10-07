@@ -74,13 +74,12 @@ export async function sendBroadcast(params: {
     return { ok: false, error: "Could not create the broadcast", status: 500 };
   }
 
-  // Popups are pull, not push: nothing goes out now. Each viewer is checked
-  // against the filter when they open the app, so a popup stays correct as
-  // people set up codes or add contacts.
-  if (params.delivery === "popup") {
-    return { ok: true, id: row.id, sentCount: 0 };
-  }
-
+  // Resolve the audience for every delivery type, including popups.
+  //
+  // Popups used to return here before counting anyone, which is why the
+  // admin list reported 0 for a popup that plenty of people could see. A
+  // popup still sends nothing now, but the size of the audience is worth
+  // knowing and the query is cheap.
   const { data: recipients, error: audErr } = await supabaseAdmin.rpc("broadcast_recipients", {
     p_audience: params.audience,
   });
@@ -90,6 +89,15 @@ export async function sendBroadcast(params: {
   }
 
   const ids: string[] = (recipients || []).map((r: { user_id: string }) => r.user_id);
+
+  // Popups are pull, not push: nothing goes out now. Each viewer is checked
+  // against the filter again when they open the app, so a popup stays
+  // correct as people set up codes or add contacts. The count recorded here
+  // is therefore who matched AT SEND TIME, not a delivery receipt.
+  if (params.delivery === "popup") {
+    await supabaseAdmin.from("broadcasts").update({ sent_count: ids.length }).eq("id", row.id);
+    return { ok: true, id: row.id, sentCount: ids.length };
+  }
 
   // Notification rows first, so the message is waiting in the app even if
   // the push never lands (no token, notifications denied, device offline).

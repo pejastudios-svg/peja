@@ -126,7 +126,7 @@ export default function AdminBroadcastsPage() {
       }
       setSentNote(
         delivery === "popup"
-          ? "Popup is live. It shows to anyone who matches, on their next open."
+          ? `Popup is live. ${json.sentCount} ${json.sentCount === 1 ? "person matches" : "people match"} right now, and it shows on their next open.`
           : `Sent to ${json.sentCount} ${json.sentCount === 1 ? "person" : "people"}.`,
       );
       setTitle("");
@@ -344,6 +344,11 @@ export default function AdminBroadcastsPage() {
                 </div>
                 <div className="text-right shrink-0">
                   <p className="text-sm text-dark-200">{r.sent_count || 0}</p>
+                  {/* A popup delivers nothing at send time, so this number
+                      is who matched the filter, not who received anything. */}
+                  <p className="text-[10px] uppercase tracking-wide text-dark-500">
+                    {r.delivery === "popup" ? "can see it" : "sent"}
+                  </p>
                   <p className="text-xs text-dark-500">
                     {formatDistanceToNow(new Date(r.sent_at || r.created_at), { addSuffix: true })}
                   </p>

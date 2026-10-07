@@ -179,13 +179,21 @@ const [contacts, setContacts] = useState<AdminEmergencyContact[]>(cachedData?.co
     { tempPassword: string; email: string; emailText: string } | null
   >(null);
   const [pwCopied, setPwCopied] = useState<"password" | "email" | null>(null);
+  // Blocks Done until the password has actually left this screen. It is
+  // shown exactly once: Supabase hashes it the moment it is set, so if this
+  // dialog closes before you copy, the only way back is resetting again.
+  // Mirrors the recovery-codes sheet, for the same reason.
+  const [pwSaved, setPwSaved] = useState(false);
 
   const closePwReset = () => {
+    // Refuse to close over a password nobody has taken a copy of.
+    if (pwResetResult && !pwSaved) return;
     setPwResetOpen(false);
     setPwResetPin("");
     setPwResetError(null);
     setPwResetResult(null);
     setPwCopied(null);
+    setPwSaved(false);
   };
 
   const submitPasswordReset = async () => {
@@ -223,9 +231,15 @@ const [contacts, setContacts] = useState<AdminEmergencyContact[]>(cachedData?.co
         what === "password" ? pwResetResult.tempPassword : pwResetResult.emailText,
       );
       setPwCopied(what);
+      setPwSaved(true);
       setTimeout(() => setPwCopied(null), 2000);
     } catch {
-      setPwResetError("Could not copy. Select the text and copy it by hand.");
+      // Clipboard writes fail in plenty of ordinary situations. Without an
+      // escape the dialog would be a dead end, so offer one rather than
+      // trapping someone behind a button that cannot succeed.
+      setPwResetError(
+        "Could not copy. Select the password above and copy it by hand, then confirm below.",
+      );
     }
   };
 
@@ -1141,10 +1155,27 @@ useEffect(() => {
               </pre>
             </details>
 
-            {pwResetError && <p className="text-red-400 text-xs">{pwResetError}</p>}
+            {pwResetError && (
+              <div className="space-y-2">
+                <p className="text-red-400 text-xs">{pwResetError}</p>
+                {!pwSaved && (
+                  <button
+                    onClick={() => setPwSaved(true)}
+                    className="text-xs font-medium text-primary-400 hover:text-primary-300"
+                  >
+                    I have written it down
+                  </button>
+                )}
+              </div>
+            )}
 
-            <Button size="sm" onClick={closePwReset}>
-              Done
+            <Button
+              size="sm"
+              onClick={closePwReset}
+              disabled={!pwSaved}
+              leftIcon={pwSaved ? <Check className="w-4 h-4" /> : undefined}
+            >
+              {pwSaved ? "Done" : "Copy the password first"}
             </Button>
           </div>
         )}

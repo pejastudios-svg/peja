@@ -100,7 +100,7 @@ return createPortal(
                 : "1px solid var(--glass-border-sm)",
             }}
           >
-            <h3 className="text-lg font-bold text-dark-100">{title}</h3>
+            <h3 className="text-lg font-bold text-dark-100 min-w-0 break-words [overflow-wrap:anywhere]">{title}</h3>
             <button
               onClick={onClose}
               className="p-2 rounded-full hover:bg-[var(--soft-surface-strong)] text-dark-400 hover:text-dark-100 transition-colors"
