@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { apiUrl } from "@/lib/api";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Send, AlertTriangle, Check } from "lucide-react";
+import { Send, AlertTriangle, Check, Clock, X } from "lucide-react";
 import HudShell from "@/components/dashboard/HudShell";
 import { formatDistanceToNow } from "date-fns";
 import { NIGERIA_STATES_LIST } from "@/lib/nigeriaLgas";
@@ -39,6 +39,7 @@ type Row = {
   audience: BroadcastAudience;
   delivery: BroadcastDelivery;
   status: string;
+  scheduled_for: string | null;
   sent_at: string | null;
   sent_count: number;
   milestone_key: string | null;
@@ -58,6 +59,20 @@ export default function AdminBroadcastsPage() {
   const [role, setRole] = useState<"guardian" | "vip" | "mvp" | "beacon_owner">("guardian");
   const [days, setDays] = useState(30);
   const [delivery, setDelivery] = useState<BroadcastDelivery>("popup");
+  const [schedule, setSchedule] = useState(false);
+  const [scheduledFor, setScheduledFor] = useState("");
+
+  // datetime-local has no timezone, so the browser reads it as local time
+  // and toISOString converts. The admin picks a wall-clock time in their
+  // own zone and that is what they get.
+  const scheduleIso = () =>
+    schedule && scheduledFor ? new Date(scheduledFor).toISOString() : null;
+
+  // Local-time floor for the picker, so past times are not offerable.
+  const minLocal = (() => {
+    const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000);
+    return d.toISOString().slice(0, 16);
+  })();
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [sending, setSending] = useState(false);
@@ -117,11 +132,22 @@ export default function AdminBroadcastsPage() {
           actionUrl: actionUrl.trim() || null,
           audience: audience(),
           delivery,
+          scheduledFor: scheduleIso(),
         }),
       });
       const json = await res.json();
       if (!res.ok) {
         setError(json.error || "Could not send");
+        return;
+      }
+      if (json.scheduled) {
+        setSentNote(
+          `Scheduled for ${new Date(scheduledFor).toLocaleString()}. You can cancel it until then.`,
+        );
+        setTitle(""); setBody(""); setResourceText(""); setActionUrl("");
+        setSchedule(false); setScheduledFor("");
+        setConfirmOpen(false);
+        load();
         return;
       }
       setSentNote(
@@ -147,7 +173,23 @@ export default function AdminBroadcastsPage() {
   const canSend =
     title.trim().length > 0 &&
     body.trim().length > 0 &&
-    (kind !== "states" || states.length > 0);
+    (kind !== "states" || states.length > 0) &&
+    (!schedule || Boolean(scheduledFor));
+
+  const cancelScheduled = async (id: string) => {
+    try {
+      const res = await fetch(apiUrl(`/api/admin/broadcasts?id=${encodeURIComponent(id)}`), {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${await token()}` },
+      });
+      const json = await res.json();
+      if (!res.ok) { setError(json.error || "Could not cancel"); return; }
+      setSentNote("Cancelled. It will not be sent.");
+      load();
+    } catch {
+      setError("Connection error. Try again.");
+    }
+  };
 
   // HudShell rather than a bare div: the admin nav is fixed, and its pt-32
   // is what keeps a page from starting underneath it.
@@ -316,23 +358,99 @@ export default function AdminBroadcastsPage() {
 
         {error && <p className="text-sm text-red-400">{error}</p>}
 
+        <div>
+          <label className="block text-sm font-medium text-dark-200 mb-1.5">When</label>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setSchedule(false)}
+              className={`flex-1 px-3 py-2.5 rounded-xl border text-sm transition-ui ${
+                !schedule
+                  ? "border-primary-500/50 bg-primary-500/10 text-dark-100"
+                  : "border-[var(--glass-border)] bg-[var(--glass-input-bg)] text-dark-300"
+              }`}
+            >
+              Send now
+            </button>
+            <button
+              onClick={() => setSchedule(true)}
+              className={`flex-1 px-3 py-2.5 rounded-xl border text-sm transition-ui ${
+                schedule
+                  ? "border-primary-500/50 bg-primary-500/10 text-dark-100"
+                  : "border-[var(--glass-border)] bg-[var(--glass-input-bg)] text-dark-300"
+              }`}
+            >
+              Schedule
+            </button>
+          </div>
+          {schedule && (
+            <>
+              <input
+                type="datetime-local"
+                value={scheduledFor}
+                min={minLocal}
+                onChange={(e) => setScheduledFor(e.target.value)}
+                className="w-full px-3 glass-input text-sm mt-2"
+              />
+              <p className="text-xs text-dark-500 mt-1.5">
+                Your local time. It goes out at the first check after this
+                moment, so within about fifteen minutes of it. You can cancel
+                any time before then.
+              </p>
+            </>
+          )}
+        </div>
+
         <Button
           onClick={() => setConfirmOpen(true)}
           disabled={!canSend}
-          leftIcon={<Send className="w-4 h-4" />}
+          leftIcon={schedule ? <Clock className="w-4 h-4" /> : <Send className="w-4 h-4" />}
         >
-          Review and send
+          {schedule ? "Review and schedule" : "Review and send"}
         </Button>
       </div>
+
+      {rows.some((r) => r.status === "scheduled") && (
+        <>
+          <h2 className="text-sm font-semibold text-dark-400 uppercase mb-3">Scheduled</h2>
+          <div className="space-y-2 mb-6">
+            {rows
+              .filter((r) => r.status === "scheduled")
+              .map((r) => (
+                <div key={r.id} className="glass-card">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm text-dark-100 font-medium truncate">{r.title}</p>
+                      <p className="text-xs text-dark-400 mt-0.5">
+                        {describeAudience(r.audience)} · {r.delivery.replace("_", " ")}
+                      </p>
+                      {r.scheduled_for && (
+                        <p className="text-xs text-primary-300 mt-1 inline-flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {new Date(r.scheduled_for).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => cancelScheduled(r.id)}
+                      className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-red-400 hover:text-red-300"
+                    >
+                      <X className="w-3.5 h-3.5" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </>
+      )}
 
       <h2 className="text-sm font-semibold text-dark-400 uppercase mb-3">Sent</h2>
       {loading ? (
         <p className="text-sm text-dark-500">Loading...</p>
-      ) : rows.length === 0 ? (
+      ) : rows.filter((r) => r.status === "sent").length === 0 ? (
         <p className="text-sm text-dark-500">Nothing sent yet.</p>
       ) : (
         <div className="space-y-2">
-          {rows.map((r) => (
+          {rows.filter((r) => r.status === "sent").map((r) => (
             <div key={r.id} className="glass-card">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -359,7 +477,11 @@ export default function AdminBroadcastsPage() {
         </div>
       )}
 
-      <Modal isOpen={confirmOpen} onClose={() => setConfirmOpen(false)} title="Send this?">
+      <Modal
+        isOpen={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={schedule ? "Schedule this?" : "Send this?"}
+      >
         <div className="space-y-4">
           {/* overflow-wrap:anywhere, not just break-words: break-words only
               breaks at spaces, so one long unbroken run of characters still
@@ -385,14 +507,25 @@ export default function AdminBroadcastsPage() {
             </span>
             .
           </p>
-          <p className="text-xs text-dark-500">This cannot be unsent.</p>
+          {schedule && scheduledFor && (
+            <p className="text-sm text-dark-200">
+              Going out <span className="text-dark-100">{new Date(scheduledFor).toLocaleString()}</span>.
+            </p>
+          )}
+          <p className="text-xs text-dark-500">
+            {schedule
+              ? "You can cancel it any time before it goes."
+              : "This cannot be unsent."}
+          </p>
           {error && <p className="text-sm text-red-400">{error}</p>}
           <div className="flex gap-2">
             <Button variant="secondary" size="sm" onClick={() => setConfirmOpen(false)}>
               Cancel
             </Button>
             <Button size="sm" onClick={send} disabled={sending}>
-              {sending ? "Sending..." : "Send"}
+              {sending
+                ? schedule ? "Scheduling..." : "Sending..."
+                : schedule ? "Schedule" : "Send"}
             </Button>
           </div>
         </div>
