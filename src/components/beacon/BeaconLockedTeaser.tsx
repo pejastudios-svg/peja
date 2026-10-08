@@ -148,32 +148,33 @@ export function BeaconLockedTeaser({
 
         <h1 className="text-2xl font-bold text-dark-50 mt-8 text-center">Peja Beacon</h1>
 
+        {/* Second person throughout: this is about the reader, not about a
+            product. And it closes on what the Beacon replaces rather than
+            who it is for, so nobody reads themselves out of it. */}
         <div className="mt-4 space-y-3.5 text-[15px] text-dark-300 leading-relaxed text-center">
           <p>
-            A small wearable that works on its own. No phone, no app, no
-            screen. It has its own SIM card.
+            A small wearable that works entirely on its own. No phone, no app,
+            no screen. It carries its own SIM.
           </p>
           <p>
-            Press the button and it calls for help, alerts your emergency
-            contacts, and puts its live location on their map.
+            Press the button and it calls for help, alerts the people you
+            trust, and puts your live location on their map.
           </p>
           <p>
-            It keeps sharing that location for as long as it is switched on,
-            so you can see where it is at any time, not only in an emergency.
+            It keeps sharing your location for as long as it is switched on,
+            so your people always know where you are, not only in an
+            emergency.
           </p>
           <p>
-            It also watches for what nobody thinks to report: leaving a safe
-            area, not moving for too long, a battery running flat.
+            It watches for the things you would never think to report: when
+            you leave a safe area, when you stay still too long, when your
+            battery is running flat.
           </p>
-          <p className="text-dark-400">
-            Made for the people hardest to reach. Children, older relatives,
-            anyone who should not have to carry a phone to be found.
+          <p className="text-dark-200 font-medium pt-1">
+            Close protection used to mean a vehicle and a team. Now it fits in
+            your pocket.
           </p>
         </div>
-
-        <p className="text-xs text-dark-500 mt-8 text-center">
-          Not yet available to everyone.
-        </p>
       </div>
 
       <Modal isOpen={askOpen} onClose={() => setAskOpen(false)} title="Enter code">
