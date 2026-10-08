@@ -452,6 +452,44 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
     });
   };
 
+  /**
+   * Move a finished pre-upload out of temp/ and return its new public URL.
+   *
+   * This is not tidiness, it is the difference between a post keeping its
+   * photo and losing it. The checkin-monitor cron deletes EVERYTHING in
+   * temp/ older than 24 hours, with no check for whether a post points at
+   * it, so a published post that kept its temp/ URL went dead the next day.
+   *
+   * The elections upload route has always done this (api/elections/[id]/
+   * upload/route.ts calls .move for exactly this reason); the post flow
+   * never did.
+   *
+   * Falls back to the temp URL if the move fails, which is no worse than
+   * the old behaviour and still publishes the post.
+   */
+  const promoteFromTemp = async (
+    tempPath: string | null,
+    userId: string,
+  ): Promise<string | null> => {
+    if (!tempPath) return null;
+    try {
+      const ext = tempPath.split(".").pop()?.toLowerCase() || "jpg";
+      const finalPath = `posts/${userId}/${Date.now()}-${Math.random()
+        .toString(36)
+        .substring(7)}.${ext}`;
+      const { error } = await supabase.storage.from("media").move(tempPath, finalPath);
+      if (error) {
+        console.error("[create] promote from temp failed:", error.message);
+        return null;
+      }
+      const { data } = supabase.storage.from("media").getPublicUrl(finalPath);
+      return data.publicUrl;
+    } catch (e) {
+      console.error("[create] promote from temp threw:", e);
+      return null;
+    }
+  };
+
   const preUploadFile = async (file: File): Promise<PreUploadResult | null> => {
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -468,7 +506,10 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
 
       const { error } = await supabase.storage
         .from("media")
-        .upload(tempPath, fileToUpload, { cacheControl: "3600", upsert: false });
+        // Long cache even though this lands in temp/: it is moved to posts/ on
+        // publish and becomes the post's permanent image, and Supabase move
+        // carries the object's metadata with it.
+        .upload(tempPath, fileToUpload, { cacheControl: "31536000", upsert: false });
 
       if (error) return null;
 
@@ -879,7 +920,10 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
           if (mirrorInterval) clearInterval(mirrorInterval);
           if (preResult) {
             usedPreUploadsRef.current.add(file);
-            mediaUrls.push({ url: preResult.url, type: isVideo ? "video" : "photo", thumbnailUrl: preResult.thumbnailUrl ?? null });
+            // Out of temp/ before the URL is stored anywhere. A video that
+            // went to Cloudinary has no tempPath and needs no move.
+            const promoted = await promoteFromTemp(preResult.tempPath, authUser.id);
+            mediaUrls.push({ url: promoted ?? preResult.url, type: isVideo ? "video" : "photo", thumbnailUrl: preResult.thumbnailUrl ?? null });
             done++;
             setUploadProgress(Math.round((done / totalFiles) * 80));
             setToast(null);
@@ -970,7 +1014,7 @@ setToast("Processing video...");
 
           const { error: uploadError } = await supabase.storage
             .from("media")
-            .upload(fileName, fileToUpload, { cacheControl: "3600", upsert: false });
+            .upload(fileName, fileToUpload, { cacheControl: "31536000", upsert: false });
 
           if (uploadError) {
             throw new Error(`Failed to upload ${file.name}: ${uploadError.message}`);

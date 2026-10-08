@@ -723,7 +723,7 @@ export function SOSButton({ className = "" }: { className?: string }) {
           console.log("[SOS] Uploading voice to:", fileName);
           const { error: uploadErr } = await supabase.storage
             .from("media")
-            .upload(fileName, vBlob, { cacheControl: "3600", upsert: false, contentType: "audio/mpeg" });
+            .upload(fileName, vBlob, { cacheControl: "31536000", upsert: false, contentType: "audio/mpeg" });
           if (uploadErr) {
             console.error("[SOS] Voice upload error:", uploadErr);
           } else {

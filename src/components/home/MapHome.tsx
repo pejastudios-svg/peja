@@ -210,6 +210,36 @@ export default function MapHome() {
   const lastPresenceWrite = useRef(0);
   // ── long-press pin: hold the map, get a place + directions ──
   const [pin, setPin] = useState<{ lat: number; lng: number; name: string | null; loading: boolean } | null>(null);
+  // Measured, not assumed. The community nudge sits directly above the
+  // dropped-pin card and used to clear it with a hardcoded 72px, which
+  // silently stopped working the moment the pin card grew a second row.
+  // Reading the real height means the two can never overlap again, whatever
+  // either card ends up containing.
+  const pinCardRef = useRef<HTMLDivElement | null>(null);
+  const [pinCardH, setPinCardH] = useState(0);
+
+  useEffect(() => {
+    const el = pinCardRef.current;
+    if (!el) {
+      setPinCardH(0);
+      return;
+    }
+    // borderBoxSize, NOT contentRect: contentRect is the CONTENT box, so it
+    // leaves out this card's 12px padding and 1px border, under-reporting
+    // the real height by 26px and eating the gap entirely.
+    //
+    // offsetHeight is the fallback rather than getBoundingClientRect
+    // because both are layout values, unaffected by the beacon-pop scale
+    // animation playing on this card when it appears.
+    const read = (entry?: ResizeObserverEntry) => {
+      const box = entry?.borderBoxSize?.[0]?.blockSize;
+      setPinCardH(box ?? el.offsetHeight);
+    };
+    const ro = new ResizeObserver(([entry]) => read(entry));
+    ro.observe(el);
+    read();
+    return () => ro.disconnect();
+  }, [pin]);
   // "Save place" from the long-press card: opens the place editor seeded
   // with the pinned point and its reverse-geocoded name.
   const [savingPlace, setSavingPlace] = useState<{ lat: number; lng: number; name: string | null } | null>(null);
@@ -1654,7 +1684,19 @@ export default function MapHome() {
                   transition: dragging ? "none" : ctlTransition,
                 }}
               >
-                <div className="rounded-2xl glass-card !p-3 beacon-pop">
+                {/* Two rows, not one.
+                    This card is inset 72px on both sides to clear the
+                    floating controls, which leaves roughly 250px on a
+                    normal phone. The icon, name, Save, Directions and
+                    close need about 280px side by side, and every button
+                    was shrink-0, so the row overflowed the card: the close
+                    button spilled out over the recenter control and the
+                    place name was squeezed to zero width.
+
+                    Splitting it fixes both. The name gets the full width
+                    it needs, and the two actions share a row where they
+                    can flex instead of overflowing. */}
+                <div ref={pinCardRef} className="rounded-2xl glass-card !p-3 beacon-pop">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-primary-500/20 flex items-center justify-center shrink-0">
                       <MapPin className="beacon-accent-text w-[18px] h-[18px]" />
@@ -1668,26 +1710,29 @@ export default function MapHome() {
                       </p>
                     </div>
                     <button
+                      onClick={() => setPin(null)}
+                      aria-label="Remove pin"
+                      className="-mr-1 p-1.5 rounded-full text-dark-400 hover:bg-[var(--soft-surface-strong)] active:scale-[0.97] transition-ui shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-stretch gap-2 mt-2.5">
+                    <button
                       onClick={() =>
                         setSavingPlace({ lat: pin.lat, lng: pin.lng, name: pin.name })
                       }
-                      className="px-3 py-2 rounded-xl bg-[var(--soft-surface-strong)] text-dark-100 text-xs font-semibold active:scale-[0.97] transition-transform shrink-0"
+                      className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-[var(--soft-surface-strong)] text-dark-100 text-xs font-semibold active:scale-[0.97] transition-transform"
                     >
                       Save
                     </button>
                     <button
                       onClick={() => openDirections({ lat: pin.lat, lng: pin.lng }, centerRef.current)}
-                      className="px-3.5 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold active:scale-[0.97] transition-transform shrink-0 flex items-center gap-1.5"
+                      className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-primary-600 text-white text-xs font-semibold active:scale-[0.97] transition-transform flex items-center justify-center gap-1.5"
                     >
-                      <Navigation className="w-3.5 h-3.5" />
+                      <Navigation className="w-3.5 h-3.5 shrink-0" />
                       Directions
-                    </button>
-                    <button
-                      onClick={() => setPin(null)}
-                      aria-label="Remove pin"
-                      className="p-1.5 rounded-full text-dark-400 hover:bg-[var(--soft-surface-strong)] active:scale-[0.97] transition-ui shrink-0"
-                    >
-                      <X className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
@@ -1721,13 +1766,25 @@ export default function MapHome() {
                   // line (96px right stack + 12px gap) until release.
                   // Pin card owns the between-controls slot when present;
                   // the compact nudge stacks one row above it.
-                  bottom: dragging
-                    ? `${sheetLiveTop + 12 + (sheetExpanded ? (pin ? 72 : 0) : 108)}px`
-                    : sheetExpanded
-                      ? pin
-                        ? `calc(${ctlBottom} + 72px)`
-                        : ctlBottom
-                      : "calc(env(safe-area-inset-bottom, 0px) + 278px)",
+                  // Every branch derives its lift from the pin card's
+                  // measured height, so the two cards cannot overlap in any
+                  // sheet state. Collapsed keeps its original 278px floor
+                  // via max(), since the controls sit lower there and the
+                  // nudge should not drop to meet them.
+                  bottom: (() => {
+                    const lift = pin ? pinCardH + 12 : 0;
+                    if (dragging) {
+                      const base = sheetExpanded ? lift : Math.max(108, lift);
+                      return `${sheetLiveTop + 12 + base}px`;
+                    }
+                    if (sheetExpanded) {
+                      return pin ? `calc(${ctlBottom} + ${lift}px)` : ctlBottom;
+                    }
+                    const floor = "env(safe-area-inset-bottom, 0px) + 278px";
+                    return pin
+                      ? `calc(max(${floor}, ${ctlBottom} + ${lift}px))`
+                      : `calc(${floor})`;
+                  })(),
                   transition: dragging
                     ? "none"
                     : `left 0.45s var(--ease-sheet), right 0.45s var(--ease-sheet), ${ctlTransition}`,

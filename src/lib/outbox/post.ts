@@ -50,7 +50,7 @@ export async function dispatchPostCreate(
     const { error: upErr } = await supabase.storage
       .from("media")
       .upload(path, blob, {
-        cacheControl: "3600",
+        cacheControl: "31536000",
         upsert: true,
         contentType: media.mime_type,
       });

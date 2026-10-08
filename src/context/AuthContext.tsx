@@ -9,6 +9,30 @@ import { setFlashToast } from "@/context/ToastContext";
 
 
 
+/**
+ * Bound a promise that talks to the network.
+ *
+ * supabase-js calls fetch, and fetch has no default timeout, so a request
+ * that stalls on a flaky mobile connection never settles. Anything that
+ * awaits it never settles either, which is how a "Signing in..." spinner
+ * ends up running forever with no error and no way back.
+ *
+ * Rejecting after a deadline turns an invisible hang into an ordinary
+ * error the caller can show and recover from.
+ */
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out`)),
+      ms,
+    );
+    Promise.resolve(promise).then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 interface User {
   id: string;
   email: string;
@@ -1004,7 +1028,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signingInRef.current = true;
     try {
       
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data: authData, error: authError } = await withTimeout(
+        supabase.auth.signUp({
         email,
         password,
         options: {
@@ -1013,7 +1038,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             phone: phone,
           },
         },
-      });
+        }),
+        25_000,
+        "Sign up",
+      );
 
       if (authError) {
         return { error: authError };
@@ -1024,30 +1052,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
 
+      // Bounded and non-fatal. A phone number that fails to save is an
+      // annoyance the user can fix in Settings; a sign-up that hangs
+      // forever on saving it is not.
       try {
-        const { error: updateError } = await supabase
-          .from("users")
-          .update({ phone: phone })
-          .eq("id", authData.user.id);
-
-        if (updateError) {
-        } else {
-        }
-      } catch (updateErr) {
+        await withTimeout(
+          supabase.from("users").update({ phone }).eq("id", authData.user.id),
+          8_000,
+          "Saving phone",
+        );
+      } catch {
+        /* non-fatal: the account exists either way */
       }
 
       if (authData.session) {
         setSession(authData.session);
         setSupabaseUser(authData.user);
 
-        // Wait for Supabase client to actually have the session ready
-        for (let i = 0; i < 20; i++) {
+        // Same wall-clock cap as signIn: each getSession() can go to the
+        // network, so iteration count alone does not bound this.
+        const readyBy = Date.now() + 3_000;
+        while (Date.now() < readyBy) {
           await new Promise((r) => setTimeout(r, 150));
-          const { data: check } = await supabase.auth.getSession();
-          if (check.session?.access_token) break;
+          try {
+            const { data: check } = await withTimeout(
+              supabase.auth.getSession(),
+              2_000,
+              "Session check",
+            );
+            if (check.session?.access_token) break;
+          } catch {
+            break;
+          }
         }
 
-        await fetchUserProfile(authData.user.id);
+        // Not awaited, for the same reason as signIn: the account is
+        // created and the session is live, so blocking the spinner on one
+        // more round trip only adds another way to hang.
+        fetchUserProfile(authData.user.id).catch(() => {});
         checkAndStartLocationTracking(authData.user.id);
       }
 
@@ -1063,27 +1105,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signIn(email: string, password: string) {
     signingInRef.current = true;
     try {
-          const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    // Generous, but finite. Past this the connection is not coming back
+    // and the user deserves to be told rather than watched spin.
+    const { data, error } = await withTimeout(
+      supabase.auth.signInWithPassword({ email, password }),
+      25_000,
+      "Sign in",
+    );
 
     if (error) return { error };
 
     // ✅ Check DB status BEFORE allowing app session state to proceed
-    const { data: row, error: stErr } = await supabase
-      .from("users")
-      .select("status")
-      .eq("id", data.user.id)
-      .single();
+    let row: { status?: string } | null = null;
+    try {
+      const res = await withTimeout(
+        supabase.from("users").select("status").eq("id", data.user.id).single(),
+        8_000,
+        "Status check",
+      );
+      row = res.data as { status?: string } | null;
+    } catch {
+      // Unreadable status already means "let them in" below, and a stalled
+      // request is just another way of being unreadable. A banned user who
+      // slips through on a timeout is caught by the status check that runs
+      // on every profile load afterwards.
+      row = null;
+    }
 
-    // If we can't read status, allow login (but you should have RLS allowing self-read)
     const status = row?.status as "active" | "suspended" | "banned" | undefined;
 
     if (status === "banned") {
       // Immediately sign out and block entry
       await clearNativeSession();
-      await supabase.auth.signOut();
+      try {
+        await withTimeout(supabase.auth.signOut(), 8_000, "Sign out");
+      } catch {
+        // The local session is cleared regardless; a stalled server-side
+        // revoke must not leave a banned user staring at a spinner.
+      }
 
       // show in-app toast (works even on login screen)
       setFlashToast("danger", "Your account has been banned.");
@@ -1098,13 +1157,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Wait for Supabase client to actually have the session ready
       // by polling getSession() until it returns a valid session
-      for (let i = 0; i < 20; i++) {
+      // Each getSession() can hit the network, so cap the real elapsed
+      // time instead of trusting 20 iterations to stay short.
+      const readyBy = Date.now() + 3_000;
+      while (Date.now() < readyBy) {
         await new Promise((r) => setTimeout(r, 150));
-        const { data: check } = await supabase.auth.getSession();
-        if (check.session?.access_token) break;
+        try {
+          const { data: check } = await withTimeout(
+            supabase.auth.getSession(),
+            2_000,
+            "Session check",
+          );
+          if (check.session?.access_token) break;
+        } catch {
+          break; // the session is already set in state; stop waiting on it
+        }
       }
 
-      await fetchUserProfile(data.user.id);
+      // NOT awaited. The user is authenticated by this point, and the
+      // onAuthStateChange SIGNED_IN handler fetches the profile too.
+      // Blocking the spinner on a second network round trip only created
+      // another way for sign-in to hang with no error.
+      fetchUserProfile(data.user.id).catch(() => {});
       checkAndStartLocationTracking(data.user.id);
 
       if (status === "suspended") {

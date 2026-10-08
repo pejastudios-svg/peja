@@ -46,6 +46,25 @@ function LoginPageInner() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Last-resort release for the button.
+  //
+  // signIn now bounds each of its network calls, so it cannot hang on its
+  // own any more. This covers the other way the spinner used to stick: the
+  // success path deliberately leaves `loading` true and navigates away, so
+  // if that navigation never happens (a guard bounces it back, the push is
+  // swallowed) the button spins with no error and no way out.
+  //
+  // Generous on purpose. It must never fire during a slow but working sign
+  // in on bad data, only once something is genuinely wrong.
+  useEffect(() => {
+    if (!loading) return;
+    const t = setTimeout(() => {
+      setLoading(false);
+      setError("That took too long. Check your connection and try again.");
+    }, 45_000);
+    return () => clearTimeout(t);
+  }, [loading]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");

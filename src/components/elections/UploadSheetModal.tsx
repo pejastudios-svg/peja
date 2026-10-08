@@ -142,7 +142,7 @@ export function UploadSheetModal({
       const tempPath = `temp/${auth.user.id}-${Date.now()}-${Math.random().toString(36).substring(7)}.${ext}`;
       const { error } = await supabase.storage
         .from("media")
-        .upload(tempPath, toStage, { cacheControl: "3600", upsert: false });
+        .upload(tempPath, toStage, { cacheControl: "31536000", upsert: false });
       if (error) throw error;
       stagedRef.current = tempPath;
       setPreUpload({ status: "done", tempPath });
