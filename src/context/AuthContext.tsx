@@ -66,6 +66,10 @@ interface User {
   // reads this to block the app until the user picks their own, so it MUST
   // flow through the mapping below or the gate never appears.
   must_change_password?: boolean;
+
+  // Null while the Beacon section is still locked for this account. Server
+  // written only, by /api/beacon/unlock.
+  beacon_unlocked_at?: string | null;
 }
 
 interface AuthContextType {
@@ -876,6 +880,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         is_vip: data.is_vip || false,
         is_mvp: data.is_mvp || false,
         must_change_password: data.must_change_password || false,
+        beacon_unlocked_at: data.beacon_unlocked_at ?? null,
       } : {
         id: userId,
         email: supabaseUser?.email || "",

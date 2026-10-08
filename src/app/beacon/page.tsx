@@ -9,6 +9,7 @@ import { PejaSpinner } from "@/components/ui/PejaSpinner";
 import { PairBeaconFlow } from "@/components/beacon/PairBeaconFlow";
 import { BeaconDashboard } from "@/components/beacon/BeaconDashboard";
 import { BeaconFirstRunManual } from "@/components/beacon/BeaconFirstRunManual";
+import { BeaconLockedTeaser } from "@/components/beacon/BeaconLockedTeaser";
 import { BeaconFleet } from "@/components/beacon/BeaconFleet";
 import { canUseBeacon, type BeaconDevice } from "@/lib/beacon";
 
@@ -27,7 +28,7 @@ type View = "auto" | "list" | "pair";
 
 export default function BeaconPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, refreshUser } = useAuth();
   const [devices, setDevices] = useState<BeaconDevice[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setView] = useState<View>("auto");
@@ -71,7 +72,20 @@ export default function BeaconPage() {
 
   if (authLoading || !user || !canUseBeacon(user.email)) return null;
 
-  // Manual first. Everything else waits until it has been read once.
+  // Locked until this account has entered the code. Gated on the page
+  // rather than on the buttons that lead here, so every route in is
+  // covered by one check, and read from the user row rather than local
+  // storage so it cannot be flipped from devtools or lost on reinstall.
+  if (!user.beacon_unlocked_at) {
+    return (
+      <BeaconLockedTeaser
+        onUnlocked={() => { void refreshUser(); }}
+        onExit={() => router.back()}
+      />
+    );
+  }
+
+  // Manual next. Everything else waits until it has been read once.
   if (manualDone === null) return null;
   if (!manualDone) {
     return (
