@@ -134,3 +134,56 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+/**
+ * How far along the job is, without sending anything.
+ *
+ * The screen needs this because it is not the only thing driving the
+ * queue: when a command is rate limited the client loop stops and the
+ * checkin-monitor cron finishes the sequence. Without somewhere to read
+ * the real cursor, the last step sits there untocked forever even though
+ * it went out a minute ago, and the reader concludes setup failed when
+ * their Beacon is already online.
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const { user } = await requireUser(req);
+    const deviceId = req.nextUrl.searchParams.get("deviceId") || "";
+    if (!deviceId) {
+      return NextResponse.json({ error: "deviceId required" }, { status: 400 });
+    }
+
+    const supabaseAdmin = getSupabaseAdmin();
+    const { data: device } = await supabaseAdmin
+      .from("devices")
+      .select("id, user_id, status")
+      .eq("id", deviceId)
+      .maybeSingle();
+    if (!device || device.user_id !== user.id) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const { data: job } = await supabaseAdmin
+      .from("beacon_config_jobs")
+      .select("commands, next_index, status")
+      .eq("device_id", deviceId)
+      .eq("kind", "config")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const total = ((job?.commands as unknown[]) || []).length;
+    return NextResponse.json({
+      ok: true,
+      index: job?.next_index ?? 0,
+      total,
+      jobStatus: job?.status ?? "none",
+      deviceStatus: device.status,
+    });
+  } catch (error) {
+    return (
+      authErrorResponse(error) ??
+      NextResponse.json({ error: (error as Error).message }, { status: 500 })
+    );
+  }
+}

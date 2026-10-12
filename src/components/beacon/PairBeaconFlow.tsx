@@ -79,24 +79,49 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
     })();
   }, [user]);
 
-  // While configuring, watch for the gateway flipping us to connected.
+  // While configuring, watch the server: both for the gateway flipping
+  // us to connected, and for how far the command queue has actually got.
+  //
+  // The progress half matters because this screen is not the only thing
+  // draining the queue. A rate limited command stops the local loop and
+  // the checkin-monitor cron finishes the rest, so without reading the
+  // real cursor the last step stays untocked forever while the Beacon is
+  // already online and restarting. That looked exactly like a failure.
   useEffect(() => {
-    if (step !== "configure" || !pairedDevice || connected) return;
+    if (step !== "configure" || !pairedDevice) return;
+    let stop = false;
     pollRef.current = setInterval(async () => {
-      const { data } = await supabase
-        .from("devices")
-        .select("status")
-        .eq("id", pairedDevice.id)
-        .maybeSingle();
-      if (data?.status === "connected") {
-        setConnected(true);
-        if (navigator.vibrate) navigator.vibrate([15, 70, 30]);
-        // Deliberately NOT advancing here. The first command is what makes
-        // the Beacon connect, so jumping now would leave the remaining
-        // commands sending blind, and closing the app would break setup.
+      if (stop) return;
+
+      if (!connected) {
+        const { data } = await supabase
+          .from("devices")
+          .select("status")
+          .eq("id", pairedDevice.id)
+          .maybeSingle();
+        if (data?.status === "connected") {
+          setConnected(true);
+          if (navigator.vibrate) navigator.vibrate([15, 70, 30]);
+          // Deliberately NOT advancing here. The first command is what
+          // makes the Beacon connect, so jumping now would leave the
+          // remaining commands sending blind, and closing the app would
+          // break setup.
+        }
+      }
+
+      try {
+        const { res, data } = await authFetchJson(
+          `/api/beacon/provision?deviceId=${encodeURIComponent(pairedDevice.id)}`,
+        );
+        if (!stop && res.ok && typeof data?.index === "number") markUpTo(data.index);
+      } catch {
+        // A missed poll is nothing: the next one is 2.5s away.
       }
     }, 2500);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => {
+      stop = true;
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
   }, [step, pairedDevice, connected]);
 
   const validSim = /^(\+?234|0)\d{10}$/.test(sim.replace(/[^\d+]/g, ""));
