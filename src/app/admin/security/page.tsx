@@ -16,6 +16,13 @@ export default function AdminSecurityPage() {
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [backupCodesRemaining, setBackupCodesRemaining] = useState(0);
   const [faceEnrollmentCount, setFaceEnrollmentCount] = useState(0);
+  // Paused keeps the enrolment and skips the camera phase at the gate.
+  // Distinct from revoking, which throws the enrolment away.
+  const [facePaused, setFacePaused] = useState(false);
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [pausePin, setPausePin] = useState("");
+  const [pauseBusy, setPauseBusy] = useState(false);
+  const [pauseError, setPauseError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Setup flow
@@ -34,7 +41,7 @@ export default function AdminSecurityPage() {
   const [disableCode, setDisableCode] = useState("");
   const [disableError, setDisableError] = useState("");
   const [disableLoading, setDisableLoading] = useState(false);
-  useScrollFreeze(showDisable);
+  useScrollFreeze(showDisable || pauseOpen);
 
   const headers = {
     "Content-Type": "application/json",
@@ -56,6 +63,7 @@ export default function AdminSecurityPage() {
       setTotpEnabled(totpData.enabled);
       setBackupCodesRemaining(totpData.backupCodesRemaining || 0);
       setFaceEnrollmentCount(faceData.enrollmentCount || 0);
+      setFacePaused(Boolean(faceData.paused));
     } catch {}
     setLoading(false);
   };
@@ -211,6 +219,56 @@ export default function AdminSecurityPage() {
             </div>
           </HudPanel>
         </Link>
+
+        {/* Pause / resume.
+            Outside the Link above, because that whole card navigates and
+            a control inside it could never be tapped. */}
+        {faceEnrollmentCount > 0 && (
+          <HudPanel>
+            <div className="flex items-center gap-3 p-2">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white">
+                  {facePaused ? "Face check is paused" : "Face check is on"}
+                </p>
+                <p className="text-xs text-dark-400 mt-0.5 leading-relaxed">
+                  {facePaused
+                    ? "The gate is PIN only right now. Your enrolled faces are untouched."
+                    : "Pausing skips the camera at the gate without deleting anything. You can turn it back on at any time."}
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  if (facePaused) {
+                    // Turning protection back ON asks for nothing.
+                    setPauseBusy(true);
+                    try {
+                      await fetch("/api/admin/face/pause/", {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify({ paused: false }),
+                      });
+                      setFacePaused(false);
+                    } finally {
+                      setPauseBusy(false);
+                    }
+                  } else {
+                    setPausePin("");
+                    setPauseError(null);
+                    setPauseOpen(true);
+                  }
+                }}
+                disabled={pauseBusy}
+                className={`shrink-0 px-3.5 py-2 rounded-xl text-sm font-semibold transition-ui ${
+                  facePaused
+                    ? "bg-primary-600 text-white"
+                    : "bg-[var(--soft-surface-strong)] text-dark-100"
+                }`}
+              >
+                {pauseBusy ? "..." : facePaused ? "Turn back on" : "Pause"}
+              </button>
+            </div>
+          </HudPanel>
+        )}
 
         {/* Setup Error */}
         {setupError && setupPhase === "idle" && (
@@ -406,6 +464,75 @@ export default function AdminSecurityPage() {
           <span>Log out of admin</span>
         </button>
       </div>
+
+      {/* Pause confirmation.
+          The PIN is asked for here and nowhere else in this flow,
+          because pausing is the only direction that removes a layer. */}
+      {pauseOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" onClick={() => setPauseOpen(false)} />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div
+              className="w-full max-w-sm rounded-2xl p-6 space-y-4"
+              style={{
+                background: "rgba(18, 12, 36, 0.98)",
+                border: "1px solid var(--glass-border)",
+                boxShadow: "0 25px 60px rgba(0,0,0,0.6)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-base font-bold text-white">Pause the face check</h3>
+              <p className="text-sm text-dark-400 leading-relaxed">
+                The gate will ask for your PIN only. Your enrolled faces stay
+                exactly as they are, and you can turn this back on without a
+                PIN whenever you like.
+              </p>
+              <input
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                autoFocus
+                value={pausePin}
+                onChange={(e) => { setPausePin(e.target.value); setPauseError(null); }}
+                placeholder="Admin PIN"
+                className="w-full px-3 glass-input text-sm"
+              />
+              {pauseError && <p className="text-sm text-red-400">{pauseError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPauseOpen(false)}
+                  className="px-4 py-2 rounded-xl text-sm font-medium bg-[var(--soft-surface-strong)] text-dark-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={pauseBusy || !pausePin.trim()}
+                  onClick={async () => {
+                    setPauseBusy(true);
+                    setPauseError(null);
+                    try {
+                      const res = await fetch("/api/admin/face/pause/", {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify({ paused: true, pin: pausePin }),
+                      });
+                      const json = await res.json();
+                      if (!res.ok) { setPauseError(json.error || "Could not pause"); return; }
+                      setFacePaused(true);
+                      setPauseOpen(false);
+                    } finally {
+                      setPauseBusy(false);
+                    }
+                  }}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold bg-primary-600 text-white disabled:opacity-40"
+                >
+                  {pauseBusy ? "Checking..." : "Pause"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Disable Modal */}
       {showDisable && (

@@ -19,6 +19,7 @@ import { AlertTriangle, ChevronRight, ChevronUp, Plus, Radio, Search as SearchIc
 import { PlaceEditorModal } from "@/components/places/PlaceEditorModal";
 import { fetchPlaces, type Place, type PlaceKind } from "@/lib/places";
 import { Briefcase, GraduationCap, Home as HomeIcon, BookOpen, MapPin as MapPinIcon } from "lucide-react";
+import { AdvertiseEntry } from "@/components/ads/AdvertiseEntry";
 
 export interface CircleMember {
   id: string;
@@ -626,6 +627,8 @@ export function CircleSheet({
               + Add
             </button>
           </div>
+
+          <div className="mb-4 mt-5"><AdvertiseEntry /></div>
 
           <p className="text-xs font-bold uppercase tracking-wider text-dark-500 mb-2 mt-5">
             Near you

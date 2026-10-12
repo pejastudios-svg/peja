@@ -458,7 +458,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await adoptNativeSessionIfNewer();
 
         // Step 2: Get session from localStorage
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const { data: { session: currentSession } } = await withTimeout(
+          supabase.auth.getSession(), 8_000, "Session",
+        );
 
         if (currentSession?.user) {
           setSession(currentSession);
@@ -478,7 +480,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await startUserRowSubscription(currentSession.user.id);
         } else {
           // No cached session — try refreshing (handles expired access tokens)
-          const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+          const { data: { session: refreshed } } = await withTimeout(
+            supabase.auth.refreshSession(), 10_000, "Session refresh",
+          );
           if (refreshed?.user) {
             setSession(refreshed);
             setSupabaseUser(refreshed.user);
@@ -626,16 +630,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // replay our stale refresh token and revoke the session family.
         await adoptNativeSessionIfNewer();
 
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const { data: { session: currentSession } } = await withTimeout(
+          supabase.auth.getSession(), 8_000, "Session",
+        );
 
         if (!currentSession) {
           // Session gone — try to restore from native storage
           await restoreNativeSession();
-          const { data: { session: restored } } = await supabase.auth.getSession();
+          const { data: { session: restored } } = await withTimeout(
+            supabase.auth.getSession(), 8_000, "Session",
+          );
 
           if (!restored) {
             // Try refreshing the token
-            const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+            const { data: { session: refreshed } } = await withTimeout(
+            supabase.auth.refreshSession(), 10_000, "Session refresh",
+          );
 
             if (!refreshed) {
               // Truly logged out — clear state
@@ -778,18 +788,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let data: any = null;
       let error: any = null;
 
-      // Retry up to 3 times — session token may not be ready on first attempt
+      // Retry up to 3 times — session token may not be ready on first
+      // attempt.
+      //
+      // Each attempt is bounded, and so is the loop as a whole. Three
+      // unbounded reads with backoff behind them is how a stalled mobile
+      // connection became a minute of "Signing in...": nothing here ever
+      // gave up, and `user` cannot be set until this returns, so the app
+      // had no way to move on or even to report that something was wrong.
+      const deadline = Date.now() + 12_000;
       for (let attempt = 0; attempt < 3; attempt++) {
-        const res = await supabase
-          .from("users")
-          .select("*")
-          .eq("id", userId)
-          .maybeSingle();
-
-        data = res.data;
-        error = res.error;
+        try {
+          const res = await withTimeout(
+            supabase.from("users").select("*").eq("id", userId).maybeSingle(),
+            5_000,
+            "Profile read",
+          );
+          data = res.data;
+          error = res.error;
+        } catch (e) {
+          data = null;
+          error = e;
+        }
 
         if (!error && data) break; // Success
+        if (Date.now() > deadline) break; // Out of time; fall through to the
+                                          // read-failed path, which keeps
+                                          // whatever profile we already had.
         if (attempt < 2) {
           await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         }
@@ -824,7 +849,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // (null) inside this mount-once callback and never updates, so the old
       // `!data && supabaseUser` guard was always false and this never ran.
       if (!data) {
-        const { data: authData } = await supabase.auth.getUser();
+        const { data: authData } = await withTimeout(
+          supabase.auth.getUser(), 8_000, "Auth user",
+        );
         const authUser = authData?.user;
         if (authUser) {
           const meta = authUser.user_metadata || {};
@@ -844,11 +871,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // insert (not upsert): if a row somehow already exists but was hidden
           // from our SELECT (e.g. RLS), the conflict is ignored rather than
           // overwriting real data like a suspended status.
-          const { data: inserted, error: insertErr } = await supabase
-            .from("users")
-            .insert(newProfile)
-            .select()
-            .single();
+          const { data: inserted, error: insertErr } = await withTimeout(
+            supabase.from("users").insert(newProfile).select().single(),
+            8_000,
+            "Profile create",
+          );
           if (!insertErr && inserted) {
             data = inserted;
           }
@@ -892,7 +919,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (profile.status === "banned") {
   await clearNativeSession();
-  await supabase.auth.signOut();
+  try {
+    await withTimeout(supabase.auth.signOut(), 8_000, "Sign out");
+  } catch {
+    // Local state is cleared immediately below and the page is replaced,
+    // so a stalled server-side revoke must not hold this open.
+  }
   setUser(null);
   setSupabaseUser(null);
   setSession(null);
@@ -936,7 +968,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refreshUser() {
     userProfileCache = null;
-    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const { data: { user: authUser } } = await withTimeout(
+      supabase.auth.getUser(), 8_000, "Auth user",
+    );
     if (authUser) {
       await fetchUserProfile(authUser.id, true);
     }
@@ -1009,7 +1043,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
               // sign out + clear state
               await clearNativeSession();
-              await supabase.auth.signOut();
+              try {
+                await withTimeout(supabase.auth.signOut(), 8_000, "Sign out");
+              } catch {
+                // Local state is cleared below regardless. A hung revoke
+                // must not leave a banned user sitting on a spinner.
+              }
               userProfileCache = null;
               locationTracker.stop();
 
@@ -1044,7 +1083,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           },
         },
         }),
-        25_000,
+        15_000,
         "Sign up",
       );
 
@@ -1114,7 +1153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // and the user deserves to be told rather than watched spin.
     const { data, error } = await withTimeout(
       supabase.auth.signInWithPassword({ email, password }),
-      25_000,
+      15_000,
       "Sign in",
     );
 
@@ -1204,7 +1243,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     locationTracker.stop();
     presenceManager.stop();
     await clearNativeSession();
-    await supabase.auth.signOut();
+    try {
+      await withTimeout(supabase.auth.signOut(), 8_000, "Sign out");
+    } catch {
+      // Local state is cleared below either way. Being unable to reach
+      // the server must not leave somebody stuck signed in.
+    }
     setUser(null);
     setSupabaseUser(null);
     setSession(null);

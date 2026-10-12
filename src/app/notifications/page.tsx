@@ -467,6 +467,14 @@ export default function NotificationsPage() {
         break;
       }
 
+      // Anything about an advert goes to the advertiser's own page,
+      // which is where the status, the reason and the numbers are.
+      case "ad_approved":
+      case "ad_rejected":
+      case "ad_credit":
+        router.push("/advertise/dashboard");
+        break;
+
       // The approval modal lives in the root layout and polls slowly, so
       // nudge it to re-check now rather than making someone wait a minute
       // after deliberately tapping the notification.

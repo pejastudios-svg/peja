@@ -90,6 +90,7 @@ export default function Home() {
   const initialUI = cachedUI || DEFAULT_UI;
 
   const [activeTab, setActiveTab] = useState<FeedTab>(initialUI.activeTab);
+
   const [trendingMode, setTrendingMode] = useState<TrendingMode>(initialUI.trendingMode);
   const [authCheckDone, setAuthCheckDone] = useState(false);
 
@@ -693,13 +694,54 @@ export default function Home() {
     router.prefetch("/profile");
   }, [router]);
 
-  // Save scroll position to FeedContext
+  // Save scroll position to FeedContext.
+  //
+  // Suppressed while a restore is in flight: without the guard the
+  // programmatic scrollTo fires a scroll event that writes the OLD
+  // position straight back under the NEW tab's key, and the restore
+  // undoes itself.
+  const restoringRef = useRef(false);
   useEffect(() => {
     const save = () => {
+      if (restoringRef.current) return;
       feedCache.setScroll(feedKey, window.scrollY);
     };
     window.addEventListener("scroll", save, { passive: true });
     return () => window.removeEventListener("scroll", save);
+  }, [feedKey, feedCache]);
+
+  // Restore the position belonging to the tab being switched TO.
+  //
+  // The scroll was already being saved per tab, it was simply never read
+  // back, so switching left the window wherever the other tab had been.
+  // Clamped to the new panel's height, because a position from a long
+  // Trending would otherwise land past the end of a short Nearby.
+  // Seeded with the tab the page opens on, so the first run is a no-op.
+  //
+  // Restoring on MOUNT is wrong and was the regression: a fresh load or a
+  // pull-to-refresh would jump to a position saved in an earlier session,
+  // before any posts had rendered, landing on blank space. A refresh
+  // should start at the top. Only switching tabs restores.
+  const restoredForRef = useRef<string | null>(
+    initialUI.activeTab === "trending" ? "home:trending" : "home:nearby",
+  );
+  useEffect(() => {
+    if (restoredForRef.current === feedKey) return;
+    restoredForRef.current = feedKey;
+    const want = feedCache.get(feedKey)?.scrollY || 0;
+    restoringRef.current = true;
+    // Two frames: one for the transform to commit, one for layout to
+    // settle at the new height before we measure the maximum.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const max = Math.max(
+          0,
+          document.documentElement.scrollHeight - window.innerHeight,
+        );
+        window.scrollTo({ top: Math.min(want, max), behavior: "auto" });
+        setTimeout(() => { restoringRef.current = false; }, 80);
+      });
+    });
   }, [feedKey, feedCache]);
 
   // Auth redirect
@@ -845,7 +887,7 @@ export default function Home() {
           </div>
          <div className="overflow-hidden">
             <div
-              className="flex"
+              className="flex items-start"
               style={{
                 width: "200%",
                 transform: `translateX(calc(${activeTab === "trending" ? "-50%" : "0%"} + ${swipeOffset}px))`,
@@ -854,7 +896,14 @@ export default function Home() {
               }}
             >
               {/* Nearby feed */}
-              <div className="w-1/2 min-w-0 px-0">
+              <div
+                className="w-1/2 min-w-0 px-0"
+                style={
+                  !isSwiping && activeTab !== "nearby"
+                    ? { height: 0, overflow: "hidden" }
+                    : undefined
+                }
+              >
                 {loading && nearbyPosts.length === 0 && activeTab === "nearby" ? (
                   <div className="space-y-4" data-tutorial="home-feed">
                     {Array.from({ length: 5 }).map((_, i) => (
@@ -894,7 +943,14 @@ export default function Home() {
               </div>
 
               {/* Trending feed */}
-              <div className="w-1/2 min-w-0 px-0">
+              <div
+                className="w-1/2 min-w-0 px-0"
+                style={
+                  !isSwiping && activeTab !== "trending"
+                    ? { height: 0, overflow: "hidden" }
+                    : undefined
+                }
+              >
                 {loading && trendingPosts.length === 0 && activeTab === "trending" ? (
                   <div className="space-y-4">
                     {Array.from({ length: 5 }).map((_, i) => (

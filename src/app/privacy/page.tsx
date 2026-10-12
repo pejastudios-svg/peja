@@ -96,6 +96,12 @@ export default function PrivacyPage() {
                 <li><strong>Law Enforcement:</strong> When required by law or to protect safety</li>
                 <li><strong>Emergency Services:</strong> During SOS alerts</li>
                 <li><strong>Service Providers:</strong> Who help us operate our service</li>
+                <li>
+                  <strong>Paystack:</strong> If you pay for anything on Peja, such as
+                  advertising your business, Paystack handles the payment. Your card
+                  details go to them, never to us. We receive only the last four digits,
+                  the card type, and whether the payment succeeded.
+                </li>
               </ul>
             </div>
           </section>
@@ -119,7 +125,7 @@ export default function PrivacyPage() {
             <ul className="list-disc pl-6 space-y-2 text-dark-300 mt-2">
               <li>Access your personal data</li>
               <li>Correct inaccurate data</li>
-              <li>Delete your account and data</li>
+              <li>Delete your account and data, apart from payment records we are required by law to keep</li>
               <li>Export your data</li>
               <li>Opt out of non-essential communications</li>
             </ul>
@@ -128,9 +134,38 @@ export default function PrivacyPage() {
           <section className="mb-8">
             <h2 className="text-xl font-semibold text-dark-100 mb-3">Data Retention</h2>
             <p className="text-dark-300 leading-relaxed">
-              We retain your data for as long as your account is active. Incident posts 
-              are archived after resolution but remain searchable for community safety. 
+              We retain your data for as long as your account is active. Incident posts
+              are archived after resolution but remain searchable for community safety.
               You can request deletion of your account at any time.
+            </p>
+            <p className="text-dark-300 leading-relaxed mt-3">
+              Payment records are the one exception, and we cannot delete them on
+              request. Nigerian law requires us to keep them: at least five years
+              after a transaction under the Money Laundering (Prevention and
+              Prohibition) Act, and seven years after an account closes under the
+              Central Bank of Nigeria framework. This covers the amount, the date
+              and who paid. It does not include your card details, which we never
+              hold. If you close your account, everything else goes.
+            </p>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="text-xl font-semibold text-dark-100 mb-3">Payments</h2>
+            <p className="text-dark-300 leading-relaxed">
+              Peja is free to use. You only pay us if you buy something for a
+              business, such as an advert.
+            </p>
+            <p className="text-dark-300 leading-relaxed mt-3">
+              Payments are processed by Paystack, who are regulated by the Central
+              Bank of Nigeria. Peja never sees or stores your card number. When you
+              buy a subscription that renews, Paystack keeps your card on file and we
+              hold only a reference to it, which lets us take the next payment without
+              asking for the card again. You can stop future payments at any time from
+              your adverts page, and we cannot charge a card after you do.
+            </p>
+            <p className="text-dark-300 leading-relaxed mt-3">
+              Paystack has its own privacy policy covering what they do with your
+              payment information, and it applies alongside this one.
             </p>
           </section>
 

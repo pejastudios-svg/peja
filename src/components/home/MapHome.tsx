@@ -16,6 +16,7 @@ import { AvatarImage } from "@/components/ui/AvatarImage";
 import { CommunityNudge } from "@/components/community/CommunityNudge";
 import { CircleSheet, type CircleMember, type NearbyIncident } from "./CircleSheet";
 import { TweenedMarker } from "./TweenedMarker";
+import { SponsoredPins } from "@/components/ads/SponsoredPins";
 import { MemberCard } from "./MemberCard";
 import { StoryRail } from "./StoryRail";
 import { authFetchJson } from "@/lib/authFetch";
@@ -125,6 +126,20 @@ export default function MapHome() {
   const [gpsDenied, setGpsDenied] = useState(false);
   const [members, setMembers] = useState<CircleMember[]>([]);
   const [incidents, setIncidents] = useState<NearbyIncident[]>([]);
+  // Viewport for sponsored pins. Updated on move end rather than per
+  // frame; SponsoredPins debounces on top of that.
+  const [adBounds, setAdBounds] = useState<
+    { north: number; south: number; east: number; west: number } | null
+  >(null);
+  const readAdBounds = useCallback(() => {
+    const m = mapRef.current?.getMap();
+    if (!m) return;
+    const b = m.getBounds();
+    setAdBounds({
+      north: b.getNorth(), south: b.getSouth(),
+      east: b.getEast(), west: b.getWest(),
+    });
+  }, []);
   const [circleSos, setCircleSos] = useState<
     { user_id: string; name: string; lat: number | null; lng: number | null; created_at: string; sosId: string }[]
   >([]);
@@ -1177,6 +1192,7 @@ export default function MapHome() {
         style={{ width: "100%", height: "100%" }}
         onRotate={(e) => setMapBearing(e.viewState.bearing)}
         onLoad={(e) => {
+          readAdBounds();
           // Sync the zoom-gate state with the real camera before the first
           // move, or place markers judge visibility against a stale value.
           setMapZoom(Math.round(e.target.getZoom() * 10) / 10);
@@ -1196,6 +1212,7 @@ export default function MapHome() {
           cancelPress();
           setMapZoom(Math.round(e.viewState.zoom * 10) / 10);
         }}
+        onMoveEnd={readAdBounds}
         onDragStart={() => {
           // They are looking somewhere else deliberately; stop trailing.
           followRef.current = false;
@@ -1510,6 +1527,27 @@ export default function MapHome() {
             </div>
           </TweenedMarker>
         ))}
+
+        {/* ── sponsored pins ──
+            Suppressed outright during an SOS, an incoming ping, or while
+            anything has been reported nearby in the last hour. The
+            component fetches nothing in that state, so there is no race
+            where an advert arrives a moment after an emergency does.
+
+            Rendered BEFORE incidents so incident markers paint on top. An
+            advert must never cover a report. */}
+        <SponsoredPins
+          bounds={adBounds}
+          suppress={
+            Boolean(activeSos) ||
+            Boolean(incomingPing) ||
+            incidents.some(
+              (i) => Date.now() - new Date(i.createdAt).getTime() < 60 * 60 * 1000,
+            )
+          }
+          origin={center}
+          onShowOnMap={(lat, lng) => flyTo(lat, lng, 16)}
+        />
 
         {/* ── incidents ── */}
         {incidents.map((p) => (

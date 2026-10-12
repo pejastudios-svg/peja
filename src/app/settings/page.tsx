@@ -1,6 +1,8 @@
 // src/app/settings/page.tsx
 "use client";
 
+import { adsEnabled } from "@/lib/ads";
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -16,30 +18,7 @@ import { setAmbientTracking } from "@/components/system/AmbientTrackerBootstrap"
 import { AMBIENT_PREF_KEY, isCapacitor } from "@/lib/ambientTracker";
 import DeviceSettings from "@/lib/deviceSettings";
 import { useScrollFreeze } from "@/hooks/useScrollFreeze";
-import {
-  Bell,
-  Shield,
-  HelpCircle,
-  FileText,
-  LogOut,
-  ChevronRight,
-  Check,
-  X,
-  CheckCircle,
-  Users,
-  MapPin,
-  AlertTriangle,
-  Lock,
-  Eye,
-  EyeOff,
-  KeyRound,
-  ShieldCheck,
-  Trash2,
-  RefreshCw,
-  Sun,
-  Moon,
-  ArrowUpCircle,
-} from "lucide-react";
+import { AlertTriangle, ArrowUpCircle, BarChart3, Bell, Check, CheckCircle, ChevronRight, Eye, EyeOff, FileText, HelpCircle, KeyRound, Lock, LogOut, MapPin, Megaphone, Moon, RefreshCw, Shield, ShieldCheck, Sun, Trash2, Users, X } from "lucide-react";
 import { refreshApp } from "@/lib/refreshApp";
 import { useTheme } from "@/context/ThemeContext";
 import { useToast } from "@/context/ToastContext";
@@ -931,6 +910,25 @@ export default function SettingsPage() {
           />
           <RecoveryCodes />
         </section>
+
+        {/* Business. Hidden until advertising ships. */}
+        {adsEnabled() && (
+        <section className="py-6 border-b border-[var(--hairline)]">
+          <h2 className="text-sm font-semibold text-dark-400 uppercase mb-4">Business</h2>
+          <SettingRow
+            icon={Megaphone}
+            label="Advertise on Peja"
+            description="Put your business on the map"
+            onClick={() => router.push("/advertise")}
+          />
+          <SettingRow
+            icon={BarChart3}
+            label="My adverts"
+            description="How they are doing"
+            onClick={() => router.push("/advertise/dashboard")}
+          />
+        </section>
+        )}
 
         {/* Support */}
         <section className="py-6 border-b border-[var(--hairline)]">

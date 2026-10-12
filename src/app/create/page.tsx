@@ -469,23 +469,29 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
    */
   const promoteFromTemp = async (
     tempPath: string | null,
-    userId: string,
   ): Promise<string | null> => {
     if (!tempPath) return null;
     try {
-      const ext = tempPath.split(".").pop()?.toLowerCase() || "jpg";
-      const finalPath = `posts/${userId}/${Date.now()}-${Math.random()
-        .toString(36)
-        .substring(7)}.${ext}`;
-      const { error } = await supabase.storage.from("media").move(tempPath, finalPath);
-      if (error) {
-        console.error("[create] promote from temp failed:", error.message);
+      // Server side, not client side. A storage move needs delete on the
+      // source, which the browser's user-scoped client does not have, so
+      // doing this here failed silently against storage RLS and left the
+      // post pointing at temp/ to be swept 24 hours later.
+      const { data: auth } = await supabase.auth.getSession();
+      const token = auth.session?.access_token;
+      if (!token) return null;
+      const res = await fetch("/api/posts/promote-media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tempPath }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.url) {
+        console.error("[create] promote failed:", json?.error);
         return null;
       }
-      const { data } = supabase.storage.from("media").getPublicUrl(finalPath);
-      return data.publicUrl;
+      return json.url as string;
     } catch (e) {
-      console.error("[create] promote from temp threw:", e);
+      console.error("[create] promote threw:", e);
       return null;
     }
   };
@@ -922,7 +928,7 @@ const [previewDescExpanded, setPreviewDescExpanded] = useState(false);
             usedPreUploadsRef.current.add(file);
             // Out of temp/ before the URL is stored anywhere. A video that
             // went to Cloudinary has no tempPath and needs no move.
-            const promoted = await promoteFromTemp(preResult.tempPath, authUser.id);
+            const promoted = await promoteFromTemp(preResult.tempPath);
             mediaUrls.push({ url: promoted ?? preResult.url, type: isVideo ? "video" : "photo", thumbnailUrl: preResult.thumbnailUrl ?? null });
             done++;
             setUploadProgress(Math.round((done / totalFiles) * 80));

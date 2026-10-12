@@ -54,14 +54,17 @@ function LoginPageInner() {
   // if that navigation never happens (a guard bounces it back, the push is
   // swallowed) the button spins with no error and no way out.
   //
-  // Generous on purpose. It must never fire during a slow but working sign
-  // in on bad data, only once something is genuinely wrong.
+  // Sits just past the worst case signIn can now take: 15s for the sign
+  // in itself, 8s for the ban check, 3s waiting for the session to
+  // settle. Anything beyond that is not a slow connection, it is
+  // something stuck, and 45 seconds of staring at a spinner was its own
+  // failure even when the eventual message was correct.
   useEffect(() => {
     if (!loading) return;
     const t = setTimeout(() => {
       setLoading(false);
       setError("That took too long. Check your connection and try again.");
-    }, 45_000);
+    }, 30_000);
     return () => clearTimeout(t);
   }, [loading]);
 

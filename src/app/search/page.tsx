@@ -4,6 +4,8 @@ import { PullToRefresh } from "@/components/ui/PullToRefresh";
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import { SponsoredCarousel } from "@/components/ads/SponsoredCarousel";
+import { SponsoredResults } from "@/components/ads/SponsoredResults";
 import { supabase } from "@/lib/supabase";
 import { Post, CATEGORIES } from "@/lib/types";
 import { PostCard } from "@/components/posts/PostCard";
@@ -34,6 +36,49 @@ function SearchContent() {
   const searchParams = useSearchParams();
 
   const [query, setQuery] = useState(searchParams.get("q") || "");
+
+  // Ads are served by distance, so they need a point. The account's last
+  // known position is enough and costs no extra permission prompt; with
+  // no position there is simply nothing to show.
+  // Ads are served by distance, so this needs a point. The account's
+  // last known position is the fallback, not the only source: it can be
+  // null on a new account, or days old, and either way the result is a
+  // search page that silently shows no sponsored results at all.
+  // Remembered between visits, so the second search does not wait on
+  // anything at all. The slow path was the first: the profile had to
+  // load, then geolocation had up to eight seconds to answer, and the
+  // carousel only appeared once one of them did. Ten to fifteen seconds
+  // of nothing, by which point the reader has moved on.
+  const [livePos, setLivePos] = useState<{ lat: number; lng: number } | null>(() => {
+    try {
+      const raw = sessionStorage.getItem("peja-ad-origin");
+      return raw ? (JSON.parse(raw) as { lat: number; lng: number }) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        const next = { lat: p.coords.latitude, lng: p.coords.longitude };
+        setLivePos(next);
+        try { sessionStorage.setItem("peja-ad-origin", JSON.stringify(next)); } catch {}
+      },
+      () => {},
+      // Short, and happy with a stale fix. This decides which shops to
+      // show, not where to send help, so waiting is worse than being a
+      // few hundred metres out.
+      { enableHighAccuracy: false, maximumAge: 30 * 60 * 1000, timeout: 4000 },
+    );
+  }, []);
+
+  const adOrigin =
+    livePos ??
+    (authUser?.last_latitude != null && authUser?.last_longitude != null
+      ? { lat: authUser.last_latitude, lng: authUser.last_longitude }
+      : null);
   const [showFilters, setShowFilters] = useState(false);
 
   // Filters
@@ -475,11 +520,27 @@ useEffect(() => {
 
   return (
     <PullToRefresh onRefresh={async () => { await performSearch(); }}>
-    <div className="min-h-screen pb-20 lg:pb-0">
+    <div className="min-h-screen pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]">
       <Header onCreateClick={() => router.push("/create")} />
 
-      <main className="pt-app-header-pill">
+      {/* overflow-anchor: none.
+          The sponsored carousel arrives after its fetch, inserting
+          content ABOVE whatever is on screen. Chrome's scroll anchoring
+          then scrolls down by the same amount to keep the visual
+          position stable, which puts the banner just off the top of the
+          viewport: it is rendered, it is simply above you, and the only
+          way to find it is to scroll up. Opting this subtree out means
+          late-arriving content lands where it was put. */}
+      <main className="pt-app-header-pill" style={{ overflowAnchor: "none" }}>
         <div className="max-w-2xl mx-auto px-4 py-4">
+          {/* Featured carousel. Above the search box because it is the one
+              placement bought to be seen rather than searched for, and
+              below it would sit under results nobody scrolls past. */}
+          <SponsoredCarousel
+            origin={adOrigin}
+            onShowOnMap={(lat, lng) => router.push(`/map?lat=${lat}&lng=${lng}`)}
+          />
+
           {/* Search Input */}
           <div className="relative mb-4">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-400" />
@@ -632,7 +693,23 @@ useEffect(() => {
             </div>
           )}
 
-{/* Results */}
+{/* Sponsored results sit above the organic ones and are labelled.
+              Somebody searching has told you what they want, which is why
+              this placement is useful rather than intrusive, and why it is
+              worth more than a banner.
+
+              Outside the branches below, not inside them. It used to live
+              in the "we found posts" arm, so a search that turned up
+              nothing rendered no sponsored row at all: the one moment the
+              screen is empty and a nearby business is the most useful
+              thing that could be on it. */}
+          <SponsoredResults
+            query={query}
+            origin={adOrigin}
+            onShowOnMap={(lat, lng) => router.push(`/map?lat=${lat}&lng=${lng}`)}
+          />
+
+          {/* Results */}
           {posts.length === 0 && !loading ? (
             <div className="text-center py-12 text-dark-400">No posts yet.</div>
           ) : posts.length === 0 && loading ? (
@@ -649,6 +726,7 @@ useEffect(() => {
               <p className="text-sm text-dark-400">
                 {posts.length} result{posts.length !== 1 ? "s" : ""} {query && `for "${query}"`}
               </p>
+
               {posts.map((post) => (
                 <PostCard
                   key={post.id}

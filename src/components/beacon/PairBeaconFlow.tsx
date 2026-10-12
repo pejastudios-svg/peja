@@ -131,7 +131,24 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
   }, [deviceId, sim, family1, family2, wearerName, wearerColor, pairing, toast]);
 
   const simDigits = sim.replace(/[^\d+]/g, "");
+  // Driven by the server's cursor, not this loop's counter.
+  //
+  // The same job row is also drained by the checkin-monitor cron, so the
+  // two can be at different points in the list, and the only thing that
+  // knows what was really sent is `next_index` on the job. Marking
+  // everything below the index the server reports keeps the ticks honest
+  // whichever side did the sending, and stops the last command sitting
+  // there un-ticked after it has already gone out.
+  // Manual fallback only: the reader taps copy or send for one command,
+  // so exactly that one is ticked and the server has no say.
   const markSent = (i: number) => setSentCmds((prev) => new Set(prev).add(i));
+
+  const markUpTo = (n: number) =>
+    setSentCmds((prev) => {
+      const next = new Set(prev);
+      for (let k = 0; k < n; k++) next.add(k);
+      return next;
+    });
 
   // ── automated provisioning via the SMS gateway ──
   // The transport is an implementation detail: setup runs by itself and
@@ -176,10 +193,13 @@ export function PairBeaconFlow({ onPaired }: { onPaired: (device: BeaconDevice) 
         }
         if (data?.deferred) {
           // Queued, not lost. Stop pushing and let the cron drain it.
+          // The index it reports is the one still waiting, so everything
+          // below it has genuinely been sent.
+          markUpTo(typeof data.index === "number" ? data.index : i);
           deferred = true;
           break;
         }
-        markSent(i);
+        markUpTo(typeof data?.index === "number" ? data.index : i + 1);
         if (data?.done) break;
         // The device applies commands in order; give it breathing room.
         if (i < commands.length - 1) {

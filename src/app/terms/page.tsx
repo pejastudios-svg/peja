@@ -215,7 +215,196 @@ export default function TermsPage() {
 </section>
 
 <section className="mb-8">
-            <h2 className="text-xl font-semibold text-dark-100 mb-3">13. Contact Us</h2>
+            <h2 className="text-xl font-semibold text-dark-100 mb-3">13. Advertising on Peja</h2>
+            <div className="text-dark-300 leading-relaxed space-y-4">
+              <p>
+                Peja carries paid placements from local businesses. Every one of
+                them is labelled &quot;Sponsored&quot;. If it is not labelled, it is not
+                an advert.
+              </p>
+              <p>
+                <strong className="text-dark-100">We limit how much you see.</strong>{" "}
+                No more than two sponsored pins appear on the map at any time, no
+                matter how many businesses have paid. Sponsored results in search
+                are marked and sit alongside ordinary results, never in place of
+                them.
+              </p>
+              <p>
+                <strong className="text-dark-100">Adverts stop during emergencies.</strong>{" "}
+                While an SOS is active, or while there is a live incident reported
+                near you, sponsored placements are hidden. Safety information is
+                never competing for space with an advert.
+              </p>
+              <p>
+                <strong className="text-dark-100">We do not sell your data.</strong>{" "}
+                Advertisers do not receive your name, your location, your phone
+                number or anything else about you. They see counts: how many times
+                their placement was shown and how many times it was tapped. Nothing
+                that identifies a person ever reaches an advertiser.
+              </p>
+              <p>
+                We refuse categories of advertising that we believe do not belong
+                on a safety app, including betting and gambling, loan and quick
+                cash apps, investment and crypto schemes, unlicensed health claims,
+                and political campaigning. The full list is in section 14.
+              </p>
+            </div>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="text-xl font-semibold text-dark-100 mb-3">14. Terms for Advertisers</h2>
+            <div className="text-dark-300 leading-relaxed space-y-4">
+              <p>
+                This section applies if you buy a placement on Peja. It is in
+                addition to the rest of these terms.
+              </p>
+              <p>
+                You must be 18 or over to buy a placement, and you must be
+                authorised to act for the business you are advertising.
+              </p>
+
+              <p className="text-dark-100 font-semibold">What you are buying</p>
+              <p>
+                You are buying a <em>placement</em>: a position on the map, in
+                search, or in the carousel, for the period you have paid for. You
+                are not buying a number of views, impressions, taps or customers,
+                and none of those are guaranteed.
+              </p>
+              <p>
+                Where we show an estimated area population, that figure is the
+                population of the local government area, derived from the 2006
+                national census and projected forward at the national growth rate.
+                It describes the size of the area. It is not a count of Peja users
+                and it is not a forecast of how many people will see your
+                placement. Not reaching a number of views is not grounds for a
+                refund.
+              </p>
+
+              <p className="text-dark-100 font-semibold">What we will not carry</p>
+              <p>
+                We do not accept advertising for: betting, gambling, lottery or
+                casino services; loan apps, moneylending or quick cash; crypto,
+                forex or anything promising investment returns; unlicensed health
+                claims, herbal cures or unapproved drugs; spiritual or miracle
+                services charging money; multi-level or network marketing; weapons;
+                tobacco and vaping; adult content; political parties, candidates or
+                campaigns.
+              </p>
+              <p>
+                Every submission is reviewed by a person before it goes live. We
+                may reject or remove any placement at any time.
+              </p>
+              <p>
+                If we remove a live placement because it broke these terms,
+                misrepresented your business, or drew complaints we judge to be well
+                founded, no refund or credit is due and the money already paid is
+                not returned.
+              </p>
+              <p>
+                If we remove it for our own reasons, or it fails to run because of a
+                fault on our side, we credit you for the days it did not run.
+              </p>
+
+              <p className="text-dark-100 font-semibold">Payment and renewal</p>
+              <p>
+                Payments are handled by Paystack. Peja never sees or stores your
+                card number. When you pay, Paystack keeps your card and gives us a
+                reference to it, which is what lets each month renew without asking
+                you for the card again. You can stop that at any time, and once you
+                have, we cannot charge the card.
+              </p>
+              <p>
+                Placements are billed monthly and renew automatically. We notify you
+                three days before each charge, and you can cancel at any time. A
+                cancellation takes effect at the end of the period you have already
+                paid for.
+              </p>
+              <p>
+                If a payment fails, your placement keeps running for three days
+                while we retry. On the fourth day it is hidden but your slot is
+                held. If payment has not succeeded after seven days, the slot is
+                released. Where another business is waiting for that slot, it may be
+                released as soon as your placement is hidden.
+              </p>
+
+              <p className="text-dark-100 font-semibold">Refunds</p>
+              <p>
+                You may cancel for a full refund at any point before your placement
+                goes live. Once it is live, the period you have used is not
+                refundable.
+              </p>
+              <p>
+                If a renewal charges you by mistake, tell us within 24 hours and we
+                will refund it in full.
+              </p>
+              <p>
+                <strong className="text-dark-100">Come to us before your bank.</strong>{" "}
+                If a charge looks wrong, tell us and we will sort it out, usually the
+                same day. Asking your bank to reverse a payment without contacting us
+                first costs us a fee whether or not the claim is upheld, and gives us
+                hours to respond to something you could have raised with us directly.
+                We may suspend or decline future placements for an account that does
+                this rather than coming to us.
+              </p>
+              <p>
+                <strong className="text-dark-100">What &quot;credit&quot; means.</strong>{" "}
+                Where these terms say we credit you, we mean we extend your
+                placement by the number of days it did not run, or hold the value
+                against a future placement. Credit is not paid out as cash.
+              </p>
+
+              <p className="text-dark-100 font-semibold">Stopping an advert</p>
+              <p>
+                Each placement is managed on its own. Pausing, stopping or
+                removing one never affects any other advert you are running.
+              </p>
+              <p>
+                <strong className="text-dark-100">Pause</strong> hides the
+                advert and stops the next renewal. The period you have already
+                paid for keeps running, so you can put it back up at any time
+                before that period ends.{" "}
+                <strong className="text-dark-100">Stop renewing</strong> leaves
+                it running to the end of that period and then ends it, with no
+                further charge.{" "}
+                <strong className="text-dark-100">Take it down</strong> removes
+                it immediately. Because that ends the period early by your own
+                choice, the remainder is not refunded.
+              </p>
+              <p>
+                An advert that has been submitted but not yet approved can be
+                withdrawn at any time for a full refund, as above. Once it is
+                approved and running, the period used is not refundable.
+              </p>
+
+              <p className="text-dark-100 font-semibold">The waiting list</p>
+              <p>
+                Every area has a limit on how many placements it can carry at each
+                tier, so that the people using Peja are not shown a map covered in
+                adverts and so that what you buy is actually seen. Featured is the
+                tightest and will usually be the one that fills.
+              </p>
+              <p>
+                Where an area is sold out at the tier you want, you can join a
+                waiting list by paying a deposit of 25 percent of the price. That deposit is fully refundable
+                at any time before the balance is taken. When a slot becomes
+                available we tell you 24 hours before charging the balance to your
+                card, and you can cancel in that window. If the charge fails you
+                have a further 24 hours to resolve it, extended while nobody else is
+                waiting, to a maximum of seven days.
+              </p>
+
+              <p className="text-dark-100 font-semibold">Your content</p>
+              <p>
+                You keep ownership of your logo, name and text. You confirm that you
+                have the right to use them and that what you tell us about your
+                business is true. You give us permission to display them within Peja
+                for the period of your placement.
+              </p>
+            </div>
+          </section>
+
+          <section className="mb-8">
+            <h2 className="text-xl font-semibold text-dark-100 mb-3">15. Contact Us</h2>
             <p className="text-dark-300 leading-relaxed">
               If you have questions about these terms, contact us at:
               <br />

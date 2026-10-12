@@ -18,6 +18,7 @@ const navItems: { href: string; label: string; badge?: boolean }[] = [
   { href: "/admin/sos", label: "SOS Alerts" },
   { href: "/admin/support", label: "Support" },
   { href: "/admin/broadcasts", label: "Broadcasts" },
+  { href: "/admin/ads", label: "Adverts" },
   { href: "/admin/flagged", label: "Flagged" },
   { href: "/admin/reports", label: "Reports" },
   { href: "/admin/guardians", label: "Guardians" },
