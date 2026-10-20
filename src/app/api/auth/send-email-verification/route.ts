@@ -32,6 +32,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, alreadyVerified: true });
     }
 
+    // A Google account arrives with an address Google has already
+    // verified. Mark it and stop here rather than mail a code that proves
+    // nothing. Also catches profiles created before signup learnt to do
+    // this. Read from app_metadata, which only the server can set.
+    const { data: authLookup } = await supabaseAdmin.auth.admin.getUserById(user.id);
+    const providers = (authLookup?.user?.app_metadata?.providers as string[] | undefined) || [];
+    if (providers.some((p) => p !== "email" && p !== "phone")) {
+      await supabaseAdmin.from("users").update({ email_verified: true }).eq("id", user.id);
+      return NextResponse.json({ ok: true, alreadyVerified: true });
+    }
+
     // 5 sends per 15 minutes: enough for a genuine retry, not enough to
     // use us as a mail cannon or burn the daily sending quota.
     if (await isRateLimitedDurable(`verify-email:${user.id}`, 5, 900)) {

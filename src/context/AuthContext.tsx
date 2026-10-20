@@ -33,6 +33,22 @@ function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string): Pro
   });
 }
 
+// True when an identity provider other than email or phone vouches for the
+// address. Google only hands over an email it has already verified, so a
+// second code from us would be theatre. Read from app_metadata, which the
+// client cannot write, never from user_metadata, which it can.
+function verifiedByProvider(u: {
+  app_metadata?: { providers?: string[]; provider?: string };
+}): boolean {
+  const meta = u.app_metadata || {};
+  const providers = meta.providers?.length
+    ? meta.providers
+    : meta.provider
+      ? [meta.provider]
+      : [];
+  return providers.some((p) => p !== "email" && p !== "phone");
+}
+
 interface User {
   id: string;
   email: string;
@@ -862,11 +878,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             avatar_url: meta.avatar_url || meta.picture || "",
             phone: meta.phone || "",
             status: "active",
-            // peja runs its OWN email verification (a code we email), so a
-            // fresh profile always starts unverified. Seeding this from
-            // Supabase's email_confirmed_at would mark everyone verified,
-            // since built-in confirmation is off and it is set at signup.
-            email_verified: false,
+            // peja runs its OWN email verification (a code we email), so an
+            // email-and-password signup starts unverified. Supabase's
+            // email_confirmed_at is no use here: built-in confirmation is
+            // off, so it is set at signup for everyone.
+            //
+            // A Google signup is different. Google has already verified the
+            // address before handing it to us, so asking for a code again
+            // proves nothing and reads as a bug. Decided from the identity
+            // provider, which is the one signal the client cannot set.
+            email_verified: verifiedByProvider(authUser),
           };
           // insert (not upsert): if a row somehow already exists but was hidden
           // from our SELECT (e.g. RLS), the conflict is ignored rather than
